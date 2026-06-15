@@ -1,183 +1,136 @@
-# insurance-ai
+# insurance-ai — Running the System
 
-A **multi-tenant SaaS** platform for AI-driven insurance underwriting, risk assessment, and decision automation, built on a Python microservices architecture.
+## Prerequisites
 
----
-
-## Architecture Overview
-
-```
-                          ┌─────────────────────────────┐
-                          │       Browser / Client       │
-                          └──────────────┬──────────────┘
-                                         │ :3000
-                          ┌──────────────▼──────────────┐
-                          │     Frontend (Next.js)       │
-                          └──────────────┬──────────────┘
-                                         │ REST
-                          ┌──────────────▼──────────────┐
-                          │    API Gateway  :8000        │  ← single entry point,
-                          │      (FastAPI)               │    auth, rate-limiting,
-                          └──┬──────────┬──────────┬────┘    request routing
-                             │          │          │
-              ┌──────────────▼──┐  ┌───▼──────┐  ┌▼──────────────┐
-              │ Tenant Service  │  │ Risk     │  │ Decision      │
-              │    :8001        │  │ Engine   │  │ Engine        │
-              │  (FastAPI)      │  │ :8002    │  │ :8003         │
-              │                 │  │(FastAPI) │  │ (FastAPI)     │
-              └────────┬────────┘  └────┬─────┘  └──────┬────────┘
-                       │               │                 │
-          ┌────────────▼───────────────▼─────────────────▼────────┐
-          │                     Shared Infrastructure              │
-          │   ┌─────────────────────┐   ┌────────────────────┐    │
-          │   │  PostgreSQL :5432   │   │  Memgraph  :7687   │    │
-          │   │  (Relational data,  │   │  (Graph DB —       │    │
-          │   │   multi-tenant      │   │   fraud detection, │    │
-          │   │   row isolation)    │   │   entity linking)  │    │
-          │   └─────────────────────┘   └────────────────────┘    │
-          └────────────────────────────────────────────────────────┘
-```
-
-### Services
-
-| Service | Port | Responsibility |
-|---|---|---|
-| **frontend** | 3000 | Next.js UI (placeholder — scaffold with `create-next-app`) |
-| **api-gateway** | 8000 | Single public entry point. Auth, rate-limiting, proxying to downstream services. |
-| **tenant-service** | 8001 | Tenant CRUD, onboarding, plan management, multi-tenant isolation enforcement. |
-| **risk-engine** | 8002 | Actuarial risk scoring, ML model inference, integration with Memgraph for graph-based fraud signals. |
-| **decision-engine** | 8003 | Policy decisioning (approve / refer / decline), rules engine, audit log. |
-
-### Databases
-
-| Database | Port | Purpose |
-|---|---|---|
-| **PostgreSQL 16** | 5432 | Primary relational store. Row-level tenant isolation via `tenant_id` columns. |
-| **Memgraph** | 7687 | Property graph database for entity relationship analysis and fraud detection. Lab UI on `:3001`. |
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) ≥ 4.x (includes Docker Compose v2)
 
 ---
 
-## Getting Started
+## First Time Setup
 
-### Prerequisites
-
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) >= 4.x
-- [Docker Compose](https://docs.docker.com/compose/) >= 2.x (bundled with Docker Desktop)
-
-### 1. Configure environment variables
+**1. Copy the environment file and set your credentials**
 
 ```bash
 cp .env.example .env
-# Edit .env and set strong passwords before running in any shared environment.
 ```
 
-### 2. Start all services
+Open `.env` and replace the placeholder passwords before running anything.
+
+**2. Build images and start every service**
 
 ```bash
 docker compose up --build
 ```
 
-> On first run, Docker will pull base images and build all service containers. This takes ~2–3 minutes. Subsequent starts are fast.
+Docker will pull base images, install dependencies, and start all containers. This takes **2–4 minutes** on a cold machine. You will see log output from every service; wait until you see uvicorn and Next.js report they are ready.
 
-### 3. Verify health checks
+**3. Create your first tenant**
+
+The API Gateway starts with an empty database. Before calling the underwriting endpoint you need at least one tenant:
 
 ```bash
-curl http://localhost:8000/health   # API Gateway
-curl http://localhost:8001/health   # Tenant Service
-curl http://localhost:8002/health   # Risk Engine
-curl http://localhost:8003/health   # Decision Engine
+curl -s -X POST "http://localhost:8000/tenants?name=Acme+Insurance" | python3 -m json.tool
 ```
 
-All should return `{"service": "<name>", "status": "healthy"}`.
+Copy the `id` field from the response — you will use it as `X-Tenant-Id` in every subsequent request.
 
-### 4. Explore interactive API docs
+**4. Verify everything is up**
 
-Each FastAPI service exposes auto-generated Swagger UI:
-
-| Service | Swagger URL |
+| URL | Expected |
 |---|---|
-| API Gateway | http://localhost:8000/docs |
-| Tenant Service | http://localhost:8001/docs |
-| Risk Engine | http://localhost:8002/docs |
-| Decision Engine | http://localhost:8003/docs |
+| http://localhost:3000 | Underwriting dashboard (Next.js) |
+| http://localhost:8000/health | `{"service":"api-gateway","status":"healthy"}` |
+| http://localhost:8002/health | `{"service":"risk-engine","status":"healthy"}` |
+| http://localhost:8000/docs | Interactive API docs (Swagger UI) |
+| http://localhost:8002/docs | Risk Engine API docs |
+| http://localhost:3001 | Memgraph Lab (graph database UI) |
 
-### 5. Memgraph Lab (Graph UI)
-
-Open http://localhost:3001 to connect to the Memgraph instance and run Cypher queries.
-
----
-
-## Project Structure
-
-```
-insurance-ai/
-├── frontend/                   # Next.js app (scaffold with create-next-app)
-│   └── Dockerfile
-├── services/
-│   ├── api-gateway/            # Public entry point
-│   │   ├── main.py
-│   │   ├── requirements.txt
-│   │   └── Dockerfile
-│   ├── tenant-service/         # Multi-tenancy management
-│   │   ├── main.py
-│   │   ├── requirements.txt
-│   │   └── Dockerfile
-│   ├── risk-engine/            # Risk scoring + graph fraud signals
-│   │   ├── main.py
-│   │   ├── requirements.txt
-│   │   └── Dockerfile
-│   └── decision-engine/        # Policy decisioning + rules
-│       ├── main.py
-│       ├── requirements.txt
-│       └── Dockerfile
-├── shared/
-│   ├── db/
-│   │   └── init.sql            # PostgreSQL bootstrap (runs once on first start)
-│   ├── models/                 # Shared Pydantic / SQLAlchemy models
-│   └── events/                 # Shared event schemas (AsyncAPI / CloudEvents)
-├── infrastructure/             # Terraform / Helm / K8s manifests (to be added)
-├── docker-compose.yml
-├── .env.example
-└── .gitignore
-```
-
----
-
-## Development Workflow
+**5. Run a test evaluation**
 
 ```bash
-# Start only the databases (useful when running services locally with uvicorn)
+curl -s -X POST http://localhost:8000/evaluate \
+  -H "Content-Type: application/json" \
+  -H "X-Tenant-Id: <paste-tenant-id-here>" \
+  -d '{
+    "applicant": {
+      "cnic": "3520112345671",
+      "name": "Muhammad Ali Khan",
+      "dob": "1985-06-15",
+      "gender": "Male",
+      "occupation": "Software Engineer",
+      "declared_income": 1200000
+    },
+    "policy": {
+      "product_name": "Term Life 20",
+      "coverage_amount": 5000000,
+      "term_years": 20
+    }
+  }' | python3 -m json.tool
+```
+
+---
+
+## After Making Code Changes
+
+### Python service changed (`api-gateway`, `risk-engine`, `tenant-service`, `decision-engine`)
+
+Because the source directories are volume-mounted, **uvicorn's `--reload` flag picks up `.py` file saves automatically** — no restart needed.
+
+If you added a new dependency to `requirements.txt`, rebuild that service's image:
+
+```bash
+docker compose up --build api-gateway
+# or
+docker compose up --build risk-engine
+```
+
+### Frontend changed (`frontend/`)
+
+Next.js dev server has hot-reload enabled. Saving any file under `frontend/` refreshes the browser automatically — no action needed.
+
+If you added a new npm package to `package.json`:
+
+```bash
+docker compose up --build frontend
+```
+
+### Shared models changed (`shared/models/core.py`)
+
+The `shared/` directory is bind-mounted into the `api-gateway` container. Uvicorn will reload automatically. The database schema is managed by SQLModel's `create_all` on startup — new columns require a full reset:
+
+```bash
+docker compose down -v          # drops volumes (wipes the database)
+docker compose up --build       # recreates everything from scratch
+```
+
+### `docker-compose.yml` or `.env` changed
+
+```bash
+docker compose down
+docker compose up --build
+```
+
+---
+
+## Common Commands
+
+```bash
+# Start everything (after first-time setup)
+docker compose up
+
+# Start only the databases (run services locally for faster iteration)
 docker compose up postgres memgraph
 
-# Rebuild a single service after code changes
-docker compose up --build risk-engine
+# Watch logs for one service
+docker compose logs -f risk-engine
 
-# Tail logs for a specific service
-docker compose logs -f decision-engine
-
-# Stop and remove all containers (data volumes are preserved)
+# Stop all containers (data is preserved)
 docker compose down
 
-# Destroy everything including volumes (resets databases)
+# Stop and wipe all data volumes (full reset)
 docker compose down -v
+
+# Open a shell inside a running service
+docker compose exec api-gateway sh
+docker compose exec postgres psql -U insurance insurance_db
 ```
-
----
-
-## Multi-Tenancy Design
-
-All relational tables carry a `tenant_id UUID` foreign key referencing `tenants.id`. The **tenant-service** is the source of truth for tenant identity. The **api-gateway** extracts the tenant context from the JWT / API key on every inbound request and propagates it downstream via an `X-Tenant-Id` header.
-
-Memgraph tenant isolation is enforced at the application layer by scoping all Cypher queries with a `tenantId` node property filter.
-
----
-
-## Roadmap
-
-- [ ] Scaffold Next.js frontend (`npx create-next-app@latest frontend`)
-- [ ] Add Alembic for PostgreSQL schema migrations
-- [ ] Wire JWT authentication into api-gateway
-- [ ] Implement tenant-aware database session middleware
-- [ ] Add Kafka / Redpanda for async event streaming between services
-- [ ] Add Prometheus + Grafana observability stack to `infrastructure/`
-- [ ] Kubernetes manifests (Helm charts) in `infrastructure/`
