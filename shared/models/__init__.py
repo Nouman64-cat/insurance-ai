@@ -1,6 +1,9 @@
 from .core import (
     AIDecision,
     Applicant,
+    Artifact,
+    Claim,
+    Commission,
     Gender,
     Policy,
     RiskAssessment,
@@ -12,6 +15,9 @@ __all__ = [
     "Applicant",
     "Policy",
     "RiskAssessment",
+    "Claim",
+    "Artifact",
+    "Commission",
     "AIDecision",
     "Gender",
 ]

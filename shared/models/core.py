@@ -43,6 +43,9 @@ class Tenant(SQLModel, table=True):
     applicants: List["Applicant"] = Relationship(back_populates="tenant")
     policies: List["Policy"] = Relationship(back_populates="tenant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="tenant")
+    claims: List["Claim"] = Relationship(back_populates="tenant")
+    artifacts: List["Artifact"] = Relationship(back_populates="tenant")
+    commissions: List["Commission"] = Relationship(back_populates="tenant")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,6 +81,7 @@ class Applicant(SQLModel, table=True):
     tenant: Optional[Tenant] = Relationship(back_populates="applicants")
     policies: List["Policy"] = Relationship(back_populates="applicant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="applicant")
+    artifacts: List["Artifact"] = Relationship(back_populates="applicant")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -104,6 +108,8 @@ class Policy(SQLModel, table=True):
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="policies")
     applicant: Optional[Applicant] = Relationship(back_populates="policies")
+    claims: List["Claim"] = Relationship(back_populates="policy")
+    commission: Optional["Commission"] = Relationship(back_populates="policy")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -144,3 +150,85 @@ class RiskAssessment(SQLModel, table=True):
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="risk_assessments")
     applicant: Optional[Applicant] = Relationship(back_populates="risk_assessments")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Claim  —  a benefit claim filed against an active policy
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Claim(SQLModel, table=True):
+    __tablename__ = "claims"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    claim_type: str = Field(max_length=100)         # e.g. 'Hospitalization', 'Death', 'Reimbursement'
+    submitted_amount: float = Field(ge=0)
+    approved_amount: float = Field(default=0, ge=0)
+    status: str = Field(max_length=50)              # e.g. 'Approved', 'Rejected', 'Investigation'
+    fraud_probability: float = Field(ge=0.0, le=1.0)
+    duplicate_flag: bool = Field(default=False)
+    ai_recommendation: str = Field(max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="claims")
+    policy: Optional[Policy] = Relationship(back_populates="claims")
+    artifacts: List["Artifact"] = Relationship(back_populates="claim")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Artifact  —  a document attached to an applicant or a claim
+# Defined after Claim because claim_id is a FK to claims.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Artifact(SQLModel, table=True):
+    __tablename__ = "artifacts"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    # An artifact is attached to an applicant, a claim, or both — both FKs are optional.
+    applicant_id: Optional[UUID] = Field(default=None, foreign_key="applicants.id", index=True)
+    claim_id: Optional[UUID] = Field(default=None, foreign_key="claims.id", index=True)
+
+    document_type: str = Field(max_length=100)      # e.g. 'CNIC', 'Salary Slip', 'Medical Report'
+    ocr_confidence_score: float = Field(ge=0.0, le=1.0)
+    authenticity_score: float = Field(ge=0.0, le=1.0)
+    quality_score: float = Field(ge=0.0, le=1.0)
+    tampered_flag: bool = Field(default=False)
+    status: str = Field(max_length=50)              # e.g. 'Accepted', 'Re-submission Requested'
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships — SQLAlchemy disambiguates the two optional FKs because
+    # each points to a different table (applicants vs claims).
+    tenant: Optional[Tenant] = Relationship(back_populates="artifacts")
+    applicant: Optional[Applicant] = Relationship(back_populates="artifacts")
+    claim: Optional[Claim] = Relationship(back_populates="artifacts")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Commission  —  agent commission record for a sold policy
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Commission(SQLModel, table=True):
+    __tablename__ = "commissions"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    agent_id: str = Field(index=True, max_length=100)
+    overall_ai_score: float = Field(ge=0.0, le=100.0)
+    commission_percentage: float = Field(ge=0.0, le=100.0)
+    calculated_amount: float = Field(ge=0)
+    bonus_eligible: bool = Field(default=False)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    # Policy.commission is Optional[Commission] (not a list) → SQLModel sets uselist=False.
+    tenant: Optional[Tenant] = Relationship(back_populates="commissions")
+    policy: Optional[Policy] = Relationship(back_populates="commission")
