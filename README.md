@@ -43,7 +43,7 @@ Copy the `id` field from the response — you will use it as `X-Tenant-Id` in ev
 | http://localhost:8002/health | `{"service":"risk-engine","status":"healthy"}` |
 | http://localhost:8000/docs | Interactive API docs (Swagger UI) |
 | http://localhost:8002/docs | Risk Engine API docs |
-| http://localhost:3001 | Memgraph Lab (graph database UI) |
+| http://localhost:3002 | Memgraph Lab (graph database UI) |
 
 **5. Run a test evaluation**
 
@@ -133,4 +133,6 @@ docker compose down -v
 # Open a shell inside a running service
 docker compose exec api-gateway sh
 docker compose exec postgres psql -U insurance insurance_db
+# or connect from host (port 5434 on host maps to 5432 inside container)
+# psql -h localhost -p 5434 -U insurance insurance_db
 ```
