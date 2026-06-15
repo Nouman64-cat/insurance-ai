@@ -1,0 +1,142 @@
+version: "3.9"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Shared network — all services communicate here
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  insurance-net:
+    driver: bridge
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Named volumes — data survives container restarts
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  postgres-data:
+  memgraph-data:
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Re-usable FastAPI service defaults
+# ─────────────────────────────────────────────────────────────────────────────
+x-fastapi-defaults: &fastapi-defaults
+  restart: unless-stopped
+  networks:
+    - insurance-net
+  env_file:
+    - .env
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Databases
+  # ───────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: insurance-postgres
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-insurance}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insurance_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-insurance_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./shared/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-insurance}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  memgraph:
+    image: memgraph/memgraph-platform:latest
+    container_name: insurance-memgraph
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "7687:7687"   # Bolt protocol
+      - "7444:7444"   # Memgraph Lab UI
+      - "3001:3000"   # Memgraph Lab web UI (mapped to 3001 to avoid conflict with frontend)
+    volumes:
+      - memgraph-data:/var/lib/memgraph
+    environment:
+      MEMGRAPH_TELEMETRY_ENABLED: "false"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7687"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Backend microservices
+  # ───────────────────────────────────────────────────────────────────────────
+  api-gateway:
+    <<: *fastapi-defaults
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    container_name: insurance-api-gateway
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./services/api-gateway:/app
+
+  tenant-service:
+    <<: *fastapi-defaults
+    build:
+      context: ./services/tenant-service
+      dockerfile: Dockerfile
+    container_name: insurance-tenant-service
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./services/tenant-service:/app
+
+  risk-engine:
+    <<: *fastapi-defaults
+    build:
+      context: ./services/risk-engine
+      dockerfile: Dockerfile
+    container_name: insurance-risk-engine
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./services/risk-engine:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      memgraph:
+        condition: service_healthy
+
+  decision-engine:
+    <<: *fastapi-defaults
+    build:
+      context: ./services/decision-engine
+      dockerfile: Dockerfile
+    container_name: insurance-decision-engine
+    ports:
+      - "8003:8003"
+    volumes:
+      - ./services/decision-engine:/app
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Frontend (Next.js placeholder)
+  # ───────────────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: insurance-frontend
+    restart: unless-stopped
+    networks:
+      - insurance-net
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://api-gateway:8000

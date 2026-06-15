@@ -109,4 +109,16 @@ yarn-debug.log*
 .env
 .env.local
 .env.*.local
+!.env.example
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Docker
+.dockerignore
+
+# Keep placeholder directories tracked
+!**/.gitkeep
 
