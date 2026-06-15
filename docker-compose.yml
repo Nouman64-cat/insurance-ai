@@ -137,6 +137,17 @@ services:
     volumes:
       - ./services/decision-engine:/app
 
+  ocr-engine:
+    <<: *fastapi-defaults
+    build:
+      context: ./services/ocr-engine
+      dockerfile: Dockerfile
+    container_name: insurance-ocr-engine
+    ports:
+      - "8014:8011"
+    volumes:
+      - ./services/ocr-engine:/app
+      - ./shared/documents:/data      # Required for the /extract-from-path endpoint
   # ───────────────────────────────────────────────────────────────────────────
   # Frontend (Next.js App Router)
   # ───────────────────────────────────────────────────────────────────────────
