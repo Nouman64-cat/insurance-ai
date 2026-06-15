@@ -60,9 +60,9 @@ services:
     networks:
       - insurance-net
     ports:
-      - "7687:7687"   # Bolt protocol
-      - "7444:7444"   # Memgraph Lab UI
-      - "3002:3000"   # Memgraph Lab web UI (mapped to 3002 to avoid conflict with frontend/host node)
+      - "7688:7687"   # Bolt protocol
+      - "7445:7444"   # Memgraph Lab UI
+      - "3001:3000"   # Memgraph Lab web UI (mapped to 3001 to avoid conflict with frontend/host node)
     volumes:
       - memgraph-data:/var/lib/memgraph
     environment:
@@ -83,7 +83,7 @@ services:
       dockerfile: Dockerfile
     container_name: insurance-api-gateway
     ports:
-      - "8000:8000"
+      - "8010:8000"
     volumes:
       - ./services/api-gateway:/app
       - ./shared:/app/shared      # exposes shared.models.core to the gateway
@@ -100,7 +100,7 @@ services:
       dockerfile: Dockerfile
     container_name: insurance-tenant-service
     ports:
-      - "8001:8001"
+      - "8011:8001"
     volumes:
       - ./services/tenant-service:/app
 
@@ -111,7 +111,7 @@ services:
       dockerfile: Dockerfile
     container_name: insurance-risk-engine
     ports:
-      - "8002:8002"
+      - "8012:8002"
     volumes:
       - ./services/risk-engine:/app
     depends_on:
@@ -133,7 +133,7 @@ services:
       dockerfile: Dockerfile
     container_name: insurance-decision-engine
     ports:
-      - "8003:8003"
+      - "8013:8003"
     volumes:
       - ./services/decision-engine:/app
 

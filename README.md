@@ -6,6 +6,24 @@
 
 ---
 
+## Port Configuration
+
+The services run on the following host ports to avoid conflicts with other local services:
+
+| Service | Port | Purpose |
+|---|---|---|
+| Frontend | 3000 | Next.js underwriting dashboard |
+| API Gateway | 8010 | Main service entry point |
+| Tenant Service | 8011 | Tenant management |
+| Risk Engine | 8012 | Risk evaluation engine |
+| Decision Engine | 8013 | Decision logic |
+| Memgraph Bolt | 7688 | Graph database (bolt protocol) |
+| Memgraph Lab | 7445 | Graph database UI |
+| Memgraph Lab Web | 3001 | Graph database web UI |
+| PostgreSQL | 5434 | Relational database (internal: 5432) |
+
+---
+
 ## First Time Setup
 
 **1. Copy the environment file and set your credentials**
@@ -29,7 +47,7 @@ Docker will pull base images, install dependencies, and start all containers. Th
 The API Gateway starts with an empty database. Before calling the underwriting endpoint you need at least one tenant:
 
 ```bash
-curl -s -X POST "http://localhost:8000/tenants?name=Acme+Insurance" | python3 -m json.tool
+curl -s -X POST "http://localhost:8010/tenants?name=Acme+Insurance" | python3 -m json.tool
 ```
 
 Copy the `id` field from the response — you will use it as `X-Tenant-Id` in every subsequent request.
@@ -39,16 +57,18 @@ Copy the `id` field from the response — you will use it as `X-Tenant-Id` in ev
 | URL | Expected |
 |---|---|
 | http://localhost:3000 | Underwriting dashboard (Next.js) |
-| http://localhost:8000/health | `{"service":"api-gateway","status":"healthy"}` |
-| http://localhost:8002/health | `{"service":"risk-engine","status":"healthy"}` |
-| http://localhost:8000/docs | Interactive API docs (Swagger UI) |
-| http://localhost:8002/docs | Risk Engine API docs |
-| http://localhost:3002 | Memgraph Lab (graph database UI) |
+| http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}` |
+| http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}` |
+| http://localhost:8010/docs | Interactive API docs (Swagger UI) |
+| http://localhost:8012/docs | Risk Engine API docs |
+| http://localhost:3001 | Memgraph Lab (graph database UI) |
+| http://localhost:5434 | PostgreSQL on port 5434 (internal DB) |
+| http://localhost:7688 | Memgraph Bolt port |
 
 **5. Run a test evaluation**
 
 ```bash
-curl -s -X POST http://localhost:8000/evaluate \
+curl -s -X POST http://localhost:8010/evaluate \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: <paste-tenant-id-here>" \
   -d '{
@@ -132,7 +152,50 @@ docker compose down -v
 
 # Open a shell inside a running service
 docker compose exec api-gateway sh
-docker compose exec postgres psql -U insurance insurance_db
+docker compose exec postgres psql -U insurance insurance
 # or connect from host (port 5434 on host maps to 5432 inside container)
-# psql -h localhost -p 5434 -U insurance insurance_db
+# psql -h localhost -p 5434 -U insurance insurance
 ```
+
+---
+
+## Troubleshooting
+
+### Port conflicts
+
+If you see `address already in use` error, another service is occupying the port:
+
+```bash
+# Find which process is using a port (e.g., 8010)
+lsof -i :8010
+
+# Stop a docker container if needed
+docker stop <container-name>
+
+# Or stop all containers and volumes for a fresh start
+docker compose down -v
+```
+
+### Database doesn't exist
+
+If you see `database "insurance" does not exist`, the PostgreSQL volume was initialized with old settings:
+
+```bash
+docker compose down
+docker volume rm insurance-ai_postgres-data
+docker compose up --build
+```
+
+### Service won't start
+
+Check logs for the specific service:
+
+```bash
+docker compose logs -f <service-name>
+```
+
+Common issues:
+- Missing `.env` file → copy `.env.example` to `.env`
+- Database not ready → PostgreSQL takes 10-15 seconds to initialize on cold start
+- Port conflicts → see "Port conflicts" section above
+
