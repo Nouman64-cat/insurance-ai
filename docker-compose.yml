@@ -138,17 +138,22 @@ services:
       - ./services/decision-engine:/app
 
   # ───────────────────────────────────────────────────────────────────────────
-  # Frontend (Next.js placeholder)
+  # Frontend (Next.js App Router)
   # ───────────────────────────────────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: dev          # use the dev stage for hot-reload during development
     container_name: insurance-frontend
     restart: unless-stopped
     networks:
       - insurance-net
     ports:
       - "3000:3000"
+    volumes:
+      - ./frontend:/app                    # hot-reload source files
+      - /app/node_modules                  # prevent host node_modules from overwriting container's
+      - /app/.next                         # preserve Next.js build cache between restarts
     environment:
-      NEXT_PUBLIC_API_URL: http://api-gateway:8000
+      NEXT_PUBLIC_API_URL: http://localhost:8000   # browser-side; points to gateway on host
