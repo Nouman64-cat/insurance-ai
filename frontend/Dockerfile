@@ -5,7 +5,7 @@ WORKDIR /app
 # ── Dependency layer (cached unless package.json changes) ──────────────────
 FROM base AS deps
 COPY package.json package-lock.json* ./
-RUN npm ci
+RUN npm install
 
 # ── Development server (used by docker-compose) ────────────────────────────
 FROM base AS dev
