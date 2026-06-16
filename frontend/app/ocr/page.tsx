@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type DragEvent,
+} from "react";
 import { ocrApi } from "@/app/services/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -142,7 +149,8 @@ function StatusBadge({ status }: { status: Status }) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function OcrPage() {
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [previewFile, setPreviewFile] = useState<File | null>(null);
   const [objectURL, setObjectURL] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<string | null>(null);
@@ -152,53 +160,105 @@ export default function OcrPage() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const selectFile = useCallback((f: File) => {
-    const ext = getExt(f.name);
-    if (!(SUPPORTED as readonly string[]).includes(ext)) {
-      setError(`Unsupported format ".${ext}". Accepted: ${SUPPORTED.join(", ").toUpperCase()}`);
+  useEffect(() => {
+    if (objectURL) {
+      URL.revokeObjectURL(objectURL);
+    }
+
+    if (files.length > 0) {
+      const first = files[0];
+      setPreviewFile(first);
+      setObjectURL(URL.createObjectURL(first));
+    } else {
+      setPreviewFile(null);
+      setObjectURL(null);
+    }
+
+    return () => {
+      if (objectURL) {
+        URL.revokeObjectURL(objectURL);
+      }
+    };
+  }, [files]);
+
+  const selectFiles = useCallback((pickedFiles: FileList | File[]) => {
+    const fileArray = Array.from(pickedFiles);
+    if (fileArray.length === 0) return;
+
+    const invalid = fileArray.filter((file) => {
+      const ext = getExt(file.name);
+      return !(SUPPORTED as readonly string[]).includes(ext);
+    });
+
+    if (invalid.length > 0) {
+      setError(
+        `Unsupported format "${getExt(invalid[0].name)}". Accepted: ${SUPPORTED.join(", ").toUpperCase()}`
+      );
       setStatus("error");
       return;
     }
-    if (objectURL) URL.revokeObjectURL(objectURL);
-    const url = URL.createObjectURL(f);
-    setFile(f);
-    setObjectURL(url);
+
+    setFiles(fileArray);
     setStatus("ready");
     setResult(null);
+    setTokenUsage(null);
     setError(null);
-  }, [objectURL]);
+  }, []);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    const dropped = e.dataTransfer.files[0];
-    if (dropped) selectFile(dropped);
-  }, [selectFile]);
+    if (e.dataTransfer.files.length > 0) {
+      selectFiles(e.dataTransfer.files);
+    }
+  }, [selectFiles]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = e.target.files?.[0];
-    if (picked) selectFile(picked);
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.length) {
+      selectFiles(e.target.files);
+    }
     e.target.value = "";
   };
 
+  const removeFile = (index: number) => {
+    setFiles((current: File[]) => {
+      const next = current.filter((_, i) => i !== index);
+      if (next.length === 0) {
+        setStatus("idle");
+      }
+      return next;
+    });
+  };
+
   const runOCR = async () => {
-    if (!file) return;
+    if (files.length === 0) return;
     setStatus("processing");
     setError(null);
     setResult(null);
     setTokenUsage(null);
 
-    const form = new FormData();
-    form.append("file", file);
-
     try {
-      const res = await ocrApi.post<{
-        filename: string;
-        extracted_text: string;
-        token_usage: TokenUsage;
-      }>("/extract", form);
-      setResult(res.data.extracted_text);
-      setTokenUsage(res.data.token_usage);
+      const extractedSections: string[] = [];
+      const totalUsage = { input: 0, output: 0, total: 0 };
+
+      for (const selectedFile of files) {
+        const form = new FormData();
+        form.append("file", selectedFile);
+
+        const res = await ocrApi.post<{
+          filename: string;
+          extracted_text: string;
+          token_usage: TokenUsage;
+        }>("/extract", form);
+
+        extractedSections.push(`=== ${selectedFile.name} ===\n${res.data.extracted_text}`);
+        totalUsage.input += res.data.token_usage.input;
+        totalUsage.output += res.data.token_usage.output;
+        totalUsage.total += res.data.token_usage.total;
+      }
+
+      setResult(extractedSections.join("\n\n"));
+      setTokenUsage(totalUsage);
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "OCR processing failed.");
@@ -214,9 +274,7 @@ export default function OcrPage() {
   };
 
   const reset = () => {
-    if (objectURL) URL.revokeObjectURL(objectURL);
-    setFile(null);
-    setObjectURL(null);
+    setFiles([]);
     setStatus("idle");
     setResult(null);
     setTokenUsage(null);
@@ -253,11 +311,11 @@ export default function OcrPage() {
               transition-colors duration-150 cursor-pointer
               ${isDragging
                 ? "border-blue-400 bg-blue-50"
-                : file
+                : files.length > 0
                   ? "border-slate-300 bg-slate-50 hover:border-blue-300"
                   : "border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/30"
               }
-              ${file ? "py-4" : "py-10"}
+              ${files.length > 0 ? "py-4" : "py-10"}
             `}
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
@@ -271,34 +329,64 @@ export default function OcrPage() {
               type="file"
               className="sr-only"
               accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
+              multiple
               onChange={handleInputChange}
             />
-            {file ? (
-              <div className="flex items-center gap-3 px-4">
-                <FileIcon />
-                <div className="overflow-hidden">
-                  <p className="text-sm font-semibold text-slate-800 truncate">{file.name}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">
-                    {(file.size / 1024).toFixed(1)} KB · {getExt(file.name).toUpperCase()}
-                  </p>
+            {files.length > 0 ? (
+              <div className="w-full">
+                <div className="flex items-center gap-3 px-4">
+                  <FileIcon />
+                  <div className="overflow-hidden">
+                    <p className="text-sm font-semibold text-slate-800 truncate">
+                      {files.length} document{files.length === 1 ? "" : "s"} selected
+                    </p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {files.length} file{files.length === 1 ? "" : "s"} · {getExt(files[0].name).toUpperCase()}
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); reset(); }}
+                    className="ml-auto flex-shrink-0 p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                    title="Clear all files"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                      strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                      <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
                 </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); reset(); }}
-                  className="ml-auto flex-shrink-0 p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
-                  title="Remove file"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                    strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                    <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-                  </svg>
-                </button>
+                <div className="mt-3 space-y-2 px-4">
+                  {files.map((f, index) => (
+                    <div key={`${f.name}-${f.size}-${f.lastModified}`} className="flex items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                      <div className="min-w-[48px]">
+                        <span className="text-xs font-medium text-slate-500">{getExt(f.name).toUpperCase()}</span>
+                      </div>
+                      <div className="min-w-0 overflow-hidden">
+                        <p className="text-sm font-medium text-slate-700 truncate">{f.name}</p>
+                        <p className="text-xs text-slate-400">
+                          {(f.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); removeFile(index); }}
+                        className="ml-auto flex-shrink-0 p-1.5 rounded-md text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title={`Remove ${f.name}`}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                          strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                          <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             ) : (
               <>
                 <UploadIcon />
                 <div className="text-center">
                   <p className="text-sm font-semibold text-slate-700">
-                    Drop a document here, or{" "}
+                    Drop documents here, or{" "}
                     <span className="text-blue-600 underline underline-offset-2">browse</span>
                   </p>
                   <p className="text-xs text-slate-400 mt-1">
@@ -311,9 +399,9 @@ export default function OcrPage() {
 
           {/* Document preview */}
           <div className="flex-1 min-h-0 rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
-            {file && objectURL ? (
+            {previewFile && objectURL ? (
               <div className="w-full h-full p-2">
-                <DocumentPreview file={file} objectURL={objectURL} />
+                <DocumentPreview file={previewFile} objectURL={objectURL} />
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400">
@@ -333,11 +421,11 @@ export default function OcrPage() {
           {/* Run button */}
           <button
             onClick={runOCR}
-            disabled={!file || status === "processing"}
+            disabled={files.length === 0 || status === "processing"}
             className={`
               w-full flex items-center justify-center gap-2.5 py-3 px-5 rounded-xl
               text-sm font-semibold tracking-wide transition-all duration-150
-              ${!file || status === "processing"
+              ${files.length === 0 || status === "processing"
                 ? "bg-slate-100 text-slate-400 cursor-not-allowed"
                 : "bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg active:scale-[0.98]"
               }
@@ -397,6 +485,7 @@ export default function OcrPage() {
             {/* Token usage + cost bar */}
             {tokenUsage && (() => {
               const cost = calcCost(tokenUsage);
+              const totalTokens = tokenUsage.input + tokenUsage.output;
               const fmt  = (n: number) => n < 0.000001 ? "<$0.000001" : `$${n.toFixed(6)}`;
               return (
                 <div className="border-t border-slate-100 bg-slate-50 px-5 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1.5">
@@ -426,7 +515,7 @@ export default function OcrPage() {
                       <span className="flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
                         <span className="text-slate-500">Total</span>
-                        <span className="font-semibold text-slate-800">{tokenUsage.total.toLocaleString()}</span>
+                        <span className="font-semibold text-slate-800">{totalTokens.toLocaleString()}</span>
                       </span>
                     </div>
                   </div>
