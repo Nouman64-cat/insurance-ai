@@ -2,6 +2,7 @@ import axios from "axios";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 const OCR_BASE_URL = process.env.NEXT_PUBLIC_OCR_URL ?? "http://localhost:8014";
+const SUMMARIZER_BASE_URL = process.env.NEXT_PUBLIC_SUMMARIZER_URL ?? "http://localhost:8015";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -28,6 +29,21 @@ ocrApi.interceptors.response.use(
   (err) => {
     const message =
       err.response?.data?.detail ?? err.message ?? "OCR processing failed.";
+    return Promise.reject(new Error(message));
+  },
+);
+
+export const summarizerApi = axios.create({
+  baseURL: SUMMARIZER_BASE_URL,
+  headers: { "Content-Type": "application/json" },
+  timeout: 120_000,
+});
+
+summarizerApi.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const message =
+      err.response?.data?.detail ?? err.message ?? "Summarization failed.";
     return Promise.reject(new Error(message));
   },
 );
