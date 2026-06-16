@@ -144,7 +144,7 @@ services:
       dockerfile: Dockerfile
     container_name: insurance-ocr-engine
     ports:
-      - "8014:8011"
+      - "8014:8004"
     volumes:
       - ./services/ocr-engine:/app
       - ./shared/documents:/data      # Required for the /extract-from-path endpoint
