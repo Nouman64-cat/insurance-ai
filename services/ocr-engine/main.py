@@ -8,7 +8,7 @@ if not GEMINI_API_KEY:
     raise RuntimeError("GEMINI_API_KEY environment variable is not set")
 
 genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.0-flash")
+model = genai.GenerativeModel("gemini-2.5-flash")
 
 OCR_PROMPT = (
     "You are an OCR engine. Extract all text from this document exactly as it appears, "
@@ -28,7 +28,7 @@ MIME_MAP = {
 
 app = FastAPI(
     title="OCR Extraction Service",
-    description="Microservice for extracting text from images and PDFs using Gemini 2.0 Flash.",
+    description="Microservice for extracting text from images and PDFs using Gemini 2.5 Flash.",
     version="2.0.0"
 )
 
@@ -43,7 +43,7 @@ def _run_ocr(file_bytes: bytes, mime_type: str) -> str:
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "engine": "Gemini 2.0 Flash", "model": "gemini-2.0-flash"}
+    return {"status": "healthy", "engine": "Gemini 2.5 Flash", "model": "gemini-2.5-flash"}
 
 
 @app.post("/extract")
