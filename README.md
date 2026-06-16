@@ -17,6 +17,8 @@ The services run on the following host ports to avoid conflicts with other local
 | Tenant Service | 8011 | Tenant management |
 | Risk Engine | 8012 | Risk evaluation engine |
 | Decision Engine | 8013 | Decision logic |
+| OCR Engine | 8014 | Document text extraction |
+| Text Summarizer | 8015 | OCR text summarization |
 | Memgraph Bolt | 7688 | Graph database (bolt protocol) |
 | Memgraph Lab | 7445 | Graph database UI |
 | Memgraph Lab Web | 3001 | Graph database web UI |
@@ -59,8 +61,12 @@ Copy the `id` field from the response — you will use it as `X-Tenant-Id` in ev
 | http://localhost:3000 | Underwriting dashboard (Next.js) |
 | http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}` |
 | http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}` |
+| http://localhost:8014/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
+| http://localhost:8015/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
 | http://localhost:8010/docs | Interactive API docs (Swagger UI) |
 | http://localhost:8012/docs | Risk Engine API docs |
+| http://localhost:8014/docs | OCR Engine API docs |
+| http://localhost:8015/docs | Text Summarizer API docs |
 | http://localhost:3001 | Memgraph Lab (graph database UI) |
 | http://localhost:5434 | PostgreSQL on port 5434 (internal DB) |
 | http://localhost:7688 | Memgraph Bolt port |
@@ -92,7 +98,7 @@ curl -s -X POST http://localhost:8010/evaluate \
 
 ## After Making Code Changes
 
-### Python service changed (`api-gateway`, `risk-engine`, `tenant-service`, `decision-engine`)
+### Python service changed (`api-gateway`, `risk-engine`, `tenant-service`, `decision-engine`, `ocr-engine`, `text-summarizer`)
 
 Because the source directories are volume-mounted, **uvicorn's `--reload` flag picks up `.py` file saves automatically** — no restart needed.
 
