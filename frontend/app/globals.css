@@ -48,7 +48,7 @@
 
   /* Dashboard shell — sidebar + main column */
   .dashboard-shell {
-    @apply flex min-h-screen;
+    @apply flex h-screen overflow-hidden;
   }
 
   /* Sidebar active link glow effect */

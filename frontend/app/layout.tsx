@@ -22,12 +22,12 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="dashboard-shell min-h-screen flex bg-slate-50">
+      <body className="dashboard-shell bg-slate-50">
         {/* ── Sidebar ──────────────────────────────────────────────────────── */}
         <Sidebar />
 
         {/* ── Main column ─────────────────────────────────────────────────── */}
-        <div className="flex flex-col flex-1 min-w-0 min-h-screen">
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
           <TopBar />
 
           {/* ── Page content ──────────────────────────────────────────────── */}

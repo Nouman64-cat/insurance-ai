@@ -164,7 +164,7 @@ export function Sidebar() {
         bg-slate-900 border-r border-slate-800
         transition-all duration-300 ease-in-out
         ${collapsed ? "w-16" : "w-60"}
-        min-h-screen relative z-40
+        h-screen relative z-40
       `}
     >
       {/* ── Brand ─────────────────────────────────────────────────────────── */}

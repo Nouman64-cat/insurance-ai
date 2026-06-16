@@ -291,11 +291,11 @@ export default function OcrPage() {
           {/* Document preview */}
           <div className="flex-1 min-h-0 rounded-xl border border-slate-200 bg-white overflow-hidden shadow-sm">
             {file && objectURL ? (
-              <div className="w-full h-full min-h-[340px] p-2">
+              <div className="w-full h-full p-2">
                 <DocumentPreview file={file} objectURL={objectURL} />
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-full min-h-[340px] gap-2 text-slate-400">
+              <div className="flex flex-col items-center justify-center h-full gap-2 text-slate-400">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"
                   strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 opacity-40">
                   <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
