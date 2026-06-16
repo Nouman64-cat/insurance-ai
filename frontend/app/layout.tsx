@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
-import { Navigation } from "@/components/Navigation";
+import { Sidebar } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 import "./globals.css";
 
 const inter = Inter({
@@ -21,14 +22,26 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={inter.variable}>
-      <body className="min-h-screen flex flex-col">
-        <Navigation />
-        <main className="flex-1">{children}</main>
-        <footer className="bg-slate-900 border-t border-slate-800 py-3 px-6">
-          <p className="text-center text-xs text-slate-500">
-            insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential
-          </p>
-        </footer>
+      <body className="dashboard-shell bg-slate-50">
+        {/* ── Sidebar ──────────────────────────────────────────────────────── */}
+        <Sidebar />
+
+        {/* ── Main column ─────────────────────────────────────────────────── */}
+        <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+          <TopBar />
+
+          {/* ── Page content ──────────────────────────────────────────────── */}
+          <main className="flex-1 overflow-auto">
+            {children}
+          </main>
+
+          {/* ── Footer ────────────────────────────────────────────────────── */}
+          <footer className="border-t border-slate-200 bg-white py-2.5 px-6">
+            <p className="text-center text-[10px] text-slate-400">
+              insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; Adamjee Life Assurance Co. Ltd.
+            </p>
+          </footer>
+        </div>
       </body>
     </html>
   );
