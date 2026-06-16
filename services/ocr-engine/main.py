@@ -1,6 +1,7 @@
 import os
 import base64
 from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 import google.generativeai as genai
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -30,6 +31,13 @@ app = FastAPI(
     title="OCR Extraction Service",
     description="Microservice for extracting text from images and PDFs using Gemini 2.5 Flash.",
     version="2.0.0"
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 

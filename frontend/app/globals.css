@@ -17,6 +17,11 @@
   ::-webkit-scrollbar-track { @apply bg-slate-100; }
   ::-webkit-scrollbar-thumb { @apply bg-slate-300 rounded-full; }
   ::-webkit-scrollbar-thumb:hover { @apply bg-slate-400; }
+
+  /* Sidebar-specific scrollbar (dark) */
+  aside ::-webkit-scrollbar-track { @apply bg-slate-900; }
+  aside ::-webkit-scrollbar-thumb { @apply bg-slate-700 rounded-full; }
+  aside ::-webkit-scrollbar-thumb:hover { @apply bg-slate-600; }
 }
 
 @layer components {
@@ -39,5 +44,22 @@
   }
   .data-val {
     @apply text-sm text-slate-900 font-semibold;
+  }
+
+  /* Dashboard shell — sidebar + main column */
+  .dashboard-shell {
+    @apply flex min-h-screen;
+  }
+
+  /* Sidebar active link glow effect */
+  .sidebar-link {
+    position: relative;
+  }
+  .sidebar-link::before {
+    content: "";
+    @apply absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-0 rounded-full bg-blue-500 transition-all duration-200;
+  }
+  .sidebar-link:hover::before {
+    @apply h-4;
   }
 }
