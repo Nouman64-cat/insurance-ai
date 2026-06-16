@@ -41,12 +41,20 @@ app.add_middleware(
 )
 
 
-def _run_ocr(file_bytes: bytes, mime_type: str) -> str:
+def _run_ocr(file_bytes: bytes, mime_type: str) -> dict:
     response = model.generate_content([
         OCR_PROMPT,
         {"mime_type": mime_type, "data": base64.b64encode(file_bytes).decode()},
     ])
-    return response.text
+    usage = response.usage_metadata
+    return {
+        "text": response.text,
+        "token_usage": {
+            "input": usage.prompt_token_count,
+            "output": usage.candidates_token_count,
+            "total": usage.total_token_count,
+        },
+    }
 
 
 @app.get("/health")
@@ -68,8 +76,12 @@ async def extract_text(file: UploadFile = File(...)):
     mime_type = MIME_MAP[file_ext]
 
     try:
-        extracted_text = _run_ocr(file_bytes, mime_type)
-        return {"filename": file.filename, "extracted_text": extracted_text}
+        result = _run_ocr(file_bytes, mime_type)
+        return {
+            "filename": file.filename,
+            "extracted_text": result["text"],
+            "token_usage": result["token_usage"],
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR Processing Error: {str(e)}")
 
@@ -90,18 +102,19 @@ async def extract_text_from_path(input_path: str, output_path: str | None = None
         with open(input_path, "rb") as f:
             file_bytes = f.read()
 
-        extracted_text = _run_ocr(file_bytes, mime_type)
+        result = _run_ocr(file_bytes, mime_type)
 
         if output_path:
             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
             with open(output_path, "w", encoding="utf-8") as f:
-                f.write(extracted_text)
+                f.write(result["text"])
 
         return {
             "status": "success",
             "input_file": input_path,
             "saved_to": output_path,
-            "extracted_text": extracted_text,
+            "extracted_text": result["text"],
+            "token_usage": result["token_usage"],
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

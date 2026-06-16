@@ -7,8 +7,24 @@ import { ocrApi } from "@/app/services/api";
 
 type Status = "idle" | "ready" | "processing" | "done" | "error";
 
+interface TokenUsage {
+  input: number;
+  output: number;
+  total: number;
+}
+
 const SUPPORTED = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp"] as const;
 const IMAGE_PREVIEW = ["png", "jpg", "jpeg", "bmp"];
+
+// Gemini 2.5 Flash pricing (per 1M tokens)
+const PRICE_INPUT_PER_M  = 0.15;
+const PRICE_OUTPUT_PER_M = 0.60;
+
+function calcCost(usage: TokenUsage) {
+  const input  = (usage.input  / 1_000_000) * PRICE_INPUT_PER_M;
+  const output = (usage.output / 1_000_000) * PRICE_OUTPUT_PER_M;
+  return { input, output, total: input + output };
+}
 
 function getExt(filename: string) {
   return filename.split(".").pop()?.toLowerCase() ?? "";
@@ -130,6 +146,7 @@ export default function OcrPage() {
   const [objectURL, setObjectURL] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [result, setResult] = useState<string | null>(null);
+  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -169,16 +186,19 @@ export default function OcrPage() {
     setStatus("processing");
     setError(null);
     setResult(null);
+    setTokenUsage(null);
 
     const form = new FormData();
     form.append("file", file);
 
     try {
-      const res = await ocrApi.post<{ filename: string; extracted_text: string }>(
-        "/extract",
-        form,
-      );
+      const res = await ocrApi.post<{
+        filename: string;
+        extracted_text: string;
+        token_usage: TokenUsage;
+      }>("/extract", form);
       setResult(res.data.extracted_text);
+      setTokenUsage(res.data.token_usage);
       setStatus("done");
     } catch (err) {
       setError(err instanceof Error ? err.message : "OCR processing failed.");
@@ -199,6 +219,7 @@ export default function OcrPage() {
     setObjectURL(null);
     setStatus("idle");
     setResult(null);
+    setTokenUsage(null);
     setError(null);
   };
 
@@ -343,33 +364,109 @@ export default function OcrPage() {
         <div className="flex flex-col flex-1 min-h-0 rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
 
           {/* Panel header */}
-          <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100">
-            <div className="flex items-center gap-2">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-                strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="16" y1="13" x2="8" y2="13" />
-                <line x1="16" y1="17" x2="8" y2="17" />
-              </svg>
-              <span className="text-sm font-semibold text-slate-700">Extracted Text</span>
-            </div>
-            {result && (
-              <div className="flex items-center gap-3">
-                <span className="text-xs text-slate-400">
-                  {wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars
-                </span>
-                <button
-                  onClick={copyToClipboard}
-                  className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg
-                    border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300
-                    transition-colors"
-                >
-                  {copied ? <CheckIcon /> : <CopyIcon />}
-                  {copied ? "Copied!" : "Copy"}
-                </button>
+          <div className="flex flex-col border-b border-slate-100">
+            <div className="flex items-center justify-between px-5 py-3.5">
+              <div className="flex items-center gap-2">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                  strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-500">
+                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                  <line x1="16" y1="13" x2="8" y2="13" />
+                  <line x1="16" y1="17" x2="8" y2="17" />
+                </svg>
+                <span className="text-sm font-semibold text-slate-700">Extracted Text</span>
               </div>
-            )}
+              {result && (
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-400">
+                    {wordCount.toLocaleString()} words · {charCount.toLocaleString()} chars
+                  </span>
+                  <button
+                    onClick={copyToClipboard}
+                    className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg
+                      border border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300
+                      transition-colors"
+                  >
+                    {copied ? <CheckIcon /> : <CopyIcon />}
+                    {copied ? "Copied!" : "Copy"}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Token usage + cost bar */}
+            {tokenUsage && (() => {
+              const cost = calcCost(tokenUsage);
+              const fmt  = (n: number) => n < 0.000001 ? "<$0.000001" : `$${n.toFixed(6)}`;
+              return (
+                <div className="border-t border-slate-100 bg-slate-50 px-5 py-2.5 flex flex-wrap items-center gap-x-5 gap-y-1.5">
+
+                  {/* Tokens section */}
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-violet-500">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                      </svg>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tokens</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                        <span className="text-slate-500">In</span>
+                        <span className="font-semibold text-slate-800">{tokenUsage.input.toLocaleString()}</span>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span className="text-slate-500">Out</span>
+                        <span className="font-semibold text-slate-800">{tokenUsage.output.toLocaleString()}</span>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+                        <span className="text-slate-500">Total</span>
+                        <span className="font-semibold text-slate-800">{tokenUsage.total.toLocaleString()}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <span className="h-3 w-px bg-slate-200 hidden sm:block" />
+
+                  {/* Cost section */}
+                  <div className="flex items-center gap-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+                        strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-amber-500">
+                        <line x1="12" y1="1" x2="12" y2="23" />
+                        <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+                      </svg>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Cost</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                        <span className="text-slate-500">In</span>
+                        <span className="font-semibold text-slate-700">{fmt(cost.input)}</span>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        <span className="text-slate-500">Out</span>
+                        <span className="font-semibold text-slate-700">{fmt(cost.output)}</span>
+                      </span>
+                      <span className="text-slate-300">·</span>
+                      <span className="flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        <span className="text-slate-500">Total</span>
+                        <span className="font-bold text-amber-700">{fmt(cost.total)}</span>
+                      </span>
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
           </div>
 
           {/* Panel body */}
