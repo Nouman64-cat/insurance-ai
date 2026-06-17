@@ -148,6 +148,18 @@ services:
     volumes:
       - ./services/ocr-engine:/app
       - ./shared/documents:/data      # Required for the /extract-from-path endpoint
+
+  text-summarizer:
+    <<: *fastapi-defaults
+    build:
+      context: ./services/text-summarizer
+      dockerfile: Dockerfile
+    container_name: insurance-text-summarizer
+    ports:
+      - "8015:8005"
+    volumes:
+      - ./services/text-summarizer:/app
+
   # ───────────────────────────────────────────────────────────────────────────
   # Frontend (Next.js App Router)
   # ───────────────────────────────────────────────────────────────────────────
