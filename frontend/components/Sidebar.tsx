@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -49,36 +49,15 @@ const NAV_ITEMS = [
         badge: null,
       },
       {
-        href: "#queue",
-        label: "Queue",
+        href: "/submissions",
+        label: "Submissions",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
-            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+            <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
+            <path d="M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z" />
           </svg>
         ),
         badge: "14",
-      },
-      {
-        href: "#reports",
-        label: "Reports",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" />
-          </svg>
-        ),
-        badge: null,
-      },
-      {
-        href: "#analytics",
-        label: "Analytics",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
-            <line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" />
-            <line x1="6" y1="20" x2="6" y2="14" />
-          </svg>
-        ),
-        badge: null,
       },
     ],
   },
@@ -86,17 +65,101 @@ const NAV_ITEMS = [
     group: "Underwriting",
     links: [
       {
-        href: "#cases",
+        href: "/proposals",
+        label: "Proposals",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
+            <rect x="8" y="2" width="8" height="4" rx="1" />
+            <line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/medical",
+        label: "Medical Underwriting",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/corporate",
+        label: "Corporate",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" />
+            <path d="M6 12H4a2 2 0 00-2 2v8h4" />
+            <path d="M18 9h2a2 2 0 012 2v11h-4" />
+            <line x1="10" y1="6" x2="14" y2="6" /><line x1="10" y1="10" x2="14" y2="10" />
+            <line x1="10" y1="14" x2="14" y2="14" /><line x1="10" y1="18" x2="14" y2="18" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/cases",
         label: "Cases",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
-            <path d="M2 3h6a4 4 0 014 4v14a3 3 0 00-3-3H2z" /><path d="M22 3h-6a4 4 0 00-4 4v14a3 3 0 013-3h7z" />
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
           </svg>
         ),
         badge: "7",
       },
+    ],
+  },
+  {
+    group: "Documents",
+    links: [
       {
-        href: "#fraud",
+        href: "/artifacts",
+        label: "Artifacts",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <polyline points="9 15 11 17 15 13" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
+  {
+    group: "Claims",
+    links: [
+      {
+        href: "/claims",
+        label: "Claims",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/reimbursements",
+        label: "Reimbursements",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z" />
+            <line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
+  {
+    group: "Intelligence",
+    links: [
+      {
+        href: "/fraud",
         label: "Fraud Detection",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
@@ -107,7 +170,24 @@ const NAV_ITEMS = [
         badge: "3",
       },
       {
-        href: "#agents",
+        href: "/score-engine",
+        label: "Score Engine",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <circle cx="12" cy="12" r="10" />
+            <circle cx="12" cy="12" r="6" />
+            <circle cx="12" cy="12" r="2" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
+  {
+    group: "Agents & Finance",
+    links: [
+      {
+        href: "/agents",
         label: "Agents",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
@@ -118,15 +198,12 @@ const NAV_ITEMS = [
         badge: null,
       },
       {
-        href: "/ocr",
-        label: "Underwriting",
+        href: "/financial",
+        label: "Financial",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-            <line x1="10" y1="9" x2="8" y2="9" />
+            <line x1="12" y1="1" x2="12" y2="23" />
+            <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
           </svg>
         ),
         badge: null,
@@ -136,6 +213,17 @@ const NAV_ITEMS = [
   {
     group: "Settings",
     links: [
+      {
+        href: "/reports",
+        label: "Reports",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" />
+          </svg>
+        ),
+        badge: null,
+      },
       {
         href: "#admin",
         label: "Admin",
@@ -156,6 +244,11 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const [activeHref, setActiveHref] = useState(pathname);
+
+  useEffect(() => {
+    setActiveHref(pathname);
+  }, [pathname]);
 
   return (
     <aside
@@ -210,12 +303,13 @@ export function Sidebar() {
             )}
             <div className="space-y-0.5">
               {group.links.map((link) => {
-                const isActive = link.href.startsWith("/") ? pathname === link.href : false;
+                const isActive = activeHref === link.href;
                 return (
                   <Link
                     key={link.href}
                     href={link.href}
                     title={collapsed ? link.label : undefined}
+                    onClick={() => setActiveHref(link.href)}
                     className={`
                       sidebar-link group flex items-center gap-3 px-2.5 py-2 rounded-lg
                       text-sm font-medium transition-all duration-150
