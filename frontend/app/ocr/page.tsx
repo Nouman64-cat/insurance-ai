@@ -527,6 +527,7 @@ export default function OcrPage() {
   const [isDragging, setIsDragging] = useState(false);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>("extracted");
+  const [extractedDocuments, setExtractedDocuments] = useState<string[]>([]);
   const [summaryStatus, setSummaryStatus] = useState<SummaryStatus>("idle");
   const [summary, setSummary] = useState<string | null>(null);
   const [summaryTokenUsage, setSummaryTokenUsage] = useState<TokenUsage | null>(
@@ -622,6 +623,7 @@ export default function OcrPage() {
     setResult(null);
     setTokenUsage(null);
     setOcrError(null);
+    setExtractedDocuments([]);
     setSummary(null);
     setSummaryTokenUsage(null);
     setSummaryStatus("idle");
@@ -641,8 +643,10 @@ export default function OcrPage() {
 
     try {
       const sections: string[] = [];
+      const documents: string[] = [];
       const total = { input: 0, output: 0, total: 0 };
 
+      // Process all files sequentially to ensure full completion before summarization
       for (const f of files) {
         const form = new FormData();
         form.append("file", f);
@@ -651,12 +655,16 @@ export default function OcrPage() {
           extracted_text: string;
           token_usage: TokenUsage;
         }>("/extract", form);
-        sections.push(`=== ${f.name} ===\n${res.data.extracted_text}`);
+        const extractedText = res.data.extracted_text;
+        sections.push(`=== ${f.name} ===\n${extractedText}`);
+        documents.push(extractedText);
         total.input += res.data.token_usage.input;
         total.output += res.data.token_usage.output;
         total.total += res.data.token_usage.total;
       }
 
+      // Store individual documents and combined result
+      setExtractedDocuments(documents);
       setResult(sections.join("\n\n"));
       setTokenUsage(total);
       setOcrStatus("done");
@@ -669,7 +677,7 @@ export default function OcrPage() {
   };
 
   const runSummarizer = async () => {
-    if (!result) return;
+    if (!extractedDocuments.length) return;
     setSummaryStatus("processing");
     setSummaryError(null);
     setSummary(null);
@@ -677,7 +685,10 @@ export default function OcrPage() {
     setActiveTab("summary");
 
     try {
-      const body: { text: string; max_words?: number } = { text: result };
+      // Send documents array to API, not combined text
+      const body: { documents: string[]; max_words?: number } = {
+        documents: extractedDocuments,
+      };
       const parsed = parseInt(maxWords, 10);
       if (!isNaN(parsed) && parsed > 0) body.max_words = parsed;
 
@@ -722,7 +733,23 @@ export default function OcrPage() {
   const activeURL = objectURLs[previewIdx] ?? null;
 
   return (
-    <div className="flex flex-col h-full p-6 gap-5">
+    <>
+      <style>{`
+        .queue-scroll::-webkit-scrollbar {
+          height: 6px;
+        }
+        .queue-scroll::-webkit-scrollbar-track {
+          background: rgb(241, 245, 249);
+        }
+        .queue-scroll::-webkit-scrollbar-thumb {
+          background: rgb(203, 213, 225);
+          border-radius: 3px;
+        }
+        .queue-scroll::-webkit-scrollbar-thumb:hover {
+          background: rgb(148, 163, 184);
+        }
+      `}</style>
+      <div className="flex flex-col h-full p-6 gap-5">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between">
         <div>
@@ -821,8 +848,11 @@ export default function OcrPage() {
                 {/* Scrollable card row */}
                 <div
                   ref={queueRef}
-                  className="flex gap-2 overflow-x-auto pb-1 scroll-smooth"
-                  style={{ scrollbarWidth: "none" }}
+                  className="queue-scroll flex gap-2 overflow-x-auto pb-2 scroll-smooth"
+                  style={{
+                    scrollbarWidth: "thin",
+                    scrollbarColor: "rgb(203, 213, 225) rgb(248, 250, 252)",
+                  }}
                 >
                   {files.map((f, i) => (
                     <DocCard
@@ -1284,5 +1314,6 @@ export default function OcrPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }
