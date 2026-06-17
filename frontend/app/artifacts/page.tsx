@@ -8,6 +8,7 @@ import {
   type ChangeEvent,
   type DragEvent,
 } from "react";
+import ReactMarkdown from "react-markdown";
 import { ocrApi, summarizerApi } from "@/app/services/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -1304,9 +1305,27 @@ export default function OcrPage() {
                   </div>
                 )}
                 {summaryStatus === "done" && summary && (
-                  <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">
-                    {summary}
-                  </p>
+                  <div className="text-sm text-slate-800 leading-relaxed">
+                    <ReactMarkdown
+                      components={{
+                        h1: ({ node, ...props }) => <h1 className="text-lg font-bold text-slate-900 mt-4 mb-2 first:mt-0" {...props} />,
+                        h2: ({ node, ...props }) => <h2 className="text-base font-bold text-slate-900 mt-3 mb-1.5 first:mt-0" {...props} />,
+                        h3: ({ node, ...props }) => <h3 className="text-sm font-bold text-slate-900 mt-2 mb-1 first:mt-0" {...props} />,
+                        p: ({ node, ...props }) => <p className="mb-2.5 last:mb-0 text-slate-700 leading-relaxed" {...props} />,
+                        ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-slate-700" {...props} />,
+                        ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-slate-700" {...props} />,
+                        li: ({ node, ...props }) => <li className="mb-0.5 text-slate-700" {...props} />,
+                        strong: ({ node, ...props }) => <strong className="font-semibold text-slate-900" {...props} />,
+                        em: ({ node, ...props }) => <em className="italic text-slate-800" {...props} />,
+                        code: ({ node, ...props }) => <code className="bg-slate-100 rounded px-1 py-0.5 font-mono text-xs text-red-600" {...props} />,
+                        blockquote: ({ node, ...props }) => (
+                          <blockquote className="border-l-4 border-slate-200 pl-3 italic my-2 text-slate-500" {...props} />
+                        ),
+                      }}
+                    >
+                      {summary}
+                    </ReactMarkdown>
+                  </div>
                 )}
               </>
             )}
