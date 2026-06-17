@@ -12,8 +12,16 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 OCR_PROMPT = (
-    "You are an OCR engine. Extract all text from this document exactly as it appears, "
-    "preserving the original layout and line breaks. Output only the raw extracted text, no commentary."
+    "You are a highly capable multimodal OCR and document parsing engine. "
+    "Your task is to extract all textual and structured information from the provided document or image. "
+    "This includes printed text, handwriting, annotations, forms, medical scans/imaging (e.g., X-ray labels, "
+    "patient info, measurements, clinical annotations), and accident photos/claims (e.g., license plates, signs, labels, handwritten remarks, damage details).\n\n"
+    "Follow these guidelines:\n"
+    "1. Extract all visible text exactly as written, preserving original layout, spacing, and line breaks.\n"
+    "2. For handwritten text, signatures, or annotations, extract them and place them in the correct spatial location relative to surrounding text.\n"
+    "3. If the input is a medical image (such as an X-ray, MRI, ultrasound, or prescription) or an accident/damage photo, extract any visible printed/written labels, annotations, dates, diagnostic stamps, scale markers, or overlaid text.\n"
+    "4. For tables, forms, or key-value structures, format them clearly (using Markdown tables or aligned text) to preserve structure.\n"
+    "5. Output only the raw extracted text/data. Do not include any introductory text, explanation, or conversational commentary."
 )
 
 SUPPORTED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "tiff", "bmp"}
@@ -35,7 +43,15 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3003",
+        "http://localhost:3004",
+        "http://localhost:3005",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
