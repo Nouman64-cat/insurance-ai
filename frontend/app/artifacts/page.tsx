@@ -724,52 +724,137 @@ export default function OcrPage() {
   const handleDownloadPdf = async () => {
     if (!summary || !pdfReportRef.current) return;
     setIsGeneratingPdf(true);
+
+    const wrapper = pdfReportRef.current.parentElement as HTMLElement;
+
     try {
-      const html2pdfModule = await import("html2pdf.js");
-      const html2pdf = html2pdfModule.default || html2pdfModule;
+      // Reveal so html2canvas captures the full content
+      wrapper.style.height = "auto";
+      wrapper.style.overflow = "visible";
+      wrapper.style.position = "fixed";
+      wrapper.style.top = "-9999px";
+
+      // Wait for all images to fully load before measuring positions
+      await Promise.all(
+        Array.from(pdfReportRef.current.querySelectorAll("img")).map(img =>
+          (img as HTMLImageElement).complete
+            ? Promise.resolve()
+            : new Promise(r => { img.onload = r; img.onerror = r; })
+        )
+      );
+      await new Promise(r => setTimeout(r, 80));
+
+      // Record every image element's position relative to the container TOP,
+      // in DOM pixels, before html2canvas runs. This is the ground truth we
+      // use to avoid splitting — no pixel heuristics needed.
+      const containerTop = pdfReportRef.current.getBoundingClientRect().top;
+      const imgBandsDom = Array.from(pdfReportRef.current.querySelectorAll("img")).map(img => {
+        const r = img.getBoundingClientRect();
+        return { top: r.top - containerTop, bottom: r.bottom - containerTop };
+      });
+
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+        import("html2canvas" as never) as Promise<{ default: (el: HTMLElement, opts: object) => Promise<HTMLCanvasElement> }>,
+        import("jspdf") as Promise<{ jsPDF: new (opts: object) => { internal: { pageSize: { getWidth(): number; getHeight(): number } }; addPage(): void; addImage(d: string, f: string, x: number, y: number, w: number, h: number): void; save(n: string): void } }>,
+      ]);
+
+      const canvas = await html2canvas(pdfReportRef.current, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        windowWidth: 794,
+        backgroundColor: "#ffffff",
+      });
+
+      const pdf = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+      const pageW = pdf.internal.pageSize.getWidth();   // 210 mm
+      const pageH = pdf.internal.pageSize.getHeight();  // 297 mm
+      const margin = 15;
+      const contentW = pageW - 2 * margin;  // 180 mm
+      const contentH = pageH - 2 * margin;  // 267 mm
+
+      const canvasW = canvas.width;
+      const canvasH = canvas.height;
+      const domScale = canvasW / 794; // matches html2canvas scale (2)
+      const pageCanvasPx = (contentH / contentW) * canvasW;
+
+      // Convert DOM image bands to canvas pixels with a small safety buffer
+      const imgBands = imgBandsDom.map(b => ({
+        top: Math.floor(b.top * domScale) - 8,
+        bottom: Math.ceil(b.bottom * domScale) + 8,
+      }));
+
+      const ctx = canvas.getContext("2d")!;
+
+      const findSafeSplitY = (startY: number, targetY: number): number => {
+        // Pass 1 — DOM-aware: if the boundary lands inside an image element,
+        // snap to just before that image. Never fooled by image content.
+        for (const band of imgBands) {
+          if (targetY > band.top && targetY < band.bottom) {
+            const before = band.top - 4;
+            if (before > startY) return before;
+          }
+        }
+
+        // Pass 2 — pixel scan for text: walk backward up to 15% of the page
+        // height looking for an all-light row (gap between paragraphs).
+        // Rows that fall inside an image band are skipped so dark images
+        // cannot confuse the scanner.
+        const searchPx = Math.floor(pageCanvasPx * 0.15);
+        for (let y = Math.floor(targetY); y >= Math.max(startY + 1, Math.floor(targetY - searchPx)); y--) {
+          if (imgBands.some(b => y >= b.top && y <= b.bottom)) continue;
+          const row = ctx.getImageData(0, y, canvasW, 1).data;
+          let light = true;
+          for (let i = 0; i < row.length; i += 4) {
+            if (row[i] < 230 || row[i + 1] < 230 || row[i + 2] < 230) { light = false; break; }
+          }
+          if (light) return y;
+        }
+
+        return Math.floor(targetY);
+      };
+
+      let yPx = 0;
+      let page = 0;
+      while (yPx < canvasH) {
+        if (page > 0) pdf.addPage();
+        const targetEnd = Math.min(yPx + pageCanvasPx, canvasH);
+        const splitY = targetEnd >= canvasH ? canvasH : findSafeSplitY(yPx, targetEnd);
+        const sliceH = splitY - yPx;
+
+        const slice = document.createElement("canvas");
+        slice.width = canvasW;
+        slice.height = Math.ceil(sliceH);
+        const sCtx = slice.getContext("2d")!;
+        sCtx.fillStyle = "#ffffff";
+        sCtx.fillRect(0, 0, slice.width, slice.height);
+        sCtx.drawImage(canvas, 0, yPx, canvasW, sliceH, 0, 0, canvasW, sliceH);
+
+        const sliceHmm = (sliceH / pageCanvasPx) * contentH;
+        pdf.addImage(slice.toDataURL("image/jpeg", 0.95), "JPEG", margin, margin, contentW, Math.min(sliceHmm, contentH));
+
+        yPx = splitY;
+        page++;
+      }
 
       let filename = "AI_Summary.pdf";
       if (files.length > 0) {
         const cleanName = files[0].name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9_-]/g, "_");
-        if (files.length === 1) {
-          filename = `AI_Summary_${cleanName}.pdf`;
-        } else {
-          filename = `AI_Summary_${cleanName}_and_${files.length - 1}_others.pdf`;
-        }
+        filename = files.length === 1
+          ? `AI_Summary_${cleanName}.pdf`
+          : `AI_Summary_${cleanName}_and_${files.length - 1}_others.pdf`;
       }
 
-      const opt = {
-        margin: 15,
-        filename: filename,
-        image: { type: "jpeg", quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          logging: false,
-          windowWidth: 794,
-          width: 794,
-          scrollX: 0,
-          scrollY: 0
-        },
-        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        pagebreak: { mode: ["avoid-all", "css", "legacy"] }
-      };
-
-      const pdfBlob = await html2pdf().set(opt).from(pdfReportRef.current).output("blob");
-
-      const url = window.URL.createObjectURL(pdfBlob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
+      pdf.save(filename);
     } catch (err) {
       console.error("Failed to generate PDF:", err);
       alert("Failed to generate PDF: " + (err as Error).message);
     } finally {
+      wrapper.style.height = "0";
+      wrapper.style.overflow = "hidden";
+      wrapper.style.position = "absolute";
+      wrapper.style.top = "0";
       setIsGeneratingPdf(false);
     }
   };
@@ -1459,27 +1544,63 @@ export default function OcrPage() {
             </div>
           </div>
 
-          {/* Main Summary Content */}
+          {/* Summary sections interleaved with source images */}
           <div className="prose prose-slate max-w-none text-sm leading-relaxed text-slate-800">
-            <ReactMarkdown
-              components={{
-                h1: ({ node, ...props }) => <h1 className="text-xl font-bold text-slate-900 mt-6 mb-3 border-b border-slate-100 pb-1" style={{ pageBreakAfter: "avoid" }} {...props} />,
-                h2: ({ node, ...props }) => <h2 className="text-lg font-bold text-slate-900 mt-5 mb-2" style={{ pageBreakAfter: "avoid" }} {...props} />,
-                h3: ({ node, ...props }) => <h3 className="text-base font-bold text-slate-900 mt-4 mb-1.5" style={{ pageBreakAfter: "avoid" }} {...props} />,
-                p: ({ node, ...props }) => <p className="mb-3 text-slate-700 leading-relaxed" {...props} />,
-                ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-4 space-y-1.5 text-slate-700" style={{ pageBreakInside: "avoid" }} {...props} />,
-                ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-4 space-y-1.5 text-slate-700" style={{ pageBreakInside: "avoid" }} {...props} />,
-                li: ({ node, ...props }) => <li className="mb-0.5 text-slate-700" {...props} />,
-                strong: ({ node, ...props }) => <strong className="font-semibold text-slate-900" {...props} />,
-                em: ({ node, ...props }) => <em className="italic text-slate-800" {...props} />,
-                code: ({ node, ...props }) => <code className="bg-slate-100 rounded px-1 py-0.5 font-mono text-xs text-red-600" {...props} />,
-                blockquote: ({ node, ...props }) => (
+            {summary && (() => {
+              const mdComponents = {
+                h1: ({ node, ...props }: React.ComponentPropsWithoutRef<"h1"> & { node?: unknown }) => <h1 className="text-xl font-bold text-slate-900 mt-6 mb-3 border-b border-slate-100 pb-1" style={{ pageBreakAfter: "avoid" }} {...props} />,
+                h2: ({ node, ...props }: React.ComponentPropsWithoutRef<"h2"> & { node?: unknown }) => <h2 className="text-lg font-bold text-slate-900 mt-5 mb-2" style={{ pageBreakAfter: "avoid" }} {...props} />,
+                h3: ({ node, ...props }: React.ComponentPropsWithoutRef<"h3"> & { node?: unknown }) => <h3 className="text-base font-bold text-slate-900 mt-4 mb-1.5" style={{ pageBreakAfter: "avoid" }} {...props} />,
+                p: ({ node, ...props }: React.ComponentPropsWithoutRef<"p"> & { node?: unknown }) => <p className="mb-3 text-slate-700 leading-relaxed" {...props} />,
+                ul: ({ node, ...props }: React.ComponentPropsWithoutRef<"ul"> & { node?: unknown }) => <ul className="list-disc pl-5 mb-4 space-y-1.5 text-slate-700" style={{ pageBreakInside: "avoid" }} {...props} />,
+                ol: ({ node, ...props }: React.ComponentPropsWithoutRef<"ol"> & { node?: unknown }) => <ol className="list-decimal pl-5 mb-4 space-y-1.5 text-slate-700" style={{ pageBreakInside: "avoid" }} {...props} />,
+                li: ({ node, ...props }: React.ComponentPropsWithoutRef<"li"> & { node?: unknown }) => <li className="mb-0.5 text-slate-700" {...props} />,
+                strong: ({ node, ...props }: React.ComponentPropsWithoutRef<"strong"> & { node?: unknown }) => <strong className="font-semibold text-slate-900" {...props} />,
+                em: ({ node, ...props }: React.ComponentPropsWithoutRef<"em"> & { node?: unknown }) => <em className="italic text-slate-800" {...props} />,
+                code: ({ node, ...props }: React.ComponentPropsWithoutRef<"code"> & { node?: unknown }) => <code className="bg-slate-100 rounded px-1 py-0.5 font-mono text-xs text-red-600" {...props} />,
+                blockquote: ({ node, ...props }: React.ComponentPropsWithoutRef<"blockquote"> & { node?: unknown }) => (
                   <blockquote className="border-l-4 border-slate-200 pl-3 italic my-3 text-slate-500 bg-slate-50 py-1 pr-2 rounded-r" style={{ pageBreakInside: "avoid" }} {...props} />
                 ),
-              }}
-            >
-              {summary}
-            </ReactMarkdown>
+              };
+
+              // Split summary into per-document sections (split before each "## " heading at line start)
+              const sections = summary.split(/(?=^## )/m).filter(s => s.trim());
+
+              return sections.map((section, i) => {
+                const file = files[i];
+                const isImage = file && IMAGE_PREVIEW.includes(getExt(file.name));
+                return (
+                  // Force a new page before every document section except the first
+                  <div key={i} style={{ pageBreakBefore: i > 0 ? "always" : "auto", paddingTop: i > 0 ? "8px" : "0" }}>
+                    <ReactMarkdown components={mdComponents}>{section}</ReactMarkdown>
+                    {isImage && (
+                      // Keep label + image together; cap height so it never bleeds across two pages
+                      <div style={{ pageBreakInside: "avoid", marginTop: "16px", marginBottom: "8px" }}>
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Source Image</p>
+                          <p className="text-[10px] text-slate-400">{file.name} · {fmtSize(file.size)}</p>
+                        </div>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={objectURLs[i]}
+                          alt={file.name}
+                          crossOrigin="anonymous"
+                          style={{
+                            width: "100%",
+                            maxHeight: "620px",
+                            height: "auto",
+                            objectFit: "contain",
+                            borderRadius: "8px",
+                            border: "1px solid #e2e8f0",
+                            display: "block",
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
 
           {/* Footer inside element (for the end of the report) */}

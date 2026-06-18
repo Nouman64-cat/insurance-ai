@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import google.generativeai as genai
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -57,25 +58,39 @@ async def summarize_text(request: SummarizeRequest):
 
     # Build prompt with exact format: document count + XML-wrapped documents
     prompt = (
-        f"You are an expert document summarizer. You have exactly {len(request.documents)} distinct documents extracted via OCR. "
-        f"You MUST provide a distinct summary for EVERY single document. Do not skip any.\n"
+        f"You are an expert insurance document analyst. You have exactly {len(request.documents)} distinct documents "
+        f"extracted via OCR from an insurance underwriting platform. These may include medical images (X-rays, MRIs), "
+        f"accident scene photos, crime scene photos, damage assessments, or standard insurance documents.\n"
+        f"You MUST provide a distinct, structured summary for EVERY single document. Do not skip any.\n\n"
+        f"FORMAT RULES (strictly follow):\n"
+        f"- Use markdown formatting throughout your response\n"
+        f"- Use ## for each document heading (e.g. ## Document 1 — X-Ray Report)\n"
+        f"- Use ### for sub-sections within each document\n"
+        f"- Use bullet points (- ) for lists of findings, damages, or details\n"
+        f"- Use **bold** for key terms, diagnoses, severity indicators, and critical values\n"
+        f"- End each document summary with a ### Key Takeaway section\n"
     )
 
     if request.max_words:
-        prompt += f"Keep each summary under {request.max_words} words.\n"
+        prompt += f"- Keep each document summary under {request.max_words} words\n"
 
     prompt += "\nHere are the documents:\n"
 
-    # Wrap each document in XML tags to prevent context blurring
     for i, doc_text in enumerate(request.documents):
         prompt += f"\n<document_{i+1}>\n{doc_text}\n</document_{i+1}>\n"
 
+    safety_settings = {
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+    }
+
     try:
-        # Run Gemini request with proper error handling
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: model.generate_content(prompt)
+            lambda: model.generate_content(prompt, safety_settings=safety_settings)
         )
 
         # Validate response before accessing metadata
