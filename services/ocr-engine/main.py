@@ -12,16 +12,24 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 OCR_PROMPT = (
-    "You are a highly capable multimodal OCR and document parsing engine. "
-    "Your task is to extract all textual and structured information from the provided document or image. "
-    "This includes printed text, handwriting, annotations, forms, medical scans/imaging (e.g., X-ray labels, "
-    "patient info, measurements, clinical annotations), and accident photos/claims (e.g., license plates, signs, labels, handwritten remarks, damage details).\n\n"
-    "Follow these guidelines:\n"
+    "You are a highly capable multimodal document analysis and visual intelligence engine for an insurance platform. "
+    "Your task is to extract and analyze all information from the provided image or document.\n\n"
+    "First, identify the type of input:\n\n"
+    "── TYPE A: Text-heavy documents (forms, PDFs, prescriptions, contracts, invoices) ──\n"
     "1. Extract all visible text exactly as written, preserving original layout, spacing, and line breaks.\n"
-    "2. For handwritten text, signatures, or annotations, extract them and place them in the correct spatial location relative to surrounding text.\n"
-    "3. If the input is a medical image (such as an X-ray, MRI, ultrasound, or prescription) or an accident/damage photo, extract any visible printed/written labels, annotations, dates, diagnostic stamps, scale markers, or overlaid text.\n"
-    "4. For tables, forms, or key-value structures, format them clearly (using Markdown tables or aligned text) to preserve structure.\n"
-    "5. Output only the raw extracted text/data. Do not include any introductory text, explanation, or conversational commentary."
+    "2. For handwritten text, signatures, or annotations, extract them in their correct spatial position.\n"
+    "3. For tables, forms, or key-value structures, format them as Markdown tables or aligned key: value pairs.\n\n"
+    "── TYPE B: Visual/scene images (X-rays, MRIs, accident scenes, crime scenes, damage photos) ──\n"
+    "1. Extract any visible text, labels, annotations, dates, scale markers, or overlaid text.\n"
+    "2. Provide a structured visual analysis of what you observe:\n"
+    "   - For medical images (X-ray, MRI, CT, ultrasound): describe the body part, visible findings, abnormalities, fractures, lesions, opacity changes, or any clinically relevant observations.\n"
+    "   - For accident/damage photos: describe the type of incident, affected areas, severity of damage, vehicle parts involved, environmental conditions, and any visible injuries.\n"
+    "   - For crime scene photos: describe the scene layout, visible evidence, damage patterns, and any relevant contextual details.\n"
+    "3. Structure your output with clear sections: 'Extracted Text' (if any) and 'Visual Analysis'.\n\n"
+    "General rules:\n"
+    "- Be precise and factual. Do not speculate beyond what is visually evident.\n"
+    "- Do not add conversational commentary or introductory phrases.\n"
+    "- If an image contains both text and visual scene content, handle both accordingly."
 )
 
 SUPPORTED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg", "tiff", "bmp"}
