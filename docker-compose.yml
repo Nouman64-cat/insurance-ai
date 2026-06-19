@@ -23,6 +23,10 @@ x-fastapi-defaults: &fastapi-defaults
     - insurance-net
   env_file:
     - .env
+  environment:
+    # macOS Docker Desktop doesn't forward FSEvents as inotify, so uvicorn --reload
+    # would never detect file changes without forcing watchfiles to use polling.
+    WATCHFILES_FORCE_POLLING: "true"
   depends_on:
     postgres:
       condition: service_healthy
@@ -180,3 +184,4 @@ services:
       - /app/.next                         # preserve Next.js build cache between restarts
     environment:
       NEXT_PUBLIC_API_URL: http://localhost:8000   # browser-side; points to gateway on host
+      CHOKIDAR_USEPOLLING: "true"                  # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
