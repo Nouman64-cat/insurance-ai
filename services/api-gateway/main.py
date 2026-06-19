@@ -16,6 +16,7 @@ from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import create_db_and_tables, get_session
@@ -101,15 +102,15 @@ async def create_tenant(
     name: str,
     session: AsyncSession = Depends(get_session),
 ):
+    existing = (await session.exec(select(Tenant).where(Tenant.name == name))).first()
+    if existing:
+        return {"id": str(existing.id), "name": existing.name, "created_at": existing.created_at}
+
     tenant = Tenant(name=name)
     session.add(tenant)
     await session.commit()
     await session.refresh(tenant)
-    return {
-        "id": str(tenant.id),
-        "name": tenant.name,
-        "created_at": tenant.created_at,
-    }
+    return {"id": str(tenant.id), "name": tenant.name, "created_at": tenant.created_at}
 
 
 @app.get(
