@@ -1,7 +1,10 @@
-import os
+import asyncio
 import base64
+import json
+import os
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 import google.generativeai as genai
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
@@ -81,6 +84,52 @@ def _run_ocr(file_bytes: bytes, mime_type: str) -> dict:
     }
 
 
+async def _stream_ocr_sse(file_bytes: bytes, mime_type: str):
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def run_gemini():
+        try:
+            encoded = base64.b64encode(file_bytes).decode()
+            response = model.generate_content(
+                [OCR_PROMPT, {"mime_type": mime_type, "data": encoded}],
+                stream=True,
+            )
+            for chunk in response:
+                if chunk.text:
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait, {"type": "chunk", "text": chunk.text}
+                    )
+            usage = response.usage_metadata
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {
+                    "type": "done",
+                    "token_usage": {
+                        "input": usage.prompt_token_count,
+                        "output": usage.candidates_token_count,
+                        "total": usage.total_token_count,
+                    },
+                },
+            )
+        except Exception as exc:
+            loop.call_soon_threadsafe(
+                queue.put_nowait, {"type": "error", "message": str(exc)}
+            )
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    fut = loop.run_in_executor(None, run_gemini)
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+    finally:
+        await fut
+
+
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "engine": "Gemini 2.5 Flash", "model": "gemini-2.5-flash"}
@@ -108,6 +157,30 @@ async def extract_text(file: UploadFile = File(...)):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR Processing Error: {str(e)}")
+
+
+@app.post("/extract/stream")
+async def extract_text_stream(file: UploadFile = File(...)):
+    """Streams OCR extraction as Server-Sent Events — no HTTP timeout for large docs."""
+    file_ext = file.filename.lower().split(".")[-1]
+    if file_ext not in SUPPORTED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported format. Supported: {', '.join(SUPPORTED_EXTENSIONS).upper()}",
+        )
+
+    file_bytes = await file.read()
+    mime_type = MIME_MAP[file_ext]
+
+    return StreamingResponse(
+        _stream_ocr_sse(file_bytes, mime_type),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @app.post("/extract-from-path")

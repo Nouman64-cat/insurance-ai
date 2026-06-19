@@ -1,7 +1,9 @@
+import json
 import os
 import asyncio
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
@@ -47,16 +49,15 @@ class SummarizeResponse(BaseModel):
     summary: str
     token_usage: TokenUsage
 
-@app.get("/health")
-async def health_check():
-    return {"status": "healthy", "engine": "Gemini 2.5 Flash", "model": "gemini-2.5-flash"}
+SAFETY_SETTINGS = {
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+}
 
-@app.post("/summarize", response_model=SummarizeResponse)
-async def summarize_text(request: SummarizeRequest):
-    if not request.documents:
-        raise HTTPException(status_code=400, detail="Documents list must not be empty.")
 
-    # Build prompt with exact format: document count + XML-wrapped documents
+def _build_prompt(request: SummarizeRequest) -> str:
     prompt = (
         f"You are an expert insurance document analyst. You have exactly {len(request.documents)} distinct documents "
         f"extracted via OCR from an insurance underwriting platform. These may include medical images (X-rays, MRIs), "
@@ -70,30 +71,77 @@ async def summarize_text(request: SummarizeRequest):
         f"- Use **bold** for key terms, diagnoses, severity indicators, and critical values\n"
         f"- End each document summary with a ### Key Takeaway section\n"
     )
-
     if request.max_words:
         prompt += f"- Keep each document summary under {request.max_words} words\n"
-
     prompt += "\nHere are the documents:\n"
-
     for i, doc_text in enumerate(request.documents):
         prompt += f"\n<document_{i+1}>\n{doc_text}\n</document_{i+1}>\n"
+    return prompt
 
-    safety_settings = {
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-    }
+
+async def _stream_summarize_sse(prompt: str):
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def run_gemini():
+        try:
+            response = model.generate_content(
+                prompt, safety_settings=SAFETY_SETTINGS, stream=True
+            )
+            for chunk in response:
+                if chunk.text:
+                    loop.call_soon_threadsafe(
+                        queue.put_nowait, {"type": "chunk", "text": chunk.text}
+                    )
+            usage = response.usage_metadata
+            loop.call_soon_threadsafe(
+                queue.put_nowait,
+                {
+                    "type": "done",
+                    "token_usage": {
+                        "input": usage.prompt_token_count,
+                        "output": usage.candidates_token_count,
+                        "total": usage.total_token_count,
+                    },
+                },
+            )
+        except Exception as exc:
+            loop.call_soon_threadsafe(
+                queue.put_nowait, {"type": "error", "message": str(exc)}
+            )
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    fut = loop.run_in_executor(None, run_gemini)
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield f"data: {json.dumps(item)}\n\n"
+    finally:
+        await fut
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "engine": "Gemini 2.5 Flash", "model": "gemini-2.5-flash"}
+
+
+@app.post("/summarize", response_model=SummarizeResponse)
+async def summarize_text(request: SummarizeRequest):
+    if not request.documents:
+        raise HTTPException(status_code=400, detail="Documents list must not be empty.")
+
+    prompt = _build_prompt(request)
 
     try:
         loop = asyncio.get_event_loop()
         response = await loop.run_in_executor(
             None,
-            lambda: model.generate_content(prompt, safety_settings=safety_settings)
+            lambda: model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
         )
 
-        # Validate response before accessing metadata
         if not response or not response.text:
             raise ValueError("Empty response from Gemini model")
 
@@ -114,3 +162,22 @@ async def summarize_text(request: SummarizeRequest):
     except Exception as e:
         error_msg = str(e) if str(e) else "Unknown error during summarization"
         raise HTTPException(status_code=500, detail=f"Summarization error: {error_msg}")
+
+
+@app.post("/summarize/stream")
+async def summarize_text_stream(request: SummarizeRequest):
+    """Streams summarization as Server-Sent Events — no HTTP timeout for large documents."""
+    if not request.documents:
+        raise HTTPException(status_code=400, detail="Documents list must not be empty.")
+
+    prompt = _build_prompt(request)
+
+    return StreamingResponse(
+        _stream_summarize_sse(prompt),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )

@@ -9,7 +9,7 @@ import {
   type DragEvent,
 } from "react";
 import ReactMarkdown from "react-markdown";
-import { ocrApi, summarizerApi } from "@/app/services/api";
+import { OCR_BASE_URL, SUMMARIZER_BASE_URL } from "@/app/services/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -646,32 +646,71 @@ export default function OcrPage() {
       const documents: string[] = [];
       const total = { input: 0, output: 0, total: 0 };
 
-      // Process all files sequentially to ensure full completion before summarization
       for (const f of files) {
         const form = new FormData();
         form.append("file", f);
-        const res = await ocrApi.post<{
-          filename: string;
-          extracted_text: string;
-          token_usage: TokenUsage;
-        }>("/extract", form);
-        const extractedText = res.data.extracted_text;
-        sections.push(`=== ${f.name} ===\n${extractedText}`);
-        documents.push(extractedText);
-        total.input += res.data.token_usage.input;
-        total.output += res.data.token_usage.output;
-        total.total += res.data.token_usage.total;
+
+        const response = await fetch(`${OCR_BASE_URL}/extract/stream`, {
+          method: "POST",
+          body: form,
+        });
+
+        if (!response.ok || !response.body) {
+          const detail = await response.text().catch(() => response.statusText);
+          throw new Error(detail || "OCR request failed");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let fileText = "";
+        let fileDone = false;
+
+        while (!fileDone) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          // SSE events are separated by double newlines
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith("data: ")) continue;
+
+            let evt: { type: string; text?: string; token_usage?: TokenUsage; message?: string };
+            try {
+              evt = JSON.parse(line.slice(6));
+            } catch {
+              continue;
+            }
+
+            if (evt.type === "chunk" && evt.text) {
+              fileText += evt.text;
+              // Show completed files + current file streaming live
+              setResult([...sections, `=== ${f.name} ===\n${fileText}`].join("\n\n"));
+            } else if (evt.type === "done" && evt.token_usage) {
+              total.input += evt.token_usage.input;
+              total.output += evt.token_usage.output;
+              total.total += evt.token_usage.total;
+              fileDone = true;
+            } else if (evt.type === "error") {
+              throw new Error(evt.message ?? "OCR processing failed.");
+            }
+          }
+        }
+
+        sections.push(`=== ${f.name} ===\n${fileText}`);
+        documents.push(fileText);
       }
 
-      // Store individual documents and combined result
       setExtractedDocuments(documents);
       setResult(sections.join("\n\n"));
       setTokenUsage(total);
       setOcrStatus("done");
     } catch (err) {
-      setOcrError(
-        err instanceof Error ? err.message : "OCR processing failed.",
-      );
+      setOcrError(err instanceof Error ? err.message : "OCR processing failed.");
       setOcrStatus("error");
     }
   };
@@ -685,24 +724,60 @@ export default function OcrPage() {
     setActiveTab("summary");
 
     try {
-      // Send documents array to API, not combined text
       const body: { documents: string[]; max_words?: number } = {
         documents: extractedDocuments,
       };
       const parsed = parseInt(maxWords, 10);
       if (!isNaN(parsed) && parsed > 0) body.max_words = parsed;
 
-      const res = await summarizerApi.post<{
-        summary: string;
-        token_usage: TokenUsage;
-      }>("/summarize", body);
-      setSummary(res.data.summary);
-      setSummaryTokenUsage(res.data.token_usage);
-      setSummaryStatus("done");
+      const response = await fetch(`${SUMMARIZER_BASE_URL}/summarize/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok || !response.body) {
+        const detail = await response.text().catch(() => response.statusText);
+        throw new Error(detail || "Summarization request failed");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let summaryText = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data: ")) continue;
+
+          let evt: { type: string; text?: string; token_usage?: TokenUsage; message?: string };
+          try {
+            evt = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
+
+          if (evt.type === "chunk" && evt.text) {
+            summaryText += evt.text;
+            setSummary(summaryText);
+          } else if (evt.type === "done" && evt.token_usage) {
+            setSummaryTokenUsage(evt.token_usage);
+            setSummaryStatus("done");
+          } else if (evt.type === "error") {
+            throw new Error(evt.message ?? "Summarization failed.");
+          }
+        }
+      }
     } catch (err) {
-      setSummaryError(
-        err instanceof Error ? err.message : "Summarization failed.",
-      );
+      setSummaryError(err instanceof Error ? err.message : "Summarization failed.");
       setSummaryStatus("error");
     }
   };
@@ -1314,7 +1389,7 @@ export default function OcrPage() {
                       </p>
                     </div>
                   )}
-                  {ocrStatus === "processing" && (
+                  {ocrStatus === "processing" && !result && (
                     <div className="flex flex-col items-center justify-center h-full gap-4">
                       <div className="relative">
                         <div className="w-14 h-14 rounded-full border-4 border-blue-100 border-t-blue-500 animate-spin" />
@@ -1331,6 +1406,19 @@ export default function OcrPage() {
                           Your documents are being scanned and processed
                         </p>
                       </div>
+                    </div>
+                  )}
+                  {ocrStatus === "processing" && result && (
+                    <div className="flex flex-col h-full gap-3">
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0" />
+                        <span className="text-xs font-semibold text-blue-600">
+                          Streaming — text appears as it is extracted
+                        </span>
+                      </div>
+                      <pre className="flex-1 overflow-auto text-sm text-slate-800 whitespace-pre-wrap break-words leading-relaxed font-mono">
+                        {result}
+                      </pre>
                     </div>
                   )}
                   {ocrStatus === "error" && ocrError && (
@@ -1411,7 +1499,7 @@ export default function OcrPage() {
                       </p>
                     </div>
                   )}
-                  {summaryStatus === "processing" && (
+                  {summaryStatus === "processing" && !summary && (
                     <div className="flex flex-col items-center justify-center h-full gap-4">
                       <div className="relative">
                         <div className="w-14 h-14 rounded-full border-4 border-violet-100 border-t-violet-500 animate-spin" />
@@ -1426,6 +1514,37 @@ export default function OcrPage() {
                         <p className="text-xs text-slate-400 mt-1">
                           Extracted text is being analyzed
                         </p>
+                      </div>
+                    </div>
+                  )}
+                  {summaryStatus === "processing" && summary && (
+                    <div className="flex flex-col h-full gap-3">
+                      <div className="flex items-center gap-2 px-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-violet-500 animate-pulse flex-shrink-0" />
+                        <span className="text-xs font-semibold text-violet-600">
+                          Streaming — summary appears as it is generated
+                        </span>
+                      </div>
+                      <div className="flex-1 overflow-auto text-sm text-slate-800 leading-relaxed">
+                        <ReactMarkdown
+                          components={{
+                            h1: ({ node, ...props }) => <h1 className="text-lg font-bold text-slate-900 mt-4 mb-2 first:mt-0" {...props} />,
+                            h2: ({ node, ...props }) => <h2 className="text-base font-bold text-slate-900 mt-3 mb-1.5 first:mt-0" {...props} />,
+                            h3: ({ node, ...props }) => <h3 className="text-sm font-bold text-slate-900 mt-2 mb-1 first:mt-0" {...props} />,
+                            p: ({ node, ...props }) => <p className="mb-2.5 last:mb-0 text-slate-700 leading-relaxed" {...props} />,
+                            ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-3 space-y-1 text-slate-700" {...props} />,
+                            ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-3 space-y-1 text-slate-700" {...props} />,
+                            li: ({ node, ...props }) => <li className="mb-0.5 text-slate-700" {...props} />,
+                            strong: ({ node, ...props }) => <strong className="font-semibold text-slate-900" {...props} />,
+                            em: ({ node, ...props }) => <em className="italic text-slate-800" {...props} />,
+                            code: ({ node, ...props }) => <code className="bg-slate-100 rounded px-1 py-0.5 font-mono text-xs text-red-600" {...props} />,
+                            blockquote: ({ node, ...props }) => (
+                              <blockquote className="border-l-4 border-slate-200 pl-3 italic my-2 text-slate-500" {...props} />
+                            ),
+                          }}
+                        >
+                          {summary}
+                        </ReactMarkdown>
                       </div>
                     </div>
                   )}
