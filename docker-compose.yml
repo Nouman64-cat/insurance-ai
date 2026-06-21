@@ -242,5 +242,5 @@ services:
       - /app/node_modules                  # prevent host node_modules from overwriting container's
       - /app/.next                         # preserve Next.js build cache between restarts
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000   # browser-side; points to gateway on host
+      NEXT_PUBLIC_API_URL: http://localhost:8010   # browser-side; host port that maps to gateway container port 8000
       CHOKIDAR_USEPOLLING: "true"                  # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
