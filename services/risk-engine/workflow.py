@@ -280,3 +280,48 @@ def stream_evaluation(applicant_data: Dict[str, Any], policy_data: Dict[str, Any
         accumulated.update(node_data)
         yield node_name, node_data
     yield "__done__", accumulated
+
+
+# --- Add this below MedicalScoreOutput ---
+class FinancialScoreOutput(BaseModel):
+    financial_score: int = Field(
+        description="Financial risk score from 0 to 100.", ge=0, le=100)
+    financial_reasons: List[str] = Field(
+        description="List of strings explaining the financial score.")
+
+# --- Replace the existing financial_scoring function ---
+
+
+def financial_scoring(state: RiskState) -> Dict[str, Any]:
+    """
+    LLM-powered financial underwriting node using Gemini 2.5 Flash.
+    """
+    applicant = state["applicant"]
+    policy = state["policy"]
+
+    llm = ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        temperature=0.1,
+        google_api_key=os.getenv("GOOGLE_API_KEY")
+    )
+
+    structured_llm = llm.with_structured_output(FinancialScoreOutput)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """You are an expert life insurance financial underwriter. 
+         Evaluate the applicant's financial risk based on:
+         1. Coverage-to-income ratio (Higher ratio = higher lapse/moral hazard risk).
+         2. Absolute income bracket (Lower income = higher affordability risk).
+         3. Policy term length (Longer terms increase exposure).
+         
+         Output a strict financial risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons."""),
+        ("user", "Applicant Data: {applicant}\nPolicy Data: {policy}")
+    ])
+
+    result = (prompt | structured_llm).invoke(
+        {"applicant": applicant, "policy": policy})
+
+    return {
+        "financial_score": result.financial_score,
+        "financial_reasons": result.financial_reasons
+    }
