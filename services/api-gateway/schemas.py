@@ -7,7 +7,7 @@ database schema.
 """
 
 from datetime import date, datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
@@ -106,3 +106,19 @@ class EvaluateResponse(BaseModel):
     )
 
     created_at: datetime
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Async / Kafka response
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ProposalAcceptedResponse(BaseModel):
+    """Returned immediately by POST /evaluate in the async Kafka flow."""
+    event_id: UUID = Field(
+        ..., description="Correlation ID — use this to match the RiskEvaluated event."
+    )
+    proposal_id: UUID = Field(
+        ..., description="Stable proposal identifier carried through every downstream event."
+    )
+    status: Literal["accepted"] = "accepted"
+    message: str = "Proposal queued for async risk evaluation."

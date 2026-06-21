@@ -20,6 +20,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import create_db_and_tables, get_session
+from kafka_producer import create_producer
 from routers.evaluate import router as evaluate_router
 from shared.models.core import Tenant
 
@@ -30,10 +31,10 @@ from shared.models.core import Tenant
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create missing DB tables before the first request is served."""
     await create_db_and_tables()
+    app.state.kafka_producer = await create_producer()
     yield
-    # Teardown: nothing to clean up for now.
+    await app.state.kafka_producer.stop()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
