@@ -85,17 +85,7 @@ class FraudScoreOutput(BaseModel):
         description="List of specific reasons for this probability based on graph data.")
 
 
-class DecisionOutput(BaseModel):
-    composite_risk_score: int = Field(
-        ge=0, le=100,
-        description="Overall composite risk score from 0 to 100.")
-    ai_decision: str = Field(
-        description='One of exactly: "Auto Approve", "Approve with Loading", "Human Review", "Decline"')
-    suggested_loading: Optional[float] = Field(
-        default=None,
-        description="Premium loading percentage if applicable, e.g. 25.0 for 25% extra premium.")
-    reasons: List[str] = Field(
-        description="Final list of reasons summarising the underwriting decision.")
+# DecisionOutput removed — final node is deterministic (no LLM).
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -360,40 +350,73 @@ of specific, evidence-backed reasons referencing the actual graph findings."""),
     }
 
 
-def make_decision(state: RiskState) -> Dict[str, Any]:
-    structured_llm = _llm().with_structured_output(DecisionOutput)
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a senior insurance underwriting manager making the final decision.
-         Based on all risk scores, produce:
-         1. A composite risk score (0-100) as a weighted blend: 40% medical + 30% financial + 30% (fraud×100).
-         2. A decision using EXACTLY one of these strings:
-            - "Auto Approve"         (composite score 0–40)
-            - "Approve with Loading" (composite score 41–65)
-            - "Human Review"         (composite score 66–80)
-            - "Decline"              (composite score 81–100)
-         3. If "Approve with Loading", suggest a loading percentage (e.g. 25.0 for 25% extra premium).
-         4. A concise list of final reasons for the decision."""),
-        ("user",
-         "Medical score: {medical_score} | Reasons: {medical_reasons}\n"
-         "Financial score: {financial_score} | Reasons: {financial_reasons}\n"
-         "Fraud probability: {fraud_probability} | Reasons: {fraud_reasons}\n"
-         "Applicant: {applicant}\nPolicy: {policy}")
-    ])
-    result = (prompt | structured_llm).invoke({
-        "medical_score":    state["medical_score"],
-        "medical_reasons":  state["medical_reasons"],
-        "financial_score":  state["financial_score"],
-        "financial_reasons": state["financial_reasons"],
-        "fraud_probability": state["fraud_probability"],
-        "fraud_reasons":    state["fraud_reasons"],
-        "applicant":        state["applicant"],
-        "policy":           state["policy"],
-    })
+# ─────────────────────────────────────────────────────────────────────────────
+# Decision aggregation — deterministic, no LLM
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Actuarial decision bands
+#   Auto Approve  → composite < 30  AND  fraud < 0.10  (clean profile, low risk)
+#   Decline       → composite > 75  OR   fraud > 0.60  (either dimension is disqualifying)
+#   Human Review  → everything else                     (ambiguous — needs underwriter eyes)
+
+def decision_aggregation(state: RiskState) -> Dict[str, Any]:
+    # ── 1. Pull scores with conservative safe defaults ────────────────────────
+    # Defaults to 50 / 0.5 if a prior node failed, keeping the decision safely
+    # in the "Human Review" band rather than accidentally auto-approving.
+    medical_score     = int(state.get("medical_score",     50))
+    financial_score   = int(state.get("financial_score",   50))
+    fraud_probability = float(state.get("fraud_probability", 0.5))
+
+    medical_reasons   = list(state.get("medical_reasons",   []))
+    financial_reasons = list(state.get("financial_reasons", []))
+    fraud_reasons     = list(state.get("fraud_reasons",     []))
+
+    # ── 2. Composite score: 40% medical + 40% financial + 20% fraud ──────────
+    fraud_scaled         = round(fraud_probability * 100, 2)
+    raw_composite        = 0.40 * medical_score + 0.40 * financial_score + 0.20 * fraud_scaled
+    composite_risk_score = max(0, min(100, round(raw_composite)))
+
+    # ── 3. Actuarial decision bands ───────────────────────────────────────────
+    if composite_risk_score < 30 and fraud_probability < 0.10:
+        ai_decision = "Auto Approve"
+        band_rationale = (
+            f"composite {composite_risk_score} < 30 "
+            f"and fraud probability {fraud_probability:.2f} < 0.10"
+        )
+    elif composite_risk_score > 75 or fraud_probability > 0.60:
+        ai_decision = "Decline"
+        if fraud_probability > 0.60:
+            band_rationale = (
+                f"fraud probability {fraud_probability:.2f} exceeds hard-decline "
+                f"threshold of 0.60 (composite: {composite_risk_score})"
+            )
+        else:
+            band_rationale = (
+                f"composite {composite_risk_score} exceeds hard-decline "
+                f"threshold of 75 (fraud: {fraud_probability:.2f})"
+            )
+    else:
+        ai_decision = "Human Review"
+        band_rationale = (
+            f"composite {composite_risk_score} falls in the 30–75 review band "
+            f"(fraud: {fraud_probability:.2f})"
+        )
+
+    # ── 4. XAI reasons — all node outputs + mathematical breakdown ────────────
+    math_breakdown = (
+        f"Composite score {composite_risk_score}/100 = "
+        f"(40% × medical {medical_score}) + "
+        f"(40% × financial {financial_score}) + "
+        f"(20% × fraud {fraud_scaled:.0f}) → "
+        f"{band_rationale} → decision: '{ai_decision}'"
+    )
+
+    reasons = [*medical_reasons, *financial_reasons, *fraud_reasons, math_breakdown]
+
     return {
-        "composite_risk_score": result.composite_risk_score,
-        "ai_decision":          result.ai_decision,
-        "suggested_loading":    result.suggested_loading,
-        "reasons":              result.reasons,
+        "composite_risk_score": composite_risk_score,
+        "ai_decision":          ai_decision,
+        "reasons":              reasons,
     }
 
 
@@ -406,18 +429,18 @@ def _should_continue(state: RiskState) -> str:
 
 
 _graph = StateGraph(RiskState)
-_graph.add_node("validate_input",   validate_input)
-_graph.add_node("medical_scoring",  medical_scoring)
-_graph.add_node("financial_scoring", financial_scoring)
-_graph.add_node("fraud_detection",  fraud_check)      # node name kept for stream compatibility
-_graph.add_node("make_decision",    make_decision)
+_graph.add_node("validate_input",      validate_input)
+_graph.add_node("medical_scoring",     medical_scoring)
+_graph.add_node("financial_scoring",   financial_scoring)
+_graph.add_node("fraud_detection",     fraud_check)
+_graph.add_node("decision_aggregation", decision_aggregation)
 
 _graph.add_edge(START, "validate_input")
 _graph.add_conditional_edges("validate_input", _should_continue)
-_graph.add_edge("medical_scoring",  "financial_scoring")
-_graph.add_edge("financial_scoring", "fraud_detection")
-_graph.add_edge("fraud_detection",  "make_decision")
-_graph.add_edge("make_decision",    END)
+_graph.add_edge("medical_scoring",     "financial_scoring")
+_graph.add_edge("financial_scoring",   "fraud_detection")
+_graph.add_edge("fraud_detection",     "decision_aggregation")
+_graph.add_edge("decision_aggregation", END)
 
 _workflow = _graph.compile()
 
