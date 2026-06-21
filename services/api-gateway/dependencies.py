@@ -14,7 +14,8 @@ import os
 from functools import lru_cache
 from uuid import UUID
 
-from fastapi import Header, HTTPException, status
+from fastapi import Header, HTTPException, Request, status
+from aiokafka import AIOKafkaProducer
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -35,6 +36,11 @@ def get_settings() -> Settings:
 # ─────────────────────────────────────────────────────────────────────────────
 # Tenant identity
 # ─────────────────────────────────────────────────────────────────────────────
+
+async def get_kafka_producer(request: Request) -> AIOKafkaProducer:
+    """Inject the shared AIOKafka producer from app.state into route handlers."""
+    return request.app.state.kafka_producer
+
 
 async def get_tenant_id(
     x_tenant_id: UUID = Header(

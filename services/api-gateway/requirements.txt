@@ -5,3 +5,4 @@ python-dotenv==1.0.1
 sqlmodel>=0.0.18
 asyncpg==0.29.0
 sqlalchemy[asyncio]==2.0.31
+aiokafka>=0.11.0
