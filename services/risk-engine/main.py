@@ -1,8 +1,11 @@
+import asyncio
+import json
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 
-from workflow import run_evaluation
+from workflow import run_evaluation, stream_evaluation
 
 app = FastAPI(title="Risk Engine", version="0.1.0")
 
@@ -69,4 +72,44 @@ async def evaluate(request: EvaluationRequest):
         ai_decision=result["ai_decision"],
         suggested_loading=result["suggested_loading"],
         reasons=result["reasons"],
+    )
+
+
+@app.post("/evaluate/stream")
+async def evaluate_stream(request: EvaluationRequest):
+    """Streams each LangGraph node completion as SSE, then emits the full result."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def run_graph():
+        try:
+            for node_name, node_data in stream_evaluation(
+                applicant_data=request.applicant.model_dump(),
+                policy_data=request.policy.model_dump(),
+            ):
+                if node_name == "__done__":
+                    evt = {"type": "done", "data": node_data}
+                else:
+                    evt = {"type": "progress", "node": node_name, "data": node_data}
+                loop.call_soon_threadsafe(queue.put_nowait, evt)
+        except Exception as exc:
+            loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc)})
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    async def generate():
+        fut = loop.run_in_executor(None, run_graph)
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                yield f"data: {json.dumps(item, default=str)}\n\n"
+        finally:
+            await fut
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
