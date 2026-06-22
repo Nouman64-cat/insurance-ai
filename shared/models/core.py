@@ -37,6 +37,7 @@ class Tenant(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(unique=True, index=True, max_length=255)
+    is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -46,6 +47,42 @@ class Tenant(SQLModel, table=True):
     claims: List["Claim"] = Relationship(back_populates="tenant")
     artifacts: List["Artifact"] = Relationship(back_populates="tenant")
     commissions: List["Commission"] = Relationship(back_populates="tenant")
+    users: List["User"] = Relationship(back_populates="tenant")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Role  —  RBAC role definitions (seeded once at startup)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Role(SQLModel, table=True):
+    __tablename__ = "roles"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    name: str = Field(unique=True, index=True, max_length=100)
+    description: str = Field(default="", max_length=500)
+
+    users: List["User"] = Relationship(back_populates="role")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# User  —  an employee (underwriter / agent / admin) belonging to a Tenant
+# ─────────────────────────────────────────────────────────────────────────────
+
+class User(SQLModel, table=True):
+    __tablename__ = "users"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    role_id: UUID = Field(foreign_key="roles.id", nullable=False)
+
+    email: str = Field(unique=True, index=True, max_length=255)
+    hashed_password: str = Field(max_length=255)
+    full_name: str = Field(max_length=255)
+    is_active: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    tenant: Optional[Tenant] = Relationship(back_populates="users")
+    role: Optional[Role] = Relationship(back_populates="users")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

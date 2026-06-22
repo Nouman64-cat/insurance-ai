@@ -160,6 +160,13 @@ services:
       - "8011:8001"
     volumes:
       - ./services/tenant-service:/app
+      - ./shared:/app/shared
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: ${DATABASE_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   risk-engine:
     <<: *fastapi-defaults
