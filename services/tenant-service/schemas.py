@@ -74,3 +74,11 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     role_id: Optional[UUID] = None
     is_active: Optional[bool] = None
+    password: Optional[str] = None
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and len(v) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return v

@@ -11,10 +11,12 @@ tenant-service; these bootstrap routes are here solely to make the
 prototype runnable without standing up every microservice.
 """
 
+import os
+import httpx
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import select
@@ -88,6 +90,91 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(evaluate_router)
 
 
+# ── Proxy routing to tenant-service ───────────────────────────────────────────
+
+TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+
+@app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def proxy_auth(path: str, request: Request):
+    async with httpx.AsyncClient() as client:
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        body = await request.body()
+        url = f"{TENANT_SERVICE_URL}/auth/{path}"
+        try:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                headers=headers,
+                params=request.query_params,
+                content=body,
+                timeout=30.0
+            )
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                headers=dict(resp.headers)
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Error connecting to tenant service: {exc}"
+            )
+
+@app.api_route("/tenants/{tenant_id}/users{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+async def proxy_tenant_users(tenant_id: UUID, path: str, request: Request):
+    async with httpx.AsyncClient() as client:
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        body = await request.body()
+        url = f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users{path}"
+        try:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                headers=headers,
+                params=request.query_params,
+                content=body,
+                timeout=30.0
+            )
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                headers=dict(resp.headers)
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Error connecting to tenant service: {exc}"
+            )
+
+
+@app.api_route("/roles", methods=["GET", "OPTIONS"])
+async def proxy_roles(request: Request):
+    async with httpx.AsyncClient() as client:
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        url = f"{TENANT_SERVICE_URL}/roles"
+        try:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                headers=headers,
+                params=request.query_params,
+                timeout=30.0
+            )
+            return Response(
+                content=resp.content,
+                status_code=resp.status_code,
+                headers=dict(resp.headers)
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Error connecting to tenant service: {exc}"
+            )
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Health
 # ─────────────────────────────────────────────────────────────────────────────
@@ -126,6 +213,18 @@ async def create_tenant(
     await session.commit()
     await session.refresh(tenant)
     return {"id": str(tenant.id), "name": tenant.name, "created_at": tenant.created_at}
+
+
+@app.get(
+    "/tenants",
+    tags=["Bootstrap"],
+    summary="List all tenants",
+)
+async def list_tenants(
+    session: AsyncSession = Depends(get_session),
+):
+    tenants = list(await session.exec(select(Tenant)))
+    return [{"id": str(t.id), "name": t.name, "created_at": t.created_at} for t in tenants]
 
 
 @app.get(
