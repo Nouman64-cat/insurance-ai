@@ -8,7 +8,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from shared.models.core import User
+from shared.models.core import User, Role
 
 SECRET_KEY  = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
 ALGORITHM   = "HS256"
@@ -74,11 +74,18 @@ async def read_users_me(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     
+    role_name = "Viewer"
+    if user.role_id:
+        role = await session.get(Role, user.role_id)
+        if role:
+            role_name = role.name
+            
     return {
         "id": str(user.id),
         "email": user.email,
         "full_name": user.full_name,
         "tenant_id": str(user.tenant_id),
         "role_id": str(user.role_id),
+        "role_name": role_name,
         "is_active": user.is_active,
     }

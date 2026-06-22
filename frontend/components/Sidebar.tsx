@@ -235,8 +235,8 @@ const NAV_ITEMS = [
         badge: null,
       },
       {
-        href: "#admin",
-        label: "Admin",
+        href: "/admin",
+        label: "User Management",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
             <circle cx="12" cy="12" r="3" />
@@ -244,6 +244,7 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        adminOnly: true,
       },
     ],
   },
@@ -255,10 +256,38 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const [activeHref, setActiveHref] = useState(pathname);
+  const [userName, setUserName] = useState("Saira Reviewer");
+  const [userEmail, setUserEmail] = useState("Senior Underwriter");
+  const [userRole, setUserRole] = useState("");
 
   useEffect(() => {
     setActiveHref(pathname);
   }, [pathname]);
+
+  useEffect(() => {
+    const storedName = localStorage.getItem("user_name");
+    const storedEmail = localStorage.getItem("user_email");
+    const storedRole = localStorage.getItem("user_role");
+    if (storedName) setUserName(storedName);
+    if (storedEmail) setUserEmail(storedEmail);
+    if (storedRole) setUserRole(storedRole);
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("jwt_token");
+    localStorage.removeItem("tenant_id");
+    localStorage.removeItem("user_email");
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_role");
+    window.location.href = "/login";
+  };
+
+  const initials = userName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "SR";
 
   return (
     <aside
@@ -313,6 +342,9 @@ export function Sidebar() {
             )}
             <div className="space-y-0.5">
               {group.links.map((link) => {
+                if ((link as any).adminOnly && userRole !== "Admin") {
+                  return null;
+                }
                 const isActive = activeHref === link.href;
                 return (
                   <Link
@@ -357,15 +389,37 @@ export function Sidebar() {
 
       {/* ── User footer ───────────────────────────────────────────────────── */}
       <div className={`border-t border-slate-800 p-3 flex-shrink-0 ${collapsed ? "flex justify-center" : ""}`}>
-        <div className={`flex items-center gap-2.5 cursor-pointer group rounded-lg p-1.5 hover:bg-slate-800 transition-colors ${collapsed ? "" : "w-full"}`}>
+        <div className={`flex items-center gap-2.5 group rounded-lg p-1.5 hover:bg-slate-800/50 transition-colors ${collapsed ? "" : "w-full"}`}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 shadow-md">
-            <span className="text-xs font-bold text-white">SR</span>
+            <span className="text-xs font-bold text-white">{initials}</span>
           </div>
           {!collapsed && (
-            <div className="overflow-hidden flex-1">
-              <p className="text-sm font-semibold text-slate-200 truncate leading-none">Saira Reviewer</p>
-              <p className="text-[10px] text-slate-500 mt-0.5 truncate">Senior Underwriter</p>
+            <div className="overflow-hidden flex-1 flex items-center justify-between">
+              <div className="overflow-hidden pr-2">
+                <p className="text-sm font-semibold text-slate-200 truncate leading-none">{userName}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 truncate">{userEmail}</p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors flex-shrink-0"
+                title="Log Out"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                </svg>
+              </button>
             </div>
+          )}
+          {collapsed && (
+            <button
+              onClick={handleLogout}
+              className="absolute bottom-14 p-1.5 bg-slate-800 border border-slate-700 rounded text-slate-400 hover:text-red-400 hover:bg-slate-750 transition-colors flex-shrink-0 shadow-lg"
+              title="Log Out"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
+            </button>
           )}
         </div>
       </div>
