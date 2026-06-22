@@ -31,7 +31,6 @@ x-fastapi-defaults: &fastapi-defaults
       condition: service_healthy
 
 services:
-
   # ───────────────────────────────────────────────────────────────────────────
   # Databases
   # ───────────────────────────────────────────────────────────────────────────
@@ -46,7 +45,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insurance_secret}
       POSTGRES_DB: ${POSTGRES_DB:-insurance_db}
     ports:
-      - "5434:5432"   # host 5434 — avoids conflict if another Postgres is running on 5432/5433
+      - "5434:5432" # host 5434 — avoids conflict if another Postgres is running on 5432/5433
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./shared/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
@@ -63,9 +62,9 @@ services:
     networks:
       - insurance-net
     ports:
-      - "7688:7687"   # Bolt protocol
-      - "7445:7444"   # Memgraph Lab UI
-      - "3001:3000"   # Memgraph Lab web UI (mapped to 3001 to avoid conflict with frontend/host node)
+      - "7688:7687" # Bolt protocol
+      - "7445:7444" # Memgraph Lab UI
+      - "3001:3000" # Memgraph Lab web UI (mapped to 3001 to avoid conflict with frontend/host node)
     volumes:
       - memgraph-data:/var/lib/memgraph
     environment:
@@ -89,8 +88,8 @@ services:
     networks:
       - insurance-net
     ports:
-      - "9092:9092"    # internal listener  (service → service)
-      - "9094:9094"    # external listener  (host tools, Postman Kafka plugins)
+      - "9092:9092" # internal listener  (service → service)
+      - "9094:9094" # external listener  (host tools, Postman Kafka plugins)
     volumes:
       - kafka-data:/var/lib/kafka/data
     environment:
@@ -105,7 +104,11 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      test:
+        [
+          "CMD-SHELL",
+          "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list",
+        ]
       interval: 15s
       timeout: 10s
       retries: 5
@@ -190,11 +193,15 @@ services:
       kafka:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8002/health')\""]
+      test:
+        [
+          "CMD-SHELL",
+          'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8002/health'')"',
+        ]
       interval: 15s
       timeout: 5s
       retries: 5
-      start_period: 30s    # allow time for pip install on first cold start
+      start_period: 30s # allow time for pip install on first cold start
 
   decision-engine:
     <<: *fastapi-defaults
@@ -217,8 +224,9 @@ services:
       - "8014:8004"
     volumes:
       - ./services/ocr-engine:/app
-      - ./shared/documents:/data      # Required for the /extract-from-path endpoint
+      - ./shared/documents:/data # Required for the /extract-from-path endpoint
 
+  # khalid
   text-summarizer:
     <<: *fastapi-defaults
     build:
@@ -237,7 +245,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: dev          # use the dev stage for hot-reload during development
+      target: dev # use the dev stage for hot-reload during development
     container_name: insurance-frontend
     restart: unless-stopped
     networks:
@@ -245,9 +253,9 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend:/app                    # hot-reload source files
-      - /app/node_modules                  # prevent host node_modules from overwriting container's
-      - /app/.next                         # preserve Next.js build cache between restarts
+      - ./frontend:/app # hot-reload source files
+      - /app/node_modules # prevent host node_modules from overwriting container's
+      - /app/.next # preserve Next.js build cache between restarts
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8010   # browser-side; host port that maps to gateway container port 8000
-      CHOKIDAR_USEPOLLING: "true"                  # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
+      NEXT_PUBLIC_API_URL: http://localhost:8010 # browser-side; host port that maps to gateway container port 8000
+      CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: FSEvents don't reach chokidar via inotify
