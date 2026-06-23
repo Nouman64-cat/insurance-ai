@@ -6,10 +6,19 @@ import api from "@/app/services/api";
 interface User {
   id: string;
   email: string;
+  username: string;
   full_name: string;
   role_id: string;
   is_active: boolean;
+  status: string;
   created_at: string;
+  first_name?: string;
+  last_name?: string;
+  phone?: string;
+  department?: string;
+  employee_id?: string;
+  designation?: string;
+  date_of_joining?: string;
 }
 
 interface Role {
@@ -32,11 +41,19 @@ export default function AdminPage() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
   // Form Fields
-  const [fullName, setFullName] = useState("");
+  const [username, setUsername] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [roleId, setRoleId] = useState("");
   const [isActive, setIsActive] = useState(true);
+  const [status, setStatus] = useState("ACTIVE");
+  const [phone, setPhone] = useState("");
+  const [department, setDepartment] = useState("");
+  const [employeeId, setEmployeeId] = useState("");
+  const [designation, setDesignation] = useState("");
+  const [dateOfJoining, setDateOfJoining] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
   useEffect(() => {
@@ -61,7 +78,6 @@ export default function AdminPage() {
     }
 
     try {
-      // Fetch users and roles in parallel
       const [usersResp, rolesResp] = await Promise.all([
         api.get<User[]>(`/tenants/${tenantId}/users/`),
         api.get<Role[]>("/roles"),
@@ -85,9 +101,17 @@ export default function AdminPage() {
   };
 
   const handleOpenCreateModal = () => {
-    setFullName("");
+    setUsername("");
+    setFirstName("");
+    setLastName("");
     setEmail("");
     setPassword("");
+    setPhone("");
+    setDepartment("");
+    setEmployeeId("");
+    setDesignation("");
+    setDateOfJoining("");
+    setStatus("ACTIVE");
     if (roles.length > 0) setRoleId(roles[0].id);
     setIsActive(true);
     setError("");
@@ -97,11 +121,18 @@ export default function AdminPage() {
 
   const handleOpenEditModal = (user: User) => {
     setSelectedUser(user);
-    setFullName(user.full_name);
+    setFirstName(user.first_name ?? "");
+    setLastName(user.last_name ?? "");
     setEmail(user.email);
-    setPassword(""); // Keep blank if not editing password
+    setPassword("");
     setRoleId(user.role_id);
     setIsActive(user.is_active);
+    setStatus(user.status ?? "ACTIVE");
+    setPhone(user.phone ?? "");
+    setDepartment(user.department ?? "");
+    setEmployeeId(user.employee_id ?? "");
+    setDesignation(user.designation ?? "");
+    setDateOfJoining(user.date_of_joining ?? "");
     setError("");
     setSuccess("");
     setShowEditModal(true);
@@ -116,10 +147,17 @@ export default function AdminPage() {
 
     try {
       await api.post(`/tenants/${tenantId}/users/`, {
+        username,
         email,
         password,
-        full_name: fullName,
         role_id: roleId,
+        first_name: firstName,
+        last_name: lastName,
+        phone: phone || null,
+        department: department || null,
+        employee_id: employeeId || null,
+        designation: designation || null,
+        date_of_joining: dateOfJoining || null,
       });
 
       setSuccess("User created successfully!");
@@ -143,12 +181,17 @@ export default function AdminPage() {
 
     try {
       const updateData: any = {
-        full_name: fullName,
         role_id: roleId,
-        is_active: isActive,
+        status: status,
+        first_name: firstName,
+        last_name: lastName,
+        phone: phone || null,
+        department: department || null,
+        employee_id: employeeId || null,
+        designation: designation || null,
+        date_of_joining: dateOfJoining || null,
       };
       
-      // Only send password if updated
       if (password) {
         updateData.password = password;
       }
@@ -269,9 +312,11 @@ export default function AdminPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="px-5 py-3.5 text-left">Username</th>
                   <th className="px-5 py-3.5 text-left">Full Name</th>
                   <th className="px-5 py-3.5 text-left">Email Address</th>
                   <th className="px-5 py-3.5 text-left">Portal Role</th>
+                  <th className="px-5 py-3.5 text-left">Department</th>
                   <th className="px-5 py-3.5 text-center">Status</th>
                   <th className="px-5 py-3.5 text-left">Created Date</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
@@ -280,6 +325,7 @@ export default function AdminPage() {
               <tbody className="divide-y divide-slate-100">
                 {users.map((user) => (
                   <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-5 py-3.5 font-medium text-slate-700">{user.username}</td>
                     <td className="px-5 py-3.5 font-semibold text-slate-800">{user.full_name}</td>
                     <td className="px-5 py-3.5 text-slate-600">{user.email}</td>
                     <td className="px-5 py-3.5">
@@ -287,15 +333,28 @@ export default function AdminPage() {
                         {getRoleName(user.role_id)}
                       </span>
                     </td>
+                    <td className="px-5 py-3.5 text-slate-600">{user.department ?? "—"}</td>
                     <td className="px-5 py-3.5 text-center">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          user.is_active
+                          user.status === "ACTIVE"
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : "bg-red-50 text-red-600 border-red-200"
+                            : user.status === "SUSPENDED"
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : user.status === "LOCKED"
+                            ? "bg-rose-50 text-rose-700 border-rose-200"
+                            : "bg-slate-100 text-slate-700 border-slate-200"
                         }`}
                       >
-                        {user.is_active ? "Active" : "Suspended"}
+                        {user.status === "ACTIVE"
+                          ? "Active"
+                          : user.status === "SUSPENDED"
+                          ? "Suspended"
+                          : user.status === "LOCKED"
+                          ? "Locked"
+                          : user.status === "INACTIVE"
+                          ? "Inactive"
+                          : "Active"}
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-xs text-slate-400">
@@ -330,8 +389,8 @@ export default function AdminPage() {
 
       {/* ── CREATE USER MODAL ── */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">Add New Portal Account</h3>
               <button
@@ -345,55 +404,135 @@ export default function AdminPage() {
             </div>
 
             <form onSubmit={handleCreateUser} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Ali Raza"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Username *</label>
+                  <input
+                    type="text"
+                    required
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="e.g. aliraza"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Email Address</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. ali@adamjeelife.com"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="e.g. ali@adamjeelife.com"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Password</label>
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimum 8 characters"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">First Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="e.g. Ali"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Portal Role</label>
-                <select
-                  value={roleId}
-                  onChange={(e) => setRoleId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
-                >
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Last Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="e.g. Raza"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Password *</label>
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Minimum 8 characters"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Portal Role *</label>
+                  <select
+                    value={roleId}
+                    onChange={(e) => setRoleId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                  >
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Phone</label>
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="e.g. +923001234567"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Department</label>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="e.g. Underwriting"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Employee ID</label>
+                  <input
+                    type="text"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    placeholder="e.g. EMP-1049"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Designation</label>
+                  <input
+                    type="text"
+                    value={designation}
+                    onChange={(e) => setDesignation(e.target.value)}
+                    placeholder="e.g. Senior Underwriter"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Date of Joining</label>
+                  <input
+                    type="date"
+                    value={dateOfJoining}
+                    onChange={(e) => setDateOfJoining(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
@@ -425,8 +564,8 @@ export default function AdminPage() {
 
       {/* ── EDIT USER MODAL ── */}
       {showEditModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">Edit Portal Account</h3>
               <button
@@ -440,62 +579,142 @@ export default function AdminPage() {
             </div>
 
             <form onSubmit={handleEditUser} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Username (Read Only)</label>
+                  <input
+                    type="text"
+                    disabled
+                    value={selectedUser?.username || ""}
+                    className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
+                  />
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Email (Read Only)</label>
-                <input
-                  type="email"
-                  disabled
-                  value={email}
-                  className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Email (Read Only)</label>
+                  <input
+                    type="email"
+                    disabled
+                    value={email}
+                    className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
+                  />
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Password (Leave blank to keep same)</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter new password if updating"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">First Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
 
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Portal Role</label>
-                <select
-                  value={roleId}
-                  onChange={(e) => setRoleId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
-                >
-                  {roles.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Last Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
 
-              {/* Active Toggle */}
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <span className="text-xs font-semibold text-slate-700">Account Active Status</span>
-                <input
-                  type="checkbox"
-                  checked={isActive}
-                  onChange={(e) => setIsActive(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500"
-                />
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Password (Leave blank to keep same)</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Enter new password if updating"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Portal Role *</label>
+                  <select
+                    value={roleId}
+                    onChange={(e) => setRoleId(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                  >
+                    {roles.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Phone</label>
+                  <input
+                    type="text"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="e.g. +923001234567"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Department</label>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="e.g. Underwriting"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Employee ID</label>
+                  <input
+                    type="text"
+                    value={employeeId}
+                    onChange={(e) => setEmployeeId(e.target.value)}
+                    placeholder="e.g. EMP-1049"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Designation</label>
+                  <input
+                    type="text"
+                    value={designation}
+                    onChange={(e) => setDesignation(e.target.value)}
+                    placeholder="e.g. Senior Underwriter"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Date of Joining</label>
+                  <input
+                    type="date"
+                    value={dateOfJoining}
+                    onChange={(e) => setDateOfJoining(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Account Status *</label>
+                  <select
+                    value={status}
+                    onChange={(e) => setStatus(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                  >
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                    <option value="Suspended">Suspended</option>
+                    <option value="Locked">Locked</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">

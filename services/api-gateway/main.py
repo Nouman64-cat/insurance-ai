@@ -18,6 +18,7 @@ from typing import List
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlmodel import select
@@ -102,6 +103,7 @@ app.include_router(evaluate_router)
 # ── Proxy routing to tenant-service ───────────────────────────────────────────
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 async def _proxy_to_tenant(request: Request, url: str) -> Response:
@@ -153,7 +155,7 @@ async def login(request: Request):
 
 
 @app.get("/auth/me", tags=["Authentication"], response_model=CurrentUserResponse, summary="Get current user")
-async def get_current_user(request: Request):
+async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/auth/me")
 
 
@@ -166,8 +168,8 @@ async def get_current_user(request: Request):
     status_code=status.HTTP_201_CREATED,
     summary="Create a user",
 )
-async def create_user(tenant_id: UUID, body: UserCreate, request: Request):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users")
+async def create_user(tenant_id: UUID, body: UserCreate, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/")
 
 
 @app.get(
@@ -176,7 +178,7 @@ async def create_user(tenant_id: UUID, body: UserCreate, request: Request):
     response_model=List[UserRead],
     summary="List users (admin only)",
 )
-async def list_users(tenant_id: UUID, request: Request):
+async def list_users(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/")
 
 
@@ -186,7 +188,7 @@ async def list_users(tenant_id: UUID, request: Request):
     response_model=UserRead,
     summary="Get a user by ID",
 )
-async def get_user(tenant_id: UUID, user_id: UUID, request: Request):
+async def get_user(tenant_id: UUID, user_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/{user_id}")
 
 
@@ -196,7 +198,7 @@ async def get_user(tenant_id: UUID, user_id: UUID, request: Request):
     response_model=UserRead,
     summary="Update a user (admin only)",
 )
-async def update_user(tenant_id: UUID, user_id: UUID, body: UserUpdate, request: Request):
+async def update_user(tenant_id: UUID, user_id: UUID, body: UserUpdate, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/{user_id}")
 
 
@@ -206,8 +208,35 @@ async def update_user(tenant_id: UUID, user_id: UUID, body: UserUpdate, request:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete a user (admin only)",
 )
-async def delete_user(tenant_id: UUID, user_id: UUID, request: Request):
+async def delete_user(tenant_id: UUID, user_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/{user_id}")
+
+
+# ── Applicants ─────────────────────────────────────────────────────────────────
+
+@app.post("/tenants/{tenant_id}/applicants", tags=["Applicants"], status_code=201, summary="Create an applicant (admin only)")
+async def create_applicant(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants")
+
+
+@app.get("/tenants/{tenant_id}/applicants", tags=["Applicants"], summary="List all applicants (admin only)")
+async def list_applicants(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants")
+
+
+@app.get("/tenants/{tenant_id}/applicants/{applicant_id}", tags=["Applicants"], summary="Get an applicant by ID")
+async def get_applicant(tenant_id: UUID, applicant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants/{applicant_id}")
+
+
+@app.delete("/tenants/{tenant_id}/applicants/{applicant_id}", tags=["Applicants"], status_code=204, summary="Delete an applicant")
+async def delete_applicant(tenant_id: UUID, applicant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants/{applicant_id}")
+
+
+@app.put("/tenants/{tenant_id}/applicants/{applicant_id}", tags=["Applicants"], summary="Update an applicant")
+async def update_applicant(tenant_id: UUID, applicant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants/{applicant_id}")
 
 
 # ── Roles ──────────────────────────────────────────────────────────────────────
@@ -229,9 +258,15 @@ async def proxy_tenant_users(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users{path}")
 
 
+@app.api_route("/tenants/{tenant_id}/applicants{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_applicants(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants{path}")
+
+
 @app.api_route("/roles", methods=["GET", "OPTIONS"], include_in_schema=False)
 async def proxy_roles(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────

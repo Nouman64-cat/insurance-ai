@@ -65,6 +65,29 @@ class Role(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# UserStatus & UserType
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UserStatus(str, Enum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+    SUSPENDED = "SUSPENDED"
+    LOCKED = "LOCKED"
+
+
+class UserType(SQLModel, table=True):
+    __tablename__ = "user_types"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    type_name: str = Field(unique=True, index=True, max_length=100)
+    description: str = Field(default="", max_length=500)
+    is_active: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    users: List["User"] = Relationship(back_populates="user_type")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # User  —  an employee (underwriter / agent / admin) belonging to a Tenant
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -74,15 +97,48 @@ class User(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     role_id: UUID = Field(foreign_key="roles.id", nullable=False)
+    user_type_id: Optional[UUID] = Field(default=None, foreign_key="user_types.id", nullable=True)
 
     email: str = Field(unique=True, index=True, max_length=255)
+    username: str = Field(unique=True, index=True, max_length=255)
     hashed_password: str = Field(max_length=255)
     full_name: str = Field(max_length=255)
+    status: UserStatus = Field(default=UserStatus.ACTIVE, max_length=50, nullable=False)
     is_active: bool = Field(default=True, nullable=False)
+    is_verified: bool = Field(default=False, nullable=False)
+    failed_login_count: int = Field(default=0, nullable=False)
+    last_login: Optional[datetime] = Field(default=None, nullable=True)
+    is_deleted: bool = Field(default=False, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     tenant: Optional[Tenant] = Relationship(back_populates="users")
     role: Optional[Role] = Relationship(back_populates="users")
+    user_type: Optional[UserType] = Relationship(back_populates="users")
+    profile: Optional["UserProfile"] = Relationship(back_populates="user", sa_relationship_kwargs={"uselist": False, "cascade": "all, delete-orphan"})
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# UserProfile  —  detailed profile information for a User
+# ─────────────────────────────────────────────────────────────────────────────
+
+class UserProfile(SQLModel, table=True):
+    __tablename__ = "user_profiles"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    user_id: UUID = Field(foreign_key="users.id", index=True, unique=True, nullable=False)
+
+    first_name: str = Field(max_length=255)
+    last_name: str = Field(max_length=255)
+    phone: Optional[str] = Field(default=None, max_length=50, nullable=True)
+    avatar_url: Optional[str] = Field(default=None, max_length=500, nullable=True)
+    department: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    employee_id: Optional[str] = Field(default=None, max_length=100, nullable=True)
+    designation: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    date_of_joining: Optional[date] = Field(default=None, nullable=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    user: Optional[User] = Relationship(back_populates="profile")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -111,6 +167,7 @@ class Applicant(SQLModel, table=True):
     # Socio-economic profile used by the risk engine
     occupation: str = Field(max_length=255)
     declared_income: float = Field(ge=0)
+    details: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
