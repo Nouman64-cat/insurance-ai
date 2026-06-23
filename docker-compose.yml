@@ -239,6 +239,23 @@ services:
       - ./services/text-summarizer:/app
 
   # ───────────────────────────────────────────────────────────────────────────
+  # Docs (Docusaurus) — http://localhost:4991
+  # ───────────────────────────────────────────────────────────────────────────
+  docs:
+    image: node:20-alpine
+    container_name: insurance-docs
+    restart: unless-stopped
+    working_dir: /app
+    networks:
+      - insurance-net
+    ports:
+      - "4991:4991"
+    volumes:
+      - ./docs:/app
+      - /app/node_modules # prevent host node_modules from being used inside container
+    command: sh -c "npm install && npm start"
+
+  # ───────────────────────────────────────────────────────────────────────────
   # Frontend (Next.js App Router)
   # ───────────────────────────────────────────────────────────────────────────
   frontend:
