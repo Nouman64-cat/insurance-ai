@@ -163,3 +163,61 @@ class ApplicantUpdate(BaseModel):
     declared_income:  Optional[float] = None
     details:          Optional[dict] = None
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Case Schemas
+# ─────────────────────────────────────────────────────────────────────────────
+from shared.models.core import (
+    CaseTypeEnum,
+    CaseStatusEnum,
+    CasePriorityEnum,
+    SourceChannelEnum,
+    AssignedRoleEnum,
+    CommentTypeEnum,
+    VisibilityLevelEnum
+)
+
+class CaseCreate(BaseModel):
+    applicant_id:     UUID
+    caseType:         CaseTypeEnum
+    priorityLevel:    CasePriorityEnum = CasePriorityEnum.NORMAL
+    sourceChannel:    SourceChannelEnum
+    assignedTeamld:   Optional[UUID] = None
+    assignedAgentId:  Optional[UUID] = None
+
+class CaseUpdate(BaseModel):
+    caseType:         Optional[CaseTypeEnum] = None
+    priorityLevel:    Optional[CasePriorityEnum] = None
+    sourceChannel:    Optional[SourceChannelEnum] = None
+    assignedAgentId:  Optional[UUID] = None
+
+class CaseRead(BaseModel):
+    caseld:           UUID
+    caseNumber:       str
+    tenant_id:        UUID
+    applicant_id:     UUID
+    caseType:         CaseTypeEnum
+    caseStatus:       CaseStatusEnum
+    priorityLevel:    CasePriorityEnum
+    sourceChannel:    SourceChannelEnum
+    createdAt:        datetime
+    updatedAt:        datetime
+    assignedTeamld:   Optional[UUID] = None
+    assignedAgentId:  Optional[UUID] = None
+    slaDeadline:      Optional[datetime] = None
+    escalationLevel:  int
+    parentCaseld:     Optional[UUID] = None
+
+    model_config = {"from_attributes": True}
+
+class CaseStatusUpdate(BaseModel):
+    status: CaseStatusEnum
+
+class CaseAssignmentCreate(BaseModel):
+    assignedToUserld: UUID
+    assignedRole: AssignedRoleEnum
+
+class CaseCommentCreate(BaseModel):
+    commentText: str
+    commentType: CommentTypeEnum
+    visibilityLevel: VisibilityLevelEnum
