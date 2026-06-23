@@ -44,6 +44,7 @@ Data Stores
 |---|---|---|
 | Frontend | 3000 | Next.js underwriting dashboard |
 | Memgraph Lab Web | 3001 | Graph database UI |
+| **Docs** | **4991** | **Docusaurus documentation site** |
 | PostgreSQL | 5434 | Relational database (internal: 5432) |
 | Memgraph Bolt | 7688 | Bolt protocol for graph queries |
 | Memgraph Lab | 7445 | Memgraph Lab UI |
@@ -114,6 +115,7 @@ Leave this running. It polls continuously and publishes results to `insurance.ri
 | URL | Expected response |
 |---|---|
 | http://localhost:3000 | Underwriting dashboard (Next.js) |
+| http://localhost:4991 | Docusaurus documentation site |
 | http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}` |
 | http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}` |
 | http://localhost:8014/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
@@ -124,6 +126,32 @@ Leave this running. It polls continuously and publishes results to `insurance.ri
 | http://localhost:8015/docs | Text Summarizer — Swagger UI |
 | http://localhost:8090 | Kafka UI — topic browser |
 | http://localhost:3001 | Memgraph Lab — graph database UI |
+
+---
+
+## Documentation Site
+
+The project ships with a [Docusaurus](https://docusaurus.io/) site covering architecture, DB schemas, data flow, the tech stack, and a per-service endpoint reference — all with live Mermaid diagrams.
+
+**Run without Docker (fastest):**
+
+```bash
+cd docs
+npm install
+npm start
+# → http://localhost:4991
+```
+
+**Run via Docker Compose (alongside all other services):**
+
+```bash
+docker compose up docs
+# → http://localhost:4991
+```
+
+No `--build` step needed — the docs service uses the pre-built `node:20-alpine` image and installs dependencies at startup.
+
+Source lives in `docs/docs/`. Edit any `.md` file and the browser hot-reloads automatically.
 
 ---
 
