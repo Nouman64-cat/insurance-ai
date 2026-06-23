@@ -24,11 +24,16 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 | `POST` | `/tenants` | Bootstrap: create a tenant |
 | `GET` | `/tenants` | Bootstrap: list all tenants |
 | `GET` | `/tenants/{tenant_id}` | Bootstrap: get a tenant |
-| `POST` | `/tenants/{tenant_id}/users` | Create a user |
-| `GET` | `/tenants/{tenant_id}/users/` | List users (admin only) |
-| `GET` | `/tenants/{tenant_id}/users/{user_id}` | Get a user |
-| `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update a user (admin only) |
-| `DELETE` | `/tenants/{tenant_id}/users/{user_id}` | Delete a user (admin only) |
+| `POST` | `/tenants/{tenant_id}/users` | Create a user (Bearer required) |
+| `GET` | `/tenants/{tenant_id}/users/` | List users (admin only, Bearer required) |
+| `GET` | `/tenants/{tenant_id}/users/{user_id}` | Get a user (Bearer required) |
+| `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update a user (admin only, Bearer required) |
+| `DELETE` | `/tenants/{tenant_id}/users/{user_id}` | Delete a user (admin only, Bearer required) |
+| `POST` | `/tenants/{tenant_id}/applicants` | Create an applicant (admin only, Bearer required) |
+| `GET` | `/tenants/{tenant_id}/applicants` | List applicants (admin only, Bearer required) |
+| `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get an applicant (Bearer required) |
+| `PUT` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Update an applicant (Bearer required) |
+| `DELETE` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Delete an applicant (Bearer required) |
 | `GET` | `/roles` | List RBAC roles |
 | `GET` | `/health` | Health check |
 
@@ -48,7 +53,7 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 **Source:** `services/tenant-service/`  
 **Swagger:** `http://localhost:8011/docs`
 
-Manages `tenants`, `users`, and `roles`. Issues JWT tokens (HS256). Seeds RBAC roles at startup.
+Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens (HS256). Seeds RBAC roles at startup.
 
 ### Endpoints
 
@@ -61,6 +66,11 @@ Manages `tenants`, `users`, and `roles`. Issues JWT tokens (HS256). Seeds RBAC r
 | `GET` | `/tenants/{tenant_id}/users/{user_id}` | Get user |
 | `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update user |
 | `DELETE` | `/tenants/{tenant_id}/users/{user_id}` | Delete user |
+| `POST` | `/tenants/{tenant_id}/applicants` | Create applicant (Admin only; enforces per-tenant CNIC uniqueness) |
+| `GET` | `/tenants/{tenant_id}/applicants` | List all applicants for a tenant (Admin only) |
+| `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get applicant by ID (Admin only) |
+| `PUT` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Full update of an applicant (Admin only) |
+| `DELETE` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Delete applicant (Admin only) |
 | `GET` | `/roles` | List all roles |
 | `GET` | `/health` | Health check |
 
@@ -81,9 +91,11 @@ Manages `tenants`, `users`, and `roles`. Issues JWT tokens (HS256). Seeds RBAC r
 **Source:** `services/risk-engine/`  
 **Swagger:** `http://localhost:8012/docs`
 
-Runs the LangGraph underwriting workflow. Does **not** write to PostgreSQL — all DB writes are done by the API Gateway after calling this service.
+Runs the LangGraph underwriting workflow. Does **not** write to PostgreSQL — all DB writes are done by the API Gateway after calling this service. **Does** write evaluated applicants to Memgraph (fire-and-forget via `graph_writer.py`) after every successful evaluation on both the sync HTTP and async Kafka paths.
 
 ### Endpoints
+
+Both endpoints accept an `X-Tenant-Id` header which is forwarded through the LangGraph workflow and used to scope all Memgraph queries to a single tenant.
 
 | Method | Path | Description |
 |---|---|---|
@@ -236,19 +248,4 @@ Browse Kafka topics and messages at `http://localhost:8090`. Cluster is pre-conf
 
 Visual graph browser for the fraud graph. Access at `http://localhost:3001`.
 
-Example Cypher to inspect the fraud graph:
-
-```cypher
--- All applicants with their fraud flags
-MATCH (a:Applicant)
-RETURN a.cnic, a.fraud_flagged, a.fraud_probability
-ORDER BY a.fraud_probability DESC;
-
--- Income-fabrication rings
-MATCH (a:Applicant)-[:APPLIED_FOR]->(p:Policy)
-WHERE a.fraud_flagged = true
-WITH a.declared_income AS income, collect(a.cnic) AS cnics, count(*) AS ring_size
-WHERE ring_size > 1
-RETURN income, ring_size, cnics
-ORDER BY ring_size DESC;
-```
+See the [DB Schemas — Memgraph section](/db-schemas#memgraph-graph-db) for full node/relationship documentation and example Cypher queries.
