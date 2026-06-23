@@ -24,6 +24,9 @@ from typing import Any, Dict
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from pydantic import ValidationError
 
+from graph_writer import write_applicant_to_graph
+from workflow import run_evaluation
+
 from shared.events.kafka_events import (
     ProposalSubmittedEvent,
     RiskEvaluatedEvent,
@@ -42,28 +45,6 @@ INBOUND_TOPIC     = "insurance.proposal.submitted.v1"
 OUTBOUND_TOPIC    = "insurance.risk.evaluated.v1"
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LangGraph shim
-# Replace this mock with your real compiled graph when wiring up:
-#   from workflow import run_evaluation
-#   loop = asyncio.get_event_loop()
-#   result = await loop.run_in_executor(None, run_evaluation, applicant, policy)
-# ─────────────────────────────────────────────────────────────────────────────
-
-class _MockGraph:
-    async def ainvoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        return {
-            "medical_score": 42,
-            "financial_score": 38,
-            "fraud_probability": 0.07,
-            "composite_risk_score": 40,
-            "ai_decision": "Auto Approve",
-            "reasons": ["Mock evaluation — wire up workflow.run_evaluation() here."],
-        }
-
-graph = _MockGraph()
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # Core processing
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -73,12 +54,33 @@ async def _process(
 ) -> None:
     """Run the workflow for one event and publish the result."""
 
-    state: Dict[str, Any] = {
-        "applicant": event.payload.applicant.model_dump(),
-        "policy":    event.payload.policy.model_dump(),
-    }
+    applicant = event.payload.applicant.model_dump()
+    policy    = event.payload.policy.model_dump()
+    tenant_id = str(event.tenant_id)
 
-    result: Dict[str, Any] = await graph.ainvoke(state)
+    # Run the synchronous LangGraph workflow off the event loop.
+    loop = asyncio.get_running_loop()
+    result: Dict[str, Any] = await loop.run_in_executor(
+        None, run_evaluation, applicant, policy, tenant_id
+    )
+
+    # Fire-and-forget: persist the evaluated applicant into Memgraph before
+    # publishing. Runs in an executor and swallows its own errors so a Memgraph
+    # outage never blocks the Kafka publish.
+    if result.get("is_valid", False):
+        await loop.run_in_executor(
+            None,
+            lambda: write_applicant_to_graph(
+                cnic              = applicant.get("cnic", ""),
+                tenant_id         = tenant_id,
+                occupation        = applicant.get("occupation", ""),
+                declared_income   = float(applicant.get("declared_income", 0)),
+                coverage_amount   = float(policy.get("coverage_amount", 0)),
+                medical_score     = int(result.get("medical_score", 0)),
+                financial_score   = int(result.get("financial_score", 0)),
+                fraud_probability = float(result.get("fraud_probability", 0.0)),
+            ),
+        )
 
     result_event = RiskEvaluatedEvent(
         correlation_id=event.event_id,

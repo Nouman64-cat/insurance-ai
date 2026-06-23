@@ -31,6 +31,7 @@ MEMGRAPH_PASS = os.getenv("MEMGRAPH_PASSWORD", "")
 class RiskState(TypedDict):
     applicant: Dict[str, Any]
     policy: Dict[str, Any]
+    tenant_id: str
     is_valid: bool
     validation_errors: List[str]
     medical_score: int
@@ -166,80 +167,60 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
 # Fraud detection — Memgraph ring query + Gemini evaluation
 # ─────────────────────────────────────────────────────────────────────────────
 
-# Detects three classes of fraud ring:
+# Detects two classes of fraud signal from the relationships built up by
+# graph_writer.py after each evaluation (SAME_AREA and SAME_OCCUPATION_CLUSTER):
 #
-#   1. Income-fabrication ring — multiple flagged applicants declaring the exact
-#      same income figure, suggesting a coordinator supplies a common fake value.
+#   1. Income-outlier ring — an applicant whose declared income wildly exceeds
+#      the average of neighbours in the same area *and* occupation cluster,
+#      suggesting a fabricated salary figure within a coordinated group.
 #
-#   2. Occupation-cluster ring — flagged peers in the same occupation applying
-#      for similar coverage, indicating coordinated applications through a shared
-#      fraud network or agent.
+#   2. Coverage cluster — peers in the same occupation cluster applying for near-
+#      identical coverage amounts, indicating coordinated high-value applications.
 #
-#   3. Repeat-applicant pattern — the same CNIC appearing multiple times signals
-#      policy stacking or application churning.
-#
-# If Memgraph is unreachable the node falls back to 0.0 / empty signals so the
-# rest of the workflow is never blocked by a graph-DB outage.
+# Both queries are tenant-scoped. If Memgraph is unreachable the node falls back
+# to empty signals so the rest of the workflow is never blocked by a graph-DB
+# outage.
 
-_RING_QUERY = """
-OPTIONAL MATCH (self:Applicant {cnic: $cnic})
-OPTIONAL MATCH (self)-[:APPLIED_FOR]->(prior_pol:Policy)
-
-// Income-fabrication ring: previously flagged applicants sharing the exact same
-// declared income — a common coordinator fabricates one plausible salary figure.
-OPTIONAL MATCH (income_peer:Applicant {declared_income: $declared_income})
-WHERE income_peer.cnic <> $cnic
-  AND income_peer.fraud_flagged = true
-
-// Occupation-cluster ring: flagged peers in the same occupation who applied for
-// coverage within 50% of the current request — coordinated high-value applications.
-OPTIONAL MATCH (occ_peer:Applicant {occupation: $occupation})-[:APPLIED_FOR]->(occ_pol:Policy)
-WHERE occ_peer.cnic <> $cnic
-  AND occ_peer.fraud_flagged = true
-  AND occ_pol.coverage_amount >= $coverage_amount * 0.5
-
-WITH
-    self,
-    count(DISTINCT prior_pol)                                              AS prior_application_count,
-    coalesce(self.fraud_flagged, false)                                    AS previously_flagged,
-    coalesce(self.fraud_probability, 0.0)                                  AS prior_fraud_probability,
-    collect(DISTINCT {cnic: income_peer.cnic, name: income_peer.name})    AS income_ring_peers,
-    collect(DISTINCT {cnic: occ_peer.cnic, occupation: occ_peer.occupation}) AS occupation_ring_peers
-
+# Income-outlier detection within the same area + occupation cluster.
+_INCOME_OUTLIER_QUERY = """
+MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_AREA]->(neighbour:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(a)
+WITH a, collect(neighbour) AS neighbours, avg(neighbour.declared_income) AS avg_income
 RETURN
-    self IS NOT NULL                AS is_known_applicant,
-    previously_flagged,
-    prior_fraud_probability,
-    prior_application_count,
-    income_ring_peers,
-    occupation_ring_peers,
-    size(income_ring_peers)         AS income_ring_size,
-    size(occupation_ring_peers)     AS occupation_ring_size
+  size(neighbours)                                        AS cluster_size,
+  avg_income                                              AS avg_income_in_cluster,
+  CASE
+    WHEN avg_income > 0 AND a.declared_income > avg_income * 3 THEN true
+    ELSE false
+  END                                                     AS income_outlier,
+  left(a.cnic, 5)                                         AS cnic_prefix
+"""
+
+# Coverage-cluster detection (suspicious near-identical coverage amounts).
+_COVERAGE_CLUSTER_QUERY = """
+MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_OCCUPATION_CLUSTER]->(peer:Applicant)
+WHERE abs(peer.coverage_amount - a.coverage_amount) < 50000
+WITH collect(peer) AS cluster
+RETURN size(cluster) AS coverage_cluster_size
 """
 
 _GRAPH_FALLBACK: Dict[str, Any] = {
-    "graph_available":         False,
-    "is_known_applicant":      False,
-    "previously_flagged":      False,
-    "prior_fraud_probability": 0.0,
-    "prior_application_count": 0,
-    "income_ring_peers":       [],
-    "occupation_ring_peers":   [],
-    "income_ring_size":        0,
-    "occupation_ring_size":    0,
+    "graph_available":        False,
+    "cluster_size":           0,
+    "avg_income_in_cluster":  0.0,
+    "income_outlier":         False,
+    "coverage_cluster_size":  0,
 }
 
 
-def _query_fraud_graph(
-    cnic: str,
-    occupation: str,
-    declared_income: float,
-    coverage_amount: float,
-) -> Dict[str, Any]:
-    """Run the ring-detection Cypher query against Memgraph.
+def _query_fraud_graph(cnic: str, tenant_id: str) -> Dict[str, Any]:
+    """Run the ring-detection Cypher queries against Memgraph.
 
-    Returns graph intelligence on success; returns _GRAPH_FALLBACK on any
-    connectivity or query error so the calling node is never blocked.
+    Runs both the income-outlier and coverage-cluster queries in a single
+    session and merges their results. Returns graph intelligence on success;
+    returns _GRAPH_FALLBACK on any connectivity or query error so the calling
+    node is never blocked.
     """
     try:
         with GraphDatabase.driver(
@@ -247,28 +228,24 @@ def _query_fraud_graph(
         ) as driver:
             driver.verify_connectivity()
             with driver.session() as session:
-                record = session.run(
-                    _RING_QUERY,
-                    cnic=cnic,
-                    declared_income=declared_income,
-                    occupation=occupation,
-                    coverage_amount=coverage_amount,
+                income_rec = session.run(
+                    _INCOME_OUTLIER_QUERY, cnic=cnic, tenant_id=tenant_id
+                ).single()
+                coverage_rec = session.run(
+                    _COVERAGE_CLUSTER_QUERY, cnic=cnic, tenant_id=tenant_id
                 ).single()
 
-        if record is None:
-            return {**_GRAPH_FALLBACK, "graph_available": True}
+        result: Dict[str, Any] = {**_GRAPH_FALLBACK, "graph_available": True}
 
-        return {
-            "graph_available":         True,
-            "is_known_applicant":      record["is_known_applicant"],
-            "previously_flagged":      record["previously_flagged"],
-            "prior_fraud_probability": record["prior_fraud_probability"],
-            "prior_application_count": record["prior_application_count"],
-            "income_ring_peers":       list(record["income_ring_peers"]),
-            "occupation_ring_peers":   list(record["occupation_ring_peers"]),
-            "income_ring_size":        record["income_ring_size"],
-            "occupation_ring_size":    record["occupation_ring_size"],
-        }
+        if income_rec is not None:
+            result["cluster_size"]          = income_rec["cluster_size"] or 0
+            result["avg_income_in_cluster"] = income_rec["avg_income_in_cluster"] or 0.0
+            result["income_outlier"]        = bool(income_rec["income_outlier"])
+
+        if coverage_rec is not None:
+            result["coverage_cluster_size"] = coverage_rec["coverage_cluster_size"] or 0
+
+        return result
 
     except neo4j_exc.ServiceUnavailable:
         logger.warning("Memgraph unavailable — graph fraud check skipped (cnic=%s)", cnic)
@@ -282,28 +259,21 @@ def fraud_check(state: RiskState) -> Dict[str, Any]:
     applicant = state["applicant"]
     policy    = state["policy"]
     cnic      = applicant["cnic"]
+    tenant_id = state.get("tenant_id", "")
 
     # ── 1. Graph intelligence from Memgraph ───────────────────────────────────
-    graph = _query_fraud_graph(
-        cnic            = cnic,
-        occupation      = applicant.get("occupation", ""),
-        declared_income = float(applicant.get("declared_income", 0)),
-        coverage_amount = float(policy.get("coverage_amount", 0)),
-    )
+    graph = _query_fraud_graph(cnic=cnic, tenant_id=tenant_id)
 
     # ── 2. Format graph results as a readable block for the LLM ──────────────
     graph_summary = (
         f"Graph database available          : {graph['graph_available']}\n"
-        f"Applicant seen in system before   : {graph['is_known_applicant']}\n"
-        f"Previously flagged for fraud      : {graph['previously_flagged']}\n"
-        f"Prior fraud probability on record : {graph['prior_fraud_probability']}\n"
-        f"Number of prior applications      : {graph['prior_application_count']}\n"
-        f"Income-fabrication ring size      : {graph['income_ring_size']} "
-        f"(flagged peers sharing exact declared income)\n"
-        f"Income ring peers                 : {graph['income_ring_peers'] or 'none'}\n"
-        f"Occupation-cluster ring size      : {graph['occupation_ring_size']} "
-        f"(flagged peers in same occupation with similar coverage)\n"
-        f"Occupation ring peers             : {graph['occupation_ring_peers'] or 'none'}\n"
+        f"Cluster size (same area + occ.)   : {graph['cluster_size']} "
+        f"(neighbours sharing CNIC area and occupation cluster)\n"
+        f"Average income in cluster         : {graph['avg_income_in_cluster']}\n"
+        f"Income outlier vs cluster         : {graph['income_outlier']} "
+        f"(declared income > 3× the cluster average)\n"
+        f"Coverage cluster size             : {graph['coverage_cluster_size']} "
+        f"(occupation peers within 50,000 of this coverage amount)\n"
     )
 
     # ── 3. LLM evaluation with Gemini ─────────────────────────────────────────
@@ -316,11 +286,11 @@ You have access to both raw applicant data AND live Memgraph graph intelligence.
 Evaluate fraud probability using a two-tier signal hierarchy:
 
 TIER 1 — GRAPH SIGNALS (highest weight, hard evidence):
-  • previously_flagged = true → strong prior evidence; weight heavily.
-  • income_ring_size > 0 → flagged peers share the exact declared income; classic fabrication ring.
-  • occupation_ring_size > 0 → flagged peers in same occupation targeting similar coverage; coordinated network.
-  • prior_application_count > 2 → policy-stacking / churning behaviour.
-  • prior_fraud_probability > 0.5 → prior evaluation already raised a flag.
+  • income_outlier = true → declared income exceeds 3× the average of neighbours
+    in the same area + occupation cluster; classic income-fabrication signal.
+  • coverage_cluster_size > 0 → occupation peers applying for near-identical
+    coverage amounts; coordinated high-value applications through a shared network.
+  • cluster_size large → a dense area/occupation cluster amplifies ring risk.
 
 TIER 2 — DATA SIGNALS (secondary weight, circumstantial):
   • Coverage-to-income ratio > 15× → moral hazard / over-insurance.
@@ -449,10 +419,15 @@ _workflow = _graph.compile()
 # Public entry points
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _initial_state(applicant_data: Dict[str, Any], policy_data: Dict[str, Any]) -> RiskState:
+def _initial_state(
+    applicant_data: Dict[str, Any],
+    policy_data: Dict[str, Any],
+    tenant_id: str = "",
+) -> RiskState:
     return {
         "applicant":           applicant_data,
         "policy":              policy_data,
+        "tenant_id":           tenant_id,
         "is_valid":            False,
         "validation_errors":   [],
         "medical_score":       0,
@@ -468,15 +443,23 @@ def _initial_state(applicant_data: Dict[str, Any], policy_data: Dict[str, Any]) 
     }
 
 
-def run_evaluation(applicant_data: Dict[str, Any], policy_data: Dict[str, Any]) -> Dict[str, Any]:
-    return dict(_workflow.invoke(_initial_state(applicant_data, policy_data)))
+def run_evaluation(
+    applicant_data: Dict[str, Any],
+    policy_data: Dict[str, Any],
+    tenant_id: str = "",
+) -> Dict[str, Any]:
+    return dict(_workflow.invoke(_initial_state(applicant_data, policy_data, tenant_id)))
 
 
-def stream_evaluation(applicant_data: Dict[str, Any], policy_data: Dict[str, Any]):
+def stream_evaluation(
+    applicant_data: Dict[str, Any],
+    policy_data: Dict[str, Any],
+    tenant_id: str = "",
+):
     """Yields (node_name, node_data) for each completed node, then ('__done__', full_state)."""
-    accumulated = dict(_initial_state(applicant_data, policy_data))
+    accumulated = dict(_initial_state(applicant_data, policy_data, tenant_id))
     for update in _workflow.stream(
-        _initial_state(applicant_data, policy_data), stream_mode="updates"
+        _initial_state(applicant_data, policy_data, tenant_id), stream_mode="updates"
     ):
         node_name = list(update.keys())[0]
         node_data = update[node_name]
