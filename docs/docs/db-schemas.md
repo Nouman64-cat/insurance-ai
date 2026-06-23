@@ -29,11 +29,23 @@ erDiagram
     applicants ||--o{ policies : "applies for"
     applicants ||--o{ risk_assessments : "assessed in"
     applicants ||--o{ artifacts : "attaches"
+    applicants ||--o{ cases : "opens"
 
     policies ||--o{ claims : "has"
     policies ||--|| commissions : "earns"
 
     claims ||--o{ artifacts : "attaches"
+
+    cases ||--o{ case_workflows : "has"
+    cases ||--o{ case_assignments : "has"
+    cases ||--o{ case_histories : "has"
+    cases ||--o{ case_escalations : "has"
+    cases ||--o{ case_comments : "has"
+    cases ||--o{ case_attachments : "has"
+    cases ||--o{ case_audit_trails : "has"
+    users ||--o{ case_assignments : "assigned to"
+    users ||--o{ case_histories : "changed by"
+    users ||--o{ case_comments : "authored by"
 ```
 
 ### `tenants`
@@ -216,20 +228,157 @@ Agent commission record for a sold policy.
 
 ## Case Management tables
 
-Ten tables support the case lifecycle. See the dedicated **[Case Management](/cases)** page for the full schema, ER diagram, status lifecycle, and enum reference.
+Ten tables support the case lifecycle. See the **[Case Management](/cases)** page for the status lifecycle diagram, API endpoints, and enum reference.
 
-| Table | Purpose |
-|---|---|
-| `cases` | Core case record — type, status, priority, channel, SLA, escalation level |
-| `case_statuses` | Reference table for status metadata |
-| `case_workflows` | Current workflow step and state per case |
-| `case_assignments` | User assignments (primary / secondary / escalation) |
-| `case_histories` | Immutable log of every status change and action |
-| `case_priorities` | Priority scores and escalation rule links |
-| `case_escalations` | Escalation records — who, why, when, resolution |
-| `case_comments` | Internal / external comments with visibility control |
-| `case_attachments` | File attachments stored at an external URL |
-| `case_audit_trails` | Field-level compliance log; survives case deletion |
+### `cases`
+
+Core case record — one row per work item (underwriting proposal, claim investigation, or inquiry).
+
+| Column | Type | Notes |
+|---|---|---|
+| `caseld` | UUID PK | Auto-generated |
+| `tenant_id` | UUID FK → `tenants.id` | Indexed |
+| `applicant_id` | UUID FK → `applicants.id` | Indexed |
+| `caseNumber` | VARCHAR(50) | Unique; auto-generated `CASE-YYYY-XXXXXX` |
+| `caseType` | ENUM | `Underwriting`, `Claim`, `Inquiry` |
+| `caseStatus` | ENUM | `New`, `InProgress`, `Pending Documents`, `Under Review`, `Approved`, `Rejected`, `Closed`; default `New` |
+| `priorityLevel` | ENUM | `Low`, `Normal`, `High`, `Critical`; default `Normal` |
+| `sourceChannel` | ENUM | `Agent`, `Bancassurance`, `Online`, `Branch`, `Mobile` |
+| `assignedTeamld` | UUID nullable | Team (no FK — team table not yet defined) |
+| `assignedAgentId` | UUID FK → `users.id` nullable | Currently assigned agent |
+| `slaDeadline` | TIMESTAMP nullable | SLA expiry |
+| `escalationLevel` | INT | Default 0 |
+| `parentCaseld` | UUID FK → `cases.caseld` nullable | Sub-case / linked case |
+| `createdAt` | TIMESTAMP | UTC |
+| `updatedAt` | TIMESTAMP | UTC; updated on every save |
+
+### `case_statuses`
+
+Reference table for status metadata (available for UI rendering).
+
+| Column | Type | Notes |
+|---|---|---|
+| `statusld` | UUID PK | |
+| `statusName` | ENUM | Unique |
+| `statusCategory` | ENUM | `Open`, `Active`, `Pending`, `Terminal` |
+| `isFinalStatus` | BOOLEAN | `true` for `Approved`, `Rejected`, `Closed` |
+| `description` | TEXT nullable | |
+
+### `case_workflows`
+
+Tracks the current step in the workflow engine for a case.
+
+| Column | Type | Notes |
+|---|---|---|
+| `workflowid` | UUID PK | |
+| `caseld` | UUID FK → `cases.caseld` | Indexed |
+| `currentStep` | VARCHAR(100) | e.g. `medical_review` |
+| `previousStep` | VARCHAR(100) nullable | |
+| `workflowState` | ENUM | `Running`, `Paused`, `Completed`, `Failed` |
+| `triggeredBy` | UUID nullable | User who triggered the step |
+| `lastUpdatedAt` | TIMESTAMP | UTC |
+| `workflowVersion` | VARCHAR(20) | Workflow schema version |
+
+### `case_assignments`
+
+One or more user assignments per case.
+
+| Column | Type | Notes |
+|---|---|---|
+| `assignmentld` | UUID PK | |
+| `caseld` | UUID FK → `cases.caseld` | Indexed |
+| `assignedToUserld` | UUID FK → `users.id` | Indexed |
+| `assignedRole` | ENUM | `Underwriter`, `Analyst`, `Manager`, `Coordinator`, `Reviewer` |
+| `assignmentType` | ENUM | `Primary`, `Secondary`, `Escalation`, `Temporary` |
+| `assignmentStatus` | ENUM | `Active`, `Completed`, `Transferred`, `Revoked`; default `Active` |
+| `workloadPercentage` | FLOAT | Default `100.0` |
+| `assignedAt` | TIMESTAMP | UTC |
+
+### `case_histories`
+
+Immutable log of every action taken on a case. Written automatically on status changes.
+
+| Column | Type | Notes |
+|---|---|---|
+| `historyld` | UUID PK | |
+| `caseld` | UUID FK → `cases.caseld` | Indexed |
+| `actionType` | ENUM | `StatusChange`, `Assignment`, `Comment`, `Escalation`, `DocumentUpload`, `Decision` |
+| `fromStatus` | VARCHAR(50) nullable | Previous status |
+| `toStatus` | VARCHAR(50) nullable | New status |
+| `changedBy` | UUID FK → `users.id` | Indexed |
+| `changeTimestamp` | TIMESTAMP | UTC |
+| `systemGeneratedFlag` | BOOLEAN | `true` for automated actions |
+
+### `case_priorities`
+
+Reference table mapping priority levels to scores.
+
+| Column | Type | Notes |
+|---|---|---|
+| `priorityld` | UUID PK | |
+| `priorityLevel` | ENUM | Unique |
+| `priorityScore` | INT | Higher = more urgent |
+| `escalationRuleld` | UUID nullable | FK to a future escalation-rules table |
+
+### `case_escalations`
+
+Records when and why a case was escalated and to whom.
+
+| Column | Type | Notes |
+|---|---|---|
+| `escalationld` | UUID PK | |
+| `caseld` | UUID FK → `cases.caseld` | Indexed |
+| `escalationLevel` | INT | 1, 2, 3… |
+| `escalationReason` | TEXT | Required |
+| `escalatedTo` | UUID FK → `users.id` | Indexed |
+| `escalationTimestamp` | TIMESTAMP | UTC |
+| `resolutionStatus` | ENUM | `Open`, `Resolved`, `Pending`, `Closed`; default `Open` |
+
+### `case_comments`
+
+Internal and external comments with visibility control.
+
+| Column | Type | Notes |
+|---|---|---|
+| `commentld` | UUID PK | |
+| `caseld` | UUID FK → `cases.caseld` | Indexed |
+| `authorld` | UUID FK → `users.id` | Indexed |
+| `commentText` | TEXT | |
+| `commentType` | ENUM | `Internal`, `External` |
+| `visibilityLevel` | ENUM | `Private`, `Team`, `All` |
+| `createdAt` | TIMESTAMP | UTC |
+
+### `case_attachments`
+
+File attachments stored at an external URL (S3 / object storage).
+
+| Column | Type | Notes |
+|---|---|---|
+| `attachmentid` | UUID PK | |
+| `caseld` | UUID FK → `cases.caseld` | Indexed |
+| `fileName` | VARCHAR(255) | |
+| `fileType` | VARCHAR(50) | MIME type or extension |
+| `fileSize` | INT nullable | Bytes |
+| `storageUrl` | VARCHAR(500) | External storage URL |
+| `uploadedBy` | UUID FK → `users.id` | Indexed |
+| `uploadedAt` | TIMESTAMP | UTC |
+| `documentClassification` | ENUM | `Medical`, `Financial`, `Identity`, `Legal`, `Other` |
+
+### `case_audit_trails`
+
+Field-level compliance log. The `caseld` column is intentionally **not** a FK so audit records survive case deletion.
+
+| Column | Type | Notes |
+|---|---|---|
+| `auditld` | UUID PK | |
+| `caseld` | UUID indexed | No FK constraint — survives case deletion |
+| `actionPerformed` | VARCHAR(200) | e.g. `"Created new case"` |
+| `entityChanged` | VARCHAR(100) | e.g. `"Case"`, `"CaseStatus"` |
+| `previousValue` | VARCHAR nullable | Before value |
+| `newValue` | VARCHAR nullable | After value |
+| `performedBy` | UUID FK → `users.id` | Indexed |
+| `timestamp` | TIMESTAMP | UTC |
+| `ipAddress` | VARCHAR(45) nullable | For future request-context capture |
 
 ---
 
