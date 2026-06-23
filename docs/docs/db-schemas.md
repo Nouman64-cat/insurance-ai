@@ -216,55 +216,6 @@ Agent commission record for a sold policy.
 
 ## Memgraph (Graph DB)
 
-Memgraph is used exclusively by the **Risk Engine** for fraud ring detection. It is not used for general data storage.
+Memgraph is used exclusively by the **Risk Engine** for fraud ring detection. It stores one node type (`Applicant`) with two relationship types (`SAME_AREA`, `SAME_OCCUPATION_CLUSTER`), all scoped per tenant.
 
-### How data gets into Memgraph
-
-`graph_writer.py` (Risk Engine) runs **fire-and-forget after every successful evaluation** — both on the sync HTTP path (`main.py`) and the async Kafka path (`consumer.py`). It uses `MERGE` (not `CREATE`) so re-evaluating the same CNIC within a tenant updates the node in place instead of duplicating it.
-
-### Node types
-
-| Label | Properties | Description |
-|---|---|---|
-| `Applicant` | `cnic`, `tenant_id`, `occupation`, `declared_income`, `coverage_amount`, `medical_score`, `financial_score`, `fraud_probability`, `evaluated_at` | Written after each evaluation; tenant-scoped via `tenant_id` |
-
-### Relationships
-
-All relationships are tenant-scoped (both sides must share the same `tenant_id`).
-
-| Relationship | From → To | Created when |
-|---|---|---|
-| `SAME_AREA` | `Applicant ↔ Applicant` | Both applicants share the same 5-digit CNIC prefix (same geographic area) |
-| `SAME_OCCUPATION_CLUSTER` | `Applicant ↔ Applicant` | Both applicants share the same `occupation` value |
-
-### Fraud signals detected
-
-The `fraud_check` LangGraph node runs two Cypher queries against these relationships:
-
-| Query | Signal | Detection logic |
-|---|---|---|
-| `_INCOME_OUTLIER_QUERY` | **Income outlier** | Applicant's `declared_income` exceeds 3× the average income of neighbours connected by both `SAME_AREA` and `SAME_OCCUPATION_CLUSTER` — classic income-fabrication signal |
-| `_COVERAGE_CLUSTER_QUERY` | **Coverage cluster** | Occupation-cluster peers applying for coverage within ±50,000 PKR of the current request — coordinated high-value applications |
-
-Both results are formatted into a text block and passed to Gemini as **Tier 1 (hard evidence)** signals, which the LLM weights more heavily than the raw data signals. If Memgraph is unreachable both queries fall back to empty results so the workflow is never blocked.
-
-### Useful Cypher for Memgraph Lab (`http://localhost:3001`)
-
-```cypher
-// All applicants ordered by fraud probability
-MATCH (a:Applicant)
-RETURN a.cnic, a.tenant_id, a.fraud_probability, a.occupation, a.declared_income
-ORDER BY a.fraud_probability DESC;
-
-// Income outliers — applicants earning 3× their cluster average
-MATCH (a:Applicant)-[:SAME_AREA]->(n:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(a)
-WITH a, avg(n.declared_income) AS cluster_avg
-WHERE cluster_avg > 0 AND a.declared_income > cluster_avg * 3
-RETURN a.cnic, a.declared_income, cluster_avg
-ORDER BY a.declared_income / cluster_avg DESC;
-
-// Coverage clusters — same-occupation peers with near-identical coverage
-MATCH (a:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(peer:Applicant)
-WHERE abs(peer.coverage_amount - a.coverage_amount) < 50000
-RETURN a.cnic, a.coverage_amount, collect(peer.cnic) AS cluster_peers;
-```
+For the full picture — graph schema, Cypher queries, LLM prompt tiers, fallback behaviour, and Memgraph Lab examples — see the dedicated **[Fraud Detection Layer](/fraud-layer)** page.
