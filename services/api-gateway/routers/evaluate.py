@@ -174,6 +174,7 @@ async def evaluate_stream(
                     "POST",
                     f"{settings.risk_engine_url}/evaluate/stream",
                     json={"applicant": applicant_payload, "policy": policy_payload},
+                    headers={"X-Tenant-Id": str(tenant_id)},
                 ) as risk_resp:
                     if risk_resp.status_code != 200:
                         yield f"data: {json.dumps({'type': 'error', 'message': f'Risk engine error: {risk_resp.status_code}'})}\n\n"
