@@ -31,8 +31,10 @@ sequenceDiagram
         LLM-->>RE: { medical_score, medical_reasons }
         RE->>LLM: financial_scoring prompt
         LLM-->>RE: { financial_score, financial_reasons }
-        RE->>MG: Cypher ring query (cnic, income, occupation, coverage)
-        MG-->>RE: ring intelligence (income_ring, occupation_ring, prior flags)
+        RE->>MG: _INCOME_OUTLIER_QUERY (cnic, tenant_id)
+        MG-->>RE: cluster_size, avg_income, income_outlier flag
+        RE->>MG: _COVERAGE_CLUSTER_QUERY (cnic, tenant_id)
+        MG-->>RE: coverage_cluster_size
         RE->>LLM: fraud_check prompt + graph context
         LLM-->>RE: { fraud_probability, fraud_reasons }
         RE->>RE: decision_aggregation (deterministic)<br/>composite = 0.40×medical + 0.40×financial + 0.20×fraud×100
@@ -44,6 +46,7 @@ sequenceDiagram
     GW->>PG: INSERT policy
     GW->>PG: INSERT risk_assessment
     PG-->>GW: assessment_id, applicant_id, policy_id
+    RE->>MG: graph_writer.py — MERGE Applicant node + SAME_AREA / SAME_OCCUPATION_CLUSTER edges
 
     GW-->>C: EvaluateResponse { scores, ai_decision, reasons, ... }
 ```
@@ -67,11 +70,12 @@ sequenceDiagram
 
     note over KF,RE: async — decoupled from HTTP request
     KF->>RE: consumer reads ProposalSubmittedEvent
-    RE->>MG: Cypher ring query
-    MG-->>RE: ring intelligence
+    RE->>MG: Income outlier + coverage cluster queries (tenant-scoped)
+    MG-->>RE: graph intelligence
     RE->>LLM: scoring prompts (medical, financial, fraud)
     LLM-->>RE: scores + reasons
     RE->>RE: decision_aggregation
+    RE->>MG: graph_writer.py — MERGE Applicant node + edges (fire-and-forget)
     RE->>KF: RiskEvaluatedEvent → insurance.risk.evaluated.v1
 ```
 
@@ -123,7 +127,7 @@ flowchart TD
 | `validate_input` | Deterministic | `applicant`, `policy` | `is_valid`, `validation_errors` |
 | `medical_scoring` | LLM (structured output) | `applicant` | `medical_score` (0–100), `medical_reasons` |
 | `financial_scoring` | LLM (structured output) | `applicant`, `policy` | `financial_score` (0–100), `financial_reasons` |
-| `fraud_detection` | Memgraph + LLM | `applicant`, `policy` + graph context | `fraud_probability` (0.0–1.0), `fraud_reasons` |
+| `fraud_detection` | Memgraph + LLM | `applicant`, `policy`, `tenant_id` + graph context | `fraud_probability` (0.0–1.0), `fraud_reasons` |
 | `decision_aggregation` | Deterministic | all scores + reasons | `composite_risk_score`, `ai_decision`, `reasons` |
 
 ### Validation rules (validate_input)
