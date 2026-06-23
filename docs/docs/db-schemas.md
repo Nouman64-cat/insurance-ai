@@ -214,6 +214,25 @@ Agent commission record for a sold policy.
 
 ---
 
+## Case Management tables
+
+Ten tables support the case lifecycle. See the dedicated **[Case Management](/cases)** page for the full schema, ER diagram, status lifecycle, and enum reference.
+
+| Table | Purpose |
+|---|---|
+| `cases` | Core case record — type, status, priority, channel, SLA, escalation level |
+| `case_statuses` | Reference table for status metadata |
+| `case_workflows` | Current workflow step and state per case |
+| `case_assignments` | User assignments (primary / secondary / escalation) |
+| `case_histories` | Immutable log of every status change and action |
+| `case_priorities` | Priority scores and escalation rule links |
+| `case_escalations` | Escalation records — who, why, when, resolution |
+| `case_comments` | Internal / external comments with visibility control |
+| `case_attachments` | File attachments stored at an external URL |
+| `case_audit_trails` | Field-level compliance log; survives case deletion |
+
+---
+
 ## Memgraph (Graph DB)
 
 Memgraph is used exclusively by the **Risk Engine** for fraud ring detection. It stores one node type (`Applicant`) with two relationship types (`SAME_AREA`, `SAME_OCCUPATION_CLUSTER`), all scoped per tenant.

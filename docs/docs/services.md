@@ -1,7 +1,7 @@
 ---
 id: services
 title: Services Reference
-sidebar_position: 7
+sidebar_position: 8
 ---
 
 # Services Reference
@@ -29,6 +29,14 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 | `GET` | `/tenants/{tenant_id}/users/{user_id}` | Get a user (Bearer required) |
 | `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update a user (admin only, Bearer required) |
 | `DELETE` | `/tenants/{tenant_id}/users/{user_id}` | Delete a user (admin only, Bearer required) |
+| `POST` | `/tenants/{tenant_id}/cases` | Create a case (Bearer required) |
+| `GET` | `/tenants/{tenant_id}/cases` | List cases — filter by `applicant_id`, `status`, `assigned_user` (Bearer required) |
+| `GET` | `/tenants/{tenant_id}/cases/{case_id}` | Get a case (Bearer required) |
+| `PUT` | `/tenants/{tenant_id}/cases/{case_id}` | Update a case (Bearer required) |
+| `DELETE` | `/tenants/{tenant_id}/cases/{case_id}` | Delete a case + all child records (Bearer required) |
+| `PATCH` | `/tenants/{tenant_id}/cases/{case_id}/status` | Update case status — writes audit history (Bearer required) |
+| `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user (Bearer required) |
+| `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add a comment (Bearer required) |
 | `POST` | `/tenants/{tenant_id}/applicants` | Create an applicant (admin only, Bearer required) |
 | `GET` | `/tenants/{tenant_id}/applicants` | List applicants (admin only, Bearer required) |
 | `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get an applicant (Bearer required) |
@@ -66,6 +74,14 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 | `GET` | `/tenants/{tenant_id}/users/{user_id}` | Get user |
 | `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update user |
 | `DELETE` | `/tenants/{tenant_id}/users/{user_id}` | Delete user |
+| `POST` | `/tenants/{tenant_id}/cases` | Create case — auto-generates `CASE-YYYY-XXXXXX` number, writes audit trail |
+| `GET` | `/tenants/{tenant_id}/cases` | List cases — filterable by `applicant_id`, `status`, `assigned_user` |
+| `GET` | `/tenants/{tenant_id}/cases/{case_id}` | Get case |
+| `PUT` | `/tenants/{tenant_id}/cases/{case_id}` | Update case fields |
+| `DELETE` | `/tenants/{tenant_id}/cases/{case_id}` | Delete case and all children (history, audit, comments, assignments) |
+| `PATCH` | `/tenants/{tenant_id}/cases/{case_id}/status` | Change status — creates `CaseHistory` entry |
+| `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user |
+| `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add internal or external comment |
 | `POST` | `/tenants/{tenant_id}/applicants` | Create applicant (Admin only; enforces per-tenant CNIC uniqueness) |
 | `GET` | `/tenants/{tenant_id}/applicants` | List all applicants for a tenant (Admin only) |
 | `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get applicant by ID (Admin only) |
