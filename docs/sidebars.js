@@ -5,6 +5,7 @@ const sidebars = {
     'architecture',
     'stack',
     'db-schemas',
+    'fraud-layer',
     'data-flow',
     'services',
   ],
