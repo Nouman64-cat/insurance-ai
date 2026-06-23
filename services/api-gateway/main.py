@@ -14,6 +14,7 @@ prototype runnable without standing up every microservice.
 import os
 import httpx
 from contextlib import asynccontextmanager
+from typing import List
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
@@ -25,6 +26,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import create_db_and_tables, get_session
 from kafka_producer import create_producer
 from routers.evaluate import router as evaluate_router
+from schemas import (
+    CurrentUserResponse,
+    RoleRead,
+    TokenResponse,
+    UserCreate,
+    UserRead,
+    UserUpdate,
+)
 from shared.models.core import Tenant
 
 
@@ -94,85 +103,135 @@ app.include_router(evaluate_router)
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
 
-@app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+
+async def _proxy_to_tenant(request: Request, url: str) -> Response:
+    async with httpx.AsyncClient() as client:
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        body = await request.body()
+        try:
+            resp = await client.request(
+                method=request.method,
+                url=url,
+                headers=headers,
+                params=request.query_params,
+                content=body,
+                timeout=30.0,
+            )
+            return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+        except httpx.HTTPError as exc:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Error connecting to tenant service: {exc}")
+
+
+# ── Authentication ─────────────────────────────────────────────────────────────
+
+@app.post(
+    "/auth/token",
+    tags=["Authentication"],
+    response_model=TokenResponse,
+    summary="Login",
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/x-www-form-urlencoded": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "username": {"type": "string", "description": "User email"},
+                            "password": {"type": "string", "format": "password"},
+                        },
+                        "required": ["username", "password"],
+                    }
+                }
+            },
+            "required": True,
+        }
+    },
+)
+async def login(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/auth/token")
+
+
+@app.get("/auth/me", tags=["Authentication"], response_model=CurrentUserResponse, summary="Get current user")
+async def get_current_user(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/auth/me")
+
+
+# ── Users ──────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/users",
+    tags=["Users"],
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a user",
+)
+async def create_user(tenant_id: UUID, body: UserCreate, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users")
+
+
+@app.get(
+    "/tenants/{tenant_id}/users/",
+    tags=["Users"],
+    response_model=List[UserRead],
+    summary="List users (admin only)",
+)
+async def list_users(tenant_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/")
+
+
+@app.get(
+    "/tenants/{tenant_id}/users/{user_id}",
+    tags=["Users"],
+    response_model=UserRead,
+    summary="Get a user by ID",
+)
+async def get_user(tenant_id: UUID, user_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/{user_id}")
+
+
+@app.patch(
+    "/tenants/{tenant_id}/users/{user_id}",
+    tags=["Users"],
+    response_model=UserRead,
+    summary="Update a user (admin only)",
+)
+async def update_user(tenant_id: UUID, user_id: UUID, body: UserUpdate, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/{user_id}")
+
+
+@app.delete(
+    "/tenants/{tenant_id}/users/{user_id}",
+    tags=["Users"],
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a user (admin only)",
+)
+async def delete_user(tenant_id: UUID, user_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/{user_id}")
+
+
+# ── Roles ──────────────────────────────────────────────────────────────────────
+
+@app.get("/roles", tags=["Roles"], response_model=List[RoleRead], summary="List all roles")
+async def list_roles(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
+
+
+# ── Catch-all proxy (hidden from Swagger) ──────────────────────────────────────
+
+@app.api_route("/auth/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_auth(path: str, request: Request):
-    async with httpx.AsyncClient() as client:
-        headers = dict(request.headers)
-        headers.pop("host", None)
-        body = await request.body()
-        url = f"{TENANT_SERVICE_URL}/auth/{path}"
-        try:
-            resp = await client.request(
-                method=request.method,
-                url=url,
-                headers=headers,
-                params=request.query_params,
-                content=body,
-                timeout=30.0
-            )
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                headers=dict(resp.headers)
-            )
-        except httpx.HTTPError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error connecting to tenant service: {exc}"
-            )
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/auth/{path}")
 
-@app.api_route("/tenants/{tenant_id}/users{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
+
+@app.api_route("/tenants/{tenant_id}/users{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_tenant_users(tenant_id: UUID, path: str, request: Request):
-    async with httpx.AsyncClient() as client:
-        headers = dict(request.headers)
-        headers.pop("host", None)
-        body = await request.body()
-        url = f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users{path}"
-        try:
-            resp = await client.request(
-                method=request.method,
-                url=url,
-                headers=headers,
-                params=request.query_params,
-                content=body,
-                timeout=30.0
-            )
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                headers=dict(resp.headers)
-            )
-        except httpx.HTTPError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error connecting to tenant service: {exc}"
-            )
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users{path}")
 
 
-@app.api_route("/roles", methods=["GET", "OPTIONS"])
+@app.api_route("/roles", methods=["GET", "OPTIONS"], include_in_schema=False)
 async def proxy_roles(request: Request):
-    async with httpx.AsyncClient() as client:
-        headers = dict(request.headers)
-        headers.pop("host", None)
-        url = f"{TENANT_SERVICE_URL}/roles"
-        try:
-            resp = await client.request(
-                method=request.method,
-                url=url,
-                headers=headers,
-                params=request.query_params,
-                timeout=30.0
-            )
-            return Response(
-                content=resp.content,
-                status_code=resp.status_code,
-                headers=dict(resp.headers)
-            )
-        except httpx.HTTPError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Error connecting to tenant service: {exc}"
-            )
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

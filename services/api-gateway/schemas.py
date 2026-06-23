@@ -16,6 +16,55 @@ from shared.models.core import Gender
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Auth / User / Role — gateway-side mirrors for Swagger documentation
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str
+
+
+class CurrentUserResponse(BaseModel):
+    id: UUID
+    email: str
+    full_name: str
+    tenant_id: UUID
+    role_id: UUID
+    role_name: str
+    is_active: bool
+
+
+class UserCreate(BaseModel):
+    email: str
+    password: str
+    full_name: str
+    role_id: UUID
+
+
+class UserRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    role_id: UUID
+    email: str
+    full_name: str
+    is_active: bool
+    created_at: datetime
+
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    password: Optional[str] = None
+
+
+class RoleRead(BaseModel):
+    id: UUID
+    name: str
+    description: str
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Request bodies
 # ─────────────────────────────────────────────────────────────────────────────
 
