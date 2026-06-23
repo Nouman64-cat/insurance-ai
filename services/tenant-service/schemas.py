@@ -1,8 +1,9 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, field_validator
+from shared.models.core import UserStatus, Gender
 
 
 # ── Tenant ────────────────────────────────────────────────────────────────────
@@ -45,10 +46,19 @@ class RoleRead(BaseModel):
 # ── User ──────────────────────────────────────────────────────────────────────
 
 class UserCreate(BaseModel):
+    username: str
     email: EmailStr
     password: str
-    full_name: str
     role_id: UUID
+    
+    # Profile fields
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
 
     @field_validator("password")
     @classmethod
@@ -63,18 +73,39 @@ class UserRead(BaseModel):
     tenant_id: UUID
     role_id: UUID
     email: str
+    username: str
     full_name: str
     is_active: bool
+    status: UserStatus
     created_at: datetime
+
+    # Profile fields
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
 
     model_config = {"from_attributes": True}
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
     role_id: Optional[UUID] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    status: Optional[UserStatus] = None
+
+    # Profile fields
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
 
     @field_validator("password")
     @classmethod
@@ -82,3 +113,53 @@ class UserUpdate(BaseModel):
         if v is not None and len(v) < 8:
             raise ValueError("password must be at least 8 characters")
         return v
+
+
+# ── Applicant ─────────────────────────────────────────────────────────────────
+
+from enum import Enum
+
+class MaritalStatus(str, Enum):
+    SINGLE   = "Single"
+    MARRIED  = "Married"
+    DIVORCED = "Divorced"
+    WIDOWED  = "Widowed"
+
+class ApplicantCreate(BaseModel):
+    cnic:             str          # e.g. "35201-1234567-1"
+    first_name:       str
+    last_name:        str
+    date_of_birth:    date
+    gender:           Gender       # "Male" | "Female" | "Other"
+    marital_status:   Optional[MaritalStatus] = None
+    nationality:      str = "Pakistani"
+    occupation:       str
+    declared_income:  float        # annual PKR
+    details:          Optional[dict] = None
+
+class ApplicantRead(BaseModel):
+    id:               UUID
+    tenant_id:        UUID
+    cnic:             str
+    name:             str
+    dob:              date
+    gender:           Gender
+    occupation:       str
+    declared_income:  float
+    created_at:       datetime
+    details:          Optional[dict] = None
+
+    model_config = {"from_attributes": True}
+
+class ApplicantUpdate(BaseModel):
+    cnic:             Optional[str] = None
+    first_name:       Optional[str] = None
+    last_name:        Optional[str] = None
+    date_of_birth:    Optional[date] = None
+    gender:           Optional[Gender] = None
+    marital_status:   Optional[MaritalStatus] = None
+    nationality:      Optional[str] = None
+    occupation:       Optional[str] = None
+    declared_income:  Optional[float] = None
+    details:          Optional[dict] = None
+

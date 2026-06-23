@@ -38,14 +38,78 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v1 — add is_active to tenants",
         "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE",
     ),
-    # Next migration goes here, e.g.:
-    # (
-    #     "v2 — add phone to users",
-    #     "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(30)",
-    # ),
+    (
+        "v2a — add username to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS username VARCHAR(255)",
+    ),
+    (
+        "v2b — backfill username",
+        "UPDATE users SET username = email WHERE username IS NULL",
+    ),
+    (
+        "v2c — set username not null",
+        "ALTER TABLE users ALTER COLUMN username SET NOT NULL",
+    ),
+    (
+        "v2d — drop constraint if exists",
+        "ALTER TABLE users DROP CONSTRAINT IF EXISTS uq_users_username",
+    ),
+    (
+        "v2e — add unique constraint",
+        "ALTER TABLE users ADD CONSTRAINT uq_users_username UNIQUE (username)",
+    ),
+    (
+        "v2f — add user_type_id to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS user_type_id UUID REFERENCES user_types(id)",
+    ),
+    (
+        "v2g — add status to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE'",
+    ),
+    (
+        "v2h — add is_verified to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_verified BOOLEAN NOT NULL DEFAULT FALSE",
+    ),
+    (
+        "v2i — add failed_login_count to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS failed_login_count INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "v2j — add last_login to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login TIMESTAMP WITH TIME ZONE",
+    ),
+    (
+        "v2k — add is_deleted to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT FALSE",
+    ),
+    (
+        "v2l — add updated_at to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
+
+async def _seed_user_types(conn) -> None:
+    from uuid import uuid4
+    from datetime import datetime
+
+    user_types = [
+        ("Admin", "System administrator with full permissions"),
+        ("Underwriter", "Insurance underwriter evaluating risk"),
+        ("Agent", "Insurance agent managing clients and policies"),
+        ("BancassuranceOfficer", "Bancassurance officer selling products through bank channel")
+    ]
+    for name, desc in user_types:
+        res = await conn.execute(text("SELECT id FROM user_types WHERE type_name = :name"), {"name": name})
+        row = res.first()
+        if not row:
+            await conn.execute(
+                text("INSERT INTO user_types (id, type_name, description, is_active, created_at) "
+                     "VALUES (:id, :name, :desc, true, :created_at)"),
+                {"id": str(uuid4()), "name": name, "desc": desc, "created_at": datetime.utcnow()}
+            )
+
 
 async def run_migrations() -> None:
     import shared.models.core  # noqa: F401 — registers all SQLModel metadata
@@ -59,6 +123,10 @@ async def run_migrations() -> None:
         for label, sql in MIGRATIONS:
             await conn.execute(text(sql))
             log.info("applied: %s", label)
+
+        # 3. Seed user types.
+        await _seed_user_types(conn)
+        log.info("seed_user_types complete")
 
     log.info("all migrations complete")
 

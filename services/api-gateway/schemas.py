@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from shared.models.core import Gender
+from shared.models.core import Gender, UserStatus
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -35,10 +35,17 @@ class CurrentUserResponse(BaseModel):
 
 
 class UserCreate(BaseModel):
+    username: str
     email: str
     password: str
-    full_name: str
     role_id: UUID
+    first_name: str
+    last_name: str
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
 
 
 class UserRead(BaseModel):
@@ -46,16 +53,33 @@ class UserRead(BaseModel):
     tenant_id: UUID
     role_id: UUID
     email: str
+    username: str
     full_name: str
     is_active: bool
+    status: UserStatus
     created_at: datetime
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
 
 
 class UserUpdate(BaseModel):
-    full_name: Optional[str] = None
     role_id: Optional[UUID] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    status: Optional[UserStatus] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
 
 
 class RoleRead(BaseModel):
