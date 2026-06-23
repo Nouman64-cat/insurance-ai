@@ -326,3 +326,276 @@ class Commission(SQLModel, table=True):
     # Policy.commission is Optional[Commission] (not a list) → SQLModel sets uselist=False.
     tenant: Optional[Tenant] = Relationship(back_populates="commissions")
     policy: Optional[Policy] = Relationship(back_populates="commission")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Case Management Enums
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CaseTypeEnum(str, Enum):
+    UNDERWRITING = "Underwriting"
+    CLAIM = "Claim"
+    INQUIRY = "Inquiry"
+
+class CaseStatusEnum(str, Enum):
+    NEW = "New"
+    IN_PROGRESS = "InProgress"
+    PENDING_DOCUMENTS = "Pending Documents"
+    UNDER_REVIEW = "Under Review"
+    APPROVED = "Approved"
+    REJECTED = "Rejected"
+    CLOSED = "Closed"
+
+class CasePriorityEnum(str, Enum):
+    LOW = "Low"
+    NORMAL = "Normal"
+    HIGH = "High"
+    CRITICAL = "Critical"
+
+class SourceChannelEnum(str, Enum):
+    AGENT = "Agent"
+    BANCASSURANCE = "Bancassurance"
+    ONLINE = "Online"
+    BRANCH = "Branch"
+    MOBILE = "Mobile"
+
+class StatusCategoryEnum(str, Enum):
+    OPEN = "Open"
+    ACTIVE = "Active"
+    PENDING = "Pending"
+    TERMINAL = "Terminal"
+
+class WorkflowStateEnum(str, Enum):
+    RUNNING = "Running"
+    PAUSED = "Paused"
+    COMPLETED = "Completed"
+    FAILED = "Failed"
+
+class AssignedRoleEnum(str, Enum):
+    UNDERWRITER = "Underwriter"
+    ANALYST = "Analyst"
+    MANAGER = "Manager"
+    COORDINATOR = "Coordinator"
+    REVIEWER = "Reviewer"
+
+class AssignmentTypeEnum(str, Enum):
+    PRIMARY = "Primary"
+    SECONDARY = "Secondary"
+    ESCALATION = "Escalation"
+    TEMPORARY = "Temporary"
+
+class AssignmentStatusEnum(str, Enum):
+    ACTIVE = "Active"
+    COMPLETED = "Completed"
+    TRANSFERRED = "Transferred"
+    REVOKED = "Revoked"
+
+class ActionTypeEnum(str, Enum):
+    STATUS_CHANGE = "StatusChange"
+    ASSIGNMENT = "Assignment"
+    COMMENT = "Comment"
+    ESCALATION = "Escalation"
+    DOCUMENT_UPLOAD = "DocumentUpload"
+    DECISION = "Decision"
+
+class ResolutionStatusEnum(str, Enum):
+    OPEN = "Open"
+    RESOLVED = "Resolved"
+    PENDING = "Pending"
+    CLOSED = "Closed"
+
+class CommentTypeEnum(str, Enum):
+    INTERNAL = "Internal"
+    EXTERNAL = "External"
+
+class VisibilityLevelEnum(str, Enum):
+    PRIVATE = "Private"
+    TEAM = "Team"
+    ALL = "All"
+
+class DocumentClassificationEnum(str, Enum):
+    MEDICAL = "Medical"
+    FINANCIAL = "Financial"
+    IDENTITY = "Identity"
+    LEGAL = "Legal"
+    OTHER = "Other"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Case
+# ─────────────────────────────────────────────────────────────────────────────
+class Case(SQLModel, table=True):
+    __tablename__ = "cases"
+
+    caseld: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
+    applicant_id: UUID = Field(foreign_key="applicants.id", index=True)
+    caseNumber: str = Field(index=True, unique=True, max_length=50)
+    caseType: CaseTypeEnum = Field(max_length=50)
+    caseStatus: CaseStatusEnum = Field(default=CaseStatusEnum.NEW, max_length=50)
+    priorityLevel: CasePriorityEnum = Field(default=CasePriorityEnum.NORMAL, max_length=50)
+    sourceChannel: SourceChannelEnum = Field(max_length=50)
+    createdAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updatedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    assignedTeamld: Optional[UUID] = Field(default=None, nullable=True)
+    assignedAgentId: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+    slaDeadline: Optional[datetime] = Field(default=None, nullable=True)
+    escalationLevel: int = Field(default=0)
+    parentCaseld: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", nullable=True)
+
+    # Relationships
+    workflows: List["CaseWorkflow"] = Relationship(back_populates="case")
+    assignments: List["CaseAssignment"] = Relationship(back_populates="case")
+    history: List["CaseHistory"] = Relationship(back_populates="case")
+    escalations: List["CaseEscalation"] = Relationship(back_populates="case")
+    comments: List["CaseComment"] = Relationship(back_populates="case")
+    attachments: List["CaseAttachment"] = Relationship(back_populates="case")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. CaseStatus
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseStatus(SQLModel, table=True):
+    __tablename__ = "case_statuses"
+
+    statusld: UUID = Field(default_factory=uuid4, primary_key=True)
+    statusName: CaseStatusEnum = Field(max_length=50, unique=True)
+    statusCategory: StatusCategoryEnum = Field(max_length=50)
+    isFinalStatus: bool = Field(default=False)
+    description: Optional[str] = Field(default=None, nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3. CaseWorkflow
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseWorkflow(SQLModel, table=True):
+    __tablename__ = "case_workflows"
+
+    workflowid: UUID = Field(default_factory=uuid4, primary_key=True)
+    caseld: UUID = Field(foreign_key="cases.caseld", index=True)
+    currentStep: str = Field(max_length=100)
+    previousStep: Optional[str] = Field(default=None, max_length=100, nullable=True)
+    workflowState: WorkflowStateEnum = Field(max_length=50)
+    triggeredBy: Optional[UUID] = Field(default=None, nullable=True)
+    lastUpdatedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    workflowVersion: str = Field(max_length=20)
+
+    case: Optional[Case] = Relationship(back_populates="workflows")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 4. CaseAssignment
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseAssignment(SQLModel, table=True):
+    __tablename__ = "case_assignments"
+
+    assignmentld: UUID = Field(default_factory=uuid4, primary_key=True)
+    caseld: UUID = Field(foreign_key="cases.caseld", index=True)
+    assignedToUserld: UUID = Field(foreign_key="users.id", index=True)
+    assignedRole: AssignedRoleEnum = Field(max_length=50)
+    assignmentType: AssignmentTypeEnum = Field(max_length=50)
+    assignedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    workloadPercentage: float = Field(default=100.0)
+    assignmentStatus: AssignmentStatusEnum = Field(default=AssignmentStatusEnum.ACTIVE, max_length=50)
+
+    case: Optional[Case] = Relationship(back_populates="assignments")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 5. CaseHistory
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseHistory(SQLModel, table=True):
+    __tablename__ = "case_histories"
+
+    historyld: UUID = Field(default_factory=uuid4, primary_key=True)
+    caseld: UUID = Field(foreign_key="cases.caseld", index=True)
+    actionType: ActionTypeEnum = Field(max_length=50)
+    fromStatus: Optional[str] = Field(default=None, max_length=50, nullable=True)
+    toStatus: Optional[str] = Field(default=None, max_length=50, nullable=True)
+    changedBy: UUID = Field(foreign_key="users.id", index=True)
+    changeTimestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    systemGeneratedFlag: bool = Field(default=False)
+
+    case: Optional[Case] = Relationship(back_populates="history")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. CasePriority
+# ─────────────────────────────────────────────────────────────────────────────
+class CasePriority(SQLModel, table=True):
+    __tablename__ = "case_priorities"
+
+    priorityld: UUID = Field(default_factory=uuid4, primary_key=True)
+    priorityLevel: CasePriorityEnum = Field(max_length=50, unique=True)
+    priorityScore: int = Field()
+    escalationRuleld: Optional[UUID] = Field(default=None, nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 7. CaseEscalation
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseEscalation(SQLModel, table=True):
+    __tablename__ = "case_escalations"
+
+    escalationld: UUID = Field(default_factory=uuid4, primary_key=True)
+    caseld: UUID = Field(foreign_key="cases.caseld", index=True)
+    escalationLevel: int = Field()
+    escalationReason: str = Field(nullable=False)
+    escalatedTo: UUID = Field(foreign_key="users.id", index=True)
+    escalationTimestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    resolutionStatus: ResolutionStatusEnum = Field(default=ResolutionStatusEnum.OPEN, max_length=50)
+
+    case: Optional[Case] = Relationship(back_populates="escalations")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 8. CaseComment
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseComment(SQLModel, table=True):
+    __tablename__ = "case_comments"
+
+    commentld: UUID = Field(default_factory=uuid4, primary_key=True)
+    caseld: UUID = Field(foreign_key="cases.caseld", index=True)
+    authorld: UUID = Field(foreign_key="users.id", index=True)
+    commentText: str = Field(nullable=False)
+    commentType: CommentTypeEnum = Field(max_length=50)
+    createdAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    visibilityLevel: VisibilityLevelEnum = Field(max_length=50)
+
+    case: Optional[Case] = Relationship(back_populates="comments")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 9. CaseAttachment
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseAttachment(SQLModel, table=True):
+    __tablename__ = "case_attachments"
+
+    attachmentid: UUID = Field(default_factory=uuid4, primary_key=True)
+    caseld: UUID = Field(foreign_key="cases.caseld", index=True)
+    fileName: str = Field(max_length=255)
+    fileType: str = Field(max_length=50)
+    fileSize: Optional[int] = Field(default=None, nullable=True)
+    storageUrl: str = Field(max_length=500)
+    uploadedBy: UUID = Field(foreign_key="users.id", index=True)
+    uploadedAt: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    documentClassification: DocumentClassificationEnum = Field(max_length=50)
+
+    case: Optional[Case] = Relationship(back_populates="attachments")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10. CaseAuditTrail
+# ─────────────────────────────────────────────────────────────────────────────
+class CaseAuditTrail(SQLModel, table=True):
+    __tablename__ = "case_audit_trails"
+
+    auditld: UUID = Field(default_factory=uuid4, primary_key=True)
+    caseld: UUID = Field(index=True)
+    actionPerformed: str = Field(max_length=200)
+    entityChanged: str = Field(max_length=100)
+    previousValue: Optional[str] = Field(default=None, nullable=True)
+    newValue: Optional[str] = Field(default=None, nullable=True)
+    performedBy: UUID = Field(foreign_key="users.id", index=True)
+    timestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    ipAddress: Optional[str] = Field(default=None, max_length=45, nullable=True)

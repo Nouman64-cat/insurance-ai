@@ -239,6 +239,48 @@ async def update_applicant(tenant_id: UUID, applicant_id: UUID, request: Request
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants/{applicant_id}")
 
 
+# ── Cases ──────────────────────────────────────────────────────────────────────
+
+@app.post("/tenants/{tenant_id}/cases", tags=["Cases"], status_code=201, summary="Create a case")
+async def create_case(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases")
+
+
+@app.get("/tenants/{tenant_id}/cases", tags=["Cases"], summary="List all cases")
+async def list_cases(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases")
+
+
+@app.get("/tenants/{tenant_id}/cases/{case_id}", tags=["Cases"], summary="Get a case by ID")
+async def get_case(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}")
+
+
+@app.put("/tenants/{tenant_id}/cases/{case_id}", tags=["Cases"], summary="Update a case")
+async def update_case(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}")
+
+
+@app.delete("/tenants/{tenant_id}/cases/{case_id}", tags=["Cases"], status_code=204, summary="Delete a case")
+async def delete_case(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}")
+
+
+@app.patch("/tenants/{tenant_id}/cases/{case_id}/status", tags=["Cases"], summary="Update case status")
+async def update_case_status(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/status")
+
+
+@app.post("/tenants/{tenant_id}/cases/{case_id}/assignments", tags=["Cases"], status_code=201, summary="Assign a case")
+async def assign_case(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/assignments")
+
+
+@app.post("/tenants/{tenant_id}/cases/{case_id}/comments", tags=["Cases"], status_code=201, summary="Add a comment")
+async def add_case_comment(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/comments")
+
+
 # ── Roles ──────────────────────────────────────────────────────────────────────
 
 @app.get("/roles", tags=["Roles"], response_model=List[RoleRead], summary="List all roles")

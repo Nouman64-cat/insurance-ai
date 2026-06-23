@@ -1,11 +1,11 @@
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlmodel import select
+from sqlmodel import select, delete
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from schemas import ApplicantCreate, ApplicantRead, ApplicantUpdate
-from shared.models.core import Applicant, Tenant
+from shared.models.core import Applicant, Tenant, Case, CaseHistory, CaseAuditTrail, CaseComment, CaseAssignment
 from routers.users import verify_admin   # reuse existing Admin guard
 
 router = APIRouter(prefix="/tenants", tags=["Applicants"])
@@ -108,6 +108,16 @@ async def delete_applicant(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Applicant not found"
         )
+        
+    # Find and cleanly delete all cases belonging to this applicant to prevent NotNullViolation
+    cases = await session.exec(select(Case).where(Case.applicant_id == applicant_id))
+    for case in cases:
+        await session.execute(delete(CaseHistory).where(CaseHistory.caseld == case.caseld))
+        await session.execute(delete(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))
+        await session.execute(delete(CaseComment).where(CaseComment.caseld == case.caseld))
+        await session.execute(delete(CaseAssignment).where(CaseAssignment.caseld == case.caseld))
+        await session.delete(case)
+        
     await session.delete(applicant)
     await session.commit()
     return None

@@ -763,27 +763,33 @@ export default function ApplicantsPage() {
                   <hr className="border-slate-100" />
 
                   <div>
-                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Document URLs (Cloud/S3 keys)</h4>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Document Uploads</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-600">CNIC Front Image URL</label>
+                        <label className="text-xs font-semibold text-slate-600">CNIC Front Image</label>
                         <input
-                          type="text"
-                          value={details.cnic_metadata.front_image_url}
-                          onChange={(e) => updateField("cnic_metadata", "front_image_url", e.target.value)}
-                          placeholder="https://..."
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) updateField("cnic_metadata", "front_image_url", URL.createObjectURL(file));
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                         />
+                        {details.cnic_metadata.front_image_url && <p className="text-[10px] text-emerald-600 mt-1 font-semibold">Image selected for upload</p>}
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-600">CNIC Back Image URL</label>
+                        <label className="text-xs font-semibold text-slate-600">CNIC Back Image</label>
                         <input
-                          type="text"
-                          value={details.cnic_metadata.back_image_url}
-                          onChange={(e) => updateField("cnic_metadata", "back_image_url", e.target.value)}
-                          placeholder="https://..."
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) updateField("cnic_metadata", "back_image_url", URL.createObjectURL(file));
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                         />
+                        {details.cnic_metadata.back_image_url && <p className="text-[10px] text-emerald-600 mt-1 font-semibold">Image selected for upload</p>}
                       </div>
                     </div>
                   </div>
@@ -1183,24 +1189,47 @@ export default function ApplicantsPage() {
             </form>
 
             {/* Footer */}
-            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => { setShowCreateModal(false); setShowEditModal(false); }}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={(e) => {
-                  if (showCreateModal) handleCreateApplicant(e);
-                  else handleEditApplicant(e);
-                }}
-                disabled={formLoading}
-                className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg"
-              >
-                {formLoading ? "Saving..." : "Save Profile Details"}
-              </button>
+            <div className="px-6 py-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center">
+              <div>
+                <button
+                  type="button"
+                  onClick={() => { setShowCreateModal(false); setShowEditModal(false); }}
+                  className="px-4 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700"
+                >
+                  Cancel
+                </button>
+              </div>
+              <div className="flex gap-3">
+                {tabs.findIndex(t => t.id === formTab) > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setFormTab(tabs[tabs.findIndex(t => t.id === formTab) - 1].id)}
+                    className="px-5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg"
+                  >
+                    Previous
+                  </button>
+                )}
+                {tabs.findIndex(t => t.id === formTab) < tabs.length - 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setFormTab(tabs[tabs.findIndex(t => t.id === formTab) + 1].id)}
+                    className="px-5 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg"
+                  >
+                    Next Step
+                  </button>
+                ) : (
+                  <button
+                    onClick={(e) => {
+                      if (showCreateModal) handleCreateApplicant(e);
+                      else handleEditApplicant(e);
+                    }}
+                    disabled={formLoading}
+                    className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm"
+                  >
+                    {formLoading ? "Saving Profile..." : "Submit Profile Details"}
+                  </button>
+                )}
+              </div>
             </div>
 
           </div>
@@ -1226,218 +1255,155 @@ export default function ApplicantsPage() {
               <button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
 
-            {/* Tabs */}
-            <div className="px-6 border-b border-slate-100 bg-white flex gap-1 overflow-x-auto whitespace-nowrap">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setViewTab(tab.id)}
-                  className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${
-                    viewTab === tab.id
-                      ? "border-blue-600 text-blue-600"
-                      : "border-transparent text-slate-400 hover:text-slate-600"
-                  }`}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </div>
-
-            {/* Scrollable Details */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 text-sm">
+            {/* Split View Layout */}
+            <div className="flex flex-1 overflow-hidden h-[600px]">
               
-              {/* TAB 1: Demographics */}
-              {viewTab === "demographics" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">First Name</span>
-                      <span className="font-semibold text-slate-800">{selectedApplicant.name.split(" ")[0]}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Last Name</span>
-                      <span className="font-semibold text-slate-800">{selectedApplicant.name.split(" ").slice(1).join(" ") || "-"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Date of Birth</span>
-                      <span className="font-semibold text-slate-800">{selectedApplicant.dob}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Gender</span>
-                      <span className="font-semibold text-slate-800">{selectedApplicant.gender}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Marital Status</span>
-                      <span className="font-semibold text-slate-800">{details.contact.emergency_contact_relation || "Single"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Email</span>
-                      <span className="font-semibold text-slate-800">{details.contact.email || "-"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Mobile Number</span>
-                      <span className="font-semibold text-slate-800">{details.contact.mobile_number || "-"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Street Address</span>
-                      <span className="font-semibold text-slate-800">{details.address.street_address || "-"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">City / Country</span>
-                      <span className="font-semibold text-slate-800">{details.address.city || "-"}, {details.address.country}</span>
+              {/* Sidebar Navigation */}
+              <div className="w-64 bg-slate-50 border-r border-slate-100 flex flex-col py-6 px-4 space-y-1.5 overflow-y-auto">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Applicant Profile</p>
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setViewTab(tab.id)}
+                    className={`text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${
+                      viewTab === tab.id
+                        ? "bg-white text-blue-600 shadow-sm border border-slate-200"
+                        : "text-slate-500 hover:bg-slate-200/50 border border-transparent"
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Main Content Pane */}
+              <div className="flex-1 overflow-y-auto bg-white p-8">
+                
+                {viewTab === "demographics" && (
+                  <div className="space-y-6 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Identity & Contact</h4>
+                    <div className="grid grid-cols-2 gap-y-6 gap-x-8">
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">First Name</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.name.split(" ")[0]}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Last Name</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.name.split(" ").slice(1).join(" ") || "-"}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Date of Birth</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.dob}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Gender</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.gender}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Marital Status</span><span className="text-sm font-medium text-slate-800">{details.contact.emergency_contact_relation || "Single"}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Mobile Number</span><span className="text-sm font-medium text-slate-800">{details.contact.mobile_number || "-"}</span></div>
+                      <div className="col-span-2"><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Email</span><span className="text-sm font-medium text-slate-800">{details.contact.email || "-"}</span></div>
+                      <div className="col-span-2"><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Full Address</span><span className="text-sm font-medium text-slate-800">{details.address.street_address || "-"}, {details.address.city || "-"}, {details.address.country}</span></div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* TAB 2: CNIC */}
-              {viewTab === "cnic" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">CNIC Number</span>
-                      <span className="font-semibold text-slate-800">{selectedApplicant.cnic}</span>
+                {viewTab === "cnic" && (
+                  <div className="space-y-6 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">CNIC & Verification</h4>
+                    <div className="grid grid-cols-2 gap-y-6 gap-x-8">
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">CNIC Number</span><span className="text-sm font-mono text-slate-800">{selectedApplicant.cnic}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Validation Status</span><span className="text-sm font-bold text-emerald-600">{details.cnic_metadata.validation_status}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Issue Date</span><span className="text-sm font-medium text-slate-800">{details.cnic_metadata.issue_date || "-"}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Expiry Date</span><span className="text-sm font-medium text-slate-800">{details.cnic_metadata.expiry_date || "-"}</span></div>
                     </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Validation Status</span>
-                      <span className="font-bold text-emerald-600">{details.cnic_metadata.validation_status}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Issue Date</span>
-                      <span className="font-semibold text-slate-800">{details.cnic_metadata.issue_date || "-"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Expiry Date</span>
-                      <span className="font-semibold text-slate-800">{details.cnic_metadata.expiry_date || "-"}</span>
-                    </div>
-                    <div className="col-span-2">
-                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-2">CNIC Front / Back Previews</span>
-                      <div className="flex gap-4">
+                    
+                    <div className="mt-8">
+                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-4">Document Previews</span>
+                      <div className="grid grid-cols-2 gap-6">
                         {details.cnic_metadata.front_image_url ? (
-                          <img src={details.cnic_metadata.front_image_url} alt="CNIC Front" className="w-1/2 h-32 object-cover rounded-lg border border-slate-200" />
+                          <div className="space-y-2">
+                            <span className="text-xs font-semibold text-slate-500">Front Image</span>
+                            <img src={details.cnic_metadata.front_image_url} alt="CNIC Front" className="w-full h-40 object-cover rounded-xl shadow-sm border border-slate-200" />
+                          </div>
                         ) : (
-                          <div className="w-1/2 h-32 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center text-xs text-slate-400">Front image missing</div>
+                          <div className="h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-xs font-semibold text-slate-400">Front image missing</div>
                         )}
                         {details.cnic_metadata.back_image_url ? (
-                          <img src={details.cnic_metadata.back_image_url} alt="CNIC Back" className="w-1/2 h-32 object-cover rounded-lg border border-slate-200" />
+                          <div className="space-y-2">
+                            <span className="text-xs font-semibold text-slate-500">Back Image</span>
+                            <img src={details.cnic_metadata.back_image_url} alt="CNIC Back" className="w-full h-40 object-cover rounded-xl shadow-sm border border-slate-200" />
+                          </div>
                         ) : (
-                          <div className="w-1/2 h-32 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-center text-xs text-slate-400">Back image missing</div>
+                          <div className="h-40 bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center text-xs font-semibold text-slate-400">Back image missing</div>
                         )}
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* TAB 3: Employment */}
-              {viewTab === "employment" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Employment Type</span>
-                      <span className="font-semibold text-slate-800">{details.occupation_details.employment_type}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Designation</span>
-                      <span className="font-semibold text-slate-800">{selectedApplicant.occupation}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Employer Name</span>
-                      <span className="font-semibold text-slate-800">{details.occupation_details.employer_name || "-"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Years of Experience</span>
-                      <span className="font-semibold text-slate-800">{details.occupation_details.years_of_experience} years</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Declared Annual Income</span>
-                      <span className="font-bold text-emerald-700">PKR {selectedApplicant.declared_income.toLocaleString()}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Occupation Hazard Level</span>
-                      <span className={`font-semibold ${details.occupation_details.occupation_hazard_level === "Low" ? "text-green-600" : "text-amber-600"}`}>{details.occupation_details.occupation_hazard_level}</span>
+                {viewTab === "employment" && (
+                  <div className="space-y-6 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Occupation & Income</h4>
+                    <div className="grid grid-cols-2 gap-y-6 gap-x-8">
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Employment Type</span><span className="text-sm font-medium text-slate-800">{details.occupation_details.employment_type}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Designation</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.occupation}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Employer Name</span><span className="text-sm font-medium text-slate-800">{details.occupation_details.employer_name || "-"}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Years of Experience</span><span className="text-sm font-medium text-slate-800">{details.occupation_details.years_of_experience} years</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Declared Annual Income</span><span className="text-sm font-bold text-emerald-600">PKR {selectedApplicant.declared_income.toLocaleString()}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Hazard Level</span><span className={`text-sm font-bold ${details.occupation_details.occupation_hazard_level === "Low" ? "text-emerald-600" : "text-amber-600"}`}>{details.occupation_details.occupation_hazard_level}</span></div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* TAB 4: Medical */}
-              {viewTab === "medical" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
-                      <span className="block text-xs text-slate-400 font-medium">Pre-Existing Conditions</span>
-                      <span className="font-bold text-slate-800">{details.medical_history.has_pre_existing_conditions ? "Yes" : "No"}</span>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
-                      <span className="block text-xs text-slate-400 font-medium">Active Smoker</span>
-                      <span className="font-bold text-slate-800">{details.medical_history.is_smoker ? "Yes" : "No"}</span>
-                    </div>
-                    <div className="bg-slate-50 rounded-lg p-3 text-center border border-slate-100">
-                      <span className="block text-xs text-slate-400 font-medium">Calculated BMI</span>
-                      <span className="font-bold text-slate-800">{details.lifestyle.bmi || "-"}</span>
-                    </div>
-                  </div>
-                  {details.conditions.length > 0 && (
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-2">Registered Diagnoses</span>
-                      <div className="divide-y divide-slate-100">
-                        {details.conditions.map((c, i) => (
-                          <div key={i} className="py-2 flex justify-between text-xs">
-                            <span className="font-semibold text-slate-700">{c.condition_name}</span>
-                            <span className="text-slate-500">Severity: {c.severity}</span>
-                          </div>
-                        ))}
+                {viewTab === "medical" && (
+                  <div className="space-y-8 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Medical & Lifestyle</h4>
+                    
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Pre-Existing</span>
+                        <span className="text-lg font-bold text-slate-800">{details.medical_history.has_pre_existing_conditions ? "Yes" : "No"}</span>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Smoker</span>
+                        <span className="text-lg font-bold text-slate-800">{details.medical_history.is_smoker ? "Yes" : "No"}</span>
+                      </div>
+                      <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center">
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Calculated BMI</span>
+                        <span className="text-lg font-bold text-slate-800">{details.lifestyle.bmi || "-"}</span>
                       </div>
                     </div>
-                  )}
-                </div>
-              )}
 
-              {/* TAB 5: Financial */}
-              {viewTab === "financial" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Credit bureau score</span>
-                      <span className="font-semibold text-slate-800">{details.financial_records.credit_bureau.credit_score}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Bureau Risk Grade</span>
-                      <span className="font-bold text-blue-600">Grade {details.financial_records.credit_bureau.risk_grade}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Total Dependents</span>
-                      <span className="font-semibold text-slate-800">{details.financial_records.dependents.number_of_dependents} ({details.financial_records.dependents.dependent_type})</span>
+                    {details.conditions.length > 0 && (
+                      <div className="pt-2">
+                        <h5 className="text-sm font-bold text-slate-800 mb-4">Registered Diagnoses</h5>
+                        <div className="space-y-3">
+                          {details.conditions.map((c: any, i: number) => (
+                            <div key={i} className="flex justify-between items-center p-4 rounded-xl bg-slate-50 border border-slate-100">
+                              <span className="text-sm font-bold text-slate-700">{c.condition_name}</span>
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-md ${c.severity === "Severe" ? "bg-red-100 text-red-700" : c.severity === "Moderate" ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"}`}>
+                                {c.severity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {viewTab === "financial" && (
+                  <div className="space-y-6 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Financial Profile</h4>
+                    <div className="grid grid-cols-2 gap-y-6 gap-x-8">
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Credit Bureau Score</span><span className="text-sm font-medium text-slate-800">{details.financial_records.credit_bureau.credit_score}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Bureau Risk Grade</span><span className="text-sm font-bold text-blue-600">Grade {details.financial_records.credit_bureau.risk_grade}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Total Dependents</span><span className="text-sm font-medium text-slate-800">{details.financial_records.dependents.number_of_dependents} ({details.financial_records.dependents.dependent_type})</span></div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
-              {/* TAB 6: Beneficiary */}
-              {viewTab === "beneficiary" && (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Nominee Name</span>
-                      <span className="font-semibold text-slate-800">{details.beneficiary.first_name} {details.beneficiary.last_name || "-"}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Relationship</span>
-                      <span className="font-semibold text-slate-800">{details.beneficiary.relationship}</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">Share percentage</span>
-                      <span className="font-bold text-slate-800">{details.beneficiary.share_percentage}%</span>
-                    </div>
-                    <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase">CNIC</span>
-                      <span className="font-semibold text-slate-800">{details.beneficiary.cnic_number || "-"}</span>
+                {viewTab === "beneficiary" && (
+                  <div className="space-y-6 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Nominee Details</h4>
+                    <div className="grid grid-cols-2 gap-y-6 gap-x-8">
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Nominee Name</span><span className="text-sm font-medium text-slate-800">{details.beneficiary.first_name} {details.beneficiary.last_name || "-"}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Relationship</span><span className="text-sm font-medium text-slate-800">{details.beneficiary.relationship}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Share Percentage</span><span className="text-sm font-bold text-slate-800">{details.beneficiary.share_percentage}%</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">CNIC</span><span className="text-sm font-mono text-slate-800">{details.beneficiary.cnic_number || "-"}</span></div>
                     </div>
                   </div>
-                </div>
-              )}
+                )}
 
+              </div>
             </div>
 
             {/* Footer */}
