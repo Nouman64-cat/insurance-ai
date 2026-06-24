@@ -3,14 +3,52 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import api from "@/app/services/api";
+
+interface ToastMsg { id: number; text: string; ok: boolean }
+
+function ToastBanner({ toasts, onDismiss }: { toasts: ToastMsg[]; onDismiss: (id: number) => void }) {
+  return (
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div
+          key={t.id}
+          onClick={() => onDismiss(t.id)}
+          className={`pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold border cursor-pointer select-none transition-all
+            ${t.ok
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-amber-50 border-amber-200 text-amber-800"}`}
+        >
+          {t.ok ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          )}
+          {t.text}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isLoginPage = pathname === "/login";
   const [authChecked, setAuthChecked] = useState(false);
+  const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  const toastIdRef = useRef(0);
+
+  const showToast = useCallback((text: string, ok: boolean) => {
+    const id = ++toastIdRef.current;
+    setToasts(prev => [...prev, { id, text, ok }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("jwt_token");
@@ -29,6 +67,85 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       setAuthChecked(true);
     }
   }, [pathname, isLoginPage, router]);
+
+  // Poll background processing documents globally across navigation
+  useEffect(() => {
+    if (!authChecked || isLoginPage) return;
+
+    let active = true;
+    let timerId: NodeJS.Timeout | null = null;
+
+    const poll = async () => {
+      if (!active) return;
+      const tenantId = localStorage.getItem("tenant_id");
+      const token = localStorage.getItem("jwt_token");
+      if (!tenantId || !token) {
+        timerId = setTimeout(poll, 4000);
+        return;
+      }
+
+      let processing: Array<{ id: string; name: string }> = [];
+      try {
+        processing = JSON.parse(localStorage.getItem("insurance_ai_processing_docs") || "[]");
+      } catch {
+        processing = [];
+      }
+
+      if (processing.length === 0) {
+        timerId = setTimeout(poll, 4000);
+        return;
+      }
+
+      const updatedList = [...processing];
+      let changed = false;
+
+      for (const item of processing) {
+        try {
+          const res = await api.get(`/tenants/${tenantId}/artifacts/${item.id}`);
+          const artifact = res.data;
+          
+          if (artifact.status !== "Processing") {
+            const isAccepted = artifact.status === "Accepted";
+            showToast(`${item.name} has been ${artifact.status.toLowerCase()}!`, isAccepted);
+            
+            const idx = updatedList.findIndex(x => x.id === item.id);
+            if (idx > -1) {
+              updatedList.splice(idx, 1);
+              changed = true;
+            }
+          }
+        } catch (err: any) {
+          if (err.response?.status === 404 || err.response?.status === 401 || err.response?.status === 403) {
+            const idx = updatedList.findIndex(x => x.id === item.id);
+            if (idx > -1) {
+              updatedList.splice(idx, 1);
+              changed = true;
+            }
+          }
+        }
+      }
+
+      if (changed && active) {
+        localStorage.setItem("insurance_ai_processing_docs", JSON.stringify(updatedList));
+      }
+
+      timerId = setTimeout(poll, 4000);
+    };
+
+    const handleNewDoc = () => {
+      if (timerId) clearTimeout(timerId);
+      poll();
+    };
+
+    window.addEventListener("insurance_ai_new_processing", handleNewDoc);
+    poll();
+
+    return () => {
+      active = false;
+      if (timerId) clearTimeout(timerId);
+      window.removeEventListener("insurance_ai_new_processing", handleNewDoc);
+    };
+  }, [authChecked, isLoginPage, showToast]);
 
   if (!authChecked && !isLoginPage) {
     return (
@@ -71,6 +188,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           </div>
         </>
       )}
+      <ToastBanner toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
     </body>
   );
 }

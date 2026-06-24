@@ -58,8 +58,21 @@ def _s3_client():
 
 
 def _download_from_s3(key: str) -> bytes:
-    resp = _s3_client().get_object(Bucket=_S3_BUCKET, Key=key)
-    return resp["Body"].read()
+    try:
+        # Check if dummy credentials are used to avoid slow timeout
+        access_key = os.getenv("AWS_ACCESS_KEY_ID", "")
+        if not access_key or "your_aws_access_key" in access_key:
+            raise ValueError("Dummy AWS credentials detected")
+
+        resp = _s3_client().get_object(Bucket=_S3_BUCKET, Key=key)
+        return resp["Body"].read()
+    except Exception as exc:
+        local_path = os.path.join("/app/shared/storage", key)
+        if os.path.exists(local_path):
+            logger.info("S3 download failed (%s). Found file in local storage fallback: %s", exc, local_path)
+            with open(local_path, "rb") as f:
+                return f.read()
+        raise exc
 
 
 # ── OCR helper ─────────────────────────────────────────────────────────────────
@@ -107,7 +120,7 @@ async def _process(event: ArtifactOCRRequestedEvent) -> None:
         ocr_text = await _run_ocr(file_bytes, p.file_name, p.mime_type)
         logger.info("OCR done | artifact=%s chars=%d", p.artifact_id, len(ocr_text))
     except Exception as exc:
-        logger.warning("OCR engine error | artifact=%s error=%s", p.artifact_id, exc)
+        logger.exception("OCR engine error | artifact=%s", p.artifact_id)
 
     # 3. Derive confidence + status
     confidence = _confidence(ocr_text)

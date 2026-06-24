@@ -39,10 +39,10 @@ function fmt(iso: string) {
 }
 
 function decisionColor(d: AIDecision) {
-  if (d === "Auto Approve") return "bg-emerald-500/15 text-emerald-400 border-emerald-500/30";
-  if (d === "Approve with Loading") return "bg-amber-500/15 text-amber-400 border-amber-500/30";
-  if (d === "Human Review") return "bg-blue-500/15 text-blue-400 border-blue-500/30";
-  return "bg-red-500/15 text-red-400 border-red-500/30";
+  if (d === "Auto Approve") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (d === "Approve with Loading") return "bg-amber-50 text-amber-700 border-amber-200";
+  if (d === "Human Review") return "bg-blue-50 text-blue-700 border-blue-200";
+  return "bg-red-50 text-red-700 border-red-200";
 }
 
 function decisionLabel(d: AIDecision) {
@@ -53,22 +53,22 @@ function decisionLabel(d: AIDecision) {
 }
 
 function compositeColor(score: number) {
-  if (score <= 40) return "text-emerald-400";
-  if (score <= 65) return "text-amber-400";
-  return "text-red-400";
+  if (score <= 40) return "text-emerald-600";
+  if (score <= 65) return "text-amber-600";
+  return "text-red-600";
 }
 
 // ── Markdown components ───────────────────────────────────────────────────────
 
 const MD: Record<string, React.ComponentType<React.HTMLAttributes<HTMLElement>>> = {
-  h2: ({ children, ...p }) => <h2 {...p} className="text-sm font-semibold text-slate-200 mt-4 mb-1">{children}</h2>,
-  h3: ({ children, ...p }) => <h3 {...p} className="text-xs font-semibold text-slate-300 mt-3 mb-1">{children}</h3>,
-  p:  ({ children, ...p }) => <p  {...p} className="text-xs text-slate-400 leading-relaxed mb-2">{children}</p>,
+  h2: ({ children, ...p }) => <h2 {...p} className="text-sm font-bold text-slate-800 mt-4 mb-1">{children}</h2>,
+  h3: ({ children, ...p }) => <h3 {...p} className="text-xs font-semibold text-slate-700 mt-3 mb-1">{children}</h3>,
+  p:  ({ children, ...p }) => <p  {...p} className="text-xs text-slate-600 leading-relaxed mb-2">{children}</p>,
   ul: ({ children, ...p }) => <ul {...p} className="list-disc list-inside space-y-0.5 mb-2">{children}</ul>,
-  li: ({ children, ...p }) => <li {...p} className="text-xs text-slate-400">{children}</li>,
-  strong: ({ children, ...p }) => <strong {...p} className="font-semibold text-slate-200">{children}</strong>,
-  hr: ({ ...p }) => <hr {...p} className="border-slate-700 my-3" />,
-  code: ({ children, ...p }) => <code {...p} className="bg-slate-800 text-blue-300 text-[10px] px-1 py-0.5 rounded">{children}</code>,
+  li: ({ children, ...p }) => <li {...p} className="text-xs text-slate-600">{children}</li>,
+  strong: ({ children, ...p }) => <strong {...p} className="font-bold text-slate-800">{children}</strong>,
+  hr: ({ ...p }) => <hr {...p} className="border-slate-200 my-3" />,
+  code: ({ children, ...p }) => <code {...p} className="bg-slate-100 text-blue-600 text-[10px] px-1 py-0.5 rounded">{children}</code>,
 };
 
 // ── Slide-out detail panel ────────────────────────────────────────────────────
@@ -101,29 +101,66 @@ function DetailPanel({
   const downloadPDF = async () => {
     if (!detail) return;
     const { default: jsPDF } = await import("jspdf");
+
+    const logoImg = await new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.src = "/rizvi.png";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+    });
+
     const doc = new jsPDF({ unit: "mm", format: "a4" });
-    const W = 210, mg = 14, cw = W - mg * 2;
-    let y = mg;
+    const W = 210, mg = 16, cw = W - mg * 2;
+    let y = 38;
+
+    const nextPage = (needed: number) => {
+      if (y + needed > 280) { doc.addPage(); y = mg; }
+    };
+
+    const section = (label: string) => {
+      nextPage(14);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(label.toUpperCase(), mg, y);
+      y += 5;
+    };
 
     const row = (label: string, value: string, offset = 0) => {
-      doc.setFontSize(7).setTextColor(150, 160, 175);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7).setTextColor(100, 116, 139);
       doc.text(label.toUpperCase(), mg + offset, y);
-      doc.setFontSize(9).setTextColor(30, 40, 55);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9).setTextColor(51, 65, 85);
       doc.text(value, mg + offset + 28, y);
       y += 6;
     };
 
-    // Header band
-    doc.setFillColor(15, 23, 42).rect(0, 0, W, 28, "F");
-    doc.setFontSize(13).setTextColor(255, 255, 255);
-    doc.text("Risk Assessment Report", mg, 12);
-    doc.setFontSize(8).setTextColor(148, 163, 184);
-    doc.text(`Generated ${new Date().toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" })}`, mg, 20);
-    y = 36;
+    // Header band with logo
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 0, W, 28, "F");
+    doc.setFillColor(59, 130, 246);
+    doc.rect(0, 28, W, 1.5, "F");
+
+    doc.setTextColor(15, 23, 42);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.text("insurance-ai", mg, 12);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text("Underwriting Platform · Risk Assessment Report", mg, 20);
+    
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, W - mg, 20, { align: "right" });
+
+    if (logoImg) {
+      doc.addImage(logoImg, "PNG", W - mg - 36.2, 4.5, 36.2, 13);
+    }
 
     // Applicant block
-    doc.setFontSize(10).setTextColor(15, 23, 42);
-    doc.text("Applicant Information", mg, y); y += 7;
+    section("APPLICANT DETAILS");
     row("Name", detail.applicant_name);
     row("CNIC", detail.applicant_cnic);
     if (detail.case_id) row("Case ID", detail.case_id);
@@ -131,20 +168,21 @@ function DetailPanel({
     y += 3;
 
     // Decision band
+    nextPage(16);
     const bandColor: [number, number, number] =
       decision === "Auto Approve" ? [16, 185, 129]
       : decision === "Approve with Loading" ? [245, 158, 11]
       : decision === "Human Review" ? [59, 130, 246]
       : [239, 68, 68];
     doc.setFillColor(...bandColor).rect(mg, y, cw, 10, "F");
+    doc.setFont("helvetica", "bold");
     doc.setFontSize(10).setTextColor(255, 255, 255);
     doc.text(`Decision: ${decision}`, mg + 4, y + 6.5);
     if (composite !== null) doc.text(`Composite Risk Score: ${composite} / 100`, mg + 80, y + 6.5);
     y += 16;
 
     // Scores
-    doc.setFontSize(10).setTextColor(15, 23, 42);
-    doc.text("Risk Scores", mg, y); y += 7;
+    section("RISK ASSESSMENT");
     const scores = [
       ["Medical Score", String(detail.medical_score)],
       ["Financial Score", String(detail.financial_score)],
@@ -156,30 +194,193 @@ function DetailPanel({
 
     // Reasons
     if (detail.reasons.length > 0) {
-      doc.setFontSize(10).setTextColor(15, 23, 42);
-      doc.text("Assessment Reasons", mg, y); y += 7;
-      doc.setFontSize(8.5).setTextColor(55, 65, 81);
-      detail.reasons.forEach((r) => {
-        const lines = doc.splitTextToSize(`• ${r}`, cw - 4);
-        if (y + lines.length * 5 > 280) { doc.addPage(); y = mg; }
-        doc.text(lines, mg + 2, y);
-        y += lines.length * 5 + 1;
-      });
+      section("DECISION REASONING");
+      
+      for (let i = 0; i < detail.reasons.length; i++) {
+        const isLast = i === detail.reasons.length - 1;
+        const reasonText = detail.reasons[i];
+
+        if (isLast) {
+          const normalized = reasonText
+            .replace(/×/g, "x")
+            .replace(/→/g, "->")
+            .replace(/!'/g, "->")
+            .replace(/–/g, "-")
+            .replace(/</g, "under")
+            .replace(/>/g, "over");
+          
+          const parts = normalized.split("->").map((p) => p.trim());
+          const calc = parts[0] || "";
+          const rule = parts.slice(1).join(" -> ");
+
+          // Draw calculation section
+          nextPage(12);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(51, 65, 85);
+          doc.text("Mathematical Breakdown:", mg, y);
+          y += 4.5;
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(51, 65, 85);
+          const calcWrapped = doc.splitTextToSize(calc, cw - 4);
+          for (const line of calcWrapped) {
+            nextPage(4.5);
+            doc.text(line, mg + 4, y);
+            y += 4;
+          }
+          
+          // Draw rule section
+          if (rule) {
+            y += 1.5;
+            nextPage(10);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(51, 65, 85);
+            doc.text("Matched Decision Rule:", mg, y);
+            y += 4;
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(71, 85, 105);
+            const ruleWrapped = doc.splitTextToSize(rule, cw - 4);
+            for (const line of ruleWrapped) {
+              nextPage(4.5);
+              doc.text(line, mg + 4, y);
+              y += 4;
+            }
+          }
+        } else {
+          // Normal reason drawing
+          const prefix = "-  ";
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(71, 85, 105);
+          
+          const wrapped = doc.splitTextToSize(prefix + reasonText, cw);
+          for (const line of wrapped) {
+            nextPage(5);
+            doc.text(line, mg, y);
+            y += 4.5;
+          }
+        }
+      }
       y += 4;
     }
 
     // AI Summary
     if (detail.ai_summary) {
-      if (y + 20 > 280) { doc.addPage(); y = mg; }
-      doc.setFontSize(10).setTextColor(15, 23, 42);
-      doc.text("AI Case Summary", mg, y); y += 7;
-      doc.setFontSize(8.5).setTextColor(55, 65, 81);
-      const plain = detail.ai_summary.replace(/[#*`_~>\-]/g, "").replace(/\n{3,}/g, "\n\n");
-      const lines = doc.splitTextToSize(plain, cw - 2);
+      section("AI CASE SUMMARY");
+      const lines = detail.ai_summary.split("\n");
       for (let i = 0; i < lines.length; i++) {
-        if (y + 5 > 280) { doc.addPage(); y = mg; }
-        doc.text(lines[i], mg, y);
-        y += 5;
+        let line = lines[i].trim();
+        if (!line) {
+          y += 3;
+          continue;
+        }
+
+        // Header 6
+        if (line.startsWith("###### ")) {
+          const text = line.replace("###### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(text, mg, y);
+          y += 4;
+          continue;
+        }
+
+        // Header 5
+        if (line.startsWith("##### ")) {
+          const text = line.replace("##### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text(text, mg, y);
+          y += 4.5;
+          continue;
+        }
+
+        // Header 4
+        if (line.startsWith("#### ")) {
+          const text = line.replace("#### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(71, 85, 105);
+          doc.text(text, mg, y);
+          y += 4.5;
+          continue;
+        }
+
+        // Header 3
+        if (line.startsWith("### ")) {
+          const text = line.replace("### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.setTextColor(71, 85, 105);
+          doc.text(text, mg, y);
+          y += 5;
+          continue;
+        }
+
+        // Header 2
+        if (line.startsWith("## ")) {
+          const text = line.replace("## ", "").trim();
+          nextPage(10);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(30, 41, 59);
+          doc.text(text, mg, y);
+          y += 5.5;
+          continue;
+        }
+
+        // Header 1
+        if (line.startsWith("# ")) {
+          const text = line.replace("# ", "").trim();
+          nextPage(12);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text(text, mg, y);
+          y += 6;
+          continue;
+        }
+
+        // Bullet list
+        if (line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")) {
+          const text = line.replace(/^[-*•]\s+/, "").trim();
+          const cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
+          const wrapped = doc.splitTextToSize(cleanText, cw - 6);
+          nextPage(wrapped.length * 4.5 + 2);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(71, 85, 105);
+          
+          doc.text("•", mg + 2, y);
+          for (let j = 0; j < wrapped.length; j++) {
+            doc.text(wrapped[j], mg + 6, y);
+            y += 4.5;
+          }
+          continue;
+        }
+
+        // Regular paragraph line
+        const cleanLine = line.replace(/\*\*/g, "").replace(/\*/g, "");
+        const wrapped = doc.splitTextToSize(cleanLine, cw);
+        nextPage(wrapped.length * 4.5 + 2);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        for (let j = 0; j < wrapped.length; j++) {
+          doc.text(wrapped[j], mg, y);
+          y += 4.5;
+        }
       }
     }
 
@@ -187,6 +388,7 @@ function DetailPanel({
     const total = (doc as unknown as { internal: { getNumberOfPages(): number } }).internal.getNumberOfPages();
     for (let p = 1; p <= total; p++) {
       doc.setPage(p);
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(7).setTextColor(150, 160, 175);
       doc.text("insurance-ai · Confidential", mg, 292);
       doc.text(`Page ${p} of ${total}`, W - mg - 18, 292);
@@ -196,17 +398,17 @@ function DetailPanel({
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[480px] bg-slate-900 border-l border-slate-800 flex flex-col z-50 shadow-2xl">
+    <div className="fixed inset-y-0 right-0 w-[480px] bg-white border-l border-slate-200 flex flex-col z-50 shadow-2xl">
       {/* Header */}
-      <div className="flex items-start justify-between p-5 border-b border-slate-800 flex-shrink-0">
+      <div className="flex items-start justify-between p-5 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
         <div>
-          <p className="text-base font-semibold text-slate-100">{item.applicant_name}</p>
-          <p className="text-xs text-slate-500 mt-0.5">CNIC {item.applicant_cnic}</p>
-          <p className="text-[10px] text-slate-600 mt-1">{fmt(item.created_at)}</p>
+          <p className="text-base font-bold text-slate-800">{item.applicant_name}</p>
+          <p className="text-xs text-slate-500 mt-0.5 font-medium">CNIC {item.applicant_cnic}</p>
+          <p className="text-[10px] text-slate-400 mt-1 font-semibold">{fmt(item.created_at)}</p>
         </div>
         <button
           onClick={onClose}
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -215,10 +417,10 @@ function DetailPanel({
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-5">
+      <div className="flex-1 overflow-y-auto p-5 space-y-5 bg-white">
         {loading ? (
           <div className="flex items-center justify-center py-16">
-            <svg className="w-5 h-5 animate-spin text-blue-400" viewBox="0 0 24 24" fill="none">
+            <svg className="w-5 h-5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
@@ -228,18 +430,18 @@ function DetailPanel({
         ) : (
           <>
             {/* Decision + composite */}
-            <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-800/60 border border-slate-700/50">
+            <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
               {composite !== null && <CompositeScoreRing score={composite} />}
               <div className="flex-1 space-y-2">
                 <StatusBadge decision={decision} size="lg" />
                 {detail.suggested_loading != null && (
-                  <p className="text-xs text-slate-400">
-                    Suggested loading: <span className="text-amber-400 font-semibold">+{detail.suggested_loading}%</span>
+                  <p className="text-xs text-slate-600">
+                    Suggested loading: <span className="text-amber-600 font-semibold">+{detail.suggested_loading}%</span>
                   </p>
                 )}
                 {detail.case_id && (
-                  <p className="text-[10px] text-slate-500">
-                    Linked to case <span className="font-mono text-slate-400">{detail.case_id.slice(0, 8)}…</span>
+                  <p className="text-[10px] text-slate-400">
+                    Linked to case <span className="font-mono text-slate-500">{detail.case_id.slice(0, 8)}…</span>
                   </p>
                 )}
               </div>
@@ -247,7 +449,7 @@ function DetailPanel({
 
             {/* Score bars */}
             <div className="space-y-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600">Scores</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Scores</p>
               <RiskScoreBar label="Medical Score" score={detail.medical_score} />
               <RiskScoreBar label="Financial Score" score={detail.financial_score} />
               <RiskScoreBar
@@ -260,12 +462,12 @@ function DetailPanel({
             {/* Reasons */}
             {detail.reasons.length > 0 && (
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-2">Assessment Reasons</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Assessment Reasons</p>
                 <ul className="space-y-1.5">
                   {detail.reasons.map((r, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs text-slate-400">
-                      <span className="mt-0.5 w-1 h-1 rounded-full bg-blue-500 flex-shrink-0" />
-                      {r}
+                    <li key={i} className="flex items-start gap-2 text-xs text-slate-600 leading-relaxed">
+                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                      <span>{r}</span>
                     </li>
                   ))}
                 </ul>
@@ -275,16 +477,16 @@ function DetailPanel({
             {/* AI Summary */}
             {detail.ai_summary ? (
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-600 mb-2">AI Case Summary</p>
-                <div className="rounded-xl border border-slate-700/50 bg-slate-800/40 p-4 prose-sm max-w-none">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">AI Case Summary</p>
+                <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-4 prose-sm max-w-none shadow-inner">
                   <ReactMarkdown components={MD as Record<string, React.ComponentType>}>
                     {detail.ai_summary}
                   </ReactMarkdown>
                 </div>
               </div>
             ) : (
-              <div className="rounded-xl border border-slate-700/30 bg-slate-800/20 p-4 text-center">
-                <p className="text-xs text-slate-600">No AI summary — this assessment was run without case documents.</p>
+              <div className="rounded-xl border border-slate-200/60 bg-slate-50/40 p-4 text-center">
+                <p className="text-xs text-slate-500">No AI summary — this assessment was run without case documents.</p>
               </div>
             )}
           </>
@@ -293,10 +495,10 @@ function DetailPanel({
 
       {/* Footer */}
       {detail && (
-        <div className="flex-shrink-0 p-4 border-t border-slate-800">
+        <div className="flex-shrink-0 p-4 border-t border-slate-200 bg-slate-50/50">
           <button
             onClick={downloadPDF}
-            className="w-full flex items-center justify-center gap-2 border border-dashed border-slate-600 hover:border-blue-500 text-slate-400 hover:text-blue-400 text-xs font-medium py-2.5 px-4 rounded-lg transition-colors"
+            className="w-full flex items-center justify-center gap-2 border border-dashed border-slate-300 hover:border-blue-500 text-slate-600 hover:text-blue-600 bg-white text-xs font-semibold py-2.5 px-4 rounded-lg transition-colors shadow-sm"
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
@@ -366,15 +568,15 @@ export default function AssessmentHistoryPage() {
   });
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-slate-950">
+    <div className="flex-1 flex flex-col min-h-0 bg-slate-50/50">
       {/* Page header */}
-      <div className="border-b border-slate-800 px-6 py-4 flex-shrink-0">
-        <h1 className="text-lg font-semibold text-slate-100">Assessment History</h1>
+      <div className="border-b border-slate-200 px-6 py-4 flex-shrink-0 bg-white shadow-sm">
+        <h1 className="text-lg font-bold text-slate-800">Assessment History</h1>
         <p className="text-xs text-slate-500 mt-0.5">All stored risk evaluations for this tenant</p>
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-800 flex-shrink-0 flex-wrap">
+      <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-200 bg-white flex-shrink-0 flex-wrap">
         {/* Decision filter */}
         <div className="flex gap-1">
           {DECISION_FILTERS.map((f) => {
@@ -383,10 +585,10 @@ export default function AssessmentHistoryPage() {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`text-[11px] font-medium px-3 py-1.5 rounded-lg transition-colors ${
+                className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors ${
                   filter === f
-                    ? "bg-blue-600/20 text-blue-400 border border-blue-500/30"
-                    : "text-slate-500 hover:text-slate-300 hover:bg-slate-800"
+                    ? "bg-blue-50 text-blue-600 border border-blue-200"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
                 }`}
               >
                 {label}
@@ -397,7 +599,7 @@ export default function AssessmentHistoryPage() {
 
         {/* Search */}
         <div className="relative ml-auto">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
             <circle cx="11" cy="11" r="8" /><path strokeLinecap="round" d="m21 21-4.35-4.35" />
           </svg>
           <input
@@ -405,14 +607,14 @@ export default function AssessmentHistoryPage() {
             placeholder="Search name or CNIC…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-8 pr-3 py-1.5 text-xs bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-600 focus:outline-none focus:border-blue-500 w-52"
+            className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder-slate-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 w-52"
           />
         </div>
 
         <button
           onClick={() => { setSkip(0); load(true); }}
           disabled={loading}
-          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-40"
+          className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
           title="Refresh"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}>
@@ -423,36 +625,36 @@ export default function AssessmentHistoryPage() {
       </div>
 
       {/* Content */}
-      <div className="flex-1 overflow-auto relative">
+      <div className="flex-1 overflow-auto relative bg-slate-50/50">
         {error && (
-          <div className="m-6 p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>
+          <div className="m-6 p-4 rounded-xl bg-red-550/10 bg-red-50 border border-red-200 text-red-700 text-xs font-semibold">{error}</div>
         )}
 
         {!error && visible.length === 0 && !loading && (
-          <div className="flex flex-col items-center justify-center h-64 text-slate-600">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-3 opacity-40">
+          <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-3 opacity-60">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            <p className="text-sm">No assessments found</p>
-            <p className="text-xs mt-1 opacity-60">Run an evaluation from Live Evaluation or Case Summarizer</p>
+            <p className="text-sm font-semibold">No assessments found</p>
+            <p className="text-xs mt-1 opacity-70">Run an evaluation from Live Evaluation or Case Summarizer</p>
           </div>
         )}
 
         {visible.length > 0 && (
-          <table className="w-full text-xs">
-            <thead className="sticky top-0 bg-slate-900/95 backdrop-blur border-b border-slate-800 z-10">
+          <table className="w-full text-xs bg-white">
+            <thead className="sticky top-0 bg-slate-50/90 backdrop-blur border-b border-slate-200 z-10">
               <tr>
-                <th className="text-left px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Applicant</th>
-                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Decision</th>
-                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Composite</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Med</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Fin</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Fraud</th>
-                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Summary</th>
-                <th className="text-right px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-600">Date</th>
+                <th className="text-left px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Applicant</th>
+                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Decision</th>
+                <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Composite</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Med</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Fin</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Fraud</th>
+                <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Summary</th>
+                <th className="text-right px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Date</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60">
+            <tbody className="divide-y divide-slate-200">
               {visible.map((a) => {
                 const isSelected = selected?.id === a.id;
                 return (
@@ -461,14 +663,14 @@ export default function AssessmentHistoryPage() {
                     onClick={() => setSelected(isSelected ? null : a)}
                     className={`cursor-pointer transition-colors ${
                       isSelected
-                        ? "bg-blue-600/10 border-l-2 border-blue-500"
-                        : "hover:bg-slate-800/40"
+                        ? "bg-blue-50/50 border-l-2 border-blue-500"
+                        : "hover:bg-slate-50/50"
                     }`}
                   >
                     {/* Applicant */}
                     <td className="px-6 py-3.5">
-                      <p className="font-medium text-slate-200">{a.applicant_name}</p>
-                      <p className="text-[10px] text-slate-600 mt-0.5 font-mono">{a.applicant_cnic}</p>
+                      <p className="font-bold text-slate-800">{a.applicant_name}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{a.applicant_cnic}</p>
                     </td>
 
                     {/* Decision badge */}
@@ -482,7 +684,7 @@ export default function AssessmentHistoryPage() {
                     <td className="px-4 py-3.5 w-32">
                       {a.composite_risk_score !== null ? (
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full ${
                                 a.composite_risk_score <= 40
@@ -499,41 +701,41 @@ export default function AssessmentHistoryPage() {
                           </span>
                         </div>
                       ) : (
-                        <span className="text-slate-600">—</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
 
                     {/* Medical */}
                     <td className="px-4 py-3.5 text-center">
                       <span className={`font-semibold tabular-nums ${
-                        a.medical_score >= 70 ? "text-red-400" : a.medical_score >= 40 ? "text-amber-400" : "text-emerald-400"
+                        a.medical_score >= 70 ? "text-red-600" : a.medical_score >= 40 ? "text-amber-600" : "text-emerald-600"
                       }`}>{a.medical_score}</span>
                     </td>
 
                     {/* Financial */}
                     <td className="px-4 py-3.5 text-center">
                       <span className={`font-semibold tabular-nums ${
-                        a.financial_score >= 70 ? "text-red-400" : a.financial_score >= 40 ? "text-amber-400" : "text-emerald-400"
+                        a.financial_score >= 70 ? "text-red-600" : a.financial_score >= 40 ? "text-amber-600" : "text-emerald-600"
                       }`}>{a.financial_score}</span>
                     </td>
 
                     {/* Fraud */}
                     <td className="px-4 py-3.5 text-center">
                       <span className={`font-semibold tabular-nums ${
-                        a.fraud_probability >= 0.5 ? "text-red-400" : a.fraud_probability >= 0.25 ? "text-amber-400" : "text-emerald-400"
+                        a.fraud_probability >= 0.5 ? "text-red-600" : a.fraud_probability >= 0.25 ? "text-amber-600" : "text-emerald-600"
                       }`}>{Math.round(a.fraud_probability * 100)}%</span>
                     </td>
 
                     {/* Has AI summary */}
                     <td className="px-4 py-3.5 text-center">
                       {a.has_summary ? (
-                        <span title="Has AI summary" className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-500/20 text-blue-400">
+                        <span title="Has AI summary" className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-blue-50 text-blue-600 border border-blue-100">
                           <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
                             <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-          </svg>
+                          </svg>
                         </span>
                       ) : (
-                        <span className="text-slate-700">—</span>
+                        <span className="text-slate-400">—</span>
                       )}
                     </td>
 
@@ -553,7 +755,7 @@ export default function AssessmentHistoryPage() {
           <div className="flex justify-center py-6">
             <button
               onClick={() => load(false)}
-              className="text-xs text-slate-500 hover:text-slate-300 border border-slate-700 hover:border-slate-600 px-5 py-2 rounded-lg transition-colors"
+              className="text-xs text-slate-600 hover:text-slate-800 border border-slate-200 hover:border-slate-300 bg-white px-5 py-2 rounded-lg transition-colors shadow-sm font-semibold"
             >
               Load more
             </button>
@@ -562,7 +764,7 @@ export default function AssessmentHistoryPage() {
 
         {loading && assessments.length === 0 && (
           <div className="flex items-center justify-center h-64">
-            <svg className="w-5 h-5 animate-spin text-blue-400" viewBox="0 0 24 24" fill="none">
+            <svg className="w-5 h-5 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
             </svg>
@@ -573,7 +775,7 @@ export default function AssessmentHistoryPage() {
       {/* Slide-out */}
       {selected && (
         <>
-          <div className="fixed inset-0 bg-black/30 z-40" onClick={() => setSelected(null)} />
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40" onClick={() => setSelected(null)} />
           <DetailPanel item={selected} tenantId={tenantId} onClose={() => setSelected(null)} />
         </>
       )}
