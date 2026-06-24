@@ -45,6 +45,22 @@ class RoleRead(BaseModel):
 
 # ── User ──────────────────────────────────────────────────────────────────────
 
+class SeedAdminCreate(BaseModel):
+    """Used by the no-auth bootstrap endpoint — creates the first Admin for a tenant."""
+    email: EmailStr
+    username: str
+    password: str
+    first_name: str
+    last_name: str
+
+    @field_validator("password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("password must be at least 8 characters")
+        return v
+
+
 class UserCreate(BaseModel):
     username: str
     email: EmailStr
@@ -136,6 +152,17 @@ class ApplicantCreate(BaseModel):
     occupation:       str
     declared_income:  float        # annual PKR
     details:          Optional[dict] = None
+
+    @field_validator("cnic")
+    @classmethod
+    def validate_cnic(cls, v: str) -> str:
+        import re
+        v = v.strip()
+        if re.fullmatch(r"\d{13}", v):
+            v = f"{v[:5]}-{v[5:12]}-{v[12]}"
+        if not re.fullmatch(r"\d{5}-\d{7}-\d", v):
+            raise ValueError("cnic must be 13 digits or in the format XXXXX-XXXXXXX-X")
+        return v
 
 class ApplicantRead(BaseModel):
     id:               UUID

@@ -43,9 +43,11 @@ erDiagram
     cases ||--o{ case_comments : "has"
     cases ||--o{ case_attachments : "has"
     cases ||--o{ case_audit_trails : "has"
+    cases ||--o{ artifacts : "documents"
     users ||--o{ case_assignments : "assigned to"
     users ||--o{ case_histories : "changed by"
     users ||--o{ case_comments : "authored by"
+    users ||--o{ artifacts : "uploads"
 ```
 
 ### `tenants`
@@ -192,20 +194,27 @@ A benefit claim filed against an active policy.
 
 ### `artifacts`
 
-A document (CNIC scan, salary slip, medical report, X-ray) attached to an applicant or a claim. Both FKs are optional — an artifact can belong to just an applicant, just a claim, or both.
+A document (CNIC scan, salary slip, medical report, X-ray) uploaded through the case management flow. Files are stored in S3 and automatically OCR'd by the OCR Engine (Gemini 2.5 Flash). See the **[Artifact Upload & OCR](/artifacts)** page for the full upload flow and API reference.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
 | `tenant_id` | UUID FK → `tenants.id` | Indexed |
-| `applicant_id` | UUID FK → `applicants.id` nullable | Indexed |
-| `claim_id` | UUID FK → `claims.id` nullable | Indexed |
-| `document_type` | VARCHAR(100) | e.g. `CNIC`, `Salary Slip`, `Medical Report` |
-| `ocr_confidence_score` | FLOAT | 0.0–1.0 |
-| `authenticity_score` | FLOAT | 0.0–1.0 |
-| `quality_score` | FLOAT | 0.0–1.0 |
+| `applicant_id` | UUID FK → `applicants.id` nullable | Auto-populated from the case on upload |
+| `claim_id` | UUID FK → `claims.id` nullable | Indexed; set when attached to a claim |
+| `case_id` | UUID FK → `cases.caseld` nullable | Indexed; set on upload via the case artifacts endpoint |
+| `uploaded_by` | UUID FK → `users.id` nullable | Indexed; user who triggered the upload |
+| `document_type` | VARCHAR(100) | e.g. `CNIC`, `Salary Slip`, `Medical Report`, `X-Ray` |
+| `file_name` | VARCHAR(255) nullable | Original uploaded filename |
+| `file_size` | INTEGER nullable | File size in bytes |
+| `file_type` | VARCHAR(100) nullable | MIME type e.g. `application/pdf`, `image/png` |
+| `storage_url` | VARCHAR(1000) nullable | Permanent S3 object URL (`https://insurance-ai-dev.s3…`) |
+| `ocr_result` | TEXT nullable | Full text extracted by Gemini 2.5 Flash |
+| `ocr_confidence_score` | FLOAT | 0.0–1.0; derived from OCR output length; default `0.0` |
+| `authenticity_score` | FLOAT | 0.0–1.0; placeholder `1.0` until document validation is wired |
+| `quality_score` | FLOAT | 0.0–1.0; placeholder `1.0` until quality checks are wired |
 | `tampered_flag` | BOOLEAN | Default `false` |
-| `status` | VARCHAR(50) | e.g. `Accepted`, `Re-submission Requested` |
+| `status` | VARCHAR(50) | `Accepted` (confidence ≥ 0.7) · `Re-submission Requested` · `Processing` |
 | `created_at` | TIMESTAMP | UTC, auto-set |
 
 ### `commissions`

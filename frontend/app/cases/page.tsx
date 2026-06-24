@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import api from "@/app/services/api";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Applicant {
   id: string;
@@ -9,7 +11,7 @@ interface Applicant {
   name: string;
 }
 
-interface Case {
+interface CaseItem {
   caseld: string;
   caseNumber: string;
   applicant_id: string;
@@ -19,430 +21,1153 @@ interface Case {
   sourceChannel: string;
   createdAt: string;
   updatedAt: string;
-  assignedAgentId?: string;
-  escalationLevel: number;
 }
 
-const STATUS_STYLE: Record<string, string> = {
-  Approved: "bg-emerald-50 text-emerald-700 border border-emerald-200",
-  "Under Review": "bg-blue-50 text-blue-700 border border-blue-200",
-  "InProgress": "bg-blue-50 text-blue-700 border border-blue-200",
-  "Pending Documents": "bg-amber-50 text-amber-700 border border-amber-200",
-  "New": "bg-slate-100 text-slate-700 border border-slate-200",
-  "Rejected": "bg-red-50 text-red-700 border border-red-200",
-  "Closed": "bg-slate-200 text-slate-800 border border-slate-300",
+interface Artifact {
+  id: string;
+  case_id: string;
+  applicant_id: string;
+  document_type: string;
+  file_name: string;
+  file_size: number;
+  file_type: string;
+  storage_url: string;
+  download_url: string;
+  ocr_result: string;
+  ocr_confidence_score: number;
+  authenticity_score: number;
+  quality_score: number;
+  tampered_flag: boolean;
+  status: string;
+  created_at: string;
+}
+
+type View = "applicants" | "cases" | "documents";
+
+// ── Constants ────────────────────────────────────────────────────────────────
+
+const CASE_TYPE_OPTIONS = ["Underwriting", "Claim", "Inquiry"];
+const PRIORITY_OPTIONS = ["Low", "Normal", "High", "Critical"];
+const CHANNEL_OPTIONS = ["Online", "Agent", "Branch"];
+const STATUS_OPTIONS = ["New", "InProgress", "Pending Documents", "Under Review", "Approved", "Rejected", "Closed"];
+const DOCUMENT_TYPES = ["CNIC", "Salary Slip", "Medical Report", "X-Ray", "MRI Scan", "Bank Statement", "Tax Return", "Policy Form", "Claim Form", "Other"];
+const SUPPORTED_EXTS = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp"];
+
+const STATUS_CHIP: Record<string, string> = {
+  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Under Review": "bg-blue-50 text-blue-700 border-blue-200",
+  InProgress: "bg-blue-50 text-blue-700 border-blue-200",
+  "Pending Documents": "bg-amber-50 text-amber-700 border-amber-200",
+  New: "bg-slate-100 text-slate-600 border-slate-200",
+  Rejected: "bg-red-50 text-red-700 border-red-200",
+  Closed: "bg-slate-200 text-slate-700 border-slate-300",
+  Accepted: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Re-submission Requested": "bg-amber-50 text-amber-700 border-amber-200",
+  Processing: "bg-blue-50 text-blue-700 border-blue-200",
 };
 
-const TYPE_STYLE: Record<string, string> = {
-  Underwriting: "bg-blue-50 text-blue-700",
-  Claim: "bg-violet-50 text-violet-700",
-  Inquiry: "bg-emerald-50 text-emerald-700",
+const PRIORITY_COLOR: Record<string, string> = {
+  Critical: "text-red-600",
+  High: "text-orange-500",
+  Normal: "text-slate-500",
+  Low: "text-slate-400",
 };
 
-export default function CasesPage() {
-  const [applicants, setApplicants] = useState<Applicant[]>([]);
-  const [cases, setCases] = useState<Case[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+const FILE_COLOR: Record<string, { bg: string; ext: string; dot: string }> = {
+  pdf:  { bg: "bg-red-500",    ext: "PDF", dot: "bg-red-400" },
+  png:  { bg: "bg-sky-500",    ext: "PNG", dot: "bg-sky-400" },
+  jpg:  { bg: "bg-amber-500",  ext: "JPG", dot: "bg-amber-400" },
+  jpeg: { bg: "bg-amber-500",  ext: "JPG", dot: "bg-amber-400" },
+  tiff: { bg: "bg-teal-500",   ext: "TIF", dot: "bg-teal-400" },
+  bmp:  { bg: "bg-purple-500", ext: "BMP", dot: "bg-purple-400" },
+};
+const FILE_COLOR_DEFAULT = { bg: "bg-slate-400", ext: "DOC", dot: "bg-slate-300" };
 
-  // Create Case Modal State
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [selectedApplicantId, setSelectedApplicantId] = useState<string>("");
-  const [newCaseType, setNewCaseType] = useState("Underwriting");
-  const [newPriority, setNewPriority] = useState("Normal");
-  const [newChannel, setNewChannel] = useState("Online");
+function getExt(name: string) { return name?.split(".").pop()?.toLowerCase() ?? ""; }
+function fmtSize(bytes: number) {
+  if (!bytes) return "—";
+  return bytes < 1_048_576 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
 
-  // View Case Modal State
-  const [selectedCase, setSelectedCase] = useState<Case | null>(null);
-  const [newStatus, setNewStatus] = useState("");
-  const [editPriority, setEditPriority] = useState("");
+// ── Icons ─────────────────────────────────────────────────────────────────────
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
-    setLoading(true);
-    setError("");
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) {
-      setError("No active tenant found.");
-      setLoading(false);
-      return;
-    }
-    try {
-      const [appRes, caseRes] = await Promise.all([
-        api.get(`/tenants/${tenantId}/applicants`),
-        api.get(`/tenants/${tenantId}/cases`),
-      ]);
-      setApplicants(appRes.data);
-      setCases(caseRes.data);
-      
-      // Auto-expand all folders initially
-      const expansions: Record<string, boolean> = {};
-      appRes.data.forEach((app: Applicant) => {
-        expansions[app.id] = true;
-      });
-      setExpandedFolders(expansions);
-    } catch (err: any) {
-      setError(err.message ?? "Failed to load data.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleFolder = (id: string) => {
-    setExpandedFolders(prev => ({ ...prev, [id]: !prev[id] }));
-  };
-
-  const handleCreateCase = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId || !selectedApplicantId) return;
-
-    try {
-      await api.post(`/tenants/${tenantId}/cases`, {
-        applicant_id: selectedApplicantId,
-        caseType: newCaseType,
-        priorityLevel: newPriority,
-        sourceChannel: newChannel,
-      });
-      setShowCreateModal(false);
-      fetchData(); // Refresh to show new case
-    } catch (err: any) {
-      alert(err.response?.data?.detail ?? "Failed to create case");
-    }
-  };
-
-  const handleUpdateStatus = async () => {
-    if (!selectedCase || !newStatus) return;
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) return;
-
-    try {
-      await api.patch(`/tenants/${tenantId}/cases/${selectedCase.caseld}/status`, {
-        status: newStatus
-      });
-      setSelectedCase(null);
-      fetchData(); // Refresh list
-    } catch (err: any) {
-      alert(err.response?.data?.detail ?? "Failed to update status");
-    }
-  };
-
-  const handleDeleteFolder = async (e: React.MouseEvent, applicantId: string) => {
-    e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this folder and all its cases?")) return;
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) return;
-    try {
-      await api.delete(`/tenants/${tenantId}/applicants/${applicantId}`);
-      fetchData();
-    } catch (err: any) {
-      alert("Failed to delete folder: " + (err.response?.data?.detail || err.message));
-    }
-  };
-
-  const handleEditFolder = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    window.location.href = `/admin/applicants`;
-  };
-
-  const handleDeleteCase = async (e: React.MouseEvent, caseId: string) => {
-    e.stopPropagation();
-    if (!confirm("Are you sure you want to delete this case?")) return;
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) return;
-    try {
-      await api.delete(`/tenants/${tenantId}/cases/${caseId}`);
-      fetchData();
-    } catch (err: any) {
-      alert("Failed to delete case.");
-    }
-  };
-
-  const handleEditCaseSubmit = async () => {
-    if (!selectedCase || !editPriority) return;
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) return;
-    try {
-      await api.put(`/tenants/${tenantId}/cases/${selectedCase.caseld}`, {
-        priorityLevel: editPriority
-      });
-      setSelectedCase(null);
-      fetchData();
-    } catch (err: any) {
-      alert("Failed to update case.");
-    }
-  };
-
-  const casesByApplicant = applicants.map(app => ({
-    applicant: app,
-    cases: cases.filter(c => c.applicant_id === app.id)
-  }));
-
+function SpinnerIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
-    <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Underwriting Cases</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Manage case workflows organized by applicant folders.</p>
+    <svg className={`animate-spin ${className}`} viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
+function FolderSvg({ color = "#F59E0B", accent = "#D97706", size = 56 }: { color?: string; accent?: string; size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 56 56" fill="none">
+      <rect x="2" y="16" width="52" height="34" rx="4" fill={color} />
+      <path d="M2 20c0-2.21 1.79-4 4-4h18l4 5H50a4 4 0 014 4v25a4 4 0 01-4 4H6a4 4 0 01-4-4V20z" fill={color} />
+      <path d="M2 25h52v25a4 4 0 01-4 4H6a4 4 0 01-4-4V25z" fill={accent} opacity="0.25" />
+      <rect x="2" y="25" width="52" height="2" fill={accent} opacity="0.3" />
+    </svg>
+  );
+}
+
+function FileSvg({ ext, size = 52 }: { ext: string; size?: number }) {
+  const fc = FILE_COLOR[ext] ?? FILE_COLOR_DEFAULT;
+  return (
+    <svg width={size} height={size} viewBox="0 0 52 56" fill="none">
+      <path d="M6 2h28l12 12v38a4 4 0 01-4 4H6a4 4 0 01-4-4V6a4 4 0 014-4z" fill="#F8FAFC" stroke="#E2E8F0" strokeWidth="1.5" />
+      <path d="M34 2l12 12H38a4 4 0 01-4-4V2z" fill="#E2E8F0" />
+      <rect x="10" y="26" width="32" height="3" rx="1.5" fill="#CBD5E1" />
+      <rect x="10" y="32" width="24" height="3" rx="1.5" fill="#CBD5E1" />
+      <rect x="10" y="38" width="28" height="3" rx="1.5" fill="#CBD5E1" />
+      <rect x="10" y="44" width="18" height="3" rx="1.5" fill="#E2E8F0" />
+      <rect x="6" y="14" width="20" height="10" rx="2" className={fc.bg} fill="currentColor" />
+      <text x="16" y="22" textAnchor="middle" fill="white" fontSize="6" fontWeight="bold" fontFamily="monospace">{fc.ext}</text>
+    </svg>
+  );
+}
+
+// ── Explorer item card ────────────────────────────────────────────────────────
+
+interface ExplorerItemProps {
+  id: string;
+  icon: React.ReactNode;
+  name: string;
+  line2?: React.ReactNode;
+  badge?: React.ReactNode;
+  isSelected: boolean;
+  onSingleClick: () => void;
+  onDoubleClick: () => void;
+  actions?: React.ReactNode;
+}
+
+function ExplorerItem({ id, icon, name, line2, badge, isSelected, onSingleClick, onDoubleClick, actions }: ExplorerItemProps) {
+  return (
+    <div
+      className={`group relative flex flex-col items-center gap-1.5 px-2 pt-3 pb-2.5 rounded-xl cursor-pointer transition-all duration-100 select-none ${
+        isSelected
+          ? "bg-blue-100 ring-2 ring-blue-400 ring-offset-1"
+          : "hover:bg-slate-100"
+      }`}
+      onClick={onSingleClick}
+      onDoubleClick={onDoubleClick}
+    >
+      {/* Hover action overlay */}
+      {actions && (
+        <div className="absolute top-1.5 right-1.5 z-10 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+          {actions}
+        </div>
+      )}
+
+      {/* Icon */}
+      <div className="flex items-center justify-center w-16 h-12">
+        {icon}
       </div>
 
-      {error && <div className="p-4 bg-red-50 text-red-600 rounded-lg text-sm border border-red-200">{error}</div>}
+      {/* Label */}
+      <div className="w-full text-center space-y-0.5">
+        <p className="text-[11px] font-semibold text-slate-800 leading-tight line-clamp-2 break-words">{name}</p>
+        {line2 && <div className="text-[10px] text-slate-400 leading-tight">{line2}</div>}
+        {badge && <div className="flex justify-center mt-0.5">{badge}</div>}
+      </div>
+    </div>
+  );
+}
 
-      {loading ? (
-        <div className="flex justify-center py-20 text-slate-400">Loading cases directory...</div>
-      ) : casesByApplicant.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-500 shadow-sm">
-          No applicants found in the system. Create an applicant first to manage their cases.
+// ── Toolbar ───────────────────────────────────────────────────────────────────
+
+function Breadcrumb({ view, applicant, caseItem, onGoApplicants, onGoCases }: {
+  view: View;
+  applicant: Applicant | null;
+  caseItem: CaseItem | null;
+  onGoApplicants: () => void;
+  onGoCases: () => void;
+}) {
+  return (
+    <nav className="flex items-center gap-1 text-sm min-w-0 overflow-x-auto">
+      <button onClick={onGoApplicants} className={`font-semibold whitespace-nowrap transition-colors ${view === "applicants" ? "text-slate-800" : "text-blue-600 hover:text-blue-700"}`}>
+        Applicants
+      </button>
+      {applicant && (
+        <>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <button onClick={onGoCases} className={`font-semibold truncate max-w-[180px] transition-colors ${view === "cases" ? "text-slate-800" : "text-blue-600 hover:text-blue-700"}`}>
+            {applicant.name}
+          </button>
+        </>
+      )}
+      {caseItem && (
+        <>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          <span className="font-semibold text-slate-800 truncate max-w-[180px]">{caseItem.caseNumber}</span>
+        </>
+      )}
+    </nav>
+  );
+}
+
+// ── Confidence bar ────────────────────────────────────────────────────────────
+
+function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
+  const pct = Math.round(value * 100);
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between text-xs">
+        <span className="text-slate-500">{label}</span>
+        <span className="font-semibold text-slate-700">{pct}%</span>
+      </div>
+      <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+// ── Small icon buttons ────────────────────────────────────────────────────────
+
+function IBtn({ title, onClick, danger = false, children }: { title: string; onClick: (e: React.MouseEvent) => void; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      title={title}
+      onClick={e => { e.stopPropagation(); onClick(e); }}
+      className={`w-6 h-6 rounded-md flex items-center justify-center text-[10px] font-bold shadow-sm transition-colors ${
+        danger
+          ? "bg-red-100 text-red-600 hover:bg-red-200 border border-red-200"
+          : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ── Empty state ───────────────────────────────────────────────────────────────
+
+function EmptyState({ icon, title, subtitle, action }: { icon: React.ReactNode; title: string; subtitle?: string; action?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col items-center justify-center flex-1 gap-4 py-16">
+      <div className="opacity-20">{icon}</div>
+      <div className="text-center">
+        <p className="text-sm font-semibold text-slate-600">{title}</p>
+        {subtitle && <p className="text-xs text-slate-400 mt-1 max-w-xs">{subtitle}</p>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+// ── Modals ────────────────────────────────────────────────────────────────────
+
+function ModalShell({ title, subtitle, onClose, children }: { title: string; subtitle?: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <div>
+            <h3 className="font-bold text-slate-800">{title}</h3>
+            {subtitle && <p className="text-xs text-slate-500 mt-0.5">{subtitle}</p>}
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-1 -mr-1 -mt-1">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {casesByApplicant.map((folder) => {
-            const isExpanded = expandedFolders[folder.applicant.id];
-            return (
-              <div key={folder.applicant.id} className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden transition-all">
-                {/* Folder Header */}
-                <div
-                  className="group px-5 py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
-                  onClick={() => toggleFolder(folder.applicant.id)}
+        <div className="p-6">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applicant; onClose: () => void; onCreated: () => void }) {
+  const [caseType, setCaseType] = useState("Underwriting");
+  const [priority, setPriority] = useState("Normal");
+  const [channel, setChannel] = useState("Online");
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setSubmitting(true);
+    setErr("");
+    try {
+      await api.post(`/tenants/${tenantId}/cases`, {
+        applicant_id: applicant.id,
+        caseType,
+        priorityLevel: priority,
+        sourceChannel: channel,
+      });
+      onCreated();
+    } catch (err: any) {
+      setErr(err.response?.data?.detail ?? "Failed to create case.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalShell title="New Case" subtitle={`Applicant: ${applicant.name}`} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Case Type">
+          <select value={caseType} onChange={e => setCaseType(e.target.value)} className={SELECT}>
+            {CASE_TYPE_OPTIONS.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </Field>
+        <Field label="Priority">
+          <select value={priority} onChange={e => setPriority(e.target.value)} className={SELECT}>
+            {PRIORITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </Field>
+        <Field label="Source Channel">
+          <select value={channel} onChange={e => setChannel(e.target.value)} className={SELECT}>
+            {CHANNEL_OPTIONS.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </Field>
+        {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className={BTN_GHOST}>Cancel</button>
+          <button type="submit" disabled={submitting} className={BTN_PRIMARY}>
+            {submitting ? <SpinnerIcon /> : "Create Case"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function EditCaseModal({ caseItem, onClose, onSaved }: { caseItem: CaseItem; onClose: () => void; onSaved: () => void }) {
+  const [priority, setPriority] = useState(caseItem.priorityLevel);
+  const [status, setStatus] = useState(caseItem.caseStatus);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setSubmitting(true);
+    setErr("");
+    try {
+      const tasks: Promise<any>[] = [];
+      if (priority !== caseItem.priorityLevel) {
+        tasks.push(api.put(`/tenants/${tenantId}/cases/${caseItem.caseld}`, { priorityLevel: priority }));
+      }
+      if (status !== caseItem.caseStatus) {
+        tasks.push(api.patch(`/tenants/${tenantId}/cases/${caseItem.caseld}/status`, { status }));
+      }
+      await Promise.all(tasks);
+      onSaved();
+    } catch (err: any) {
+      setErr(err.response?.data?.detail ?? "Failed to update case.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Edit Case" subtitle={caseItem.caseNumber} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Priority">
+          <select value={priority} onChange={e => setPriority(e.target.value)} className={SELECT}>
+            {PRIORITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </Field>
+        <Field label="Status">
+          <select value={status} onChange={e => setStatus(e.target.value)} className={SELECT}>
+            {STATUS_OPTIONS.map(o => <option key={o}>{o}</option>)}
+          </select>
+        </Field>
+        {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+        <p className="text-[10px] text-slate-400">Status changes are appended to the immutable CaseHistory audit trail.</p>
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className={BTN_GHOST}>Cancel</button>
+          <button type="submit" disabled={submitting || (priority === caseItem.priorityLevel && status === caseItem.caseStatus)} className={BTN_PRIMARY}>
+            {submitting ? <SpinnerIcon /> : "Save Changes"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; onClose: () => void; onUploaded: (a: Artifact) => void }) {
+  const [docType, setDocType] = useState("CNIC");
+  const [file, setFile] = useState<File | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const addFile = (f: File) => {
+    const ext = getExt(f.name);
+    if (!SUPPORTED_EXTS.includes(ext)) { setErr(`Unsupported format ".${ext}". Allowed: ${SUPPORTED_EXTS.join(", ").toUpperCase()}`); return; }
+    setFile(f); setErr("");
+  };
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) addFile(f); };
+  const handleInput = (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) addFile(f); e.target.value = ""; };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setUploading(true); setErr("");
+    const form = new FormData();
+    form.append("document_type", docType);
+    form.append("file", file);
+    try {
+      const res = await api.post(
+        `/tenants/${tenantId}/cases/${caseItem.caseld}/artifacts`,
+        form,
+        { headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000 }
+      );
+      onUploaded(res.data);
+    } catch (err: any) {
+      setErr(err.response?.data?.detail ?? err.message ?? "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Upload Document" subtitle={`Case: ${caseItem.caseNumber}`} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Document Type">
+          <select value={docType} onChange={e => setDocType(e.target.value)} className={SELECT}>
+            {DOCUMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </Field>
+
+        {/* Drop zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+          className={`rounded-xl border-2 cursor-pointer transition-all px-4 py-5 flex flex-col items-center gap-2 ${
+            isDragging ? "border-blue-400 bg-blue-50" : file
+              ? "border-emerald-300 bg-emerald-50"
+              : "border-dashed border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/40"
+          }`}
+        >
+          <input ref={inputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" onChange={handleInput} />
+          {file ? (
+            <>
+              <FileSvg ext={getExt(file.name)} size={40} />
+              <p className="text-xs font-semibold text-emerald-700 truncate max-w-full px-2">{file.name}</p>
+              <p className="text-[10px] text-emerald-600">{fmtSize(file.size)} · Click to replace</p>
+            </>
+          ) : (
+            <>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-slate-400">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              <p className="text-xs font-semibold text-slate-600">Drop file or <span className="text-blue-600">browse</span></p>
+              <p className="text-[10px] text-slate-400">PDF · PNG · JPG · JPEG · TIFF · BMP</p>
+            </>
+          )}
+        </div>
+
+        {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+
+        {uploading && (
+          <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+            <SpinnerIcon className="w-3.5 h-3.5" />
+            Uploading to S3 and running OCR — this may take up to 30 seconds…
+          </div>
+        )}
+
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} disabled={uploading} className={BTN_GHOST}>Cancel</button>
+          <button type="submit" disabled={!file || uploading} className={BTN_PRIMARY}>
+            {uploading ? <SpinnerIcon /> : <>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              Upload &amp; OCR
+            </>}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function ArtifactDetailModal({ artifact: initial, tenantId, onClose }: { artifact: Artifact; tenantId: string; onClose: () => void }) {
+  const [artifact, setArtifact] = useState(initial);
+  const [loading, setLoading] = useState(!initial.download_url);
+
+  useEffect(() => {
+    if (!initial.download_url) {
+      api.get(`/tenants/${tenantId}/artifacts/${initial.id}`)
+        .then(r => setArtifact(r.data))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [initial.id, tenantId, initial.download_url]);
+
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    if (!artifact.ocr_result) return;
+    await navigator.clipboard.writeText(artifact.ocr_result);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const statusCls = STATUS_CHIP[artifact.status] ?? "bg-slate-100 text-slate-700 border-slate-200";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-start justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+          <div className="flex items-center gap-3 min-w-0">
+            <FileSvg ext={getExt(artifact.file_name ?? "")} size={36} />
+            <div className="min-w-0">
+              <p className="font-bold text-slate-800 truncate">{artifact.file_name}</p>
+              <p className="text-xs text-slate-500">{artifact.document_type} · {fmtSize(artifact.file_size)}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 flex-shrink-0 ml-3">
+            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${statusCls}`}>{artifact.status}</span>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-1">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-5 overflow-y-auto max-h-[70vh]">
+          {loading ? (
+            <div className="flex items-center justify-center py-8"><SpinnerIcon className="w-6 h-6 text-slate-400" /></div>
+          ) : (
+            <>
+              {/* Scores */}
+              <div className="space-y-2.5">
+                <ScoreBar label="OCR Confidence" value={artifact.ocr_confidence_score} color="bg-blue-500" />
+                <ScoreBar label="Authenticity" value={artifact.authenticity_score} color="bg-emerald-500" />
+                <ScoreBar label="Quality" value={artifact.quality_score} color="bg-violet-500" />
+              </div>
+
+              {/* Meta */}
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">File Type</p>
+                  <p className="font-medium text-slate-700">{artifact.file_type}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">Uploaded</p>
+                  <p className="font-medium text-slate-700">{new Date(artifact.created_at).toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">Tamper Flag</p>
+                  <p className={`font-semibold ${artifact.tampered_flag ? "text-red-600" : "text-emerald-600"}`}>
+                    {artifact.tampered_flag ? "⚠ Flagged" : "Clean"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Download */}
+              {artifact.download_url && (
+                <a
+                  href={artifact.download_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-700 hover:bg-white transition-colors"
                 >
-                  <div className="flex items-center gap-3">
-                    <span className="text-xl">{isExpanded ? "📂" : "📁"}</span>
-                    <div>
-                      <h3 className="font-bold text-slate-800">{folder.applicant.name}</h3>
-                      <p className="text-xs text-slate-500 font-mono mt-0.5">ID: {folder.applicant.id}</p>
-                    </div>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                    <polyline points="7 10 12 15 17 10" />
+                    <line x1="12" y1="15" x2="12" y2="3" />
+                  </svg>
+                  Download from S3 (1h link)
+                </a>
+              )}
+
+              {/* OCR text */}
+              {artifact.ocr_result && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Extracted Text</p>
+                    <button onClick={copy} className="text-[10px] font-semibold text-slate-400 hover:text-slate-600 flex items-center gap-1">
+                      {copied ? "✓ Copied" : "Copy"}
+                    </button>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity mr-2">
-                      <button onClick={handleEditFolder} className="px-3 py-1 bg-white border border-slate-200 text-slate-600 text-[10px] font-bold rounded hover:bg-slate-50 shadow-sm">Edit Folder</button>
-                      <button onClick={(e) => handleDeleteFolder(e, folder.applicant.id)} className="px-3 py-1 bg-red-50 border border-red-200 text-red-600 text-[10px] font-bold rounded hover:bg-red-100 shadow-sm">Delete</button>
-                    </div>
-                    <span className="text-xs font-semibold text-slate-500 bg-slate-200/50 px-2.5 py-1 rounded-full">
-                      {folder.cases.length} {folder.cases.length === 1 ? "Case" : "Cases"}
-                    </span>
-                    <svg className={`w-5 h-5 text-slate-400 transform transition-transform ${isExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  <pre className="text-xs text-slate-700 whitespace-pre-wrap break-words leading-relaxed font-mono bg-slate-50 border border-slate-200 rounded-lg p-4 max-h-56 overflow-y-auto">
+                    {artifact.ocr_result}
+                  </pre>
+                </div>
+              )}
+
+              {!artifact.ocr_result && (
+                <p className="text-xs text-slate-400 text-center py-4">No OCR text extracted for this document.</p>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EditArtifactModal({ artifact, tenantId, onClose, onSaved }: { artifact: Artifact; tenantId: string; onClose: () => void; onSaved: (a: Artifact) => void }) {
+  const [docType, setDocType] = useState(artifact.document_type);
+  const [submitting, setSubmitting] = useState(false);
+  const [err, setErr] = useState("");
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true); setErr("");
+    try {
+      const res = await api.patch(`/tenants/${tenantId}/artifacts/${artifact.id}`, { document_type: docType });
+      onSaved(res.data);
+    } catch (err: any) {
+      setErr(err.response?.data?.detail ?? "Failed to update.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Edit Document" subtitle={artifact.file_name ?? ""} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        <Field label="Document Type">
+          <select value={docType} onChange={e => setDocType(e.target.value)} className={SELECT}>
+            {DOCUMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+          </select>
+        </Field>
+        {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+        <div className="flex justify-end gap-3 pt-2">
+          <button type="button" onClick={onClose} className={BTN_GHOST}>Cancel</button>
+          <button type="submit" disabled={submitting || docType === artifact.document_type} className={BTN_PRIMARY}>
+            {submitting ? <SpinnerIcon /> : "Save"}
+          </button>
+        </div>
+      </form>
+    </ModalShell>
+  );
+}
+
+function ConfirmDeleteModal({ title, message, onConfirm, onCancel, deleting }: { title: string; message: string; onConfirm: () => void; onCancel: () => void; deleting: boolean }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="p-6 space-y-4">
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-red-600">
+                <polyline points="3 6 5 6 21 6" />
+                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                <path d="M10 11v6M14 11v6" />
+                <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-bold text-slate-800">{title}</h3>
+              <p className="text-sm text-slate-500 mt-1">{message}</p>
+            </div>
+          </div>
+          <div className="flex justify-end gap-3">
+            <button onClick={onCancel} disabled={deleting} className={BTN_GHOST}>Cancel</button>
+            <button onClick={onConfirm} disabled={deleting} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 disabled:opacity-50 transition-all">
+              {deleting ? <SpinnerIcon /> : "Delete"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Form helpers ──────────────────────────────────────────────────────────────
+
+const SELECT = "w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400";
+const BTN_PRIMARY = "flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm";
+const BTN_GHOST = "px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg border border-transparent transition-colors";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-semibold text-slate-600">{label}</label>
+      {children}
+    </div>
+  );
+}
+
+// ── Case folder color by status ───────────────────────────────────────────────
+
+function caseFolderColor(status: string): { color: string; accent: string } {
+  switch (status) {
+    case "Approved": return { color: "#34D399", accent: "#059669" };
+    case "Rejected": return { color: "#F87171", accent: "#DC2626" };
+    case "Pending Documents": return { color: "#FBBF24", accent: "#D97706" };
+    case "Under Review":
+    case "InProgress": return { color: "#60A5FA", accent: "#2563EB" };
+    case "Closed": return { color: "#94A3B8", accent: "#64748B" };
+    default: return { color: "#A5B4FC", accent: "#6366F1" };
+  }
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+export default function CasesPage() {
+  const [view, setView] = useState<View>("applicants");
+  const [activeApplicant, setActiveApplicant] = useState<Applicant | null>(null);
+  const [activeCase, setActiveCase] = useState<CaseItem | null>(null);
+
+  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [cases, setCases] = useState<CaseItem[]>([]);
+  const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+
+  const [loadingMain, setLoadingMain] = useState(true);
+  const [loadingDocs, setLoadingDocs] = useState(false);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Modals
+  const [showCreateCase, setShowCreateCase] = useState(false);
+  const [editingCase, setEditingCase] = useState<CaseItem | null>(null);
+  const [deletingCase, setDeletingCase] = useState<CaseItem | null>(null);
+  const [deletingCaseInProgress, setDeletingCaseInProgress] = useState(false);
+
+  const [showUpload, setShowUpload] = useState(false);
+  const [viewingArtifact, setViewingArtifact] = useState<Artifact | null>(null);
+  const [editingArtifact, setEditingArtifact] = useState<Artifact | null>(null);
+  const [deletingArtifact, setDeletingArtifact] = useState<Artifact | null>(null);
+  const [deletingArtifactInProgress, setDeletingArtifactInProgress] = useState(false);
+
+  const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+
+  // Load applicants + all cases once
+  useEffect(() => {
+    setLoadingMain(true);
+    Promise.all([
+      api.get(`/tenants/${tenantId}/applicants`),
+      api.get(`/tenants/${tenantId}/cases`),
+    ]).then(([aRes, cRes]) => {
+      setApplicants(aRes.data);
+      setCases(cRes.data);
+    }).catch(err => setError(err.message ?? "Failed to load."))
+      .finally(() => setLoadingMain(false));
+  }, [tenantId]);
+
+  const fetchArtifacts = useCallback(async (caseId: string) => {
+    setLoadingDocs(true);
+    try {
+      const res = await api.get(`/tenants/${tenantId}/cases/${caseId}/artifacts`);
+      setArtifacts(res.data);
+    } catch { setArtifacts([]); }
+    finally { setLoadingDocs(false); }
+  }, [tenantId]);
+
+  // Navigation helpers
+  const openApplicant = (applicant: Applicant) => {
+    setActiveApplicant(applicant);
+    setActiveCase(null);
+    setArtifacts([]);
+    setSelectedId(null);
+    setView("cases");
+  };
+
+  const openCase = (c: CaseItem) => {
+    setActiveCase(c);
+    setSelectedId(null);
+    setView("documents");
+    fetchArtifacts(c.caseld);
+  };
+
+  const goToApplicants = () => {
+    setView("applicants");
+    setActiveApplicant(null);
+    setActiveCase(null);
+    setSelectedId(null);
+    setArtifacts([]);
+  };
+
+  const goToCases = () => {
+    setView("cases");
+    setActiveCase(null);
+    setSelectedId(null);
+    setArtifacts([]);
+  };
+
+  // CRUD handlers
+  const handleDeleteCase = async () => {
+    if (!deletingCase) return;
+    setDeletingCaseInProgress(true);
+    try {
+      await api.delete(`/tenants/${tenantId}/cases/${deletingCase.caseld}`);
+      setCases(prev => prev.filter(c => c.caseld !== deletingCase.caseld));
+      setDeletingCase(null);
+    } catch (err: any) {
+      alert(err.response?.data?.detail ?? "Failed to delete case.");
+    } finally {
+      setDeletingCaseInProgress(false);
+    }
+  };
+
+  const handleDeleteArtifact = async () => {
+    if (!deletingArtifact) return;
+    setDeletingArtifactInProgress(true);
+    try {
+      await api.delete(`/tenants/${tenantId}/artifacts/${deletingArtifact.id}`);
+      setArtifacts(prev => prev.filter(a => a.id !== deletingArtifact.id));
+      if (selectedId === deletingArtifact.id) setSelectedId(null);
+      setDeletingArtifact(null);
+    } catch (err: any) {
+      alert(err.response?.data?.detail ?? "Failed to delete document.");
+    } finally {
+      setDeletingArtifactInProgress(false);
+    }
+  };
+
+  const casesForApplicant = activeApplicant
+    ? cases.filter(c => c.applicant_id === activeApplicant.id)
+    : [];
+
+  const selectedArtifact = artifacts.find(a => a.id === selectedId) ?? null;
+
+  // Status bar text
+  const statusText = (() => {
+    if (view === "applicants") return `${applicants.length} applicant${applicants.length !== 1 ? "s" : ""}`;
+    if (view === "cases") return `${casesForApplicant.length} case${casesForApplicant.length !== 1 ? "s" : ""}`;
+    if (view === "documents") {
+      const base = `${artifacts.length} document${artifacts.length !== 1 ? "s" : ""}`;
+      if (selectedArtifact) return `${base}  ·  ${selectedArtifact.file_name}  ·  ${fmtSize(selectedArtifact.file_size)}  ·  ${selectedArtifact.document_type}  ·  ${selectedArtifact.status}`;
+      return base;
+    }
+    return "";
+  })();
+
+  return (
+    <div className="flex flex-col h-full bg-slate-50">
+
+      {/* ── Toolbar ──────────────────────────────────────────────────────────── */}
+      <div className="flex items-center justify-between gap-4 px-5 py-3 bg-white border-b border-slate-200 flex-shrink-0">
+        {/* Back + breadcrumb */}
+        <div className="flex items-center gap-3 min-w-0">
+          {view !== "applicants" && (
+            <button
+              onClick={view === "documents" ? goToCases : goToApplicants}
+              className="flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors flex-shrink-0"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-600">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          )}
+          <Breadcrumb
+            view={view}
+            applicant={activeApplicant}
+            caseItem={activeCase}
+            onGoApplicants={goToApplicants}
+            onGoCases={goToCases}
+          />
+        </div>
+
+        {/* Action buttons */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {view === "cases" && activeApplicant && (
+            <button onClick={() => setShowCreateCase(true)} className={BTN_PRIMARY}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              New Case
+            </button>
+          )}
+          {view === "documents" && activeCase && (
+            <button onClick={() => setShowUpload(true)} className={BTN_PRIMARY}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+              Upload Document
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* ── Main content ─────────────────────────────────────────────────────── */}
+      <div className="flex-1 overflow-auto min-h-0">
+        {error && (
+          <div className="m-5 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600">{error}</div>
+        )}
+
+        {loadingMain ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="flex flex-col items-center gap-3 text-slate-400">
+              <SpinnerIcon className="w-8 h-8" />
+              <p className="text-sm font-medium">Loading…</p>
+            </div>
+          </div>
+        ) : (
+          <div className="p-5">
+
+            {/* ── Applicants grid ───────────────────────────────────────────── */}
+            {view === "applicants" && (
+              applicants.length === 0 ? (
+                <EmptyState
+                  icon={<FolderSvg size={72} />}
+                  title="No applicants yet"
+                  subtitle="Create an applicant first to start managing cases."
+                />
+              ) : (
+                <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
+                  {applicants.map(app => {
+                    const count = cases.filter(c => c.applicant_id === app.id).length;
+                    return (
+                      <ExplorerItem
+                        key={app.id}
+                        id={app.id}
+                        icon={<FolderSvg color="#FBBF24" accent="#D97706" size={52} />}
+                        name={app.name}
+                        line2={<>{app.cnic}<br />{count} case{count !== 1 ? "s" : ""}</>}
+                        isSelected={selectedId === app.id}
+                        onSingleClick={() => setSelectedId(app.id)}
+                        onDoubleClick={() => openApplicant(app)}
+                        actions={null}
+                      />
+                    );
+                  })}
+                </div>
+              )
+            )}
+
+            {/* ── Cases grid ───────────────────────────────────────────────── */}
+            {view === "cases" && (
+              casesForApplicant.length === 0 ? (
+                <EmptyState
+                  icon={<FolderSvg color="#93C5FD" accent="#3B82F6" size={72} />}
+                  title="No cases yet"
+                  subtitle={`${activeApplicant?.name} has no cases. Create the first one.`}
+                  action={
+                    <button onClick={() => setShowCreateCase(true)} className={BTN_PRIMARY}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      New Case
+                    </button>
+                  }
+                />
+              ) : (
+                <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }}>
+                  {casesForApplicant.map(c => {
+                    const fc = caseFolderColor(c.caseStatus);
+                    const statusCls = STATUS_CHIP[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200";
+                    const priCls = PRIORITY_COLOR[c.priorityLevel] ?? "text-slate-500";
+                    return (
+                      <ExplorerItem
+                        key={c.caseld}
+                        id={c.caseld}
+                        icon={<FolderSvg color={fc.color} accent={fc.accent} size={52} />}
+                        name={c.caseNumber}
+                        line2={
+                          <span className={priCls}>{c.caseType} · {c.priorityLevel}</span>
+                        }
+                        badge={
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${statusCls}`}>
+                            {c.caseStatus}
+                          </span>
+                        }
+                        isSelected={selectedId === c.caseld}
+                        onSingleClick={() => setSelectedId(c.caseld)}
+                        onDoubleClick={() => openCase(c)}
+                        actions={
+                          <>
+                            <IBtn title="Edit case" onClick={() => setEditingCase(c)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </IBtn>
+                            <IBtn title="Delete case" danger onClick={() => setDeletingCase(c)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                                <path d="M10 11v6M14 11v6" />
+                              </svg>
+                            </IBtn>
+                          </>
+                        }
+                      />
+                    );
+                  })}
+                </div>
+              )
+            )}
+
+            {/* ── Documents grid ───────────────────────────────────────────── */}
+            {view === "documents" && (
+              loadingDocs ? (
+                <div className="flex items-center justify-center py-20">
+                  <div className="flex flex-col items-center gap-3 text-slate-400">
+                    <SpinnerIcon className="w-7 h-7" />
+                    <p className="text-sm font-medium">Loading documents…</p>
+                  </div>
+                </div>
+              ) : artifacts.length === 0 ? (
+                <EmptyState
+                  icon={
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" className="w-20 h-20 text-slate-300">
+                      <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
                     </svg>
-                  </div>
+                  }
+                  title="No documents yet"
+                  subtitle={`Upload the first document to ${activeCase?.caseNumber}`}
+                  action={
+                    <button onClick={() => setShowUpload(true)} className={BTN_PRIMARY}>
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                        <polyline points="17 8 12 3 7 8" />
+                        <line x1="12" y1="3" x2="12" y2="15" />
+                      </svg>
+                      Upload Document
+                    </button>
+                  }
+                />
+              ) : (
+                <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
+                  {artifacts.map(a => {
+                    const ext = getExt(a.file_name ?? "");
+                    const statusCls = STATUS_CHIP[a.status] ?? "bg-slate-100 text-slate-600 border-slate-200";
+                    return (
+                      <ExplorerItem
+                        key={a.id}
+                        id={a.id}
+                        icon={<FileSvg ext={ext} size={52} />}
+                        name={a.file_name ?? "Unknown"}
+                        line2={<>{a.document_type}<br />{fmtSize(a.file_size)}</>}
+                        badge={
+                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full border ${statusCls}`}>
+                            {a.status}
+                          </span>
+                        }
+                        isSelected={selectedId === a.id}
+                        onSingleClick={() => setSelectedId(a.id)}
+                        onDoubleClick={() => setViewingArtifact(a)}
+                        actions={
+                          <>
+                            <IBtn title="View / download" onClick={() => setViewingArtifact(a)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                                <circle cx="12" cy="12" r="3" />
+                              </svg>
+                            </IBtn>
+                            <IBtn title="Edit document type" onClick={() => setEditingArtifact(a)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </IBtn>
+                            <IBtn title="Delete document" danger onClick={() => setDeletingArtifact(a)}>
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+                              </svg>
+                            </IBtn>
+                          </>
+                        }
+                      />
+                    );
+                  })}
                 </div>
+              )
+            )}
+          </div>
+        )}
+      </div>
 
-                {/* Folder Body */}
-                {isExpanded && (
-                  <div className="p-5">
-                    {folder.cases.length === 0 ? (
-                      <div className="text-center py-8">
-                        <p className="text-sm text-slate-400 mb-3">Folder is empty. No cases uploaded yet.</p>
-                        <button
-                          onClick={() => {
-                            setSelectedApplicantId(folder.applicant.id);
-                            setShowCreateModal(true);
-                          }}
-                          className="px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors border border-blue-200 shadow-sm"
-                        >
-                          + Create Initial Case
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => {
-                              setSelectedApplicantId(folder.applicant.id);
-                              setShowCreateModal(true);
-                            }}
-                            className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm transition-all"
-                          >
-                            + Add Another Case
-                          </button>
-                        </div>
-                        <div className="border border-slate-100 rounded-lg overflow-hidden">
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="bg-slate-50 border-b border-slate-100 text-left text-xs text-slate-500 uppercase tracking-wider">
-                                <th className="px-4 py-3 font-semibold">Case Number</th>
-                                <th className="px-4 py-3 font-semibold">Type</th>
-                                <th className="px-4 py-3 font-semibold">Priority</th>
-                                <th className="px-4 py-3 font-semibold">Status</th>
-                                <th className="px-4 py-3 font-semibold">Updated</th>
-                                <th className="px-4 py-3 font-semibold text-right">Actions</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                              {folder.cases.map(c => (
-                                <tr key={c.caseld} className="hover:bg-slate-50/50">
-                                  <td className="px-4 py-3 font-mono text-xs font-semibold text-slate-700">{c.caseNumber}</td>
-                                  <td className="px-4 py-3">
-                                    <span className={`inline-flex px-2 py-0.5 rounded text-[11px] font-bold ${TYPE_STYLE[c.caseType] || "bg-slate-100 text-slate-700"}`}>{c.caseType}</span>
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span className={`text-[11px] font-bold ${c.priorityLevel === 'Critical' ? 'text-red-600' : c.priorityLevel === 'High' ? 'text-orange-600' : 'text-slate-500'}`}>{c.priorityLevel}</span>
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold ${STATUS_STYLE[c.caseStatus] || "bg-slate-100 text-slate-700"}`}>{c.caseStatus}</span>
-                                  </td>
-                                  <td className="px-4 py-3 text-xs text-slate-500">
-                                    {new Date(c.updatedAt).toLocaleDateString()}
-                                  </td>
-                                  <td className="px-4 py-3 text-right">
-                                    <div className="flex justify-end gap-2">
-                                      <button
-                                        onClick={() => {
-                                          setSelectedCase(c);
-                                          setNewStatus(c.caseStatus);
-                                          setEditPriority(c.priorityLevel);
-                                        }}
-                                        className="px-3 py-1 bg-white border border-slate-200 text-slate-600 text-xs font-semibold rounded hover:bg-slate-50 shadow-sm"
-                                      >
-                                        View/Edit
-                                      </button>
-                                      <button
-                                        onClick={(e) => handleDeleteCase(e, c.caseld)}
-                                        className="px-3 py-1 bg-red-50 border border-red-200 text-red-600 text-xs font-semibold rounded hover:bg-red-100 shadow-sm"
-                                      >
-                                        Delete
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+      {/* ── Status bar ───────────────────────────────────────────────────────── */}
+      <div className="flex-shrink-0 border-t border-slate-200 bg-white px-5 py-1.5">
+        <p className="text-[10px] text-slate-400 font-medium">{statusText}</p>
+      </div>
+
+      {/* ── Modals ───────────────────────────────────────────────────────────── */}
+
+      {showCreateCase && activeApplicant && (
+        <CreateCaseModal
+          applicant={activeApplicant}
+          onClose={() => setShowCreateCase(false)}
+          onCreated={() => {
+            setShowCreateCase(false);
+            api.get(`/tenants/${tenantId}/cases`).then(r => setCases(r.data)).catch(() => {});
+          }}
+        />
       )}
 
-      {/* CREATE CASE MODAL */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <h3 className="font-bold text-slate-800">Generate New Case</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
-            </div>
-            <form onSubmit={handleCreateCase} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Case Type</label>
-                <select value={newCaseType} onChange={e => setNewCaseType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                  <option value="Underwriting">Underwriting</option>
-                  <option value="Claim">Claim</option>
-                  <option value="Inquiry">Inquiry</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Priority Level</label>
-                <select value={newPriority} onChange={e => setNewPriority(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                  <option value="Low">Low</option>
-                  <option value="Normal">Normal</option>
-                  <option value="High">High</option>
-                  <option value="Critical">Critical</option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Source Channel</label>
-                <select value={newChannel} onChange={e => setNewChannel(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm">
-                  <option value="Online">Online</option>
-                  <option value="Agent">Agent</option>
-                  <option value="Branch">Branch</option>
-                </select>
-              </div>
-              <div className="pt-4 flex justify-end gap-3">
-                <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg border border-transparent">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm">Create Case</button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {editingCase && (
+        <EditCaseModal
+          caseItem={editingCase}
+          onClose={() => setEditingCase(null)}
+          onSaved={() => {
+            setEditingCase(null);
+            api.get(`/tenants/${tenantId}/cases`).then(r => setCases(r.data)).catch(() => {});
+          }}
+        />
       )}
 
-      {/* MANAGE / VIEW CASE MODAL */}
-      {selectedCase && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden">
-            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex justify-between items-center">
-              <div>
-                <h3 className="font-bold text-slate-800">Case Details</h3>
-                <p className="text-xs font-mono text-slate-500 mt-0.5">{selectedCase.caseNumber}</p>
-              </div>
-              <button onClick={() => setSelectedCase(null)} className="text-slate-400 hover:text-slate-600">✕</button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="block text-xs font-semibold text-slate-400 uppercase mb-0.5">Current Status</span>
-                  <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-bold ${STATUS_STYLE[selectedCase.caseStatus] || "bg-slate-100 text-slate-700"}`}>
-                    {selectedCase.caseStatus}
-                  </span>
-                </div>
-                <div>
-                  <span className="block text-xs font-semibold text-slate-400 uppercase mb-0.5">Created At</span>
-                  <span className="font-medium text-slate-700">{new Date(selectedCase.createdAt).toLocaleString()}</span>
-                </div>
-              </div>
+      {deletingCase && (
+        <ConfirmDeleteModal
+          title="Delete Case"
+          message={`Delete "${deletingCase.caseNumber}" and all its documents? This cannot be undone.`}
+          onConfirm={handleDeleteCase}
+          onCancel={() => setDeletingCase(null)}
+          deleting={deletingCaseInProgress}
+        />
+      )}
 
-              {/* Action Panel for Updating Case Properties */}
-              <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-4">
-                <h4 className="text-xs font-bold text-slate-800 uppercase">Edit Case Properties</h4>
-                <div className="flex gap-3">
-                  <select
-                    value={editPriority}
-                    onChange={e => setEditPriority(e.target.value)}
-                    className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700"
-                  >
-                    <option value="Low">Low Priority</option>
-                    <option value="Normal">Normal Priority</option>
-                    <option value="High">High Priority</option>
-                    <option value="Critical">Critical Priority</option>
-                  </select>
-                  <button
-                    onClick={handleEditCaseSubmit}
-                    disabled={editPriority === selectedCase.priorityLevel}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 shadow-sm transition-all"
-                  >
-                    Save Changes
-                  </button>
-                </div>
-                
-                <hr className="border-slate-200" />
-                
-                <h4 className="text-xs font-bold text-slate-800 uppercase">Update Status</h4>
-                <div className="flex gap-3">
-                  <select
-                    value={newStatus}
-                    onChange={e => setNewStatus(e.target.value)}
-                    className="flex-1 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-semibold text-slate-700"
-                  >
-                    <option value="New">New</option>
-                    <option value="InProgress">In Progress</option>
-                    <option value="Pending Documents">Pending Documents</option>
-                    <option value="Under Review">Under Review</option>
-                    <option value="Approved">Approved</option>
-                    <option value="Rejected">Rejected</option>
-                    <option value="Closed">Closed</option>
-                  </select>
-                  <button
-                    onClick={handleUpdateStatus}
-                    disabled={newStatus === selectedCase.caseStatus}
-                    className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 disabled:hover:bg-emerald-600 shadow-sm transition-all"
-                  >
-                    Transition State
-                  </button>
-                </div>
-                <p className="text-[10px] text-slate-400 mt-2">Note: Status changes automatically append an immutable record to the CaseHistory table.</p>
-              </div>
+      {showUpload && activeCase && (
+        <UploadModal
+          caseItem={activeCase}
+          onClose={() => setShowUpload(false)}
+          onUploaded={artifact => {
+            setArtifacts(prev => [artifact, ...prev]);
+            setShowUpload(false);
+            setViewingArtifact(artifact);
+          }}
+        />
+      )}
 
-            </div>
-          </div>
-        </div>
+      {viewingArtifact && (
+        <ArtifactDetailModal
+          artifact={viewingArtifact}
+          tenantId={tenantId}
+          onClose={() => setViewingArtifact(null)}
+        />
+      )}
+
+      {editingArtifact && (
+        <EditArtifactModal
+          artifact={editingArtifact}
+          tenantId={tenantId}
+          onClose={() => setEditingArtifact(null)}
+          onSaved={updated => {
+            setArtifacts(prev => prev.map(a => a.id === updated.id ? updated : a));
+            setEditingArtifact(null);
+          }}
+        />
+      )}
+
+      {deletingArtifact && (
+        <ConfirmDeleteModal
+          title="Delete Document"
+          message={`Delete "${deletingArtifact.file_name}" from S3 and the database? This cannot be undone.`}
+          onConfirm={handleDeleteArtifact}
+          onCancel={() => setDeletingArtifact(null)}
+          deleting={deletingArtifactInProgress}
+        />
       )}
     </div>
   );

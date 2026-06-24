@@ -7,6 +7,7 @@ const sidebars = {
     'db-schemas',
     'fraud-layer',
     'cases',
+    'artifacts',
     'data-flow',
     'services',
   ],

@@ -12,6 +12,7 @@ from routers.users import router as users_router
 from routers.auth import router as auth_router
 from routers.applicants import router as applicants_router
 from routers.cases import router as cases_router
+from routers.artifacts import router as artifacts_router
 from shared.models.core import Role
 
 # ── Standard RBAC roles seeded once at startup ────────────────────────────────
@@ -65,6 +66,7 @@ app.include_router(users_router)
 app.include_router(auth_router)
 app.include_router(applicants_router)
 app.include_router(cases_router)
+app.include_router(artifacts_router)
 
 
 @app.get("/health", tags=["Ops"])

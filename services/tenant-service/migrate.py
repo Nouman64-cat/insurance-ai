@@ -86,9 +86,85 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v2l — add updated_at to users",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()",
     ),
+    (
+        "v3 — add details to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS details JSON",
+    ),
+    (
+        "v4a — add case_id to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS case_id UUID REFERENCES cases(caseld)",
+    ),
+    (
+        "v4b — add uploaded_by to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS uploaded_by UUID REFERENCES users(id)",
+    ),
+    (
+        "v4c — add file_name to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS file_name VARCHAR(255)",
+    ),
+    (
+        "v4d — add file_size to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS file_size INTEGER",
+    ),
+    (
+        "v4e — add file_type to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS file_type VARCHAR(100)",
+    ),
+    (
+        "v4f — add storage_url to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS storage_url VARCHAR(1000)",
+    ),
+    (
+        "v4g — add ocr_result to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS ocr_result TEXT",
+    ),
+    (
+        "v4h — set default for ocr_confidence_score",
+        "ALTER TABLE artifacts ALTER COLUMN ocr_confidence_score SET DEFAULT 0.0",
+    ),
+    (
+        "v4i — set default for authenticity_score",
+        "ALTER TABLE artifacts ALTER COLUMN authenticity_score SET DEFAULT 1.0",
+    ),
+    (
+        "v4j — set default for quality_score",
+        "ALTER TABLE artifacts ALTER COLUMN quality_score SET DEFAULT 1.0",
+    ),
+    (
+        "v4k — set default for status",
+        "ALTER TABLE artifacts ALTER COLUMN status SET DEFAULT 'Processing'",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
+
+async def _create_enums_idempotent(conn) -> None:
+    """Create all PostgreSQL enum types in the metadata using DO blocks.
+
+    Using DO $$ BEGIN ... EXCEPTION WHEN duplicate_object THEN NULL; END $$
+    makes this safe on both a fresh DB and a restart with an existing volume —
+    the second case previously caused UniqueViolationError on casetypeenum etc.
+    """
+    from sqlalchemy import Enum as SAEnum
+
+    seen: set[str] = set()
+    for table in SQLModel.metadata.sorted_tables:
+        for column in table.columns:
+            if (
+                isinstance(column.type, SAEnum)
+                and column.type.name
+                and column.type.name not in seen
+            ):
+                seen.add(column.type.name)
+                values_str = ", ".join(f"'{v}'" for v in column.type.enums)
+                await conn.execute(text(f"""
+                    DO $$ BEGIN
+                        CREATE TYPE {column.type.name} AS ENUM ({values_str});
+                    EXCEPTION WHEN duplicate_object THEN NULL;
+                    END $$;
+                """))
+    log.info("enums created/verified: %s", sorted(seen))
+
 
 async def _seed_user_types(conn) -> None:
     from uuid import uuid4
@@ -115,7 +191,19 @@ async def run_migrations() -> None:
     import shared.models.core  # noqa: F401 — registers all SQLModel metadata
 
     async with _engine.begin() as conn:
-        # 1. Create any tables that do not yet exist (fully idempotent).
+        # 1. Create enum types idempotently before create_all so that restarts
+        #    with an existing volume do not raise UniqueViolationError.
+        await _create_enums_idempotent(conn)
+
+        # 2. Tell SQLAlchemy the enum types already exist so create_all only
+        #    issues CREATE TABLE statements (never CREATE TYPE).
+        from sqlalchemy import Enum as SAEnum
+        for table in SQLModel.metadata.sorted_tables:
+            for column in table.columns:
+                if isinstance(column.type, SAEnum):
+                    column.type.create_type = False
+
+        # 3. Create any tables that do not yet exist (fully idempotent).
         await conn.run_sync(SQLModel.metadata.create_all)
         log.info("create_all complete")
 

@@ -159,6 +159,24 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/auth/me")
 
 
+# ── Bootstrap — no auth ───────────────────────────────────────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/setup",
+    tags=["Bootstrap"],
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create first Admin user (no auth required)",
+    description=(
+        "One-time bootstrap endpoint. Creates the first Admin user for a tenant "
+        "without requiring a JWT token. Returns **409** if any user already exists — "
+        "after that, use `POST /auth/token` to log in and manage users normally."
+    ),
+)
+async def seed_admin(tenant_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/setup")
+
+
 # ── Users ──────────────────────────────────────────────────────────────────────
 
 @app.post(
@@ -279,6 +297,55 @@ async def assign_case(tenant_id: UUID, case_id: UUID, request: Request, token: s
 @app.post("/tenants/{tenant_id}/cases/{case_id}/comments", tags=["Cases"], status_code=201, summary="Add a comment")
 async def add_case_comment(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/comments")
+
+
+# ── Artifacts ─────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/artifacts",
+    tags=["Artifacts"],
+    status_code=201,
+    summary="Upload a document (PDF/PNG/JPEG) and run OCR",
+)
+async def upload_artifact(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/artifacts")
+
+
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/artifacts",
+    tags=["Artifacts"],
+    summary="List artifacts for a case",
+)
+async def list_case_artifacts(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/artifacts")
+
+
+@app.get(
+    "/tenants/{tenant_id}/artifacts/{artifact_id}",
+    tags=["Artifacts"],
+    summary="Get artifact with fresh presigned download URL",
+)
+async def get_artifact(tenant_id: UUID, artifact_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/artifacts/{artifact_id}")
+
+
+@app.patch(
+    "/tenants/{tenant_id}/artifacts/{artifact_id}",
+    tags=["Artifacts"],
+    summary="Update artifact metadata (e.g. document_type)",
+)
+async def update_artifact(tenant_id: UUID, artifact_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/artifacts/{artifact_id}")
+
+
+@app.delete(
+    "/tenants/{tenant_id}/artifacts/{artifact_id}",
+    status_code=204,
+    tags=["Artifacts"],
+    summary="Delete artifact from S3 and database",
+)
+async def delete_artifact(tenant_id: UUID, artifact_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/artifacts/{artifact_id}")
 
 
 # ── Roles ──────────────────────────────────────────────────────────────────────

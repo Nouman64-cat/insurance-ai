@@ -3,7 +3,7 @@ from enum import Enum
 from typing import List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, JSON, UniqueConstraint
+from sqlalchemy import Column, Integer, JSON, String, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -283,21 +283,25 @@ class Artifact(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
-    # An artifact is attached to an applicant, a claim, or both — both FKs are optional.
     applicant_id: Optional[UUID] = Field(default=None, foreign_key="applicants.id", index=True)
     claim_id: Optional[UUID] = Field(default=None, foreign_key="claims.id", index=True)
+    case_id: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", index=True)
+    uploaded_by: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True)
 
-    document_type: str = Field(max_length=100)      # e.g. 'CNIC', 'Salary Slip', 'Medical Report'
-    ocr_confidence_score: float = Field(ge=0.0, le=1.0)
-    authenticity_score: float = Field(ge=0.0, le=1.0)
-    quality_score: float = Field(ge=0.0, le=1.0)
+    document_type: str = Field(max_length=100)
+    file_name: Optional[str] = Field(default=None, sa_column=Column(String(255), nullable=True))
+    file_size: Optional[int] = Field(default=None, sa_column=Column(Integer, nullable=True))
+    file_type: Optional[str] = Field(default=None, sa_column=Column(String(100), nullable=True))
+    storage_url: Optional[str] = Field(default=None, sa_column=Column(String(1000), nullable=True))
+    ocr_result: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    ocr_confidence_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    authenticity_score: float = Field(default=1.0, ge=0.0, le=1.0)
+    quality_score: float = Field(default=1.0, ge=0.0, le=1.0)
     tampered_flag: bool = Field(default=False)
-    status: str = Field(max_length=50)              # e.g. 'Accepted', 'Re-submission Requested'
+    status: str = Field(default="Processing", max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
-    # Relationships — SQLAlchemy disambiguates the two optional FKs because
-    # each points to a different table (applicants vs claims).
     tenant: Optional[Tenant] = Relationship(back_populates="artifacts")
     applicant: Optional[Applicant] = Relationship(back_populates="artifacts")
     claim: Optional[Claim] = Relationship(back_populates="artifacts")

@@ -42,6 +42,9 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 | `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get an applicant (Bearer required) |
 | `PUT` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Update an applicant (Bearer required) |
 | `DELETE` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Delete an applicant (Bearer required) |
+| `POST` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | Upload document → S3 + OCR (Bearer required) |
+| `GET` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | List artifacts for a case (Bearer required) |
+| `GET` | `/tenants/{tenant_id}/artifacts/{artifact_id}` | Get artifact + fresh presigned URL (Bearer required) |
 | `GET` | `/roles` | List RBAC roles |
 | `GET` | `/health` | Health check |
 
@@ -87,6 +90,9 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 | `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get applicant by ID (Admin only) |
 | `PUT` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Full update of an applicant (Admin only) |
 | `DELETE` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Delete applicant (Admin only) |
+| `POST` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | Upload document → S3 upload + OCR extraction; auto-links `applicant_id` from case |
+| `GET` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | List all artifacts for a case |
+| `GET` | `/tenants/{tenant_id}/artifacts/{artifact_id}` | Get single artifact with fresh presigned download URL (1 hr expiry) |
 | `GET` | `/roles` | List all roles |
 | `GET` | `/health` | Health check |
 
@@ -98,6 +104,17 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 | `Underwriter` | Evaluate proposals, review risk assessments, make decisions |
 | `Agent` | Submit proposals, track status |
 | `Viewer` | Read-only access to dashboards and reports |
+
+### Key env vars
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | PostgreSQL async connection string |
+| `AWS_ACCESS_KEY_ID` | IAM key for S3 uploads |
+| `AWS_SECRET_ACCESS_KEY` | IAM secret for S3 uploads |
+| `AWS_REGION` | S3 bucket region (default `us-east-1`) |
+| `S3_BUCKET_NAME` | Bucket name (default `insurance-ai-dev`) |
+| `OCR_ENGINE_URL` | Internal OCR service URL (default `http://ocr-engine:8004`) |
 
 ---
 

@@ -10,7 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from jose import JWTError
 
 from database import get_session
-from schemas import UserCreate, UserRead, UserUpdate
+from schemas import SeedAdminCreate, UserCreate, UserRead, UserUpdate
 from shared.models.core import Role, Tenant, User, UserProfile, UserStatus
 from routers.auth import decode_access_token, oauth2_scheme
 
@@ -86,6 +86,80 @@ async def verify_admin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrative privileges required",
         )
+
+
+@router.post(
+    "/{tenant_id}/setup",
+    response_model=UserRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Bootstrap first Admin",
+    description=(
+        "Creates the first Admin user for a tenant. **No authentication required.** "
+        "Returns 409 if any user already exists for this tenant — use the normal "
+        "user management endpoints after initial setup."
+    ),
+)
+async def seed_admin(
+    tenant_id: UUID,
+    body: SeedAdminCreate,
+    session: AsyncSession = Depends(get_session),
+) -> UserRead:
+    tenant = await session.get(Tenant, tenant_id)
+    _verify_tenant(tenant, tenant_id)
+
+    existing_users = (
+        await session.exec(select(User).where(User.tenant_id == tenant_id))
+    ).first()
+    if existing_users:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This tenant already has users. Use POST /auth/token to log in, then manage users via the users endpoints.",
+        )
+
+    admin_role = (await session.exec(select(Role).where(Role.name == "Admin"))).first()
+    if admin_role is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Admin role not found — ensure the tenant service seeded roles on startup.",
+        )
+
+    existing_email = (await session.exec(select(User).where(User.email == body.email))).first()
+    if existing_email:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Email '{body.email}' is already registered.",
+        )
+
+    existing_username = (await session.exec(select(User).where(User.username == body.username))).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Username '{body.username}' is already registered.",
+        )
+
+    user = User(
+        tenant_id=tenant_id,
+        role_id=admin_role.id,
+        email=body.email,
+        username=body.username,
+        hashed_password=_pwd.hash(body.password),
+        full_name=f"{body.first_name} {body.last_name}".strip(),
+        status=UserStatus.ACTIVE,
+        is_active=True,
+    )
+    session.add(user)
+    await session.flush()
+
+    profile = UserProfile(
+        user_id=user.id,
+        first_name=body.first_name,
+        last_name=body.last_name,
+    )
+    session.add(profile)
+    await session.commit()
+    await session.refresh(user)
+    await session.refresh(profile)
+    return to_user_read(user, profile)
 
 
 @router.post(
