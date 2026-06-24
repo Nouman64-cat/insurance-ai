@@ -4,9 +4,9 @@ from typing import List, Optional
 from uuid import UUID, uuid4
 
 import boto3
-import httpx
+from aiokafka import AIOKafkaProducer
 from botocore.exceptions import ClientError
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from jose import JWTError
 from pydantic import BaseModel
 from sqlmodel import select
@@ -14,13 +14,14 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import decode_access_token, oauth2_scheme
+from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
 from shared.models.core import Artifact, Case, Tenant, User
 
 router = APIRouter(prefix="/tenants", tags=["Artifacts"])
 
-_OCR_URL = os.environ.get("OCR_ENGINE_URL", "http://ocr-engine:8004")
-_S3_BUCKET = os.environ.get("S3_BUCKET_NAME", "insurance-ai-dev")
+_S3_BUCKET  = os.environ.get("S3_BUCKET_NAME", "insurance-ai-dev")
 _AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+OCR_TOPIC   = "insurance.artifact.ocr.requested.v1"
 
 SUPPORTED_MIME = {
     "pdf": "application/pdf",
@@ -68,26 +69,6 @@ def _s3_key(tenant_id: UUID, case_id: UUID, artifact_id: UUID, file_name: str) -
     return f"{tenant_id}/cases/{case_id}/{artifact_id}/{file_name}"
 
 
-async def _run_ocr(file_bytes: bytes, filename: str, mime_type: str) -> dict:
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        resp = await client.post(
-            f"{_OCR_URL}/extract",
-            files={"file": (filename, file_bytes, mime_type)},
-        )
-        resp.raise_for_status()
-        return resp.json()
-
-
-def _confidence_from_ocr(ocr_text: str) -> float:
-    if not ocr_text or not ocr_text.strip():
-        return 0.1
-    length = len(ocr_text.strip())
-    if length > 200:
-        return 0.9
-    if length > 50:
-        return 0.7
-    return 0.5
-
 
 async def _get_current_user_id(token: str) -> UUID:
     try:
@@ -100,8 +81,13 @@ async def _get_current_user_id(token: str) -> UUID:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
-@router.post("/{tenant_id}/cases/{case_id}/artifacts", status_code=201, summary="Upload document and run OCR")
+@router.post(
+    "/{tenant_id}/cases/{case_id}/artifacts",
+    status_code=202,
+    summary="Upload document — S3 sync, OCR async via Kafka",
+)
 async def upload_artifact(
+    request: Request,
     tenant_id: UUID,
     case_id: UUID,
     document_type: str = Form(..., description="e.g. CNIC, Salary Slip, Medical Report, X-Ray"),
@@ -131,7 +117,7 @@ async def upload_artifact(
     artifact_id = uuid4()
     s3_key = _s3_key(tenant_id, case_id, artifact_id, file.filename)
 
-    # Upload to S3
+    # 1. Upload to S3 (synchronous but fast — kept in the request path)
     loop = asyncio.get_running_loop()
     try:
         storage_url = await loop.run_in_executor(
@@ -140,18 +126,7 @@ async def upload_artifact(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"S3 upload failed: {exc}")
 
-    # Run OCR
-    ocr_text = ""
-    confidence = 0.0
-    try:
-        ocr_result = await _run_ocr(file_bytes, file.filename, mime_type)
-        ocr_text = ocr_result.get("extracted_text", "")
-        confidence = _confidence_from_ocr(ocr_text)
-    except Exception:
-        confidence = 0.0
-
-    artifact_status = "Accepted" if confidence >= 0.7 else "Re-submission Requested"
-
+    # 2. Persist artifact row immediately with Processing status
     artifact = Artifact(
         id=artifact_id,
         tenant_id=tenant_id,
@@ -163,15 +138,42 @@ async def upload_artifact(
         file_size=len(file_bytes),
         file_type=mime_type,
         storage_url=storage_url,
-        ocr_result=ocr_text,
-        ocr_confidence_score=confidence,
+        ocr_result=None,
+        ocr_confidence_score=0.0,
         authenticity_score=1.0,
         quality_score=1.0,
-        status=artifact_status,
+        status="Processing",
     )
     session.add(artifact)
     await session.commit()
     await session.refresh(artifact)
+
+    # 3. Publish OCR job to Kafka — worker picks it up and updates the row async
+    event = ArtifactOCRRequestedEvent(
+        tenant_id=tenant_id,
+        payload=ArtifactOCRPayload(
+            artifact_id=artifact_id,
+            tenant_id=tenant_id,
+            case_id=case_id,
+            s3_key=s3_key,
+            file_name=file.filename or "",
+            mime_type=mime_type,
+        ),
+    )
+    try:
+        producer: AIOKafkaProducer = request.app.state.kafka_producer
+        await producer.send_and_wait(
+            OCR_TOPIC,
+            value=event.model_dump_json(),
+            key=str(artifact_id),
+        )
+    except Exception as exc:
+        # Kafka unavailable: log and continue — artifact is already saved,
+        # status stays "Processing"; operator can replay manually.
+        import logging
+        logging.getLogger("tenant-service.artifacts").warning(
+            "Kafka publish failed for artifact %s: %s", artifact_id, exc
+        )
 
     return _artifact_response(artifact, s3_key)
 

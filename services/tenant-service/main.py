@@ -1,5 +1,8 @@
+import asyncio
+import os
 from contextlib import asynccontextmanager
 
+from aiokafka import AIOKafkaProducer
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
@@ -7,6 +10,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import _session_factory
 from migrate import run_migrations
+from ocr_worker import start_ocr_worker
 from routers.tenants import router as tenants_router
 from routers.users import router as users_router
 from routers.auth import router as auth_router
@@ -14,6 +18,8 @@ from routers.applicants import router as applicants_router
 from routers.cases import router as cases_router
 from routers.artifacts import router as artifacts_router
 from shared.models.core import Role
+
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 
 # ── Standard RBAC roles seeded once at startup ────────────────────────────────
 
@@ -38,7 +44,28 @@ async def lifespan(app: FastAPI):
     await run_migrations()
     async with _session_factory() as session:
         await _seed_roles(session)
+
+    # Kafka producer — shared across all request handlers via app.state
+    producer = AIOKafkaProducer(
+        bootstrap_servers=KAFKA_BOOTSTRAP,
+        value_serializer=lambda v: v.encode("utf-8"),
+        key_serializer=lambda k: k.encode("utf-8") if k else None,
+        acks="all",
+        enable_idempotence=True,
+    )
+    await producer.start()
+    app.state.kafka_producer = producer
+
+    # OCR worker — background asyncio task
+    stop_event = asyncio.Event()
+    worker_task = start_ocr_worker(stop_event)
+
     yield
+
+    # Graceful shutdown
+    stop_event.set()
+    await worker_task
+    await producer.stop()
 
 
 # ── App ───────────────────────────────────────────────────────────────────────

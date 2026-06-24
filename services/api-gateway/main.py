@@ -11,6 +11,7 @@ tenant-service; these bootstrap routes are here solely to make the
 prototype runnable without standing up every microservice.
 """
 
+import json
 import os
 import httpx
 from contextlib import asynccontextmanager
@@ -20,7 +21,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -103,6 +104,7 @@ app.include_router(evaluate_router)
 # ── Proxy routing to tenant-service ───────────────────────────────────────────
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+TEXT_SUMMARIZER_URL = os.environ.get("TEXT_SUMMARIZER_URL", "http://text-summarizer:8005")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
@@ -346,6 +348,36 @@ async def update_artifact(tenant_id: UUID, artifact_id: UUID, request: Request, 
 )
 async def delete_artifact(tenant_id: UUID, artifact_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/artifacts/{artifact_id}")
+
+
+# ── Text Summarizer ────────────────────────────────────────────────────────────
+
+@app.post("/summarize/stream", tags=["Summarizer"], summary="Stream case summary via SSE (Gemini 2.5 Flash)")
+async def summarize_stream(request: Request):
+    """Proxies SSE streaming from the text-summarizer service — no auth required on this leg."""
+    body = await request.body()
+
+    async def _generate():
+        try:
+            async with httpx.AsyncClient(timeout=300.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{TEXT_SUMMARIZER_URL}/summarize/stream",
+                    content=body,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+        except httpx.ConnectError:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Text summarizer is unreachable'})}\n\n"
+        except httpx.TimeoutException:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Text summarizer timed out after 300 s'})}\n\n"
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
+    )
 
 
 # ── Roles ──────────────────────────────────────────────────────────────────────

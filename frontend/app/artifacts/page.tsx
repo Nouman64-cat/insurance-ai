@@ -226,7 +226,7 @@ function CaseUploadTab() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "done" | "error">("idle");
+  const [uploadStatus, setUploadStatus] = useState<"idle" | "uploading" | "polling" | "done" | "error">("idle");
   const [uploadError, setUploadError] = useState("");
   const [artifact, setArtifact] = useState<ArtifactResponse | null>(null);
 
@@ -235,6 +235,7 @@ function CaseUploadTab() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     const tenantId = localStorage.getItem("tenant_id");
@@ -309,20 +310,44 @@ function CaseUploadTab() {
     form.append("file", uploadFile);
 
     try {
+      // Server returns 202 immediately — artifact status is "Processing"
       const res = await api.post(
         `/tenants/${tenantId}/cases/${selectedCaseId}/artifacts`,
         form,
-        { headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000 }
+        { headers: { "Content-Type": "multipart/form-data" }, timeout: 30_000 }
       );
-      setArtifact(res.data);
-      setUploadStatus("done");
+      const initial: ArtifactResponse = res.data;
+      setArtifact(initial);
       setUploadFile(null);
       fetchCaseArtifacts(selectedCaseId);
+
+      if (initial.status === "Processing") {
+        setUploadStatus("polling");
+        // Poll every 3 s until OCR worker completes the job
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          try {
+            const poll = await api.get(`/tenants/${tenantId}/artifacts/${initial.id}`);
+            const updated: ArtifactResponse = poll.data;
+            if (updated.status !== "Processing") {
+              setArtifact(updated);
+              setUploadStatus("done");
+              setCaseArtifacts(prev => prev.map(a => a.id === updated.id ? updated : a));
+              if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+            }
+          } catch { /* ignore transient poll errors */ }
+        }, 3000);
+      } else {
+        setUploadStatus("done");
+      }
     } catch (err: any) {
       setUploadError(err.message ?? "Upload failed.");
       setUploadStatus("error");
     }
   };
+
+  // Cleanup poll on unmount
+  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
 
   const filteredCases = cases.filter(c =>
     c.caseNumber.toLowerCase().includes(caseSearch.toLowerCase()) ||
@@ -455,15 +480,17 @@ function CaseUploadTab() {
         {/* Upload button */}
         <button
           onClick={handleUpload}
-          disabled={!selectedCaseId || !uploadFile || uploadStatus === "uploading"}
+          disabled={!selectedCaseId || !uploadFile || uploadStatus === "uploading" || uploadStatus === "polling"}
           className={`w-full flex items-center justify-center gap-2 py-2.5 px-5 rounded-xl text-sm font-semibold tracking-wide transition-all duration-150 ${
-            !selectedCaseId || !uploadFile || uploadStatus === "uploading"
+            !selectedCaseId || !uploadFile || uploadStatus === "uploading" || uploadStatus === "polling"
               ? "bg-slate-100 text-slate-400 cursor-not-allowed"
               : "bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg active:scale-[0.98]"
           }`}
         >
           {uploadStatus === "uploading" ? (
-            <><SpinnerIcon /> Uploading to S3 &amp; running OCR…</>
+            <><SpinnerIcon /> Uploading to S3…</>
+          ) : uploadStatus === "polling" ? (
+            <><SpinnerIcon /> OCR in progress — polling…</>
           ) : (
             <>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -480,13 +507,16 @@ function CaseUploadTab() {
       {/* ── Right panel ─────────────────────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-h-0 gap-4 overflow-y-auto">
 
-        {/* Upload result */}
-        {uploadStatus === "done" && artifact && (
+        {/* Upload result — shown while polling and after done */}
+        {(uploadStatus === "polling" || uploadStatus === "done") && artifact && (
           <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex-shrink-0">
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 bg-slate-50">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-emerald-400" />
-                <span className="text-xs font-bold text-slate-700">Upload Successful</span>
+                {uploadStatus === "polling" ? (
+                  <><SpinnerIcon className="w-3.5 h-3.5 text-blue-500" /><span className="text-xs font-bold text-blue-700">OCR running — Kafka worker processing…</span></>
+                ) : (
+                  <><div className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-xs font-bold text-slate-700">Upload &amp; OCR Complete</span></>
+                )}
               </div>
               <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_COLORS[artifact.status] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
                 {artifact.status}

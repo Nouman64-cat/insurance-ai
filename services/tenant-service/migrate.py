@@ -134,6 +134,18 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v4k — set default for status",
         "ALTER TABLE artifacts ALTER COLUMN status SET DEFAULT 'Processing'",
     ),
+    (
+        "v5a — add composite_risk_score to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS composite_risk_score INTEGER",
+    ),
+    (
+        "v5b — add case_id to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS case_id UUID REFERENCES cases(caseld)",
+    ),
+    (
+        "v5c — add ai_summary to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS ai_summary TEXT",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

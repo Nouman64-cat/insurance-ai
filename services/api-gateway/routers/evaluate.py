@@ -16,11 +16,12 @@ POST /evaluate/stream is kept intact for synchronous dev/testing workflows.
 """
 
 import json
+from typing import List, Optional
 from uuid import UUID, uuid4
 
 import httpx
 from aiokafka import AIOKafkaProducer
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -254,12 +255,15 @@ async def evaluate_stream(
                 assessment = RiskAssessment(
                     tenant_id=tenant_id,
                     applicant_id=applicant.id,
+                    case_id=request.case_id,
                     medical_score=final_risk["medical_score"],
                     financial_score=final_risk["financial_score"],
                     fraud_probability=final_risk["fraud_probability"],
+                    composite_risk_score=final_risk.get("composite_risk_score"),
                     ai_decision=AIDecision(final_risk["ai_decision"]),
                     suggested_loading=final_risk.get("suggested_loading"),
                     reasons=final_risk.get("reasons"),
+                    ai_summary=request.ai_summary,
                 )
                 db.add(assessment)
                 await db.commit()
@@ -275,3 +279,87 @@ async def evaluate_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /assessments — list stored evaluations for this tenant
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/assessments", summary="List stored risk assessments for this tenant")
+async def list_assessments(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    case_id: Optional[UUID] = Query(None),
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+) -> List[dict]:
+    stmt = (
+        select(RiskAssessment)
+        .where(RiskAssessment.tenant_id == tenant_id)
+    )
+    if case_id:
+        stmt = stmt.where(RiskAssessment.case_id == case_id)
+    stmt = stmt.order_by(RiskAssessment.created_at.desc()).offset(skip).limit(limit)
+    assessments = (await session.exec(stmt)).all()
+
+    if not assessments:
+        return []
+
+    # Batch-load applicant names in one query
+    applicant_ids = list({a.applicant_id for a in assessments})
+    app_stmt = select(Applicant).where(Applicant.id.in_(applicant_ids))
+    applicants = {a.id: a for a in (await session.exec(app_stmt)).all()}
+
+    return [
+        {
+            "id": str(a.id),
+            "applicant_id": str(a.applicant_id),
+            "applicant_name": applicants[a.applicant_id].name if a.applicant_id in applicants else "Unknown",
+            "applicant_cnic": applicants[a.applicant_id].cnic if a.applicant_id in applicants else "—",
+            "case_id": str(a.case_id) if a.case_id else None,
+            "medical_score": a.medical_score,
+            "financial_score": a.financial_score,
+            "fraud_probability": a.fraud_probability,
+            "composite_risk_score": a.composite_risk_score,
+            "ai_decision": a.ai_decision.value,
+            "suggested_loading": a.suggested_loading,
+            "has_summary": a.ai_summary is not None,
+            "created_at": a.created_at.isoformat(),
+        }
+        for a in assessments
+    ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /assessments/{assessment_id} — full detail including ai_summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/assessments/{assessment_id}", summary="Get a single risk assessment with full AI summary")
+async def get_assessment(
+    assessment_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    a = await session.get(RiskAssessment, assessment_id)
+    if a is None or a.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
+    applicant = await session.get(Applicant, a.applicant_id)
+
+    return {
+        "id": str(a.id),
+        "applicant_id": str(a.applicant_id),
+        "applicant_name": applicant.name if applicant else "Unknown",
+        "applicant_cnic": applicant.cnic if applicant else "—",
+        "case_id": str(a.case_id) if a.case_id else None,
+        "medical_score": a.medical_score,
+        "financial_score": a.financial_score,
+        "fraud_probability": a.fraud_probability,
+        "composite_risk_score": a.composite_risk_score,
+        "ai_decision": a.ai_decision.value,
+        "suggested_loading": a.suggested_loading,
+        "reasons": a.reasons or [],
+        "ai_summary": a.ai_summary,
+        "has_summary": a.ai_summary is not None,
+        "created_at": a.created_at.isoformat(),
+    }

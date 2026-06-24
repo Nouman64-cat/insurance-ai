@@ -503,10 +503,11 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
   );
 }
 
-function ArtifactDetailModal({ artifact: initial, tenantId, onClose }: { artifact: Artifact; tenantId: string; onClose: () => void }) {
+function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }: { artifact: Artifact; tenantId: string; onClose: () => void; onUpdate?: (a: Artifact) => void }) {
   const [artifact, setArtifact] = useState(initial);
   const [loading, setLoading] = useState(!initial.download_url);
 
+  // Fetch fresh presigned URL on open if it wasn't included
   useEffect(() => {
     if (!initial.download_url) {
       api.get(`/tenants/${tenantId}/artifacts/${initial.id}`)
@@ -515,6 +516,21 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose }: { artifac
         .finally(() => setLoading(false));
     }
   }, [initial.id, tenantId, initial.download_url]);
+
+  // Poll every 3 s while OCR is still pending — modal has its own copy of the artifact
+  // so it must poll independently rather than waiting for the parent to push updates.
+  useEffect(() => {
+    if (artifact.status !== "Processing") return;
+    const t = setTimeout(async () => {
+      try {
+        const res = await api.get(`/tenants/${tenantId}/artifacts/${artifact.id}`);
+        const fresh: Artifact = res.data;
+        setArtifact(fresh);
+        onUpdate?.(fresh);
+      } catch { /* ignore transient errors */ }
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [artifact.status, artifact.id, tenantId, onUpdate]);
 
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -609,7 +625,14 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose }: { artifac
                 </div>
               )}
 
-              {!artifact.ocr_result && (
+              {!artifact.ocr_result && artifact.status === "Processing" && (
+                <div className="flex flex-col items-center gap-2 py-6">
+                  <SpinnerIcon className="w-5 h-5 text-blue-400" />
+                  <p className="text-xs text-slate-400">OCR in progress — extracting text…</p>
+                </div>
+              )}
+
+              {!artifact.ocr_result && artifact.status !== "Processing" && (
                 <p className="text-xs text-slate-400 text-center py-4">No OCR text extracted for this document.</p>
               )}
             </>
@@ -718,6 +741,38 @@ function caseFolderColor(status: string): { color: string; accent: string } {
   }
 }
 
+// ── Toast ─────────────────────────────────────────────────────────────────────
+
+interface ToastMsg { id: number; text: string; ok: boolean }
+
+function ToastBanner({ toasts, onDismiss }: { toasts: ToastMsg[]; onDismiss: (id: number) => void }) {
+  return (
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
+      {toasts.map(t => (
+        <div
+          key={t.id}
+          onClick={() => onDismiss(t.id)}
+          className={`pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold border cursor-pointer select-none transition-all
+            ${t.ok
+              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+              : "bg-amber-50 border-amber-200 text-amber-800"}`}
+        >
+          {t.ok ? (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
+              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+          )}
+          {t.text}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CasesPage() {
@@ -746,7 +801,41 @@ export default function CasesPage() {
   const [deletingArtifact, setDeletingArtifact] = useState<Artifact | null>(null);
   const [deletingArtifactInProgress, setDeletingArtifactInProgress] = useState(false);
 
+  const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  const toastId = useRef(0);
+  const showToast = useCallback((text: string, ok: boolean) => {
+    const id = ++toastId.current;
+    setToasts(prev => [...prev, { id, text, ok }]);
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
+  }, []);
+
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+
+  // Poll every 3 s while any artifact in the current case view is "Processing".
+  // useEffect re-runs whenever artifacts changes so the timeout always resets to
+  // 3 s from the last state change, creating a natural retry loop that stops the
+  // moment nothing is Processing.
+  useEffect(() => {
+    if (view !== "documents" || !tenantId) return;
+    const processing = artifacts.filter(a => a.status === "Processing");
+    if (processing.length === 0) return;
+
+    const t = setTimeout(async () => {
+      const results = await Promise.allSettled(
+        processing.map(a =>
+          api.get(`/tenants/${tenantId}/artifacts/${a.id}`).then(r => r.data as Artifact)
+        )
+      );
+      const updated = results
+        .filter((r): r is PromiseFulfilledResult<Artifact> => r.status === "fulfilled")
+        .map(r => r.value);
+      if (updated.length > 0) {
+        setArtifacts(prev => prev.map(a => updated.find(u => u.id === a.id) ?? a));
+      }
+    }, 3000);
+
+    return () => clearTimeout(t);
+  }, [artifacts, view, tenantId]);
 
   // Load applicants + all cases once
   useEffect(() => {
@@ -851,6 +940,8 @@ export default function CasesPage() {
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
+
+      <ToastBanner toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
 
       {/* ── Toolbar ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4 px-5 py-3 bg-white border-b border-slate-200 flex-shrink-0">
@@ -1042,11 +1133,21 @@ export default function CasesPage() {
                   {artifacts.map(a => {
                     const ext = getExt(a.file_name ?? "");
                     const statusCls = STATUS_CHIP[a.status] ?? "bg-slate-100 text-slate-600 border-slate-200";
+                    const isProcessing = a.status === "Processing";
                     return (
                       <ExplorerItem
                         key={a.id}
                         id={a.id}
-                        icon={<FileSvg ext={ext} size={52} />}
+                        icon={
+                          <div className="relative">
+                            <FileSvg ext={ext} size={52} />
+                            {isProcessing && (
+                              <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-white/70">
+                                <SpinnerIcon className="w-5 h-5 text-blue-500" />
+                              </div>
+                            )}
+                          </div>
+                        }
                         name={a.file_name ?? "Unknown"}
                         line2={<>{a.document_type}<br />{fmtSize(a.file_size)}</>}
                         badge={
@@ -1145,6 +1246,19 @@ export default function CasesPage() {
           artifact={viewingArtifact}
           tenantId={tenantId}
           onClose={() => setViewingArtifact(null)}
+          onUpdate={updated => {
+            setViewingArtifact(updated);
+            setArtifacts(prev => prev.map(a => a.id === updated.id ? updated : a));
+            if (updated.status !== "Processing") {
+              const ok = updated.status === "Accepted";
+              showToast(
+                ok
+                  ? `OCR complete — ${updated.file_name ?? "Document"} accepted`
+                  : `OCR complete — ${updated.file_name ?? "Document"} needs re-submission`,
+                ok,
+              );
+            }
+          }}
         />
       )}
 

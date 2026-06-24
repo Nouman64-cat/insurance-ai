@@ -224,6 +224,105 @@ export default function LiveEvaluationPage() {
   const isRunning = status === "streaming";
   const decision  = asDecision(result.aiDecision);
 
+  const downloadReport = async () => {
+    const { default: jsPDF } = await import("jspdf");
+
+    const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+    const pageW = 210, pageH = 297, mg = 16, cw = pageW - mg * 2;
+    let y = 0;
+
+    const nextPage = (needed: number) => {
+      if (y + needed > pageH - 18) { doc.addPage(); y = 18; }
+    };
+
+    const scoreBar = (label: string, score: number, display: string, r: number, g: number, b: number) => {
+      nextPage(14);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(51, 65, 85);
+      doc.text(label, mg, y);
+      doc.setFont("helvetica", "bold"); doc.setTextColor(15, 23, 42);
+      doc.text(display, pageW - mg, y, { align: "right" });
+      y += 4;
+      doc.setFillColor(241, 245, 249); doc.rect(mg, y, cw, 3.5, "F");
+      doc.setFillColor(r, g, b); doc.rect(mg, y, (Math.min(score, 100) / 100) * cw, 3.5, "F");
+      y += 9;
+    };
+
+    // Header
+    doc.setFillColor(15, 23, 42); doc.rect(0, 0, pageW, 28, "F");
+    doc.setFillColor(59, 130, 246); doc.rect(0, 28, pageW, 1.5, "F");
+    doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(13);
+    doc.text("insurance-ai", mg, 12);
+    doc.setFont("helvetica", "normal"); doc.setFontSize(7.5);
+    doc.text("Underwriting Platform · Live Evaluation Report", mg, 20);
+    doc.setTextColor(148, 163, 184);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, pageW - mg, 20, { align: "right" });
+    y = 38;
+
+    // Applicant & Policy
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+    doc.text("APPLICANT DETAILS", mg, y); y += 5;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 23, 42);
+    doc.text(form.name || "—", mg, y); y += 6;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
+    doc.text([`CNIC: ${form.cnic || "—"}`, `DOB: ${form.dob || "—"}`, `Gender: ${form.gender}`, `Occupation: ${form.occupation || "—"}`, `Annual Income: PKR ${Number(form.declaredIncome || 0).toLocaleString()}`].join("    "), mg, y, { maxWidth: cw });
+    y += 7;
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+    doc.text("POLICY", mg, y); y += 4;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
+    doc.text(`${form.productName || "—"}    Coverage: PKR ${Number(form.coverageAmount || 0).toLocaleString()}    Term: ${form.termYears || "—"} years`, mg, y, { maxWidth: cw });
+    y += 9;
+    doc.setDrawColor(226, 232, 240); doc.line(mg, y, pageW - mg, y); y += 8;
+
+    // Risk scores
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+    doc.text("RISK ASSESSMENT", mg, y); y += 5;
+    if (result.medicalScore     !== null) scoreBar("Medical Score",     result.medicalScore,                  `${result.medicalScore} / 100`,          59,  130, 246);
+    if (result.financialScore   !== null) scoreBar("Financial Score",   result.financialScore,                `${result.financialScore} / 100`,        139, 92,  246);
+    if (result.fraudProbability !== null) scoreBar("Fraud Probability", result.fraudProbability * 100,        result.fraudProbability.toFixed(2),       239, 68,  68);
+    y += 2; nextPage(4); doc.setDrawColor(226, 232, 240); doc.line(mg, y, pageW - mg, y); y += 8;
+
+    // Decision
+    doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+    doc.text("UNDERWRITING DECISION", mg, y); y += 5;
+    doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
+    doc.text("Composite Risk Score", mg, y);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(22); doc.setTextColor(15, 23, 42);
+    doc.text(String(result.compositeScore ?? "—"), mg + 52, y + 0.5);
+    y += 8;
+    const DC: Record<string, [number, number, number]> = { "Auto Approve": [16, 185, 129], "Approve with Loading": [245, 158, 11], "Human Review": [59, 130, 246], "Decline": [239, 68, 68] };
+    const [dr, dg, db] = DC[result.aiDecision ?? ""] ?? [100, 116, 139];
+    doc.setFillColor(dr, dg, db); doc.rect(mg, y - 4, 60, 8, "F");
+    doc.setTextColor(255, 255, 255); doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+    doc.text(result.aiDecision ?? "—", mg + 4, y + 1);
+    y += 14;
+
+    if (result.reasons.length > 0) {
+      nextPage(12);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+      doc.text("DECISION REASONING", mg, y); y += 5;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
+      for (let i = 0; i < result.reasons.length; i++) {
+        const isLast = i === result.reasons.length - 1;
+        if (isLast) { doc.setFont("helvetica", "bold"); doc.setTextColor(51, 65, 85); }
+        for (const ln of doc.splitTextToSize((isLast ? "∑  " : "–  ") + result.reasons[i], cw)) {
+          nextPage(5); doc.text(ln, mg, y); y += 4.5;
+        }
+        if (isLast) { doc.setFont("helvetica", "normal"); doc.setTextColor(71, 85, 105); }
+      }
+    }
+
+    const total = (doc as unknown as { internal: { getNumberOfPages: () => number } }).internal.getNumberOfPages();
+    for (let p = 1; p <= total; p++) {
+      doc.setPage(p);
+      doc.setDrawColor(226, 232, 240); doc.line(mg, pageH - 12, pageW - mg, pageH - 12);
+      doc.setFont("helvetica", "normal"); doc.setFontSize(6.5); doc.setTextColor(148, 163, 184);
+      doc.text("insurance-ai Underwriting Platform · Prototype v0.1.0 · Strictly Confidential · Adamjee Life Assurance Co. Ltd.", pageW / 2, pageH - 7, { align: "center" });
+      doc.text(`Page ${p} of ${total}`, pageW - mg, pageH - 7, { align: "right" });
+    }
+
+    doc.save(`live-evaluation-${form.cnic || "report"}-${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────────
 
   return (
@@ -486,6 +585,21 @@ export default function LiveEvaluationPage() {
 
               </div>
             </div>
+          )}
+
+          {/* Download PDF — appears when evaluation is complete */}
+          {status === "done" && result.compositeScore !== null && (
+            <button
+              onClick={downloadReport}
+              className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl border-2 border-dashed border-slate-300 text-sm font-semibold text-slate-600 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50 transition-all active:scale-[0.99]"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download PDF Report
+            </button>
           )}
 
           {/* Idle placeholder */}

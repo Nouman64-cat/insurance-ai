@@ -118,6 +118,8 @@ class PolicyIn(BaseModel):
 class EvaluateRequest(BaseModel):
     applicant: ApplicantIn
     policy: PolicyIn
+    case_id: Optional[UUID] = None
+    ai_summary: Optional[str] = None
 
     model_config = {
         "json_schema_extra": {

@@ -6,8 +6,9 @@ to guarantee the on-wire JSON contract never drifts between services.
 
 Topics
 ------
-insurance.proposal.submitted.v1  →  ProposalSubmittedEvent
-insurance.risk.evaluated.v1      →  RiskEvaluatedEvent
+insurance.proposal.submitted.v1      →  ProposalSubmittedEvent
+insurance.risk.evaluated.v1          →  RiskEvaluatedEvent
+insurance.artifact.ocr.requested.v1  →  ArtifactOCRRequestedEvent
 """
 
 from datetime import datetime, timezone
@@ -79,3 +80,24 @@ class RiskEvaluatedEvent(BaseModel):
     timestamp: datetime = Field(default_factory=_utcnow)
     correlation_id: UUID      # matches ProposalSubmittedEvent.event_id
     payload: RiskEvaluatedPayload
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Topic: insurance.artifact.ocr.requested.v1
+# ─────────────────────────────────────────────────────────────────────────────
+
+class ArtifactOCRPayload(BaseModel):
+    artifact_id: UUID
+    tenant_id: UUID
+    case_id: UUID
+    s3_key: str       # full S3 object key to download and pass to OCR engine
+    file_name: str
+    mime_type: str
+
+
+class ArtifactOCRRequestedEvent(BaseModel):
+    event_id: UUID = Field(default_factory=uuid4)
+    event_type: str = "ArtifactOCRRequested"
+    timestamp: datetime = Field(default_factory=_utcnow)
+    tenant_id: UUID
+    payload: ArtifactOCRPayload
