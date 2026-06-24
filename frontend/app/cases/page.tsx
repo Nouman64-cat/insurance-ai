@@ -396,49 +396,110 @@ function EditCaseModal({ caseItem, onClose, onSaved }: { caseItem: CaseItem; onC
   );
 }
 
-function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; onClose: () => void; onUploaded: (a: Artifact) => void }) {
+interface SelectedFile {
+  file: File;
+  docType: string;
+}
+
+function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; onClose: () => void; onUploaded: (artifacts: Artifact[]) => void }) {
   const [docType, setDocType] = useState("CNIC");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<SelectedFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const addFile = (f: File) => {
-    const ext = getExt(f.name);
-    if (!SUPPORTED_EXTS.includes(ext)) { setErr(`Unsupported format ".${ext}". Allowed: ${SUPPORTED_EXTS.join(", ").toUpperCase()}`); return; }
-    setFile(f); setErr("");
-  };
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); setIsDragging(false); const f = e.dataTransfer.files[0]; if (f) addFile(f); };
-  const handleInput = (e: ChangeEvent<HTMLInputElement>) => { const f = e.target.files?.[0]; if (f) addFile(f); e.target.value = ""; };
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!file) return;
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) return;
-    setUploading(true); setErr("");
-    const form = new FormData();
-    form.append("document_type", docType);
-    form.append("file", file);
-    try {
-      const res = await api.post(
-        `/tenants/${tenantId}/cases/${caseItem.caseld}/artifacts`,
-        form,
-        { headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000 }
-      );
-      onUploaded(res.data);
-    } catch (err: any) {
-      setErr(err.response?.data?.detail ?? err.message ?? "Upload failed.");
-    } finally {
-      setUploading(false);
+  const addFiles = (newFiles: FileList | File[]) => {
+    setErr("");
+    const validFiles: SelectedFile[] = [];
+    for (let i = 0; i < newFiles.length; i++) {
+      const f = newFiles[i];
+      const ext = getExt(f.name);
+      if (!SUPPORTED_EXTS.includes(ext)) {
+        setErr(`Unsupported format ".${ext}". Allowed: ${SUPPORTED_EXTS.join(", ").toUpperCase()}`);
+        continue;
+      }
+      if (!files.some(existing => existing.file.name === f.name && existing.file.size === f.size)) {
+        validFiles.push({ file: f, docType: docType });
+      }
+    }
+    if (validFiles.length > 0) {
+      setFiles(prev => [...prev, ...validFiles]);
     }
   };
 
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files) {
+      addFiles(e.dataTransfer.files);
+    }
+  };
+
+  const handleInput = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      addFiles(e.target.files);
+    }
+    e.target.value = "";
+  };
+
+  const removeFile = (idx: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== idx));
+  };
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (files.length === 0) return;
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setUploading(true);
+    setErr("");
+    
+    const results: Artifact[] = [];
+    const errors: string[] = [];
+    
+    for (const f of files) {
+      const form = new FormData();
+      form.append("document_type", f.docType);
+      form.append("file", f.file);
+      try {
+        const res = await api.post(
+          `/tenants/${tenantId}/cases/${caseItem.caseld}/artifacts`,
+          form,
+          { headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000 }
+        );
+        results.push(res.data);
+      } catch (err: any) {
+        errors.push(`${f.file.name}: ${err.response?.data?.detail ?? err.message ?? "failed"}`);
+      }
+    }
+    
+    if (results.length > 0) {
+      try {
+        const existing = JSON.parse(localStorage.getItem("insurance_ai_processing_docs") || "[]");
+        const newItems = results.map(r => ({ id: r.id, name: r.file_name }));
+        localStorage.setItem("insurance_ai_processing_docs", JSON.stringify([...existing, ...newItems]));
+        window.dispatchEvent(new Event("insurance_ai_new_processing"));
+      } catch (e) {
+        console.error("Failed to update global processing docs list", e);
+      }
+    }
+
+    if (errors.length > 0) {
+      setErr(`Some uploads failed:\n${errors.join("\n")}`);
+      if (results.length > 0) {
+        setFiles(prev => prev.filter(f => errors.some(e => e.includes(f.file.name))));
+      }
+    } else {
+      onUploaded(results);
+    }
+    setUploading(false);
+  };
+
   return (
-    <ModalShell title="Upload Document" subtitle={`Case: ${caseItem.caseNumber}`} onClose={onClose}>
+    <ModalShell title="Upload Document(s)" subtitle={`Case: ${caseItem.caseNumber}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
-        <Field label="Document Type">
+        <Field label="Default Document Type (for new selections)">
           <select value={docType} onChange={e => setDocType(e.target.value)} className={SELECT}>
             {DOCUMENT_TYPES.map(t => <option key={t}>{t}</option>)}
           </select>
@@ -451,32 +512,61 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
           onDrop={handleDrop}
           onClick={() => inputRef.current?.click()}
           className={`rounded-xl border-2 cursor-pointer transition-all px-4 py-5 flex flex-col items-center gap-2 ${
-            isDragging ? "border-blue-400 bg-blue-50" : file
-              ? "border-emerald-300 bg-emerald-50"
-              : "border-dashed border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/40"
+            isDragging ? "border-blue-400 bg-blue-50" : "border-dashed border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/40"
           }`}
         >
-          <input ref={inputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" onChange={handleInput} />
-          {file ? (
-            <>
-              <FileSvg ext={getExt(file.name)} size={40} />
-              <p className="text-xs font-semibold text-emerald-700 truncate max-w-full px-2">{file.name}</p>
-              <p className="text-[10px] text-emerald-600">{fmtSize(file.size)} · Click to replace</p>
-            </>
-          ) : (
-            <>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-slate-400">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <p className="text-xs font-semibold text-slate-600">Drop file or <span className="text-blue-600">browse</span></p>
-              <p className="text-[10px] text-slate-400">PDF · PNG · JPG · JPEG · TIFF · BMP</p>
-            </>
-          )}
+          <input ref={inputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" onChange={handleInput} multiple />
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-slate-400">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <p className="text-xs font-semibold text-slate-600">Drop files here or <span className="text-blue-600">browse</span></p>
+          <p className="text-[10px] text-slate-400">PDF · PNG · JPG · JPEG · TIFF · BMP</p>
         </div>
 
-        {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
+        {/* Selected files list */}
+        {files.length > 0 && (
+          <div className="space-y-2">
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Selected Files ({files.length})</p>
+            <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl bg-white shadow-sm">
+              {files.map((f, idx) => (
+                <div key={idx} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3.5 py-3 hover:bg-slate-50 transition-colors">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                    <FileSvg ext={getExt(f.file.name)} size={24} />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-slate-700 truncate text-xs">{f.file.name}</p>
+                      <p className="text-[10px] text-slate-400">{fmtSize(f.file.size)}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <select
+                      value={f.docType}
+                      onChange={e => {
+                        const newType = e.target.value;
+                        setFiles(prev => prev.map((item, i) => i === idx ? { ...item, docType: newType } : item));
+                      }}
+                      className="px-2 py-1 text-[11px] border border-slate-200 rounded bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      {DOCUMENT_TYPES.map(t => <option key={t}>{t}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); removeFile(idx); }}
+                      className="w-6 h-6 rounded-md flex items-center justify-center text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors border border-slate-100 hover:border-red-100"
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 whitespace-pre-line">{err}</p>}
 
         {uploading && (
           <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
@@ -487,7 +577,7 @@ function UploadModal({ caseItem, onClose, onUploaded }: { caseItem: CaseItem; on
 
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onClose} disabled={uploading} className={BTN_GHOST}>Cancel</button>
-          <button type="submit" disabled={!file || uploading} className={BTN_PRIMARY}>
+          <button type="submit" disabled={files.length === 0 || uploading} className={BTN_PRIMARY}>
             {uploading ? <SpinnerIcon /> : <>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                 <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
@@ -1233,10 +1323,12 @@ export default function CasesPage() {
         <UploadModal
           caseItem={activeCase}
           onClose={() => setShowUpload(false)}
-          onUploaded={artifact => {
-            setArtifacts(prev => [artifact, ...prev]);
+          onUploaded={newArtifacts => {
+            setArtifacts(prev => [...newArtifacts, ...prev]);
             setShowUpload(false);
-            setViewingArtifact(artifact);
+            if (newArtifacts.length > 0) {
+              setViewingArtifact(newArtifacts[0]);
+            }
           }}
         />
       )}

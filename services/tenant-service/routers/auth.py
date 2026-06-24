@@ -12,7 +12,7 @@ from shared.models.core import User, Role
 
 SECRET_KEY  = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
 ALGORITHM   = "HS256"
-EXPIRE_MINS = int(os.environ.get("JWT_EXPIRE_MINUTES", 30))
+EXPIRE_MINS = int(os.environ.get("JWT_EXPIRE_MINUTES", 1440))
 
 def create_access_token(payload: dict) -> str:
     data = payload.copy()

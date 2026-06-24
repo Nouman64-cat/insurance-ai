@@ -42,32 +42,53 @@ def _s3_client():
     )
 
 
+from fastapi.responses import FileResponse
+
 def _upload_to_s3(file_bytes: bytes, key: str, content_type: str) -> str:
-    client = _s3_client()
-    client.put_object(
-        Bucket=_S3_BUCKET,
-        Key=key,
-        Body=file_bytes,
-        ContentType=content_type,
-    )
-    return f"https://{_S3_BUCKET}.s3.{_AWS_REGION}.amazonaws.com/{key}"
+    try:
+        # Check if dummy credentials are used to avoid slow timeout/exception
+        access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        if not access_key or "your_aws_access_key" in access_key:
+            raise ValueError("Dummy AWS credentials detected")
+
+        client = _s3_client()
+        client.put_object(
+            Bucket=_S3_BUCKET,
+            Key=key,
+            Body=file_bytes,
+            ContentType=content_type,
+        )
+        return f"https://{_S3_BUCKET}.s3.{_AWS_REGION}.amazonaws.com/{key}"
+    except Exception as exc:
+        import logging
+        logging.getLogger("tenant-service.artifacts").warning(
+            "S3 upload failed: %s. Using local filesystem storage fallback.", exc
+        )
+        local_path = os.path.join("/app/shared/storage", key)
+        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        with open(local_path, "wb") as f:
+            f.write(file_bytes)
+        return f"local://{key}"
 
 
 def _presign_url(key: str, expires: int = 3600) -> str:
     try:
+        access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+        if not access_key or "your_aws_access_key" in access_key:
+            raise ValueError("Dummy AWS credentials")
+
         client = _s3_client()
         return client.generate_presigned_url(
             "get_object",
             Params={"Bucket": _S3_BUCKET, "Key": key},
             ExpiresIn=expires,
         )
-    except ClientError:
+    except Exception:
         return ""
 
 
 def _s3_key(tenant_id: UUID, case_id: UUID, artifact_id: UUID, file_name: str) -> str:
     return f"{tenant_id}/cases/{case_id}/{artifact_id}/{file_name}"
-
 
 
 async def _get_current_user_id(token: str) -> UUID:
@@ -117,7 +138,7 @@ async def upload_artifact(
     artifact_id = uuid4()
     s3_key = _s3_key(tenant_id, case_id, artifact_id, file.filename)
 
-    # 1. Upload to S3 (synchronous but fast — kept in the request path)
+    # 1. Upload to S3 (with local filesystem fallback)
     loop = asyncio.get_running_loop()
     try:
         storage_url = await loop.run_in_executor(
@@ -168,18 +189,17 @@ async def upload_artifact(
             key=str(artifact_id),
         )
     except Exception as exc:
-        # Kafka unavailable: log and continue — artifact is already saved,
-        # status stays "Processing"; operator can replay manually.
         import logging
         logging.getLogger("tenant-service.artifacts").warning(
             "Kafka publish failed for artifact %s: %s", artifact_id, exc
         )
 
-    return _artifact_response(artifact, s3_key)
+    return _artifact_response(artifact, s3_key, request)
 
 
 @router.get("/{tenant_id}/cases/{case_id}/artifacts", summary="List artifacts for a case")
 async def list_case_artifacts(
+    request: Request,
     tenant_id: UUID,
     case_id: UUID,
     token: str = Depends(oauth2_scheme),
@@ -193,11 +213,12 @@ async def list_case_artifacts(
         select(Artifact).where(Artifact.case_id == case_id, Artifact.tenant_id == tenant_id)
     )).all()
 
-    return [_artifact_response(a) for a in rows]
+    return [_artifact_response(a, a.storage_url.split(".amazonaws.com/", 1)[1] if a.storage_url and ".amazonaws.com/" in a.storage_url else None, request) for a in rows]
 
 
 @router.get("/{tenant_id}/artifacts/{artifact_id}", summary="Get artifact with fresh presigned URL")
 async def get_artifact(
+    request: Request,
     tenant_id: UUID,
     artifact_id: UUID,
     token: str = Depends(oauth2_scheme),
@@ -209,13 +230,15 @@ async def get_artifact(
 
     key = None
     if artifact.storage_url:
-        # reconstruct key from URL: everything after the bucket domain
-        try:
-            key = artifact.storage_url.split(".amazonaws.com/", 1)[1]
-        except IndexError:
-            pass
+        if artifact.storage_url.startswith("local://"):
+            key = artifact.storage_url.replace("local://", "")
+        else:
+            try:
+                key = artifact.storage_url.split(".amazonaws.com/", 1)[1]
+            except IndexError:
+                pass
 
-    return _artifact_response(artifact, key)
+    return _artifact_response(artifact, key, request)
 
 
 class ArtifactUpdate(BaseModel):
@@ -224,6 +247,7 @@ class ArtifactUpdate(BaseModel):
 
 @router.patch("/{tenant_id}/artifacts/{artifact_id}", summary="Update artifact metadata")
 async def update_artifact(
+    request: Request,
     tenant_id: UUID,
     artifact_id: UUID,
     payload: ArtifactUpdate,
@@ -243,15 +267,18 @@ async def update_artifact(
 
     key = None
     if artifact.storage_url:
-        try:
-            key = artifact.storage_url.split(".amazonaws.com/", 1)[1]
-        except IndexError:
-            pass
+        if artifact.storage_url.startswith("local://"):
+            key = artifact.storage_url.replace("local://", "")
+        else:
+            try:
+                key = artifact.storage_url.split(".amazonaws.com/", 1)[1]
+            except IndexError:
+                pass
 
-    return _artifact_response(artifact, key)
+    return _artifact_response(artifact, key, request)
 
 
-@router.delete("/{tenant_id}/artifacts/{artifact_id}", status_code=204, summary="Delete artifact from S3 and database")
+@router.delete("/{tenant_id}/artifacts/{artifact_id}", status_code=204, summary="Delete artifact from S3/local and database")
 async def delete_artifact(
     tenant_id: UUID,
     artifact_id: UUID,
@@ -264,10 +291,16 @@ async def delete_artifact(
 
     if artifact.storage_url:
         try:
-            key = artifact.storage_url.split(".amazonaws.com/", 1)[1]
-            s3 = _s3_client()
-            loop = asyncio.get_running_loop()
-            await loop.run_in_executor(None, lambda: s3.delete_object(Bucket=_S3_BUCKET, Key=key))
+            if artifact.storage_url.startswith("local://"):
+                key = artifact.storage_url.replace("local://", "")
+                local_path = os.path.join("/app/shared/storage", key)
+                if os.path.exists(local_path):
+                    os.remove(local_path)
+            else:
+                key = artifact.storage_url.split(".amazonaws.com/", 1)[1]
+                s3 = _s3_client()
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, lambda: s3.delete_object(Bucket=_S3_BUCKET, Key=key))
         except Exception:
             pass  # don't block DB deletion on S3 failure
 
@@ -275,8 +308,37 @@ async def delete_artifact(
     await session.commit()
 
 
-def _artifact_response(artifact: Artifact, s3_key: str | None = None) -> dict:
-    presigned = _presign_url(s3_key) if s3_key else ""
+@router.get("/{tenant_id}/artifacts/{artifact_id}/download", summary="Download local artifact file")
+async def download_local_artifact(
+    tenant_id: UUID,
+    artifact_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    artifact = await session.get(Artifact, artifact_id)
+    if artifact is None or artifact.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Artifact not found")
+
+    if not artifact.storage_url or not artifact.storage_url.startswith("local://"):
+        raise HTTPException(status_code=400, detail="Artifact is not stored locally")
+
+    key = artifact.storage_url.replace("local://", "")
+    local_path = os.path.join("/app/shared/storage", key)
+    if not os.path.exists(local_path):
+        raise HTTPException(status_code=404, detail="Local file not found")
+
+    return FileResponse(local_path, media_type=artifact.file_type, filename=artifact.file_name)
+
+
+def _artifact_response(artifact: Artifact, s3_key: str | None = None, request: Request | None = None) -> dict:
+    if artifact.storage_url and artifact.storage_url.startswith("local://"):
+        if request:
+            base = str(request.base_url).rstrip("/")
+            presigned = f"{base}/tenants/{artifact.tenant_id}/artifacts/{artifact.id}/download"
+        else:
+            presigned = f"/tenants/{artifact.tenant_id}/artifacts/{artifact.id}/download"
+    else:
+        presigned = _presign_url(s3_key) if s3_key else ""
+
     return {
         "id": str(artifact.id),
         "tenant_id": str(artifact.tenant_id),

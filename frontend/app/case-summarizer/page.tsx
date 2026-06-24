@@ -11,55 +11,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-interface Applicant {
-  id: string;
-  cnic: string;
-  name: string;
-  dob: string;
-  gender: string;
-  occupation: string;
-  declared_income: number;
-}
-
-interface CaseItem {
-  caseld: string;
-  caseNumber: string;
-  status: string;
-}
-
-interface Artifact {
-  id: string;
-  file_name: string | null;
-  document_type: string;
-  status: string;
-  ocr_result: string | null;
-}
-
-interface TokenUsage { input: number; output: number; total: number }
-
-type SumStatus  = "idle" | "streaming" | "done" | "error";
-type EvalStatus = "idle" | "streaming" | "done" | "error";
-
-interface EvalState {
-  completedNodes:   string[];
-  medicalScore:     number | null;
-  medicalReasons:   string[];
-  financialScore:   number | null;
-  financialReasons: string[];
-  fraudProbability: number | null;
-  fraudReasons:     string[];
-  compositeScore:   number | null;
-  aiDecision:       string | null;
-  reasons:          string[];
-  validationErrors: string[];
-}
-
-const INITIAL_EVAL: EvalState = {
-  completedNodes: [], medicalScore: null, medicalReasons: [],
-  financialScore: null, financialReasons: [], fraudProbability: null,
-  fraudReasons: [], compositeScore: null, aiDecision: null,
-  reasons: [], validationErrors: [],
-};
+import { workflowStore, INITIAL_EVAL, INITIAL_FORM } from "./workflowStore";
+import type { Applicant, CaseItem, Artifact, TokenUsage, SumStatus, EvalStatus, EvalState, EvalForm } from "./workflowStore";
 
 const PIPELINE_NODES = [
   { key: "validate_input",       label: "Input\nValidation",     dotColor: "bg-slate-500"   },
@@ -108,37 +61,105 @@ export default function CaseSummarizerPage() {
 
   // Selection
   const [applicants, setApplicants] = useState<Applicant[]>([]);
-  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
+  const [storeState, setStoreState] = useState(() => ({
+    selectedApplicant: workflowStore.selectedApplicant,
+    selectedCase: workflowStore.selectedCase,
+    checkedDocs: workflowStore.checkedDocs,
+    applicantSearch: workflowStore.applicantSearch,
+    sumStatus: workflowStore.sumStatus,
+    summary: workflowStore.summary,
+    tokenUsage: workflowStore.tokenUsage,
+    sumError: workflowStore.sumError,
+    showEvalForm: workflowStore.showEvalForm,
+    evalForm: workflowStore.evalForm,
+    evalStatus: workflowStore.evalStatus,
+    evalResult: workflowStore.evalResult,
+    evalError: workflowStore.evalError,
+  }));
+
+  useEffect(() => {
+    return workflowStore.subscribe(() => {
+      setStoreState({
+        selectedApplicant: workflowStore.selectedApplicant,
+        selectedCase: workflowStore.selectedCase,
+        checkedDocs: workflowStore.checkedDocs,
+        applicantSearch: workflowStore.applicantSearch,
+        sumStatus: workflowStore.sumStatus,
+        summary: workflowStore.summary,
+        tokenUsage: workflowStore.tokenUsage,
+        sumError: workflowStore.sumError,
+        showEvalForm: workflowStore.showEvalForm,
+        evalForm: workflowStore.evalForm,
+        evalStatus: workflowStore.evalStatus,
+        evalResult: workflowStore.evalResult,
+        evalError: workflowStore.evalError,
+      });
+    });
+  }, []);
+
+  const {
+    selectedApplicant,
+    selectedCase,
+    checkedDocs,
+    applicantSearch,
+    sumStatus,
+    summary,
+    tokenUsage,
+    sumError,
+    showEvalForm,
+    evalForm,
+    evalStatus,
+    evalResult,
+    evalError,
+  } = storeState;
+
+  const setSelectedApplicant = (val: Applicant | null) => workflowStore.update({ selectedApplicant: val });
+  const setSelectedCase = (val: CaseItem | null) => workflowStore.update({ selectedCase: val });
+  const setCheckedDocs = (val: Set<string> | ((prev: Set<string>) => Set<string>)) => {
+    const next = typeof val === "function" ? val(workflowStore.checkedDocs) : val;
+    workflowStore.update({ checkedDocs: next });
+  };
+  const setApplicantSearch = (val: string) => workflowStore.update({ applicantSearch: val });
+  const setSumStatus = (val: SumStatus) => workflowStore.update({ sumStatus: val });
+  const setSummary = (val: string | ((prev: string) => string)) => {
+    const next = typeof val === "function" ? val(workflowStore.summary) : val;
+    workflowStore.update({ summary: next });
+  };
+  const setTokenUsage = (val: TokenUsage | null) => workflowStore.update({ tokenUsage: val });
+  const setSumError = (val: string | null) => workflowStore.update({ sumError: val });
+  const setShowEvalForm = (val: boolean | ((prev: boolean) => boolean)) => {
+    const next = typeof val === "function" ? val(workflowStore.showEvalForm) : val;
+    workflowStore.update({ showEvalForm: next });
+  };
+  const setEvalForm = (val: EvalForm | ((prev: EvalForm) => EvalForm)) => {
+    const next = typeof val === "function" ? val(workflowStore.evalForm) : val;
+    workflowStore.update({ evalForm: next });
+  };
+  const setEvalStatus = (val: EvalStatus) => workflowStore.update({ evalStatus: val });
+  const setEvalResult = (val: EvalState | ((prev: EvalState) => EvalState)) => {
+    const next = typeof val === "function" ? val(workflowStore.evalResult) : val;
+    workflowStore.update({ evalResult: next });
+  };
+  const setEvalError = (val: string | null) => workflowStore.update({ evalError: val });
+
   const [cases, setCases] = useState<CaseItem[]>([]);
-  const [selectedCase, setSelectedCase] = useState<CaseItem | null>(null);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
-  const [checkedDocs, setCheckedDocs] = useState<Set<string>>(new Set());
   const [loadingCases, setLoadingCases] = useState(false);
   const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 
-  // Summary
-  const [sumStatus, setSumStatus] = useState<SumStatus>("idle");
-  const [summary, setSummary] = useState("");
-  const [tokenUsage, setTokenUsage] = useState<TokenUsage | null>(null);
-  const [sumError, setSumError] = useState<string | null>(null);
-  const sumAbortRef = useRef<AbortController | null>(null);
+  // Search applicant combobox state
+  const [showApplicantDropdown, setShowApplicantDropdown] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Eval form (pre-filled from applicant, editable)
-  const [showEvalForm, setShowEvalForm] = useState(false);
-  const [evalForm, setEvalForm] = useState({
-    cnic: "", name: "", dob: "", gender: "Male", occupation: "",
-    declaredIncome: "", productName: "Term Life Insurance", coverageAmount: "", termYears: "",
-  });
-
-  // Risk evaluation
-  const [evalStatus, setEvalStatus] = useState<EvalStatus>("idle");
-  const [evalResult, setEvalResult] = useState<EvalState>(INITIAL_EVAL);
-  const [evalError, setEvalError] = useState<string | null>(null);
-  const evalAbortRef = useRef<AbortController | null>(null);
-
-  useEffect(() => () => {
-    sumAbortRef.current?.abort();
-    evalAbortRef.current?.abort();
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowApplicantDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   // Load applicants on mount
@@ -174,15 +195,15 @@ export default function CaseSummarizerPage() {
   // Pre-fill eval form from selected applicant
   useEffect(() => {
     if (!selectedApplicant) return;
-    setEvalForm(f => ({
-      ...f,
+    setEvalForm({
+      ...evalForm,
       cnic: selectedApplicant.cnic,
       name: selectedApplicant.name,
       dob: selectedApplicant.dob,
       gender: selectedApplicant.gender,
       occupation: selectedApplicant.occupation,
       declaredIncome: String(selectedApplicant.declared_income),
-    }));
+    });
   }, [selectedApplicant]);
 
   const selectedDocs = artifacts.filter(a => checkedDocs.has(a.id) && a.ocr_result);
@@ -191,165 +212,13 @@ export default function CaseSummarizerPage() {
 
   const handleSummarize = async () => {
     if (selectedDocs.length === 0) return;
-    sumAbortRef.current?.abort();
-    const abort = new AbortController();
-    sumAbortRef.current = abort;
-
-    setSumStatus("streaming");
-    setSummary("");
-    setTokenUsage(null);
-    setSumError(null);
-    setEvalStatus("idle");
-    setEvalResult(INITIAL_EVAL);
-
-    try {
-      const res = await fetch(`${API_BASE}/summarize/stream`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("jwt_token") ?? ""}`,
-        },
-        body: JSON.stringify({ documents: selectedDocs.map(d => d.ocr_result!) }),
-        signal: abort.signal,
-      });
-
-      if (!res.ok) throw new Error(`Summarizer returned ${res.status}`);
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data: ")) continue;
-          let evt: Record<string, unknown>;
-          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-          if (evt.type === "chunk") {
-            setSummary(prev => prev + (evt.text as string));
-          } else if (evt.type === "done") {
-            setTokenUsage(evt.token_usage as TokenUsage);
-            setSumStatus("done");
-          } else if (evt.type === "error") {
-            setSumError((evt.message as string) ?? "Unknown error");
-            setSumStatus("error");
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      setSumError(err instanceof Error ? err.message : "Connection failed");
-      setSumStatus("error");
-    }
+    workflowStore.startSummarize(API_BASE, localStorage.getItem("jwt_token") ?? "", selectedDocs);
   };
 
   // ── Risk Evaluation ───────────────────────────────────────────────────────────
 
   const runEval = async () => {
-    evalAbortRef.current?.abort();
-    const abort = new AbortController();
-    evalAbortRef.current = abort;
-
-    setEvalStatus("streaming");
-    setEvalResult(INITIAL_EVAL);
-    setEvalError(null);
-
-    const payload = {
-      applicant: {
-        cnic: evalForm.cnic, name: evalForm.name, dob: evalForm.dob,
-        gender: evalForm.gender, occupation: evalForm.occupation,
-        declared_income: parseFloat(evalForm.declaredIncome) || 0,
-      },
-      policy: {
-        product_name: evalForm.productName,
-        coverage_amount: parseFloat(evalForm.coverageAmount) || 0,
-        term_years: parseInt(evalForm.termYears) || 0,
-      },
-      ...(selectedCase?.caseld ? { case_id: selectedCase.caseld } : {}),
-      ...(summary ? { ai_summary: summary } : {}),
-    };
-
-    try {
-      const res = await fetch(`${API_BASE}/evaluate/stream`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
-        body: JSON.stringify(payload),
-        signal: abort.signal,
-      });
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(
-          Array.isArray(body.detail)
-            ? body.detail.map((d: { msg?: string }) => d.msg ?? d).join(", ")
-            : body.detail ?? `Error ${res.status}`,
-        );
-      }
-
-      const reader = res.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      outer: while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() ?? "";
-        for (const part of parts) {
-          const line = part.trim();
-          if (!line.startsWith("data: ")) continue;
-          let evt: Record<string, unknown>;
-          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-          const type = evt.type as string;
-          if (type === "progress") {
-            const node = evt.node as string;
-            const data = evt.data as Record<string, unknown>;
-            setEvalResult(prev => {
-              const next: EvalState = {
-                ...prev,
-                completedNodes: prev.completedNodes.includes(node)
-                  ? prev.completedNodes : [...prev.completedNodes, node],
-              };
-              if (node === "medical_scoring") {
-                next.medicalScore   = data.medical_score   as number;
-                next.medicalReasons = (data.medical_reasons as string[]) ?? [];
-              } else if (node === "financial_scoring") {
-                next.financialScore   = data.financial_score   as number;
-                next.financialReasons = (data.financial_reasons as string[]) ?? [];
-              } else if (node === "fraud_detection") {
-                next.fraudProbability = data.fraud_probability as number;
-                next.fraudReasons     = (data.fraud_reasons as string[]) ?? [];
-              } else if (node === "decision_aggregation") {
-                next.compositeScore = data.composite_risk_score as number;
-                next.aiDecision     = data.ai_decision as string;
-                next.reasons        = (data.reasons as string[]) ?? [];
-              }
-              return next;
-            });
-            if (node === "decision_aggregation") setEvalStatus("done");
-          } else if (type === "invalid") {
-            setEvalResult(prev => ({ ...prev, validationErrors: (evt.errors as string[]) ?? [] }));
-            setEvalStatus("error");
-            setEvalError("Validation failed — see errors below.");
-            break outer;
-          } else if (type === "error") {
-            setEvalStatus("error");
-            setEvalError((evt.message as string) ?? "Unexpected error.");
-            break outer;
-          }
-        }
-      }
-    } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") return;
-      setEvalStatus("error");
-      setEvalError(err instanceof Error ? err.message : "Connection failed.");
-    }
+    workflowStore.startEval(API_BASE, tenantId);
   };
 
   const decision    = asDecision(evalResult.aiDecision);
@@ -360,6 +229,13 @@ export default function CaseSummarizerPage() {
 
   const downloadReport = async () => {
     const { default: jsPDF } = await import("jspdf");
+
+    const logoImg = await new Promise<HTMLImageElement | null>((resolve) => {
+      const img = new Image();
+      img.src = "/rizvi.png";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+    });
 
     const doc   = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
     const pageW = 210;
@@ -398,22 +274,27 @@ export default function CaseSummarizerPage() {
       y += 9;
     };
 
-    // ── Dark header ──────────────────────────────────────────────────────────
-    doc.setFillColor(15, 23, 42);
+    // ── Header with Logo ──────────────────────────────────────────────────────
+    doc.setFillColor(255, 255, 255);
     doc.rect(0, 0, pageW, 28, "F");
     doc.setFillColor(59, 130, 246);
     doc.rect(0, 28, pageW, 1.5, "F");
 
-    doc.setTextColor(255, 255, 255);
+    doc.setTextColor(15, 23, 42);
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
     doc.text("insurance-ai", mg, 12);
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
     doc.text("Underwriting Platform · Case Risk Assessment Report", mg, 20);
     doc.setTextColor(148, 163, 184);
     doc.text(`Generated: ${new Date().toLocaleString()}`, pageW - mg, 20, { align: "right" });
+
+    if (logoImg) {
+      doc.addImage(logoImg, "PNG", pageW - mg - 36.2, 4.5, 36.2, 13);
+    }
 
     y = 38;
 
@@ -465,23 +346,115 @@ export default function CaseSummarizerPage() {
     // ── AI Summary ───────────────────────────────────────────────────────────
     if (summary) {
       section("AI CASE SUMMARY");
-      const plain = summary
-        .replace(/^#{1,6}\s+/gm, "")
-        .replace(/\*\*(.*?)\*\*/g, "$1")
-        .replace(/\*(.*?)\*/g, "$1")
-        .replace(/`(.*?)`/g, "$1")
-        .replace(/^\s*[-*+]\s+/gm, "• ")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+      const lines = summary.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        if (!line) {
+          y += 3;
+          continue;
+        }
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(51, 65, 85);
-      const lines = doc.splitTextToSize(plain, cw);
-      for (const line of lines) {
-        nextPage(5);
-        doc.text(line, mg, y);
-        y += 4.5;
+        // Header 6
+        if (line.startsWith("###### ")) {
+          const text = line.replace("###### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(text, mg, y);
+          y += 4;
+          continue;
+        }
+
+        // Header 5
+        if (line.startsWith("##### ")) {
+          const text = line.replace("##### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
+          doc.setTextColor(100, 116, 139);
+          doc.text(text, mg, y);
+          y += 4.5;
+          continue;
+        }
+
+        // Header 4
+        if (line.startsWith("#### ")) {
+          const text = line.replace("#### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.setTextColor(71, 85, 105);
+          doc.text(text, mg, y);
+          y += 4.5;
+          continue;
+        }
+
+        // Header 3
+        if (line.startsWith("### ")) {
+          const text = line.replace("### ", "").trim();
+          nextPage(8);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9.5);
+          doc.setTextColor(71, 85, 105);
+          doc.text(text, mg, y);
+          y += 5;
+          continue;
+        }
+
+        // Header 2
+        if (line.startsWith("## ")) {
+          const text = line.replace("## ", "").trim();
+          nextPage(10);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(10);
+          doc.setTextColor(30, 41, 59);
+          doc.text(text, mg, y);
+          y += 5.5;
+          continue;
+        }
+
+        // Header 1
+        if (line.startsWith("# ")) {
+          const text = line.replace("# ", "").trim();
+          nextPage(12);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(11);
+          doc.setTextColor(15, 23, 42);
+          doc.text(text, mg, y);
+          y += 6;
+          continue;
+        }
+
+        // Bullet list
+        if (line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")) {
+          const text = line.substring(2).trim();
+          const cleanText = text.replace(/\*\*/g, "").replace(/\*/g, "");
+          const wrapped = doc.splitTextToSize(cleanText, cw - 6);
+          nextPage(wrapped.length * 4.5 + 2);
+          doc.setFont("helvetica", "normal");
+          doc.setFontSize(8.5);
+          doc.setTextColor(71, 85, 105);
+          
+          doc.text("•", mg + 2, y);
+          for (let j = 0; j < wrapped.length; j++) {
+            doc.text(wrapped[j], mg + 6, y);
+            y += 4.5;
+          }
+          continue;
+        }
+
+        // Regular paragraph line
+        const cleanLine = line.replace(/\*\*/g, "").replace(/\*/g, "");
+        const wrapped = doc.splitTextToSize(cleanLine, cw);
+        nextPage(wrapped.length * 4.5 + 2);
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        for (let j = 0; j < wrapped.length; j++) {
+          doc.text(wrapped[j], mg, y);
+          y += 4.5;
+        }
       }
       y += 5;
 
@@ -543,23 +516,76 @@ export default function CaseSummarizerPage() {
       doc.text("DECISION REASONING", mg, y);
       y += 5;
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8.5);
-      doc.setTextColor(71, 85, 105);
       for (let i = 0; i < evalResult.reasons.length; i++) {
         const isLast = i === evalResult.reasons.length - 1;
-        const prefix = isLast ? "∑  " : "–  ";
+        
+        let reasonText = evalResult.reasons[i];
         if (isLast) {
+          const normalized = reasonText
+            .replace(/×/g, "x")
+            .replace(/→/g, "->")
+            .replace(/!'/g, "->")
+            .replace(/–/g, "-")
+            .replace(/</g, "under")
+            .replace(/>/g, "over");
+          
+          const parts = normalized.split("->").map((p: string) => p.trim());
+          const calc = parts[0] || "";
+          const rule = parts[1] || "";
+
+          // Draw calculation section
+          nextPage(12);
           doc.setFont("helvetica", "bold");
+          doc.setFontSize(8.5);
           doc.setTextColor(51, 65, 85);
+          doc.text("Mathematical Breakdown:", mg, y);
+          y += 4.5;
+          
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(8);
+          doc.setTextColor(51, 65, 85);
+          const calcWrapped = doc.splitTextToSize(calc, cw - 4);
+          for (const line of calcWrapped) {
+            nextPage(4.5);
+            doc.text(line, mg + 4, y);
+            y += 4;
+          }
+          
+          // Draw rule section
+          if (rule) {
+            y += 1.5;
+            nextPage(10);
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(8);
+            doc.setTextColor(51, 65, 85);
+            doc.text("Matched Decision Rule:", mg, y);
+            y += 4;
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(8);
+            doc.setTextColor(71, 85, 105);
+            const ruleWrapped = doc.splitTextToSize(rule, cw - 4);
+            for (const line of ruleWrapped) {
+              nextPage(4.5);
+              doc.text(line, mg + 4, y);
+              y += 4;
+            }
+          }
+          continue;
         }
-        const wrapped = doc.splitTextToSize(prefix + evalResult.reasons[i], cw);
+
+        // Normal reason drawing
+        const prefix = "-  ";
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8.5);
+        doc.setTextColor(71, 85, 105);
+        
+        const wrapped = doc.splitTextToSize(prefix + reasonText, cw);
         for (const line of wrapped) {
           nextPage(5);
           doc.text(line, mg, y);
           y += 4.5;
         }
-        if (isLast) { doc.setFont("helvetica", "normal"); doc.setTextColor(71, 85, 105); }
       }
     }
 
@@ -603,31 +629,89 @@ export default function CaseSummarizerPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-5 items-start">
 
         {/* ── LEFT PANEL ──────────────────────────────────────────────────────── */}
-        <div className="space-y-4">
+        <div className="space-y-4 lg:sticky lg:top-5">
 
           {/* Case selector */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-100">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+            <div className="px-5 py-3 border-b border-slate-100 rounded-t-xl">
               <p className="text-sm font-semibold text-slate-700">Select Case</p>
             </div>
             <div className="p-5 space-y-4">
-              <div>
+              <div className="relative" ref={dropdownRef}>
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Applicant</label>
-                <select
-                  value={selectedApplicant?.id ?? ""}
-                  onChange={e => {
-                    setSelectedApplicant(applicants.find(a => a.id === e.target.value) ?? null);
-                    setSelectedCase(null);
-                    setSumStatus("idle");
-                    setSummary("");
-                  }}
-                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-                >
-                  <option value="">— Select applicant —</option>
-                  {applicants.map(a => (
-                    <option key={a.id} value={a.id}>{a.name} · {a.cnic}</option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search or select applicant..."
+                    value={applicantSearch}
+                    onFocus={() => setShowApplicantDropdown(true)}
+                    onChange={e => {
+                      setApplicantSearch(e.target.value);
+                      setShowApplicantDropdown(true);
+                      if (!e.target.value) {
+                        setSelectedApplicant(null);
+                        setSelectedCase(null);
+                      }
+                    }}
+                    className="w-full px-3 py-2 pr-12 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                  />
+                  {applicantSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setApplicantSearch("");
+                        setSelectedApplicant(null);
+                        setSelectedCase(null);
+                        setShowApplicantDropdown(true);
+                      }}
+                      className="absolute right-8 top-2 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowApplicantDropdown(!showApplicantDropdown)}
+                    className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                  >
+                    <svg className={`w-4 h-4 transform transition-transform ${showApplicantDropdown ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+                </div>
+
+                {showApplicantDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                    {(() => {
+                      const filtered = applicants.filter(a =>
+                        a.name.toLowerCase().includes(applicantSearch.toLowerCase()) ||
+                        a.cnic.includes(applicantSearch)
+                      );
+                      if (filtered.length === 0) {
+                        return <div className="px-3 py-2 text-xs text-slate-500">No applicants found</div>;
+                      }
+                      return filtered.map(a => (
+                        <div
+                          key={a.id}
+                          onClick={() => {
+                            setSelectedApplicant(a);
+                            setApplicantSearch(`${a.name} (${a.cnic})`);
+                            setShowApplicantDropdown(false);
+                            setSelectedCase(null);
+                            setSumStatus("idle");
+                            setSummary("");
+                          }}
+                          className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex flex-col ${
+                            selectedApplicant?.id === a.id ? "bg-blue-50/50" : ""
+                          }`}
+                        >
+                          <span className="font-semibold text-slate-700">{a.name}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">CNIC: {a.cnic}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -775,7 +859,7 @@ export default function CaseSummarizerPage() {
                 </div>
               </div>
 
-              <div className="p-5">
+              <div className="p-5 max-h-[400px] overflow-y-auto">
                 {sumStatus === "error" && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-xs text-red-600">{sumError}</div>
                 )}
@@ -806,7 +890,7 @@ export default function CaseSummarizerPage() {
               <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => setShowEvalForm(v => !v)}
+                  onClick={() => setShowEvalForm(!showEvalForm)}
                   className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors border-b border-slate-100"
                 >
                   <div className="flex items-center gap-2.5">
@@ -827,24 +911,24 @@ export default function CaseSummarizerPage() {
                 {showEvalForm && (
                   <div className="p-5">
                     <div className="grid grid-cols-2 gap-3 mb-4">
-                      <EvalField label="CNIC"                value={evalForm.cnic}            onChange={v => setEvalForm(f => ({ ...f, cnic: v }))}            placeholder="35201-1234567-1" />
-                      <EvalField label="Full Name"           value={evalForm.name}            onChange={v => setEvalForm(f => ({ ...f, name: v }))}            placeholder="Muhammad Ali" />
-                      <EvalField label="Date of Birth" type="date" value={evalForm.dob}       onChange={v => setEvalForm(f => ({ ...f, dob: v }))} />
+                      <EvalField label="CNIC"                value={evalForm.cnic}            onChange={v => setEvalForm({ ...evalForm, cnic: v })}            placeholder="35201-1234567-1" />
+                      <EvalField label="Full Name"           value={evalForm.name}            onChange={v => setEvalForm({ ...evalForm, name: v })}            placeholder="Muhammad Ali" />
+                      <EvalField label="Date of Birth" type="date" value={evalForm.dob}       onChange={v => setEvalForm({ ...evalForm, dob: v })} />
                       <div>
                         <label className="block text-xs font-medium text-slate-600 mb-1">Gender</label>
                         <select
                           value={evalForm.gender}
-                          onChange={e => setEvalForm(f => ({ ...f, gender: e.target.value }))}
+                          onChange={e => setEvalForm({ ...evalForm, gender: e.target.value })}
                           className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                         >
                           <option>Male</option><option>Female</option><option>Other</option>
                         </select>
                       </div>
-                      <EvalField label="Occupation"          value={evalForm.occupation}      onChange={v => setEvalForm(f => ({ ...f, occupation: v }))}      placeholder="Engineer" />
-                      <EvalField label="Annual Income (PKR)" type="number" value={evalForm.declaredIncome} onChange={v => setEvalForm(f => ({ ...f, declaredIncome: v }))} placeholder="1200000" />
-                      <EvalField label="Product Name"        value={evalForm.productName}     onChange={v => setEvalForm(f => ({ ...f, productName: v }))}     placeholder="Term Life Insurance" />
-                      <EvalField label="Coverage (PKR)"      type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm(f => ({ ...f, coverageAmount: v }))} placeholder="5000000" />
-                      <EvalField label="Term (Years)"        type="number" value={evalForm.termYears}      onChange={v => setEvalForm(f => ({ ...f, termYears: v }))}      placeholder="20" />
+                      <EvalField label="Occupation"          value={evalForm.occupation}      onChange={v => setEvalForm({ ...evalForm, occupation: v })}      placeholder="Engineer" />
+                      <EvalField label="Annual Income (PKR)" type="number" value={evalForm.declaredIncome} onChange={v => setEvalForm({ ...evalForm, declaredIncome: v })} placeholder="1200000" />
+                      <EvalField label="Product Name"        value={evalForm.productName}     onChange={v => setEvalForm({ ...evalForm, productName: v })}     placeholder="Term Life Insurance" />
+                      <EvalField label="Coverage (PKR)"      type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />
+                      <EvalField label="Term (Years)"        type="number" value={evalForm.termYears}      onChange={v => setEvalForm({ ...evalForm, termYears: v })}      placeholder="20" />
                     </div>
                   </div>
                 )}
@@ -852,8 +936,8 @@ export default function CaseSummarizerPage() {
                 {/* Always-visible quick inputs for coverage + term (the two fields not from applicant) */}
                 {!showEvalForm && (
                   <div className="px-5 py-4 grid grid-cols-2 gap-3">
-                    <EvalField label="Coverage Amount (PKR)" type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm(f => ({ ...f, coverageAmount: v }))} placeholder="5000000" />
-                    <EvalField label="Term (Years)"          type="number" value={evalForm.termYears}      onChange={v => setEvalForm(f => ({ ...f, termYears: v }))}      placeholder="20" />
+                    <EvalField label="Coverage Amount (PKR)" type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />
+                    <EvalField label="Term (Years)"          type="number" value={evalForm.termYears}      onChange={v => setEvalForm({ ...evalForm, termYears: v })}      placeholder="20" />
                   </div>
                 )}
 
@@ -930,7 +1014,7 @@ export default function CaseSummarizerPage() {
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4">
                   <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-2">Validation Errors</p>
                   <ul className="space-y-1">
-                    {evalResult.validationErrors.map((msg, i) => (
+                    {evalResult.validationErrors.map((msg: string, i: number) => (
                       <li key={i} className="text-xs text-red-600 flex items-start gap-1.5">
                         <span className="text-red-400 mt-0.5 flex-shrink-0">✕</span>{msg}
                       </li>
@@ -942,8 +1026,8 @@ export default function CaseSummarizerPage() {
               {/* Stream error */}
               {evalStatus === "error" && evalError && evalResult.validationErrors.length === 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-                  <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Error</p>
-                  <p className="text-xs text-red-600">{evalError}</p>
+                   <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Error</p>
+                   <p className="text-xs text-red-600">{evalError}</p>
                 </div>
               )}
 
@@ -998,7 +1082,7 @@ export default function CaseSummarizerPage() {
                       <div>
                         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">XAI Reasons</p>
                         <ul className="space-y-1.5">
-                          {evalResult.reasons.map((r, i) => {
+                          {evalResult.reasons.map((r: string, i: number) => {
                             const isMath = i === evalResult.reasons.length - 1;
                             return (
                               <li key={i} className={`text-xs flex items-start gap-2 ${

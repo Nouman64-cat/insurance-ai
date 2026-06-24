@@ -16,6 +16,18 @@ interface Applicant {
   details?: any;
 }
 
+const formatCNIC = (value: string): string => {
+  const clean = value.replace(/\D/g, "");
+  const trimmed = clean.slice(0, 13);
+  if (trimmed.length <= 5) {
+    return trimmed;
+  } else if (trimmed.length <= 12) {
+    return `${trimmed.slice(0, 5)}-${trimmed.slice(5)}`;
+  } else {
+    return `${trimmed.slice(0, 5)}-${trimmed.slice(5, 12)}-${trimmed.slice(12)}`;
+  }
+};
+
 export default function ApplicantsPage() {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -596,8 +608,9 @@ export default function ApplicantsPage() {
                           type="text"
                           required
                           value={cnic}
-                          onChange={(e) => setCnic(e.target.value)}
+                          onChange={(e) => setCnic(formatCNIC(e.target.value))}
                           placeholder="35201-XXXXXXX-X"
+                          maxLength={15}
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
                         />
                       </div>
@@ -1153,7 +1166,9 @@ export default function ApplicantsPage() {
                         <input
                           type="text"
                           value={details.beneficiary.cnic_number}
-                          onChange={(e) => updateField("beneficiary", "cnic_number", e.target.value)}
+                          onChange={(e) => updateField("beneficiary", "cnic_number", formatCNIC(e.target.value))}
+                          placeholder="35201-XXXXXXX-X"
+                          maxLength={15}
                           className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
                         />
                       </div>

@@ -295,6 +295,7 @@ export function Sidebar() {
   const [userName, setUserName] = useState("Saira Reviewer");
   const [userEmail, setUserEmail] = useState("Senior Underwriter");
   const [userRole, setUserRole] = useState("");
+  const [navMode, setNavMode] = useState<"all" | "working">("all");
 
   useEffect(() => {
     setActiveHref(pathname);
@@ -304,10 +305,17 @@ export function Sidebar() {
     const storedName = localStorage.getItem("user_name");
     const storedEmail = localStorage.getItem("user_email");
     const storedRole = localStorage.getItem("user_role");
+    const savedMode = localStorage.getItem("demo_nav_mode");
     if (storedName) setUserName(storedName);
     if (storedEmail) setUserEmail(storedEmail);
     if (storedRole) setUserRole(storedRole);
+    if (savedMode === "working") setNavMode("working");
   }, []);
+
+  const handleNavModeChange = (mode: "all" | "working") => {
+    setNavMode(mode);
+    localStorage.setItem("demo_nav_mode", mode);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("jwt_token");
@@ -324,6 +332,17 @@ export function Sidebar() {
     .join("")
     .slice(0, 2)
     .toUpperCase() || "SR";
+
+  const workingHrefs = ["/cases", "/artifacts", "/case-summarizer", "/admin", "/admin/applicants"];
+
+  const displayGroups = (navMode === "working"
+    ? [
+        {
+          group: "WORKING MODULES",
+          links: NAV_ITEMS.flatMap((g) => g.links as any).filter((link: any) => workingHrefs.includes(link.href)),
+        },
+      ]
+    : NAV_ITEMS) as any;
 
   return (
     <aside
@@ -367,9 +386,38 @@ export function Sidebar() {
         </div>
       )}
 
+      {/* ── View Mode Selector Dropdown ───────────────────────────────────── */}
+      {!collapsed && (
+        <div className="mx-3 mt-3">
+          <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1 px-1">
+            Navigation Mode
+          </label>
+          <div className="relative">
+            <select
+              value={navMode}
+              onChange={(e) => handleNavModeChange(e.target.value as "all" | "working")}
+              className="w-full bg-slate-800/90 border border-slate-750 rounded-lg pl-8 pr-8 py-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all cursor-pointer appearance-none shadow-sm"
+            >
+              <option value="all">All Portal Modules</option>
+              <option value="working">Working Modules (Demo)</option>
+            </select>
+            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+              </svg>
+            </div>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Nav ───────────────────────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Sidebar navigation">
-        {NAV_ITEMS.map((group) => (
+        {displayGroups.map((group: any) => (
           <div key={group.group}>
             {!collapsed && (
               <p className="px-2 mb-1.5 text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600">
@@ -377,7 +425,7 @@ export function Sidebar() {
               </p>
             )}
             <div className="space-y-0.5">
-              {group.links.map((link) => {
+              {group.links.map((link: any) => {
                 if ((link as any).adminOnly && userRole !== "Admin") {
                   return null;
                 }
