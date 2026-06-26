@@ -333,7 +333,7 @@ export function Sidebar() {
     .slice(0, 2)
     .toUpperCase() || "SR";
 
-  const workingHrefs = ["/cases", "/artifacts", "/case-summarizer", "/admin", "/admin/applicants"];
+  const workingHrefs = ["/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin", "/admin/applicants"];
 
   const displayGroups = (navMode === "working"
     ? [
