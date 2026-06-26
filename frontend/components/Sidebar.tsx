@@ -181,6 +181,38 @@ const NAV_ITEMS = [
         ),
         badge: null,
       },
+      {
+        href: "/live-evaluation",
+        label: "Live Evaluation",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/case-summarizer",
+        label: "Case Summarizer",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/assessments",
+        label: "Assessment History",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+          </svg>
+        ),
+        badge: null,
+      },
     ],
   },
   {
@@ -225,8 +257,8 @@ const NAV_ITEMS = [
         badge: null,
       },
       {
-        href: "#admin",
-        label: "Admin",
+        href: "/admin",
+        label: "User Management",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
             <circle cx="12" cy="12" r="3" />
@@ -234,6 +266,21 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        adminOnly: true,
+      },
+      {
+        href: "/admin/applicants",
+        label: "Applicant Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 00-3-3.87" />
+            <path d="M16 3.13a4 4 0 010 7.75" />
+          </svg>
+        ),
+        badge: null,
+        adminOnly: true,
       },
     ],
   },
@@ -245,10 +292,57 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
   const [activeHref, setActiveHref] = useState(pathname);
+  const [userName, setUserName] = useState("Saira Reviewer");
+  const [userEmail, setUserEmail] = useState("Senior Underwriter");
+  const [userRole, setUserRole] = useState("");
+  const [navMode, setNavMode] = useState<"all" | "working">("all");
 
   useEffect(() => {
     setActiveHref(pathname);
   }, [pathname]);
+
+  useEffect(() => {
+    const storedName = localStorage.getItem("user_name");
+    const storedEmail = localStorage.getItem("user_email");
+    const storedRole = localStorage.getItem("user_role");
+    const savedMode = localStorage.getItem("demo_nav_mode");
+    if (storedName) setUserName(storedName);
+    if (storedEmail) setUserEmail(storedEmail);
+    if (storedRole) setUserRole(storedRole);
+    if (savedMode === "working") setNavMode("working");
+  }, []);
+
+  const handleNavModeChange = (mode: "all" | "working") => {
+    setNavMode(mode);
+    localStorage.setItem("demo_nav_mode", mode);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("jwt_token");
+    localStorage.removeItem("tenant_id");
+    localStorage.removeItem("user_email");
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_role");
+    window.location.href = "/login";
+  };
+
+  const initials = userName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .slice(0, 2)
+    .toUpperCase() || "SR";
+
+  const workingHrefs = ["/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin", "/admin/applicants"];
+
+  const displayGroups = (navMode === "working"
+    ? [
+        {
+          group: "WORKING MODULES",
+          links: NAV_ITEMS.flatMap((g) => g.links as any).filter((link: any) => workingHrefs.includes(link.href)),
+        },
+      ]
+    : NAV_ITEMS) as any;
 
   return (
     <aside
@@ -292,9 +386,38 @@ export function Sidebar() {
         </div>
       )}
 
+      {/* ── View Mode Selector Dropdown ───────────────────────────────────── */}
+      {!collapsed && (
+        <div className="mx-3 mt-3">
+          <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1 px-1">
+            Navigation Mode
+          </label>
+          <div className="relative">
+            <select
+              value={navMode}
+              onChange={(e) => handleNavModeChange(e.target.value as "all" | "working")}
+              className="w-full bg-slate-800/90 border border-slate-750 rounded-lg pl-8 pr-8 py-1.5 text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500/50 transition-all cursor-pointer appearance-none shadow-sm"
+            >
+              <option value="all">All Portal Modules</option>
+              <option value="working">Working Modules (Demo)</option>
+            </select>
+            <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+              </svg>
+            </div>
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+              </svg>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Nav ───────────────────────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Sidebar navigation">
-        {NAV_ITEMS.map((group) => (
+        {displayGroups.map((group: any) => (
           <div key={group.group}>
             {!collapsed && (
               <p className="px-2 mb-1.5 text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600">
@@ -302,7 +425,10 @@ export function Sidebar() {
               </p>
             )}
             <div className="space-y-0.5">
-              {group.links.map((link) => {
+              {group.links.map((link: any) => {
+                if ((link as any).adminOnly && userRole !== "Admin") {
+                  return null;
+                }
                 const isActive = activeHref === link.href;
                 return (
                   <Link
@@ -347,15 +473,37 @@ export function Sidebar() {
 
       {/* ── User footer ───────────────────────────────────────────────────── */}
       <div className={`border-t border-slate-800 p-3 flex-shrink-0 ${collapsed ? "flex justify-center" : ""}`}>
-        <div className={`flex items-center gap-2.5 cursor-pointer group rounded-lg p-1.5 hover:bg-slate-800 transition-colors ${collapsed ? "" : "w-full"}`}>
+        <div className={`flex items-center gap-2.5 group rounded-lg p-1.5 hover:bg-slate-800/50 transition-colors ${collapsed ? "" : "w-full"}`}>
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 shadow-md">
-            <span className="text-xs font-bold text-white">SR</span>
+            <span className="text-xs font-bold text-white">{initials}</span>
           </div>
           {!collapsed && (
-            <div className="overflow-hidden flex-1">
-              <p className="text-sm font-semibold text-slate-200 truncate leading-none">Saira Reviewer</p>
-              <p className="text-[10px] text-slate-500 mt-0.5 truncate">Senior Underwriter</p>
+            <div className="overflow-hidden flex-1 flex items-center justify-between">
+              <div className="overflow-hidden pr-2">
+                <p className="text-sm font-semibold text-slate-200 truncate leading-none">{userName}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5 truncate">{userEmail}</p>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors flex-shrink-0"
+                title="Log Out"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+                </svg>
+              </button>
             </div>
+          )}
+          {collapsed && (
+            <button
+              onClick={handleLogout}
+              className="absolute bottom-14 p-1.5 bg-slate-800 border border-slate-700 rounded text-slate-400 hover:text-red-400 hover:bg-slate-750 transition-colors flex-shrink-0 shadow-lg"
+              title="Log Out"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
+            </button>
           )}
         </div>
       </div>
