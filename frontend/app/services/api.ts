@@ -13,6 +13,13 @@ const api = axios.create({
 api.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem("jwt_token");
+      localStorage.removeItem("tenant_id");
+      localStorage.removeItem("user_email");
+      window.location.href = "/login";
+      return Promise.reject(new Error("Session expired. Redirecting to login..."));
+    }
     const message =
       err.response?.data?.detail ?? err.message ?? "An unexpected error occurred.";
     return Promise.reject(new Error(message));
@@ -27,6 +34,13 @@ export const ocrApi = axios.create({
 ocrApi.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem("jwt_token");
+      localStorage.removeItem("tenant_id");
+      localStorage.removeItem("user_email");
+      window.location.href = "/login";
+      return Promise.reject(new Error("Session expired. Redirecting to login..."));
+    }
     const message =
       err.response?.data?.detail ?? err.message ?? "OCR processing failed.";
     return Promise.reject(new Error(message));
@@ -42,6 +56,13 @@ export const summarizerApi = axios.create({
 summarizerApi.interceptors.response.use(
   (res) => res,
   (err) => {
+    if (err.response?.status === 401) {
+      localStorage.removeItem("jwt_token");
+      localStorage.removeItem("tenant_id");
+      localStorage.removeItem("user_email");
+      window.location.href = "/login";
+      return Promise.reject(new Error("Session expired. Redirecting to login..."));
+    }
     const message =
       err.response?.data?.detail ?? err.message ?? "Summarization failed.";
     return Promise.reject(new Error(message));

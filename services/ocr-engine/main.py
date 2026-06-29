@@ -13,6 +13,7 @@ if not GEMINI_API_KEY:
 
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
+# this is System prompt
 
 OCR_PROMPT = (
     "You are a highly capable multimodal document analysis and visual intelligence engine for an insurance platform. "

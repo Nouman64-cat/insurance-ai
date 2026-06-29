@@ -1,25 +1,45 @@
 """
-POST /evaluate — core underwriting endpoint.
+POST /evaluate — async underwriting endpoint (Kafka-backed).
 
-Flow:
-  1. Validate X-Tenant-Id header (via dependency) and confirm the tenant exists.
-  2. Forward applicant + policy data to the Risk Engine service via httpx.
-  3. Upsert the Applicant row (same CNIC may re-apply under the same tenant).
-  4. Insert Policy and RiskAssessment rows inside a single transaction.
-  5. Return a fully hydrated EvaluateResponse with the AI decision and
-     explainability reasons.
+Flow
+----
+1. Validate X-Tenant-Id header and confirm the tenant exists (fail-fast).
+2. Build a ProposalSubmittedEvent with a fresh event_id + proposal_id.
+3. Publish the event to insurance.proposal.submitted.v1.
+4. Return 202 Accepted immediately — the Risk Engine processes asynchronously.
+
+The Risk Engine consumes the event, runs the LangGraph workflow, and publishes
+the result to insurance.risk.evaluated.v1. A downstream result consumer
+(not this service) is responsible for persisting the RiskAssessment to the DB.
+
+POST /evaluate/stream is kept intact for synchronous dev/testing workflows.
 """
 
-from uuid import UUID
+import json
+from typing import List, Optional
+from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, status
+from aiokafka import AIOKafkaProducer
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from database import get_session
-from dependencies import Settings, get_settings, get_tenant_id
-from schemas import EvaluateRequest, EvaluateResponse
+from database import _session_factory, get_session
+from dependencies import get_kafka_producer, get_settings, get_tenant_id
+from kafka_producer import PROPOSAL_TOPIC
+from schemas import (
+    EvaluateRequest,
+    EvaluateResponse,
+    ProposalAcceptedResponse,
+)
+from shared.events.kafka_events import (
+    ApplicantPayload,
+    PolicyPayload,
+    ProposalPayload,
+    ProposalSubmittedEvent,
+)
 from shared.models.core import (
     AIDecision,
     Applicant,
@@ -27,32 +47,39 @@ from shared.models.core import (
     RiskAssessment,
     Tenant,
 )
+from dependencies import Settings
 
 router = APIRouter(tags=["Underwriting"])
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /evaluate — async Kafka path
+# ─────────────────────────────────────────────────────────────────────────────
+
 @router.post(
     "/evaluate",
-    response_model=EvaluateResponse,
-    status_code=status.HTTP_201_CREATED,
-    summary="Run AI underwriting evaluation",
-    response_description="Full risk assessment persisted to the database.",
+    response_model=ProposalAcceptedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+    summary="Submit a proposal for async AI underwriting",
+    response_description=(
+        "Proposal accepted and queued. Use the returned event_id to correlate "
+        "the RiskEvaluated event on insurance.risk.evaluated.v1."
+    ),
 )
 async def evaluate(
     request: EvaluateRequest,
     tenant_id: UUID = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
-    settings: Settings = Depends(get_settings),
-) -> EvaluateResponse:
+    producer: AIOKafkaProducer = Depends(get_kafka_producer),
+) -> ProposalAcceptedResponse:
     """
-    Accepts applicant and policy data, runs the LangGraph risk-engine workflow,
-    persists all records to PostgreSQL, and returns the complete assessment.
+    Publishes a ProposalSubmitted event to Kafka and returns 202 immediately.
 
     **Headers required:**
     - `X-Tenant-Id`: UUID of an existing tenant (create one via `POST /tenants`).
     """
 
-    # ── 1. Confirm tenant exists ──────────────────────────────────────────────
+    # ── 1. Confirm tenant exists (fail fast — no point queuing a bad request) ─
     tenant: Tenant | None = await session.get(Tenant, tenant_id)
     if tenant is None:
         raise HTTPException(
@@ -63,113 +90,276 @@ async def evaluate(
             ),
         )
 
-    # ── 2. Call the Risk Engine ───────────────────────────────────────────────
-    # The risk-engine lives at its own Docker-Compose hostname and is called
-    # over HTTP so this gateway stays decoupled from LangGraph internals.
+    # ── 2. Build the event ────────────────────────────────────────────────────
+    proposal_id = uuid4()
+
+    event = ProposalSubmittedEvent(
+        tenant_id=tenant_id,
+        payload=ProposalPayload(
+            proposal_id=proposal_id,
+            applicant=ApplicantPayload(
+                cnic=request.applicant.cnic,
+                dob=str(request.applicant.dob),
+                gender=str(request.applicant.gender.value),
+                occupation=request.applicant.occupation,
+                declared_income=int(request.applicant.declared_income),
+            ),
+            policy=PolicyPayload(
+                product_name=request.policy.product_name,
+                coverage_amount=int(request.policy.coverage_amount),
+                term_years=request.policy.term_years,
+            ),
+        ),
+    )
+
+    # ── 3. Publish to Kafka ───────────────────────────────────────────────────
+    # Keying by tenant_id ensures all proposals for the same tenant land on the
+    # same partition — preserving per-tenant ordering guarantees.
+    try:
+        await producer.send_and_wait(
+            PROPOSAL_TOPIC,
+            value=event.model_dump_json(),
+            key=str(tenant_id),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Failed to publish proposal event: {exc}",
+        )
+
+    # ── 4. Return 202 immediately ─────────────────────────────────────────────
+    return ProposalAcceptedResponse(
+        event_id=event.event_id,
+        proposal_id=proposal_id,
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# POST /evaluate/stream — synchronous SSE path (kept for dev / testing)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.post("/evaluate/stream", summary="Run AI underwriting evaluation with streaming progress")
+async def evaluate_stream(
+    request: EvaluateRequest,
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> StreamingResponse:
+    """
+    Same as POST /evaluate but streams SSE progress events as each LangGraph node
+    completes, then persists to DB and emits a final `saved` event.
+
+    Event types:
+    - `progress` — a workflow node finished: {node, data}
+    - `invalid`  — input validation failed: {errors}
+    - `saved`    — DB write done, full result: {assessment_id, ...}
+    - `error`    — something went wrong: {message}
+    """
+    tenant: Tenant | None = await session.get(Tenant, tenant_id)
+    if tenant is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant '{tenant_id}' not found. Create it first via POST /tenants.",
+        )
+
     applicant_payload = request.applicant.model_dump(mode="json")
     policy_payload = request.policy.model_dump(mode="json")
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            risk_resp = await client.post(
-                f"{settings.risk_engine_url}/evaluate",
-                json={"applicant": applicant_payload, "policy": policy_payload},
-            )
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=(
-                "Risk Engine is unreachable. "
-                "Ensure the 'risk-engine' container is running and healthy."
-            ),
-        )
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Risk Engine did not respond within 30 s. Try again shortly.",
-        )
+    async def generate():
+        final_risk: dict | None = None
 
-    # Propagate validation errors from the risk-engine as-is.
-    if risk_resp.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail=risk_resp.json().get("detail", "Risk Engine rejected the input."),
-        )
+        # ── Stream from risk engine ───────────────────────────────────────────
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{settings.risk_engine_url}/evaluate/stream",
+                    json={"applicant": applicant_payload, "policy": policy_payload},
+                    headers={"X-Tenant-Id": str(tenant_id)},
+                ) as risk_resp:
+                    if risk_resp.status_code != 200:
+                        yield f"data: {json.dumps({'type': 'error', 'message': f'Risk engine error: {risk_resp.status_code}'})}\n\n"
+                        return
 
-    if risk_resp.is_error:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Risk Engine returned an unexpected error: {risk_resp.status_code}.",
-        )
+                    buffer = ""
+                    async for chunk in risk_resp.aiter_text():
+                        buffer += chunk
+                        parts = buffer.split("\n\n")
+                        buffer = parts.pop()
+                        for part in parts:
+                            line = part.strip()
+                            if not line.startswith("data: "):
+                                continue
+                            try:
+                                evt = json.loads(line[6:])
+                            except json.JSONDecodeError:
+                                continue
 
-    risk: dict = risk_resp.json()
+                            if evt["type"] == "progress":
+                                yield f"data: {json.dumps(evt)}\n\n"
+                            elif evt["type"] == "done":
+                                final_risk = evt["data"]
+                            elif evt["type"] == "error":
+                                yield f"data: {json.dumps({'type': 'error', 'message': evt.get('message', 'Unknown error')})}\n\n"
+                                return
 
-    # ── 3. Upsert Applicant ───────────────────────────────────────────────────
-    # The (tenant_id, cnic) unique constraint means the same person may
-    # re-apply with a new policy. Reuse the existing Applicant row rather
-    # than inserting a duplicate.
-    stmt = select(Applicant).where(
-        Applicant.tenant_id == tenant_id,
-        Applicant.cnic == request.applicant.cnic,
+        except httpx.TimeoutException:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Risk engine timed out after 120 s'})}\n\n"
+            return
+        except httpx.ConnectError:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Risk engine is unreachable'})}\n\n"
+            return
+
+        if final_risk is None:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Risk engine did not return a final result'})}\n\n"
+            return
+
+        # ── Validation failure — no DB write ──────────────────────────────────
+        if not final_risk.get("is_valid", False):
+            yield f"data: {json.dumps({'type': 'invalid', 'errors': final_risk.get('validation_errors', [])})}\n\n"
+            return
+
+        # ── Persist to DB ─────────────────────────────────────────────────────
+        try:
+            async with _session_factory() as db:
+                stmt = select(Applicant).where(
+                    Applicant.tenant_id == tenant_id,
+                    Applicant.cnic == request.applicant.cnic,
+                )
+                existing = (await db.exec(stmt)).first()
+                if existing is not None:
+                    applicant = existing
+                else:
+                    applicant = Applicant(
+                        tenant_id=tenant_id,
+                        cnic=request.applicant.cnic,
+                        name=request.applicant.name,
+                        dob=request.applicant.dob,
+                        gender=request.applicant.gender,
+                        occupation=request.applicant.occupation,
+                        declared_income=request.applicant.declared_income,
+                    )
+                    db.add(applicant)
+                    await db.flush()
+
+                policy = Policy(
+                    tenant_id=tenant_id,
+                    applicant_id=applicant.id,
+                    product_name=request.policy.product_name,
+                    coverage_amount=request.policy.coverage_amount,
+                    term_years=request.policy.term_years,
+                )
+                db.add(policy)
+                await db.flush()
+
+                assessment = RiskAssessment(
+                    tenant_id=tenant_id,
+                    applicant_id=applicant.id,
+                    case_id=request.case_id,
+                    medical_score=final_risk["medical_score"],
+                    financial_score=final_risk["financial_score"],
+                    fraud_probability=final_risk["fraud_probability"],
+                    composite_risk_score=final_risk.get("composite_risk_score"),
+                    ai_decision=AIDecision(final_risk["ai_decision"]),
+                    suggested_loading=final_risk.get("suggested_loading"),
+                    reasons=final_risk.get("reasons"),
+                    ai_summary=request.ai_summary,
+                )
+                db.add(assessment)
+                await db.commit()
+                await db.refresh(assessment)
+
+            yield f"data: {json.dumps({'type': 'saved', 'data': {'assessment_id': str(assessment.id), 'applicant_id': str(applicant.id), 'policy_id': str(policy.id), 'tenant_id': str(tenant_id), 'medical_score': assessment.medical_score, 'financial_score': assessment.financial_score, 'fraud_probability': assessment.fraud_probability, 'composite_risk_score': final_risk['composite_risk_score'], 'ai_decision': assessment.ai_decision.value, 'suggested_loading': assessment.suggested_loading, 'reasons': assessment.reasons or [], 'created_at': assessment.created_at.isoformat()}})}\n\n"
+
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Database error: {str(exc)}'})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
-    existing = (await session.exec(stmt)).first()
 
-    if existing is not None:
-        applicant = existing
-    else:
-        applicant = Applicant(
-            tenant_id=tenant_id,
-            cnic=request.applicant.cnic,
-            name=request.applicant.name,
-            dob=request.applicant.dob,
-            gender=request.applicant.gender,
-            occupation=request.applicant.occupation,
-            declared_income=request.applicant.declared_income,
-        )
-        session.add(applicant)
-        await session.flush()   # populate applicant.id before using it as FK
 
-    # ── 4. Create Policy ──────────────────────────────────────────────────────
-    # Each call always creates a new policy row — the same applicant can apply
-    # for multiple products or re-apply with different coverage amounts.
-    policy = Policy(
-        tenant_id=tenant_id,
-        applicant_id=applicant.id,
-        product_name=request.policy.product_name,
-        coverage_amount=request.policy.coverage_amount,
-        term_years=request.policy.term_years,
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /assessments — list stored evaluations for this tenant
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/assessments", summary="List stored risk assessments for this tenant")
+async def list_assessments(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    case_id: Optional[UUID] = Query(None),
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+) -> List[dict]:
+    stmt = (
+        select(RiskAssessment)
+        .where(RiskAssessment.tenant_id == tenant_id)
     )
-    session.add(policy)
-    await session.flush()
+    if case_id:
+        stmt = stmt.where(RiskAssessment.case_id == case_id)
+    stmt = stmt.order_by(RiskAssessment.created_at.desc()).offset(skip).limit(limit)
+    assessments = (await session.exec(stmt)).all()
 
-    # ── 5. Persist RiskAssessment ─────────────────────────────────────────────
-    assessment = RiskAssessment(
-        tenant_id=tenant_id,
-        applicant_id=applicant.id,
-        medical_score=risk["medical_score"],
-        financial_score=risk["financial_score"],
-        fraud_probability=risk["fraud_probability"],
-        ai_decision=AIDecision(risk["ai_decision"]),
-        suggested_loading=risk.get("suggested_loading"),
-        reasons=risk.get("reasons"),
-    )
-    session.add(assessment)
-    await session.commit()
-    await session.refresh(assessment)
+    if not assessments:
+        return []
 
-    # ── 6. Return response ────────────────────────────────────────────────────
-    return EvaluateResponse(
-        assessment_id=assessment.id,
-        applicant_id=applicant.id,
-        policy_id=policy.id,
-        tenant_id=tenant_id,
-        medical_score=assessment.medical_score,
-        financial_score=assessment.financial_score,
-        fraud_probability=assessment.fraud_probability,
-        # composite_risk_score comes from the engine result, not the DB row.
-        composite_risk_score=risk["composite_risk_score"],
-        ai_decision=assessment.ai_decision.value,
-        suggested_loading=assessment.suggested_loading,
-        reasons=assessment.reasons or [],
-        created_at=assessment.created_at,
-    )
+    # Batch-load applicant names in one query
+    applicant_ids = list({a.applicant_id for a in assessments})
+    app_stmt = select(Applicant).where(Applicant.id.in_(applicant_ids))
+    applicants = {a.id: a for a in (await session.exec(app_stmt)).all()}
+
+    return [
+        {
+            "id": str(a.id),
+            "applicant_id": str(a.applicant_id),
+            "applicant_name": applicants[a.applicant_id].name if a.applicant_id in applicants else "Unknown",
+            "applicant_cnic": applicants[a.applicant_id].cnic if a.applicant_id in applicants else "—",
+            "case_id": str(a.case_id) if a.case_id else None,
+            "medical_score": a.medical_score,
+            "financial_score": a.financial_score,
+            "fraud_probability": a.fraud_probability,
+            "composite_risk_score": a.composite_risk_score,
+            "ai_decision": a.ai_decision.value,
+            "suggested_loading": a.suggested_loading,
+            "has_summary": a.ai_summary is not None,
+            "created_at": a.created_at.isoformat(),
+        }
+        for a in assessments
+    ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /assessments/{assessment_id} — full detail including ai_summary
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/assessments/{assessment_id}", summary="Get a single risk assessment with full AI summary")
+async def get_assessment(
+    assessment_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    a = await session.get(RiskAssessment, assessment_id)
+    if a is None or a.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Assessment not found")
+
+    applicant = await session.get(Applicant, a.applicant_id)
+
+    return {
+        "id": str(a.id),
+        "applicant_id": str(a.applicant_id),
+        "applicant_name": applicant.name if applicant else "Unknown",
+        "applicant_cnic": applicant.cnic if applicant else "—",
+        "case_id": str(a.case_id) if a.case_id else None,
+        "medical_score": a.medical_score,
+        "financial_score": a.financial_score,
+        "fraud_probability": a.fraud_probability,
+        "composite_risk_score": a.composite_risk_score,
+        "ai_decision": a.ai_decision.value,
+        "suggested_loading": a.suggested_loading,
+        "reasons": a.reasons or [],
+        "ai_summary": a.ai_summary,
+        "has_summary": a.ai_summary is not None,
+        "created_at": a.created_at.isoformat(),
+    }

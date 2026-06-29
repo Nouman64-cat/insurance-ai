@@ -1,31 +1,27 @@
-"""
-Risk Engine — LangGraph multi-agent evaluation workflow.
-
-Graph topology:
-
-  START
-    └─► intake_validation ──[invalid]──► END
-                          └──[valid]──► medical_scoring
-                                            └─► financial_scoring
-                                                      └─► fraud_check
-                                                                └─► decision_maker
-                                                                          └─► END
-
-All nodes are deterministic mock functions; no LLM API keys are required.
-Drop-in LLM calls can replace the mock bodies in v2 without touching the graph.
-
-Scoring convention: 0 = no risk, 100 = maximum risk.
-Composite = medical×0.40 + financial×0.35 + fraud_pct×0.25
-Decision thresholds: 0–25 Auto Approve | 26–50 Loading | 51–75 Review | 76–100 Decline
-"""
-
 from __future__ import annotations
 
+import logging
+import os
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
+from neo4j import GraphDatabase
+from neo4j import exceptions as neo4j_exc
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
+
+logger = logging.getLogger(__name__)
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Memgraph connection config
+# ─────────────────────────────────────────────────────────────────────────────
+
+MEMGRAPH_URI  = os.getenv("MEMGRAPH_URI",      "bolt://memgraph:7687")
+MEMGRAPH_USER = os.getenv("MEMGRAPH_USERNAME", "")
+MEMGRAPH_PASS = os.getenv("MEMGRAPH_PASSWORD", "")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -33,465 +29,440 @@ from typing_extensions import TypedDict
 # ─────────────────────────────────────────────────────────────────────────────
 
 class RiskState(TypedDict):
-    # ── Inputs ────────────────────────────────────────────────────────────────
     applicant: Dict[str, Any]
-    # expected keys: cnic, name, dob, gender, occupation, declared_income (annual PKR)
-
     policy: Dict[str, Any]
-    # expected keys: coverage_amount (PKR), term_years, product_name
-
-    # ── Validation ────────────────────────────────────────────────────────────
+    tenant_id: str
     is_valid: bool
     validation_errors: List[str]
-
-    # ── Agent outputs ─────────────────────────────────────────────────────────
-    medical_score: int           # 0–100
+    medical_score: int
     medical_reasons: List[str]
-
-    financial_score: int         # 0–100
+    financial_score: int
     financial_reasons: List[str]
-
-    fraud_probability: float     # 0.0–1.0
+    fraud_probability: float
     fraud_reasons: List[str]
-
-    # ── Final decision ────────────────────────────────────────────────────────
     composite_risk_score: int
-    ai_decision: str             # mirrors AIDecision enum values in shared/models
-    suggested_loading: Optional[float]  # % premium loading; None if not applicable
-    reasons: List[str]           # unified explainability list for the UI
+    ai_decision: str
+    suggested_loading: Optional[float]
+    reasons: List[str]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Internal helpers
+# LLM helper
 # ─────────────────────────────────────────────────────────────────────────────
 
-_HIGH_HAZARD_KEYWORDS = {
-    "mining", "miner", "military", "soldier", "army", "navy", "air force",
-    "police", "security guard", "fisherman", "fishing", "lumberjack",
-    "construction", "demolition", "oil rig", "pilot", "motorcyclist",
-    "racing driver", "firefighter", "bomb disposal",
-}
-
-_MEDIUM_HAZARD_KEYWORDS = {
-    "driver", "factory worker", "mechanic", "plumber", "welder",
-    "painter", "carpenter", "mason", "delivery", "courier", "electrician",
-}
-
-
-def _parse_dob(value: Any) -> date:
-    if isinstance(value, datetime):
-        return value.date()
-    if isinstance(value, date):
-        return value
-    return datetime.strptime(str(value), "%Y-%m-%d").date()
-
-
-def _age(dob: date) -> int:
-    today = date.today()
-    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
-
-
-def _occupation_tier(occupation: str) -> str:
-    """Returns 'high', 'medium', or 'low' hazard tier for a given occupation."""
-    occ = occupation.lower()
-    if any(k in occ for k in _HIGH_HAZARD_KEYWORDS):
-        return "high"
-    if any(k in occ for k in _MEDIUM_HAZARD_KEYWORDS):
-        return "medium"
-    return "low"
+def _llm() -> ChatGoogleGenerativeAI:
+    return ChatGoogleGenerativeAI(
+        model="gemini-2.5-flash",
+        temperature=0.1,
+        google_api_key=os.getenv("GEMINI_API_KEY"),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Node 1 — Intake Validation
+# LLM output schemas
 # ─────────────────────────────────────────────────────────────────────────────
 
-_REQUIRED_APPLICANT = {"cnic", "name", "dob", "gender", "occupation", "declared_income"}
-_REQUIRED_POLICY = {"coverage_amount", "term_years"}
+class MedicalScoreOutput(BaseModel):
+    medical_score: int = Field(
+        ge=0, le=100,
+        description="Actuarial medical risk score from 0 to 100.")
+    medical_reasons: List[str] = Field(
+        description="List of strings explaining the exact reasons for the score.")
 
 
-def intake_validation(state: RiskState) -> Dict[str, Any]:
-    """
-    Gate node. Checks that all required fields are present and within
-    acceptable ranges. Invalid applications short-circuit to END.
-    """
+class FinancialScoreOutput(BaseModel):
+    financial_score: int = Field(
+        ge=0, le=100,
+        description="Financial risk score from 0 to 100.")
+    financial_reasons: List[str] = Field(
+        description="List of strings explaining the financial risk assessment.")
+
+
+class FraudScoreOutput(BaseModel):
+    fraud_probability: float = Field(
+        ge=0.0, le=1.0,
+        description="Float between 0.0 (no fraud) and 1.0 (certain fraud).")
+    fraud_reasons: List[str] = Field(
+        description="List of specific reasons for this probability based on graph data.")
+
+
+# DecisionOutput removed — final node is deterministic (no LLM).
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Graph nodes
+# ─────────────────────────────────────────────────────────────────────────────
+
+def validate_input(state: RiskState) -> Dict[str, Any]:
     errors: List[str] = []
     applicant = state["applicant"]
     policy = state["policy"]
 
-    for field in _REQUIRED_APPLICANT:
-        if applicant.get(field) is None:
-            errors.append(f"Missing required applicant field: '{field}'")
+    try:
+        dob = datetime.strptime(applicant["dob"], "%Y-%m-%d").date()
+        age = (date.today() - dob).days // 365
+        if age < 18:
+            errors.append(f"Applicant is under 18 (age: {age}).")
+        if age > 70:
+            errors.append(f"Applicant exceeds maximum entry age of 70 (age: {age}).")
+    except (KeyError, ValueError):
+        errors.append("Invalid or missing date of birth.")
 
-    for field in _REQUIRED_POLICY:
-        if policy.get(field) is None:
-            errors.append(f"Missing required policy field: '{field}'")
+    income = applicant.get("declared_income", 0)
+    if income <= 0:
+        errors.append("Declared income must be greater than zero.")
 
-    if not errors:
-        try:
-            age = _age(_parse_dob(applicant["dob"]))
-            if not (18 <= age <= 75):
-                errors.append(
-                    f"Applicant age {age} is outside the insurable range (18–75)."
-                )
-        except (ValueError, TypeError):
-            errors.append("'dob' must be a valid ISO date string (YYYY-MM-DD).")
+    coverage = policy.get("coverage_amount", 0)
+    if coverage <= 0:
+        errors.append("Coverage amount must be greater than zero.")
 
-        if float(applicant.get("declared_income", -1)) < 0:
-            errors.append("'declared_income' must be ≥ 0.")
+    if income > 0 and coverage > income * 20:
+        errors.append(
+            f"Coverage amount ({coverage:,.0f}) exceeds 20× annual income ({income * 20:,.0f})."
+        )
 
-        if float(policy.get("coverage_amount", 0)) <= 0:
-            errors.append("'coverage_amount' must be > 0.")
-
-        if not (1 <= int(policy.get("term_years", 0)) <= 40):
-            errors.append("'term_years' must be between 1 and 40.")
+    term = policy.get("term_years", 0)
+    if term < 1 or term > 40:
+        errors.append(f"Policy term must be between 1 and 40 years (got {term}).")
 
     return {"is_valid": len(errors) == 0, "validation_errors": errors}
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Node 2 — Medical Scoring
-# ─────────────────────────────────────────────────────────────────────────────
-
 def medical_scoring(state: RiskState) -> Dict[str, Any]:
-    """
-    Actuarial proxy for medical underwriting.
-
-    Signals used:
-      - Age bracket         (dominant factor for mortality tables)
-      - Biological sex      (small actuarial mortality differential)
-      - Occupation hazard   (accidental death / disability exposure)
-
-    LLM replacement hook: swap the bracket lookups for a structured Claude call
-    that accepts BMI, medical history, and smoker status when that data is available.
-    """
     applicant = state["applicant"]
-    reasons: List[str] = []
-    score = 0
+    structured_llm = _llm().with_structured_output(MedicalScoreOutput)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """You are an expert life insurance medical underwriter.
+         Evaluate the following applicant's baseline medical risk based on:
+         1. Age (Calculate from DOB. Older = higher risk).
+         2. Gender (Standard actuarial mortality differentials).
+         3. Occupation Hazard (High hazard like mining/military = high points, office work = 0 points).
 
-    # ── Age bracket ───────────────────────────────────────────────────────────
-    age = _age(_parse_dob(applicant["dob"]))
-    age_table = [
-        (26,  10, "18–25"),
-        (36,  20, "26–35"),
-        (46,  32, "36–45"),
-        (56,  48, "46–55"),
-        (66,  62, "56–65"),
-        (76,  78, "66–75"),
-    ]
-    for upper, pts, label in age_table:
-        if age < upper:
-            score += pts
-            reasons.append(f"Age {age} (bracket {label}): +{pts} pts")
-            break
+         Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons."""),
+        ("user", "Applicant Data: {applicant}")
+    ])
+    result = (prompt | structured_llm).invoke({"applicant": applicant})
+    return {"medical_score": result.medical_score, "medical_reasons": result.medical_reasons}
 
-    # ── Gender actuarial adjustment ───────────────────────────────────────────
-    if str(applicant.get("gender", "")).lower() in {"male", "m", "male"}:
-        score += 5
-        reasons.append("Gender Male: +5 pts (actuarial mortality differential)")
-
-    # ── Occupation hazard ─────────────────────────────────────────────────────
-    occ = applicant.get("occupation", "Unknown")
-    tier = _occupation_tier(occ)
-    occ_pts = {"high": 20, "medium": 10, "low": 0}[tier]
-    score += occ_pts
-    reasons.append(
-        f"Occupation '{occ}' ({tier}-hazard category): +{occ_pts} pts"
-    )
-
-    return {"medical_score": min(score, 100), "medical_reasons": reasons}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Node 3 — Financial Scoring
-# ─────────────────────────────────────────────────────────────────────────────
 
 def financial_scoring(state: RiskState) -> Dict[str, Any]:
-    """
-    Evaluates affordability and over-insurance risk.
-
-    Signals used:
-      - Coverage-to-income ratio  (primary lapse / contestability indicator)
-      - Absolute income bracket   (proxy for financial stability)
-      - Policy term length        (longer exposure = higher default/lapse risk)
-
-    LLM replacement hook: extend with credit bureau data, existing policy
-    aggregation, and debt-to-income ratio when available.
-    """
     applicant = state["applicant"]
     policy = state["policy"]
-    reasons: List[str] = []
-    score = 0
+    structured_llm = _llm().with_structured_output(FinancialScoreOutput)
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """You are an expert insurance financial underwriter.
+         Assess the financial risk of this applicant based on:
+         1. Income-to-coverage ratio (high coverage vs low income = higher risk).
+         2. Policy term (longer term = higher exposure).
+         3. Occupation stability and income reliability.
 
-    income = max(float(applicant.get("declared_income", 1)), 1)
-    coverage = float(policy.get("coverage_amount", 0))
-    ratio = coverage / income
-
-    # ── Coverage-to-income ratio ──────────────────────────────────────────────
-    ratio_table = [
-        (3,           10, "< 3×",    "low over-insurance risk"),
-        (5,           25, "3–5×",    "acceptable"),
-        (10,          45, "5–10×",   "moderate"),
-        (15,          65, "10–15×",  "high"),
-        (float("inf"), 80, "> 15×",  "extreme — potential over-insurance"),
-    ]
-    for upper, pts, label, note in ratio_table:
-        if ratio < upper:
-            score += pts
-            reasons.append(
-                f"Coverage-to-income ratio {ratio:.1f}× ({label}, {note}): +{pts} pts"
-            )
-            break
-
-    # ── Absolute income bracket (annual PKR) ──────────────────────────────────
-    income_table = [
-        (600_000,        20, "< PKR 600k/yr"),
-        (1_200_000,      15, "PKR 600k–1.2M/yr"),
-        (2_400_000,      10, "PKR 1.2M–2.4M/yr"),
-        (4_800_000,       5, "PKR 2.4M–4.8M/yr"),
-        (float("inf"),    0, "> PKR 4.8M/yr"),
-    ]
-    for upper, pts, label in income_table:
-        if income < upper:
-            score += pts
-            if pts:
-                reasons.append(f"Income bracket ({label}): +{pts} pts")
-            else:
-                reasons.append(f"Income bracket ({label}): no additional risk")
-            break
-
-    # ── Policy term length ────────────────────────────────────────────────────
-    term = int(policy.get("term_years", 0))
-    if term > 30:
-        score += 10
-        reasons.append(f"Long policy term ({term} yrs): +10 pts (lapse exposure)")
-    elif term > 20:
-        score += 5
-        reasons.append(f"Medium-long term ({term} yrs): +5 pts")
-    else:
-        reasons.append(f"Policy term ({term} yrs): +0 pts")
-
-    return {"financial_score": min(score, 100), "financial_reasons": reasons}
+         Output a financial risk score from 0 (low risk) to 100 (very high risk) and specific reasons."""),
+        ("user", "Applicant: {applicant}\nPolicy: {policy}")
+    ])
+    result = (prompt | structured_llm).invoke({"applicant": applicant, "policy": policy})
+    return {"financial_score": result.financial_score, "financial_reasons": result.financial_reasons}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Node 4 — Fraud Check
+# Fraud detection — Memgraph ring query + Gemini evaluation
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Detects two classes of fraud signal from the relationships built up by
+# graph_writer.py after each evaluation (SAME_AREA and SAME_OCCUPATION_CLUSTER):
+#
+#   1. Income-outlier ring — an applicant whose declared income wildly exceeds
+#      the average of neighbours in the same area *and* occupation cluster,
+#      suggesting a fabricated salary figure within a coordinated group.
+#
+#   2. Coverage cluster — peers in the same occupation cluster applying for near-
+#      identical coverage amounts, indicating coordinated high-value applications.
+#
+# Both queries are tenant-scoped. If Memgraph is unreachable the node falls back
+# to empty signals so the rest of the workflow is never blocked by a graph-DB
+# outage.
+
+# Income-outlier detection within the same area + occupation cluster.
+_INCOME_OUTLIER_QUERY = """
+MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_AREA]->(neighbour:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(a)
+WITH a, collect(neighbour) AS neighbours, avg(neighbour.declared_income) AS avg_income
+RETURN
+  size(neighbours)                                        AS cluster_size,
+  avg_income                                              AS avg_income_in_cluster,
+  CASE
+    WHEN avg_income > 0 AND a.declared_income > avg_income * 3 THEN true
+    ELSE false
+  END                                                     AS income_outlier,
+  left(a.cnic, 5)                                         AS cnic_prefix
+"""
+
+# Coverage-cluster detection (suspicious near-identical coverage amounts).
+_COVERAGE_CLUSTER_QUERY = """
+MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_OCCUPATION_CLUSTER]->(peer:Applicant)
+WHERE abs(peer.coverage_amount - a.coverage_amount) < 50000
+WITH collect(peer) AS cluster
+RETURN size(cluster) AS coverage_cluster_size
+"""
+
+_GRAPH_FALLBACK: Dict[str, Any] = {
+    "graph_available":        False,
+    "cluster_size":           0,
+    "avg_income_in_cluster":  0.0,
+    "income_outlier":         False,
+    "coverage_cluster_size":  0,
+}
+
+
+def _query_fraud_graph(cnic: str, tenant_id: str) -> Dict[str, Any]:
+    """Run the ring-detection Cypher queries against Memgraph.
+
+    Runs both the income-outlier and coverage-cluster queries in a single
+    session and merges their results. Returns graph intelligence on success;
+    returns _GRAPH_FALLBACK on any connectivity or query error so the calling
+    node is never blocked.
+    """
+    try:
+        with GraphDatabase.driver(
+            MEMGRAPH_URI, auth=(MEMGRAPH_USER, MEMGRAPH_PASS)
+        ) as driver:
+            driver.verify_connectivity()
+            with driver.session() as session:
+                income_rec = session.run(
+                    _INCOME_OUTLIER_QUERY, cnic=cnic, tenant_id=tenant_id
+                ).single()
+                coverage_rec = session.run(
+                    _COVERAGE_CLUSTER_QUERY, cnic=cnic, tenant_id=tenant_id
+                ).single()
+
+        result: Dict[str, Any] = {**_GRAPH_FALLBACK, "graph_available": True}
+
+        if income_rec is not None:
+            result["cluster_size"]          = income_rec["cluster_size"] or 0
+            result["avg_income_in_cluster"] = income_rec["avg_income_in_cluster"] or 0.0
+            result["income_outlier"]        = bool(income_rec["income_outlier"])
+
+        if coverage_rec is not None:
+            result["coverage_cluster_size"] = coverage_rec["coverage_cluster_size"] or 0
+
+        return result
+
+    except neo4j_exc.ServiceUnavailable:
+        logger.warning("Memgraph unavailable — graph fraud check skipped (cnic=%s)", cnic)
+        return _GRAPH_FALLBACK
+    except Exception as exc:
+        logger.error("Memgraph query failed (cnic=%s): %s", cnic, exc)
+        return _GRAPH_FALLBACK
+
 
 def fraud_check(state: RiskState) -> Dict[str, Any]:
-    """
-    Lightweight rule-based fraud signal aggregator.
-
-    In production this node would call a Memgraph Cypher query to check
-    entity relationships (shared CNICs, shared bank accounts, ring networks).
-    For the prototype it uses observable application-layer signals only.
-
-    LLM replacement hook: pass the full applicant profile to a Claude call
-    with a structured fraud-signal extraction prompt and SHAP-style weights.
-    """
     applicant = state["applicant"]
-    policy = state["policy"]
-    reasons: List[str] = []
-    prob: float = 0.02  # 2% baseline industry fraud rate
+    policy    = state["policy"]
+    cnic      = applicant["cnic"]
+    tenant_id = state.get("tenant_id", "")
 
-    income = max(float(applicant.get("declared_income", 1)), 1)
-    coverage = float(policy.get("coverage_amount", 0))
-    ratio = coverage / income
+    # ── 1. Graph intelligence from Memgraph ───────────────────────────────────
+    graph = _query_fraud_graph(cnic=cnic, tenant_id=tenant_id)
 
-    # ── CNIC format check (Pakistan: 13 numeric digits, optionally hyphenated) ──
-    cnic: str = str(applicant.get("cnic", ""))
-    cnic_digits = cnic.replace("-", "").replace(" ", "")
-    if not (cnic_digits.isdigit() and len(cnic_digits) == 13):
-        prob += 0.30
-        reasons.append(
-            f"CNIC '{cnic}' failed format validation (expected 13 digits): +0.30"
-        )
-    else:
-        reasons.append(f"CNIC format valid: no signal")
-
-    # ── Coverage-to-income anomaly ────────────────────────────────────────────
-    if ratio > 15:
-        prob += 0.25
-        reasons.append(f"Extreme coverage-to-income ratio ({ratio:.1f}×): +0.25")
-    elif ratio > 10:
-        prob += 0.12
-        reasons.append(f"Elevated coverage-to-income ratio ({ratio:.1f}×): +0.12")
-
-    # ── Age boundary anomaly ──────────────────────────────────────────────────
-    age = _age(_parse_dob(applicant["dob"]))
-    if age < 18 or age > 70:
-        prob += 0.10
-        reasons.append(f"Age {age} outside normal underwriting range: +0.10")
-
-    # ── Low income + high coverage combination ────────────────────────────────
-    if income < 300_000 and coverage > 5_000_000:
-        prob += 0.15
-        reasons.append(
-            "Low annual income (<PKR 300k) combined with high coverage (>PKR 5M): +0.15"
-        )
-
-    final_prob = min(round(prob, 4), 0.95)
-    if final_prob <= 0.02:
-        reasons.append("No fraud signals detected; baseline probability (2%) applies")
-
-    return {"fraud_probability": final_prob, "fraud_reasons": reasons}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Node 5 — Decision Maker
-# ─────────────────────────────────────────────────────────────────────────────
-
-def decision_maker(state: RiskState) -> Dict[str, Any]:
-    """
-    Aggregates all agent scores into a single composite risk score and maps
-    it to a final underwriting decision with an optional premium loading.
-
-    Composite = medical×0.40 + financial×0.35 + fraud_pct×0.25
-
-    Thresholds:
-        0–25   → Auto Approve           (loading = 0%)
-       26–50   → Approve with Loading   (loading 10%–50%, stepped to nearest 5%)
-       51–75   → Human Review           (no automated loading)
-       76–100  → Decline
-    """
-    medical = state["medical_score"]
-    financial = state["financial_score"]
-    fraud_pct = state["fraud_probability"] * 100
-
-    composite = int(round(medical * 0.40 + financial * 0.35 + fraud_pct * 0.25))
-
-    if composite <= 25:
-        decision = "Auto Approve"
-        loading: Optional[float] = 0.0
-        decision_reason = f"Composite {composite}/100 ≤ 25 → Auto Approve (no loading)"
-
-    elif composite <= 50:
-        decision = "Approve with Loading"
-        raw = ((composite - 25) / 25) * 40 + 10   # scales 10% → 50%
-        loading = float(round(raw / 5) * 5)        # rounded to nearest 5%
-        decision_reason = (
-            f"Composite {composite}/100 in 26–50 → Approve with Loading "
-            f"({loading:.0f}% premium loading)"
-        )
-
-    elif composite <= 75:
-        decision = "Human Review"
-        loading = None
-        decision_reason = (
-            f"Composite {composite}/100 in 51–75 → Referred to Human Underwriter"
-        )
-
-    else:
-        decision = "Decline"
-        loading = None
-        decision_reason = f"Composite {composite}/100 > 75 → Decline"
-
-    all_reasons = (
-        state["medical_reasons"]
-        + state["financial_reasons"]
-        + state["fraud_reasons"]
-        + [
-            "─── Decision ───",
-            (
-                f"Composite risk score: {composite}/100  "
-                f"(medical {medical}×0.40 + financial {financial}×0.35 "
-                f"+ fraud {fraud_pct:.1f}×0.25)"
-            ),
-            decision_reason,
-        ]
+    # ── 2. Format graph results as a readable block for the LLM ──────────────
+    graph_summary = (
+        f"Graph database available          : {graph['graph_available']}\n"
+        f"Cluster size (same area + occ.)   : {graph['cluster_size']} "
+        f"(neighbours sharing CNIC area and occupation cluster)\n"
+        f"Average income in cluster         : {graph['avg_income_in_cluster']}\n"
+        f"Income outlier vs cluster         : {graph['income_outlier']} "
+        f"(declared income > 3× the cluster average)\n"
+        f"Coverage cluster size             : {graph['coverage_cluster_size']} "
+        f"(occupation peers within 50,000 of this coverage amount)\n"
     )
 
+    # ── 3. LLM evaluation with Gemini ─────────────────────────────────────────
+    structured_llm = _llm().with_structured_output(FraudScoreOutput)
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", """You are a senior insurance fraud investigator specialising in network-based fraud rings.
+You have access to both raw applicant data AND live Memgraph graph intelligence.
+
+Evaluate fraud probability using a two-tier signal hierarchy:
+
+TIER 1 — GRAPH SIGNALS (highest weight, hard evidence):
+  • income_outlier = true → declared income exceeds 3× the average of neighbours
+    in the same area + occupation cluster; classic income-fabrication signal.
+  • coverage_cluster_size > 0 → occupation peers applying for near-identical
+    coverage amounts; coordinated high-value applications through a shared network.
+  • cluster_size large → a dense area/occupation cluster amplifies ring risk.
+
+TIER 2 — DATA SIGNALS (secondary weight, circumstantial):
+  • Coverage-to-income ratio > 15× → moral hazard / over-insurance.
+  • Age-occupation-income inconsistency (e.g. 25-year-old "retired").
+  • Unusually round income figures that match known fabrication patterns.
+
+GRAPH UNAVAILABLE: If graph_available is false, assess from data signals only
+and cap probability at 0.5 — absence of graph evidence is not proof of fraud.
+
+Output a fraud_probability from 0.0 (clean) to 1.0 (certain fraud) and a list
+of specific, evidence-backed reasons referencing the actual graph findings."""),
+        ("user",
+         "=== APPLICANT DATA ===\n{applicant}\n\n"
+         "=== POLICY DATA ===\n{policy}\n\n"
+         "=== MEMGRAPH RING INTELLIGENCE ===\n{graph_summary}"),
+    ])
+
+    result = (prompt | structured_llm).invoke({
+        "applicant":     applicant,
+        "policy":        policy,
+        "graph_summary": graph_summary,
+    })
+
     return {
-        "composite_risk_score": composite,
-        "ai_decision": decision,
-        "suggested_loading": loading,
-        "reasons": all_reasons,
+        "fraud_probability": result.fraud_probability,
+        "fraud_reasons":     result.fraud_reasons,
     }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Conditional routing
+# Decision aggregation — deterministic, no LLM
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _route_after_validation(state: RiskState) -> str:
-    return "valid" if state["is_valid"] else "invalid"
+# Actuarial decision bands
+#   Auto Approve  → composite < 30  AND  fraud < 0.10  (clean profile, low risk)
+#   Decline       → composite > 75  OR   fraud > 0.60  (either dimension is disqualifying)
+#   Human Review  → everything else                     (ambiguous — needs underwriter eyes)
 
+def decision_aggregation(state: RiskState) -> Dict[str, Any]:
+    # ── 1. Pull scores with conservative safe defaults ────────────────────────
+    # Defaults to 50 / 0.5 if a prior node failed, keeping the decision safely
+    # in the "Human Review" band rather than accidentally auto-approving.
+    medical_score     = int(state.get("medical_score",     50))
+    financial_score   = int(state.get("financial_score",   50))
+    fraud_probability = float(state.get("fraud_probability", 0.5))
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Graph assembly — compiled once at module load
-# ─────────────────────────────────────────────────────────────────────────────
+    medical_reasons   = list(state.get("medical_reasons",   []))
+    financial_reasons = list(state.get("financial_reasons", []))
+    fraud_reasons     = list(state.get("fraud_reasons",     []))
 
-def _build_graph() -> StateGraph:
-    g = StateGraph(RiskState)
+    # ── 2. Composite score: 40% medical + 40% financial + 20% fraud ──────────
+    fraud_scaled         = round(fraud_probability * 100, 2)
+    raw_composite        = 0.40 * medical_score + 0.40 * financial_score + 0.20 * fraud_scaled
+    composite_risk_score = max(0, min(100, round(raw_composite)))
 
-    g.add_node("intake_validation", intake_validation)
-    g.add_node("medical_scoring",   medical_scoring)
-    g.add_node("financial_scoring", financial_scoring)
-    g.add_node("fraud_check",       fraud_check)
-    g.add_node("decision_maker",    decision_maker)
+    # ── 3. Actuarial decision bands ───────────────────────────────────────────
+    if composite_risk_score < 30 and fraud_probability < 0.10:
+        ai_decision = "Auto Approve"
+        band_rationale = (
+            f"composite {composite_risk_score} < 30 "
+            f"and fraud probability {fraud_probability:.2f} < 0.10"
+        )
+    elif composite_risk_score > 75 or fraud_probability > 0.60:
+        ai_decision = "Decline"
+        if fraud_probability > 0.60:
+            band_rationale = (
+                f"fraud probability {fraud_probability:.2f} exceeds hard-decline "
+                f"threshold of 0.60 (composite: {composite_risk_score})"
+            )
+        else:
+            band_rationale = (
+                f"composite {composite_risk_score} exceeds hard-decline "
+                f"threshold of 75 (fraud: {fraud_probability:.2f})"
+            )
+    else:
+        ai_decision = "Human Review"
+        band_rationale = (
+            f"composite {composite_risk_score} falls in the 30–75 review band "
+            f"(fraud: {fraud_probability:.2f})"
+        )
 
-    g.add_edge(START, "intake_validation")
-
-    g.add_conditional_edges(
-        "intake_validation",
-        _route_after_validation,
-        {"valid": "medical_scoring", "invalid": END},
+    # ── 4. XAI reasons — all node outputs + mathematical breakdown ────────────
+    math_breakdown = (
+        f"Composite score {composite_risk_score}/100 = "
+        f"(40% × medical {medical_score}) + "
+        f"(40% × financial {financial_score}) + "
+        f"(20% × fraud {fraud_scaled:.0f}) → "
+        f"{band_rationale} → decision: '{ai_decision}'"
     )
 
-    g.add_edge("medical_scoring",   "financial_scoring")
-    g.add_edge("financial_scoring", "fraud_check")
-    g.add_edge("fraud_check",       "decision_maker")
-    g.add_edge("decision_maker",    END)
+    reasons = [*medical_reasons, *financial_reasons, *fraud_reasons, math_breakdown]
 
-    return g
-
-
-_compiled_graph = _build_graph().compile()
+    return {
+        "composite_risk_score": composite_risk_score,
+        "ai_decision":          ai_decision,
+        "reasons":              reasons,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Public interface
+# Graph assembly
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _should_continue(state: RiskState) -> str:
+    return "medical_scoring" if state["is_valid"] else END
+
+
+_graph = StateGraph(RiskState)
+_graph.add_node("validate_input",      validate_input)
+_graph.add_node("medical_scoring",     medical_scoring)
+_graph.add_node("financial_scoring",   financial_scoring)
+_graph.add_node("fraud_detection",     fraud_check)
+_graph.add_node("decision_aggregation", decision_aggregation)
+
+_graph.add_edge(START, "validate_input")
+_graph.add_conditional_edges("validate_input", _should_continue)
+_graph.add_edge("medical_scoring",     "financial_scoring")
+_graph.add_edge("financial_scoring",   "fraud_detection")
+_graph.add_edge("fraud_detection",     "decision_aggregation")
+_graph.add_edge("decision_aggregation", END)
+
+_workflow = _graph.compile()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Public entry points
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _initial_state(
+    applicant_data: Dict[str, Any],
+    policy_data: Dict[str, Any],
+    tenant_id: str = "",
+) -> RiskState:
+    return {
+        "applicant":           applicant_data,
+        "policy":              policy_data,
+        "tenant_id":           tenant_id,
+        "is_valid":            False,
+        "validation_errors":   [],
+        "medical_score":       0,
+        "medical_reasons":     [],
+        "financial_score":     0,
+        "financial_reasons":   [],
+        "fraud_probability":   0.0,
+        "fraud_reasons":       [],
+        "composite_risk_score": 0,
+        "ai_decision":         "",
+        "suggested_loading":   None,
+        "reasons":             [],
+    }
+
 
 def run_evaluation(
     applicant_data: Dict[str, Any],
     policy_data: Dict[str, Any],
+    tenant_id: str = "",
 ) -> Dict[str, Any]:
-    """
-    Execute the full risk evaluation pipeline synchronously.
+    return dict(_workflow.invoke(_initial_state(applicant_data, policy_data, tenant_id)))
 
-    Args:
-        applicant_data: dict with keys matching the Applicant model
-                        (cnic, name, dob, gender, occupation, declared_income)
-        policy_data:    dict with keys matching the Policy model
-                        (coverage_amount, term_years, product_name)
 
-    Returns:
-        Final RiskState as a plain dict. Key output fields:
-            is_valid            bool
-            validation_errors   list[str]
-            medical_score       int  0–100
-            financial_score     int  0–100
-            fraud_probability   float  0.0–1.0
-            composite_risk_score int  0–100
-            ai_decision         str  ("Auto Approve" | "Approve with Loading" |
-                                      "Human Review" | "Decline")
-            suggested_loading   float | None  (% premium loading)
-            reasons             list[str]  (explainability output for the UI)
-    """
-    initial: RiskState = {
-        "applicant": applicant_data,
-        "policy": policy_data,
-        "is_valid": False,
-        "validation_errors": [],
-        "medical_score": 0,
-        "medical_reasons": [],
-        "financial_score": 0,
-        "financial_reasons": [],
-        "fraud_probability": 0.0,
-        "fraud_reasons": [],
-        "composite_risk_score": 0,
-        "ai_decision": "",
-        "suggested_loading": None,
-        "reasons": [],
-    }
-    return dict(_compiled_graph.invoke(initial))
+def stream_evaluation(
+    applicant_data: Dict[str, Any],
+    policy_data: Dict[str, Any],
+    tenant_id: str = "",
+):
+    """Yields (node_name, node_data) for each completed node, then ('__done__', full_state)."""
+    accumulated = dict(_initial_state(applicant_data, policy_data, tenant_id))
+    for update in _workflow.stream(
+        _initial_state(applicant_data, policy_data, tenant_id), stream_mode="updates"
+    ):
+        node_name = list(update.keys())[0]
+        node_data = update[node_name]
+        accumulated.update(node_data)
+        yield node_name, node_data
+    yield "__done__", accumulated
