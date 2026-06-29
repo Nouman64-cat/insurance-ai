@@ -7,8 +7,12 @@ const config = {
   tagline: 'AI-powered multi-tenant insurance underwriting platform',
   favicon: 'img/favicon.ico',
 
-  url: 'http://localhost',
-  baseUrl: '/',
+  url: 'https://nouman64-cat.github.io',
+  baseUrl: '/insurance-ai/',
+
+  organizationName: 'Nouman64-cat',
+  projectName: 'insurance-ai',
+  trailingSlash: false,
 
   onBrokenLinks: 'warn',
   onBrokenMarkdownLinks: 'warn',
