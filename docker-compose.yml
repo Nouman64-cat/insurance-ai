@@ -9,7 +9,6 @@ networks:
 # Named volumes — data survives container restarts
 # ─────────────────────────────────────────────────────────────────────────────
 volumes:
-  postgres-data:
   memgraph-data:
   kafka-data:
 
@@ -26,34 +25,13 @@ x-fastapi-defaults: &fastapi-defaults
     # macOS Docker Desktop doesn't forward FSEvents as inotify, so uvicorn --reload
     # would never detect file changes without forcing watchfiles to use polling.
     WATCHFILES_FORCE_POLLING: "true"
-  depends_on:
-    postgres:
-      condition: service_healthy
 
 services:
   # ───────────────────────────────────────────────────────────────────────────
   # Databases
   # ───────────────────────────────────────────────────────────────────────────
-  postgres:
-    image: postgres:16-alpine
-    container_name: insurance-postgres
-    restart: unless-stopped
-    networks:
-      - insurance-net
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-insurance}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-insurance_secret}
-      POSTGRES_DB: ${POSTGRES_DB:-insurance_db}
-    ports:
-      - "5434:5432" # host 5434 — avoids conflict if another Postgres is running on 5432/5433
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-      - ./shared/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-insurance}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+  # Postgres runs externally (native install on the host) — see .env DATABASE_URL.
+  # Containers reach it via host.docker.internal.
 
   memgraph:
     image: memgraph/memgraph-platform:latest
@@ -146,8 +124,6 @@ services:
       PYTHONPATH: /app
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
-      postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
       risk-engine:
@@ -174,8 +150,6 @@ services:
       OCR_ENGINE_URL: http://ocr-engine:8004
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
-      postgres:
-        condition: service_healthy
       kafka:
         condition: service_healthy
 
@@ -194,8 +168,6 @@ services:
       PYTHONPATH: /app
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     depends_on:
-      postgres:
-        condition: service_healthy
       memgraph:
         condition: service_healthy
       kafka:

@@ -23,7 +23,7 @@ log = logging.getLogger(__name__)
 
 DATABASE_URL: str = os.environ.get(
     "DATABASE_URL",
-    "postgresql+asyncpg://insurance:insurance_secret@postgres:5432/insurance_db",
+    "postgresql+asyncpg://postgres:asdf456nouM$@host.docker.internal:5432/insurance-ai",
 )
 
 _engine = create_async_engine(DATABASE_URL, echo=False, future=True)

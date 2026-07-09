@@ -13,11 +13,11 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-# Falls back to the Docker-Compose service name so the container works
+# Falls back to the host's external Postgres so the container works
 # without a local .env file during development.
 DATABASE_URL: str = os.environ.get(
     "DATABASE_URL",
-    "postgresql+asyncpg://insurance:insurance_secret@postgres:5432/insurance_db",
+    "postgresql+asyncpg://postgres:asdf456nouM$@host.docker.internal:5432/insurance-ai",
 )
 
 engine = create_async_engine(
