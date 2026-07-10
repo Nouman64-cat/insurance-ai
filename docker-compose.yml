@@ -249,6 +249,8 @@ services:
       - insurance-net
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     volumes:
       - ./frontend:/app # hot-reload source files
       - /app/node_modules # prevent host node_modules from overwriting container's

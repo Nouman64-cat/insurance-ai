@@ -1,8 +1,8 @@
 import axios from "axios";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
-export const OCR_BASE_URL = process.env.NEXT_PUBLIC_OCR_URL ?? "http://localhost:8014";
-export const SUMMARIZER_BASE_URL = process.env.NEXT_PUBLIC_SUMMARIZER_URL ?? "http://localhost:8015";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+export const OCR_BASE_URL = process.env.NEXT_PUBLIC_OCR_URL;
+export const SUMMARIZER_BASE_URL = process.env.NEXT_PUBLIC_SUMMARIZER_URL;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
