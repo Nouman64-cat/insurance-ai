@@ -27,8 +27,6 @@ x-fastapi-defaults: &fastapi-defaults
     # macOS Docker Desktop doesn't forward FSEvents as inotify, so uvicorn --reload
     # would never detect file changes without forcing watchfiles to use polling.
     WATCHFILES_FORCE_POLLING: "true"
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
 
 services:
   # ───────────────────────────────────────────────────────────────────────────

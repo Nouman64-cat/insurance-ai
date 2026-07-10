@@ -261,7 +261,7 @@ const NAV_ITEMS = [
     ],
   },
   {
-    group: "Settings",
+    group: "Management",
     links: [
       /*
             {
@@ -345,6 +345,22 @@ const NAV_ITEMS = [
       },
     ],
   },
+  {
+    group: "Profile",
+    links: [
+      {
+        href: "/profile",
+        label: "Profile",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
 ] as const;
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -394,7 +410,7 @@ export function Sidebar() {
     .slice(0, 2)
     .toUpperCase() || "SR";
 
-  const workingHrefs = ["/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin/users", "/admin/applicants"];
+  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin/users", "/admin/applicants"];
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins"];
 
   const displayGroups = (userRole === "SuperAdmin"
