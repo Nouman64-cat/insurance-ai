@@ -283,6 +283,21 @@ const NAV_ITEMS = [
         adminOnly: true,
       },
       {
+        href: "/admin/organizations",
+        label: "Organization Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" />
+            <path d="M6 12H4a2 2 0 00-2 2v8h4" />
+            <path d="M18 9h2a2 2 0 012 2v11h-4" />
+            <line x1="10" y1="6" x2="14" y2="6" /><line x1="10" y1="10" x2="14" y2="10" />
+            <line x1="10" y1="14" x2="14" y2="14" /><line x1="10" y1="18" x2="14" y2="18" />
+          </svg>
+        ),
+        badge: null,
+        adminOnly: true,
+      },
+      {
         href: "/super-admin/tenants",
         label: "Tenant Management",
         icon: (

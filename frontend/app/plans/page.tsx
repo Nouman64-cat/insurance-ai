@@ -118,6 +118,10 @@ export default function InsurancePlansPage() {
         </p>
       </div>
 
+      <div>
+        <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Individual Plans</h2>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {PLANS.map((plan) => {
           const colors = COLOR_CLASSES[plan.color];
@@ -193,6 +197,56 @@ export default function InsurancePlansPage() {
             </div>
           );
         })}
+      </div>
+
+      <div className="pt-2">
+        <h2 className="text-sm font-bold text-slate-700 uppercase tracking-wider mb-3">Group / Business Plans</h2>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="bg-white rounded-xl border border-slate-200 border-t-4 border-t-indigo-500 shadow-sm overflow-hidden">
+          <div className="p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <h2 className="text-base font-bold text-slate-900">Group Life</h2>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap bg-indigo-50 text-indigo-700 border-indigo-200">
+                GROUP_LIFE
+              </span>
+            </div>
+
+            <p className="text-sm text-slate-600 leading-relaxed">
+              A single Master Policy issued to a business, covering its staff under one contract — employees get a
+              Certificate of Insurance, not their own individual policy. Pays out only on death during employment; no
+              maturity/surrender value.
+            </p>
+
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 pt-2 border-t border-slate-100">
+              <div>
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Minimum Group Size</span>
+                <span className="text-sm font-semibold text-slate-800">10 employees</span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Sum Assured Formula</span>
+                <span className="text-sm font-semibold text-slate-800">12×–36× monthly basic salary</span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Medical Underwriting</span>
+                <span className="text-sm font-semibold text-slate-800">None — guaranteed issue</span>
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Underwriting Basis</span>
+                <span className="text-sm font-semibold text-slate-800">Group-level (size, industry, claims history)</span>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Enrollment</span>
+              <p className="text-xs text-slate-500">
+                Employer submits an employee census (CNIC, DOB, gender, occupation, salary per employee) which is validated for
+                duplicates and missing fields before certificates are issued. See <span className="font-semibold text-slate-700">Organization Management</span> to onboard a business.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -190,6 +190,22 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v7f — add policy_id to risk_assessments",
         "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS policy_id UUID REFERENCES policies(id)",
     ),
+    (
+        # Postgres enum types don't auto-grow when a Python Enum gains a new
+        # member — _create_enums_idempotent() only CREATEs a type if it's
+        # missing entirely, so an existing insurancetypeenum from an earlier
+        # run needs this explicit ALTER to accept the new GROUP_LIFE value.
+        "v8a-enum — add GROUP_LIFE to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'GROUP_LIFE'",
+    ),
+    (
+        "v8a — add organization_id to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id)",
+    ),
+    (
+        "v8b — add master_policy_id to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS master_policy_id UUID REFERENCES master_policies(id)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

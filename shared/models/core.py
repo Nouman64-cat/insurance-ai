@@ -29,6 +29,7 @@ class InsuranceTypeEnum(str, Enum):
     WHOLE_LIFE = "WHOLE_LIFE"
     ENDOWMENT = "ENDOWMENT"
     CHILD_EDUCATION_MARRIAGE = "CHILD_EDUCATION_MARRIAGE"
+    GROUP_LIFE = "GROUP_LIFE"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -50,7 +51,9 @@ class Tenant(SQLModel, table=True):
 
     # Relationships
     applicants: List["Applicant"] = Relationship(back_populates="tenant")
+    organizations: List["Organization"] = Relationship(back_populates="tenant")
     policies: List["Policy"] = Relationship(back_populates="tenant")
+    master_policies: List["MasterPolicy"] = Relationship(back_populates="tenant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="tenant")
     claims: List["Claim"] = Relationship(back_populates="tenant")
     artifacts: List["Artifact"] = Relationship(back_populates="tenant")
@@ -150,6 +153,36 @@ class UserProfile(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Organization  —  a business/employer insuring its staff under a group policy
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Organization(SQLModel, table=True):
+    """
+    A small/medium business (or any employer) that insures its employees under
+    one or more MasterPolicy contracts, rather than individuals shopping for
+    their own coverage.
+    """
+    __tablename__ = "organizations"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    name: str = Field(max_length=255)
+    registration_number: Optional[str] = Field(default=None, max_length=100)  # NTN / business reg no.
+    industry: Optional[str] = Field(default=None, max_length=255)
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="organizations")
+    employees: List["Applicant"] = Relationship(back_populates="organization")
+    master_policies: List["MasterPolicy"] = Relationship(back_populates="organization")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Applicant  —  the person applying for a policy
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -157,6 +190,10 @@ class Applicant(SQLModel, table=True):
     """
     Personal and financial profile of an insurance applicant.
     CNIC is unique per tenant (same person cannot have two records within one insurer).
+
+    Also doubles as an "employee" record when organization_id is set — a
+    business's staff enrolled under a MasterPolicy are Applicant rows too, so
+    they get the same Case/Artifact/RiskAssessment/Claim machinery for free.
     """
     __tablename__ = "applicants"
     __table_args__ = (
@@ -165,6 +202,10 @@ class Applicant(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    # Set only for employees enrolled under an Organization's group policy;
+    # NULL for individual applicants (unchanged, existing behavior).
+    organization_id: Optional[UUID] = Field(default=None, foreign_key="organizations.id", index=True, nullable=True)
 
     # Identity
     cnic: str = Field(index=True, max_length=15)        # Pakistani National Identity Card
@@ -181,9 +222,40 @@ class Applicant(SQLModel, table=True):
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="applicants")
+    organization: Optional[Organization] = Relationship(back_populates="employees")
     policies: List["Policy"] = Relationship(back_populates="applicant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="applicant")
     artifacts: List["Artifact"] = Relationship(back_populates="applicant")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MasterPolicy  —  a group contract between an Organization and the insurer
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MasterPolicy(SQLModel, table=True):
+    """
+    The single contract issued to an Organization covering its employees (e.g.
+    Group Life). Each covered employee gets their own Policy row (their
+    Certificate of Insurance) linked back here via Policy.master_policy_id.
+    """
+    __tablename__ = "master_policies"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    organization_id: UUID = Field(foreign_key="organizations.id", index=True, nullable=False)
+
+    insurance_type: InsuranceTypeEnum = Field(max_length=50)   # GROUP_LIFE in v1
+    sum_assured_multiple: float = Field(ge=0)                  # e.g. 24.0 = 24x monthly basic salary
+    term_years: int = Field(ge=1, le=40)
+    effective_date: date
+    status: str = Field(default="Pending", max_length=50)      # Pending / Active / Review
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="master_policies")
+    organization: Optional[Organization] = Relationship(back_populates="master_policies")
+    certificates: List["Policy"] = Relationship(back_populates="master_policy")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -201,6 +273,10 @@ class Policy(SQLModel, table=True):
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     applicant_id: UUID = Field(foreign_key="applicants.id", index=True, nullable=False)
 
+    # Set only for a Certificate of Insurance issued under a group MasterPolicy;
+    # NULL for individually-underwritten policies (unchanged, existing behavior).
+    master_policy_id: Optional[UUID] = Field(default=None, foreign_key="master_policies.id", index=True, nullable=True)
+
     product_name: str = Field(max_length=255)           # e.g. "Term Life", "Health Platinum"
     insurance_type: InsuranceTypeEnum = Field(max_length=50)
     coverage_amount: float = Field(ge=0)                # in PKR
@@ -216,6 +292,7 @@ class Policy(SQLModel, table=True):
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="policies")
     applicant: Optional[Applicant] = Relationship(back_populates="policies")
+    master_policy: Optional[MasterPolicy] = Relationship(back_populates="certificates")
     claims: List["Claim"] = Relationship(back_populates="policy")
     commission: Optional["Commission"] = Relationship(back_populates="policy")
 

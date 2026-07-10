@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, field_validator
@@ -232,6 +232,78 @@ class PolicyRead(BaseModel):
     created_at:       datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── Organization / Group insurance ─────────────────────────────────────────────
+
+class OrganizationCreate(BaseModel):
+    name: str
+    registration_number: Optional[str] = None
+    industry: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class OrganizationRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    name: str
+    registration_number: Optional[str] = None
+    industry: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MasterPolicyCreate(BaseModel):
+    sum_assured_multiple: float
+    term_years: int
+    effective_date: date
+
+
+class MasterPolicyRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    organization_id: UUID
+    insurance_type: InsuranceTypeEnum
+    sum_assured_multiple: float
+    term_years: int
+    effective_date: date
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class CensusRequest(BaseModel):
+    """Raw employee rows — kept as loose dicts (rather than a strict per-field
+    model) so group_underwriting.validate_census() can report friendly
+    per-row errors instead of an opaque FastAPI 422 on the first bad row."""
+    employees: List[Dict[str, Any]]
+
+
+class CensusValidationResponse(BaseModel):
+    is_valid: bool
+    total: int
+    duplicate_cnics: List[str] = []
+    missing_fields: List[str] = []
+    errors: List[str] = []
+
+
+class CensusConfirmResponse(BaseModel):
+    created_count: int
+    applicant_ids: List[UUID]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
