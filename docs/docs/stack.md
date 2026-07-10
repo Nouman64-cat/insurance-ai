@@ -31,7 +31,7 @@ sidebar_position: 3
 
 | Database | Use case | Port |
 |---|---|---|
-| **PostgreSQL 16** | Relational store — all business entities (tenants, users, applicants, policies, assessments, claims, artifacts, commissions) | 5434 (host) / 5432 (container) |
+| **PostgreSQL** | Relational store — all business entities (tenants, users, applicants, policies, assessments, claims, artifacts, commissions). **External** — not a docker-compose container; point `DATABASE_URL` at your own instance. | *(external)* |
 | **Memgraph** | Graph store — applicant fraud ring detection. Nodes: `Applicant`, `Policy`. Edges: `APPLIED_FOR`. | 7688 (Bolt) / 7445 (Lab UI) |
 
 ## Messaging
