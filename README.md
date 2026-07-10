@@ -43,23 +43,23 @@ Data Stores
 
 ## Port Reference
 
-| Service | Host Port | Purpose |
-|---|---|---|
-| Frontend | 3000 | Next.js underwriting dashboard |
-| Memgraph Lab Web | 3001 | Graph database UI |
-| **Docs** | **4991** | **Docusaurus documentation site** |
-| PostgreSQL | *(external)* | Not run via docker-compose — point `DATABASE_URL` at your own instance |
-| Memgraph Bolt | 7688 | Bolt protocol for graph queries |
-| Memgraph Lab | 7445 | Memgraph Lab UI |
-| API Gateway | 8010 | Main public entry point |
-| Tenant Service | 8011 | Tenant management |
-| Risk Engine | 8012 | LangGraph risk evaluation |
-| Decision Engine | 8013 | (Scaffolded — future) |
-| OCR Engine | 8014 | Document text extraction via Gemini |
-| Text Summarizer | 8015 | OCR text summarization via Gemini |
-| Kafka UI | 8090 | Inspect Kafka topics and messages |
-| Kafka | 9092 | Internal broker (service → service) |
-| Kafka | 9094 | External listener (host tools, Postman) |
+| Service          | Host Port      | Purpose                                                                  |
+| ---------------- | -------------- | ------------------------------------------------------------------------ |
+| Frontend         | 3000           | Next.js underwriting dashboard                                           |
+| Memgraph Lab Web | 3001           | Graph database UI                                                        |
+| **Docs**   | **4991** | **Docusaurus documentation site**                                  |
+| PostgreSQL       | *(external)* | Not run via docker-compose — point`DATABASE_URL` at your own instance |
+| Memgraph Bolt    | 7688           | Bolt protocol for graph queries                                          |
+| Memgraph Lab     | 7445           | Memgraph Lab UI                                                          |
+| API Gateway      | 8010           | Main public entry point                                                  |
+| Tenant Service   | 8011           | Tenant management                                                        |
+| Risk Engine      | 8012           | LangGraph risk evaluation                                                |
+| Decision Engine  | 8013           | (Scaffolded — future)                                                   |
+| OCR Engine       | 8014           | Document text extraction via Gemini                                      |
+| Text Summarizer  | 8015           | OCR text summarization via Gemini                                        |
+| Kafka UI         | 8090           | Inspect Kafka topics and messages                                        |
+| Kafka            | 9092           | Internal broker (service → service)                                     |
+| Kafka            | 9094           | External listener (host tools, Postman)                                  |
 
 ---
 
@@ -80,6 +80,7 @@ cp .env.example .env
 ```
 
 Open `.env` and fill in:
+
 - `DATABASE_URL` — pointing at your external PostgreSQL instance and the empty database you created (e.g. `postgresql+asyncpg://postgres:yourpassword@host.docker.internal:5432/insurance-ai` on macOS/Windows Docker Desktop)
 - Your Gemini API key and any other credentials
 
@@ -112,6 +113,7 @@ docker compose exec risk-engine python consumer.py
 ```
 
 You should see:
+
 ```
 INFO  consumer started — polling insurance.proposal.submitted.v1
 ```
@@ -120,20 +122,20 @@ Leave this running. It polls continuously and publishes results to `insurance.ri
 
 **5. Verify everything is up**
 
-| URL | Expected response |
-|---|---|
-| http://localhost:3000 | Underwriting dashboard (Next.js) |
-| http://localhost:4991 | Docusaurus documentation site |
-| http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}` |
-| http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}` |
+| URL                          | Expected response                                    |
+| ---------------------------- | ---------------------------------------------------- |
+| http://localhost:3000        | Underwriting dashboard (Next.js)                     |
+| http://localhost:4991        | Docusaurus documentation site                        |
+| http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}`     |
+| http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}`     |
 | http://localhost:8014/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
 | http://localhost:8015/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
-| http://localhost:8010/docs | API Gateway — Swagger UI |
-| http://localhost:8012/docs | Risk Engine — Swagger UI |
-| http://localhost:8014/docs | OCR Engine — Swagger UI |
-| http://localhost:8015/docs | Text Summarizer — Swagger UI |
-| http://localhost:8090 | Kafka UI — topic browser |
-| http://localhost:3001 | Memgraph Lab — graph database UI |
+| http://localhost:8010/docs   | API Gateway — Swagger UI                            |
+| http://localhost:8012/docs   | Risk Engine — Swagger UI                            |
+| http://localhost:8014/docs   | OCR Engine — Swagger UI                             |
+| http://localhost:8015/docs   | Text Summarizer — Swagger UI                        |
+| http://localhost:8090        | Kafka UI — topic browser                            |
+| http://localhost:3001        | Memgraph Lab — graph database UI                    |
 
 ---
 
@@ -191,6 +193,7 @@ curl -s -X POST http://localhost:8010/evaluate \
 ```
 
 Response — **202 Accepted**:
+
 ```json
 {
   "event_id": "3f2e1a...",
@@ -219,12 +222,12 @@ curl -s -X POST http://localhost:8010/evaluate/stream \
 
 SSE event types:
 
-| Type | When | Payload |
-|---|---|---|
-| `progress` | each LangGraph node completes | `{node, data}` |
-| `invalid` | validation failed | `{errors: [...]}` |
-| `saved` | DB write complete | full assessment object |
-| `error` | something failed | `{message}` |
+| Type         | When                          | Payload                |
+| ------------ | ----------------------------- | ---------------------- |
+| `progress` | each LangGraph node completes | `{node, data}`       |
+| `invalid`  | validation failed             | `{errors: [...]}`    |
+| `saved`    | DB write complete             | full assessment object |
+| `error`    | something failed              | `{message}`          |
 
 ---
 
@@ -236,11 +239,11 @@ The `decision_aggregation` node is fully deterministic:
 composite_score = (40% × medical_score) + (40% × financial_score) + (20% × fraud_probability × 100)
 ```
 
-| Decision | Condition |
-|---|---|
+| Decision               | Condition                                   |
+| ---------------------- | ------------------------------------------- |
 | **Auto Approve** | composite < 30 AND fraud_probability < 0.10 |
-| **Decline** | composite > 75 OR fraud_probability > 0.60 |
-| **Human Review** | everything else |
+| **Decline**      | composite > 75 OR fraud_probability > 0.60  |
+| **Human Review** | everything else                             |
 
 The final `reasons` list includes XAI outputs from all three scoring nodes plus a plain-English math breakdown of the composite calculation.
 
@@ -295,10 +298,10 @@ curl -s -X POST http://localhost:8012/evaluate \
 
 ## Kafka Topics
 
-| Topic | Producer | Consumer | Payload |
-|---|---|---|---|
-| `insurance.proposal.submitted.v1` | API Gateway | `consumer.py` | `ProposalSubmittedEvent` — applicant + policy data |
-| `insurance.risk.evaluated.v1` | `consumer.py` | *(result consumer — future)* | `RiskEvaluatedEvent` — scores + decision |
+| Topic                               | Producer        | Consumer                        | Payload                                               |
+| ----------------------------------- | --------------- | ------------------------------- | ----------------------------------------------------- |
+| `insurance.proposal.submitted.v1` | API Gateway     | `consumer.py`                 | `ProposalSubmittedEvent` — applicant + policy data |
+| `insurance.risk.evaluated.v1`     | `consumer.py` | *(result consumer — future)* | `RiskEvaluatedEvent` — scores + decision           |
 
 Browse both topics live at **http://localhost:8090** (Kafka UI).
 
