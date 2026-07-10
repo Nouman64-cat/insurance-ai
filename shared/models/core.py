@@ -24,6 +24,13 @@ class AIDecision(str, Enum):
     DECLINE = "Decline"
 
 
+class InsuranceTypeEnum(str, Enum):
+    TERM_LIFE = "TERM_LIFE"
+    WHOLE_LIFE = "WHOLE_LIFE"
+    ENDOWMENT = "ENDOWMENT"
+    CHILD_EDUCATION_MARRIAGE = "CHILD_EDUCATION_MARRIAGE"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tenant  —  top-level isolation boundary
 # ─────────────────────────────────────────────────────────────────────────────
@@ -195,8 +202,14 @@ class Policy(SQLModel, table=True):
     applicant_id: UUID = Field(foreign_key="applicants.id", index=True, nullable=False)
 
     product_name: str = Field(max_length=255)           # e.g. "Term Life", "Health Platinum"
+    insurance_type: InsuranceTypeEnum = Field(max_length=50)
     coverage_amount: float = Field(ge=0)                # in PKR
     term_years: int = Field(ge=1, le=40)
+
+    # Only populated for CHILD_EDUCATION_MARRIAGE — the insured milestone
+    # belongs to a dependent, not the proposer/applicant.
+    dependent_name: Optional[str] = Field(default=None, max_length=255)
+    dependent_dob: Optional[date] = Field(default=None)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -222,6 +235,9 @@ class RiskAssessment(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     applicant_id: UUID = Field(foreign_key="applicants.id", index=True, nullable=False)
+
+    # Policy linkage — optional since older rows predate this column
+    policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
 
     # Scoring  (0–100 for medical/financial; 0.0–1.0 for fraud probability)
     medical_score: int = Field(ge=0, le=100)

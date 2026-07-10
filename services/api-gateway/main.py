@@ -295,6 +295,15 @@ async def add_case_comment(tenant_id: UUID, case_id: UUID, request: Request, tok
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/comments")
 
 
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/document-checklist",
+    tags=["Cases"],
+    summary="Get required/received/missing documents for a case's plan type",
+)
+async def get_case_document_checklist(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/document-checklist")
+
+
 # ── Artifacts ─────────────────────────────────────────────────────────────────
 
 @app.post(

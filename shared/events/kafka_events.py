@@ -12,7 +12,7 @@ insurance.artifact.ocr.requested.v1  →  ArtifactOCRRequestedEvent
 """
 
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -38,8 +38,11 @@ class ApplicantPayload(BaseModel):
 
 class PolicyPayload(BaseModel):
     product_name: str
+    insurance_type: str
     coverage_amount: int      # PKR
     term_years: int
+    dependent_name: Optional[str] = None
+    dependent_dob: Optional[str] = None      # YYYY-MM-DD
 
 
 class ProposalPayload(BaseModel):

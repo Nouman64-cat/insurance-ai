@@ -50,7 +50,7 @@ const CASE_TYPE_OPTIONS = ["Underwriting", "Claim", "Inquiry"];
 const PRIORITY_OPTIONS = ["Low", "Normal", "High", "Critical"];
 const CHANNEL_OPTIONS = ["Online", "Agent", "Branch"];
 const STATUS_OPTIONS = ["New", "InProgress", "Pending Documents", "Under Review", "Approved", "Rejected", "Closed"];
-const DOCUMENT_TYPES = ["CNIC", "Salary Slip", "Medical Report", "X-Ray", "MRI Scan", "Bank Statement", "Tax Return", "Policy Form", "Claim Form", "Other"];
+const DOCUMENT_TYPES = ["CNIC", "Salary Slip", "Medical Report", "X-Ray", "MRI Scan", "Bank Statement", "Tax Return", "Policy Form", "Claim Form", "Child's Birth Certificate", "Other"];
 const SUPPORTED_EXTS = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp"];
 
 const STATUS_CHIP: Record<string, string> = {
@@ -873,6 +873,8 @@ export default function CasesPage() {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
+  const [checklistRequired, setChecklistRequired] = useState<string[] | null>(null);
+  const [checklistInsuranceType, setChecklistInsuranceType] = useState<string | null>(null);
 
   const [loadingMain, setLoadingMain] = useState(true);
   const [loadingDocs, setLoadingDocs] = useState(false);
@@ -949,6 +951,17 @@ export default function CasesPage() {
     finally { setLoadingDocs(false); }
   }, [tenantId]);
 
+  const fetchChecklist = useCallback(async (caseId: string) => {
+    try {
+      const res = await api.get(`/tenants/${tenantId}/cases/${caseId}/document-checklist`);
+      setChecklistRequired(res.data.required ?? []);
+      setChecklistInsuranceType(res.data.insurance_type ?? null);
+    } catch {
+      setChecklistRequired(null);
+      setChecklistInsuranceType(null);
+    }
+  }, [tenantId]);
+
   // Navigation helpers
   const openApplicant = (applicant: Applicant) => {
     setActiveApplicant(applicant);
@@ -963,6 +976,7 @@ export default function CasesPage() {
     setSelectedId(null);
     setView("documents");
     fetchArtifacts(c.caseld);
+    fetchChecklist(c.caseld);
   };
 
   const goToApplicants = () => {
@@ -971,6 +985,8 @@ export default function CasesPage() {
     setActiveCase(null);
     setSelectedId(null);
     setArtifacts([]);
+    setChecklistRequired(null);
+    setChecklistInsuranceType(null);
   };
 
   const goToCases = () => {
@@ -978,6 +994,8 @@ export default function CasesPage() {
     setActiveCase(null);
     setSelectedId(null);
     setArtifacts([]);
+    setChecklistRequired(null);
+    setChecklistInsuranceType(null);
   };
 
   // CRUD handlers
@@ -1187,6 +1205,47 @@ export default function CasesPage() {
                 </div>
               )
             )}
+
+            {/* ── Required documents checklist ─────────────────────────────── */}
+            {view === "documents" && activeCase && checklistRequired && checklistRequired.length > 0 && (() => {
+              const received = new Set(artifacts.map(a => a.document_type));
+              const missing = checklistRequired.filter(d => !received.has(d));
+              return (
+                <div className="mb-4 p-4 rounded-xl border border-slate-200 bg-white">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm font-semibold text-slate-700">
+                      Required Documents
+                      {checklistInsuranceType && (
+                        <span className="ml-2 text-xs font-normal text-slate-400">
+                          ({checklistInsuranceType.replaceAll("_", " ")})
+                        </span>
+                      )}
+                    </p>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
+                      missing.length === 0
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}>
+                      {checklistRequired.length - missing.length}/{checklistRequired.length} received
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {checklistRequired.map(doc => (
+                      <span
+                        key={doc}
+                        className={`text-xs px-2 py-1 rounded-lg border ${
+                          missing.includes(doc)
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : "bg-emerald-50 text-emerald-700 border-emerald-200 line-through"
+                        }`}
+                      >
+                        {doc}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── Documents grid ───────────────────────────────────────────── */}
             {view === "documents" && (

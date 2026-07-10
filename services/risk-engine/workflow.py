@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -12,6 +11,8 @@ from neo4j import GraphDatabase
 from neo4j import exceptions as neo4j_exc
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
+
+from underwriting_rules import check_plan_rules
 
 logger = logging.getLogger(__name__)
 
@@ -94,38 +95,12 @@ class FraudScoreOutput(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def validate_input(state: RiskState) -> Dict[str, Any]:
-    errors: List[str] = []
     applicant = state["applicant"]
     policy = state["policy"]
 
-    try:
-        dob = datetime.strptime(applicant["dob"], "%Y-%m-%d").date()
-        age = (date.today() - dob).days // 365
-        if age < 18:
-            errors.append(f"Applicant is under 18 (age: {age}).")
-        if age > 70:
-            errors.append(f"Applicant exceeds maximum entry age of 70 (age: {age}).")
-    except (KeyError, ValueError):
-        errors.append("Invalid or missing date of birth.")
+    is_valid, errors = check_plan_rules(policy.get("insurance_type"), applicant, policy)
 
-    income = applicant.get("declared_income", 0)
-    if income <= 0:
-        errors.append("Declared income must be greater than zero.")
-
-    coverage = policy.get("coverage_amount", 0)
-    if coverage <= 0:
-        errors.append("Coverage amount must be greater than zero.")
-
-    if income > 0 and coverage > income * 20:
-        errors.append(
-            f"Coverage amount ({coverage:,.0f}) exceeds 20× annual income ({income * 20:,.0f})."
-        )
-
-    term = policy.get("term_years", 0)
-    if term < 1 or term > 40:
-        errors.append(f"Policy term must be between 1 and 40 years (got {term}).")
-
-    return {"is_valid": len(errors) == 0, "validation_errors": errors}
+    return {"is_valid": is_valid, "validation_errors": errors}
 
 
 def medical_scoring(state: RiskState) -> Dict[str, Any]:

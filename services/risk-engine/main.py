@@ -24,8 +24,10 @@ class ApplicantInput(BaseModel):
 
 class PolicyInput(BaseModel):
     product_name: str
+    insurance_type: Optional[str] = None
     coverage_amount: float
     term_years: int
+    dependent_dob: Optional[str] = None
 
 
 class EvaluationRequest(BaseModel):

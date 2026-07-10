@@ -6,7 +6,9 @@ from uuid import UUID
 from datetime import datetime
 
 from database import get_session
+from document_requirements import get_required_documents
 from shared.models.core import (
+    Artifact,
     Case,
     CaseHistory,
     CaseAssignment,
@@ -16,6 +18,7 @@ from shared.models.core import (
     CaseAuditTrail,
     AssignmentTypeEnum,
     AssignmentStatusEnum,
+    Policy,
     User,
 )
 from schemas import (
@@ -221,6 +224,42 @@ async def assign_case(
     await session.commit()
     
     return {"status": "assigned"}
+
+
+@router.get("/{case_id}/document-checklist")
+async def get_document_checklist(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    result = await session.execute(stmt)
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+    policy_stmt = (
+        select(Policy)
+        .where(Policy.tenant_id == tenant_id, Policy.applicant_id == case.applicant_id)
+        .order_by(Policy.created_at.desc())
+    )
+    policy = (await session.execute(policy_stmt)).scalars().first()
+    insurance_type = policy.insurance_type.value if policy else None
+
+    required = get_required_documents(insurance_type, case.caseType.value)
+
+    artifacts_stmt = select(Artifact.document_type).where(Artifact.case_id == case_id)
+    received = sorted({row[0] for row in (await session.execute(artifacts_stmt)).all()})
+
+    missing = [doc for doc in required if doc not in received]
+
+    return {
+        "insurance_type": insurance_type,
+        "case_type": case.caseType.value,
+        "required": required,
+        "received": received,
+        "missing": missing,
+    }
 
 
 @router.post("/{case_id}/comments", status_code=201)

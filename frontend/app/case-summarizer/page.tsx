@@ -11,7 +11,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-import { workflowStore, INITIAL_EVAL, INITIAL_FORM } from "./workflowStore";
+import { workflowStore, INITIAL_EVAL, INITIAL_FORM, INSURANCE_TYPE_OPTIONS, INSURANCE_TYPE_LABELS } from "./workflowStore";
 import type { Applicant, CaseItem, Artifact, TokenUsage, SumStatus, EvalStatus, EvalState, EvalForm } from "./workflowStore";
 
 const PIPELINE_NODES = [
@@ -334,7 +334,7 @@ export default function CaseSummarizerPage() {
     doc.setFontSize(8.5);
     doc.setTextColor(71, 85, 105);
     doc.text(
-      `${evalForm.productName || "—"}    Coverage: PKR ${Number(evalForm.coverageAmount || 0).toLocaleString()}    Term: ${evalForm.termYears || "—"} years`,
+      `${INSURANCE_TYPE_LABELS[evalForm.insuranceType] ?? "—"}    Coverage: PKR ${Number(evalForm.coverageAmount || 0).toLocaleString()}    Term: ${evalForm.termYears || "—"} years`,
       mg, y, { maxWidth: cw },
     );
     y += 9;
@@ -926,9 +926,26 @@ export default function CaseSummarizerPage() {
                       </div>
                       <EvalField label="Occupation"          value={evalForm.occupation}      onChange={v => setEvalForm({ ...evalForm, occupation: v })}      placeholder="Engineer" />
                       <EvalField label="Annual Income (PKR)" type="number" value={evalForm.declaredIncome} onChange={v => setEvalForm({ ...evalForm, declaredIncome: v })} placeholder="1200000" />
-                      <EvalField label="Product Name"        value={evalForm.productName}     onChange={v => setEvalForm({ ...evalForm, productName: v })}     placeholder="Term Life Insurance" />
+                      <div>
+                        <label className="block text-xs font-medium text-slate-600 mb-1">Insurance Type</label>
+                        <select
+                          value={evalForm.insuranceType}
+                          onChange={e => setEvalForm({ ...evalForm, insuranceType: e.target.value })}
+                          className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                        >
+                          {INSURANCE_TYPE_OPTIONS.map(o => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </div>
                       <EvalField label="Coverage (PKR)"      type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />
                       <EvalField label="Term (Years)"        type="number" value={evalForm.termYears}      onChange={v => setEvalForm({ ...evalForm, termYears: v })}      placeholder="20" />
+                      {evalForm.insuranceType === "CHILD_EDUCATION_MARRIAGE" && (
+                        <>
+                          <EvalField label="Dependent Name" value={evalForm.dependentName} onChange={v => setEvalForm({ ...evalForm, dependentName: v })} placeholder="Child's full name" />
+                          <EvalField label="Dependent Date of Birth" type="date" value={evalForm.dependentDob} onChange={v => setEvalForm({ ...evalForm, dependentDob: v })} />
+                        </>
+                      )}
                     </div>
                   </div>
                 )}

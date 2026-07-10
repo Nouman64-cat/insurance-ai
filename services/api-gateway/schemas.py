@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from shared.models.core import Gender, UserStatus
+from shared.models.core import Gender, InsuranceTypeEnum, UserStatus
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -109,10 +109,17 @@ class ApplicantIn(BaseModel):
 
 class PolicyIn(BaseModel):
     product_name: str = Field(..., examples=["Term Life 20"])
+    insurance_type: InsuranceTypeEnum = Field(..., examples=["TERM_LIFE"])
     coverage_amount: float = Field(
         ..., gt=0, description="Requested coverage amount in PKR.", examples=[5000000]
     )
     term_years: int = Field(..., ge=1, le=40, examples=[20])
+    dependent_name: Optional[str] = Field(
+        default=None, description="Required only for CHILD_EDUCATION_MARRIAGE plans."
+    )
+    dependent_dob: Optional[date] = Field(
+        default=None, description="Required only for CHILD_EDUCATION_MARRIAGE plans."
+    )
 
 
 class EvaluateRequest(BaseModel):
@@ -135,6 +142,7 @@ class EvaluateRequest(BaseModel):
                     },
                     "policy": {
                         "product_name": "Term Life 20",
+                        "insurance_type": "TERM_LIFE",
                         "coverage_amount": 5000000,
                         "term_years": 20,
                     },

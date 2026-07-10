@@ -19,9 +19,11 @@ interface FormValues {
   gender:         string;
   occupation:     string;
   declaredIncome: string;
-  productName:    string;
+  insuranceType:  string;
   coverageAmount: string;
   termYears:      string;
+  dependentName:  string;
+  dependentDob:   string;
 }
 
 interface EvalState {
@@ -62,6 +64,17 @@ const INITIAL_EVAL: EvalState = {
   validationErrors: [],
 };
 
+const INSURANCE_TYPE_OPTIONS = [
+  { value: "TERM_LIFE",                label: "Term Life" },
+  { value: "WHOLE_LIFE",                label: "Whole Life" },
+  { value: "ENDOWMENT",                 label: "Endowment / Savings Plan" },
+  { value: "CHILD_EDUCATION_MARRIAGE",  label: "Child Education & Marriage Plan" },
+] as const;
+
+const INSURANCE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  INSURANCE_TYPE_OPTIONS.map(o => [o.value, o.label]),
+);
+
 const DEFAULT_FORM: FormValues = {
   tenantId:       process.env.NEXT_PUBLIC_TENANT_ID ?? "",
   cnic:           "",
@@ -70,9 +83,11 @@ const DEFAULT_FORM: FormValues = {
   gender:         "Male",
   occupation:     "",
   declaredIncome: "",
-  productName:    "Term Life Insurance",
+  insuranceType:  "TERM_LIFE",
   coverageAmount: "",
   termYears:      "",
+  dependentName:  "",
+  dependentDob:   "",
 };
 
 const VALID_DECISIONS = new Set<string>(["Auto Approve", "Approve with Loading", "Human Review", "Decline"]);
@@ -120,9 +135,13 @@ export default function LiveEvaluationPage() {
         declared_income: parseFloat(form.declaredIncome) || 0,
       },
       policy: {
-        product_name:    form.productName,
+        product_name:    INSURANCE_TYPE_LABELS[form.insuranceType] ?? form.insuranceType,
+        insurance_type:  form.insuranceType,
         coverage_amount: parseFloat(form.coverageAmount) || 0,
         term_years:      parseInt(form.termYears)         || 0,
+        ...(form.insuranceType === "CHILD_EDUCATION_MARRIAGE"
+          ? { dependent_name: form.dependentName, dependent_dob: form.dependentDob }
+          : {}),
       },
     };
 
@@ -269,7 +288,7 @@ export default function LiveEvaluationPage() {
     doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
     doc.text("POLICY", mg, y); y += 4;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
-    doc.text(`${form.productName || "—"}    Coverage: PKR ${Number(form.coverageAmount || 0).toLocaleString()}    Term: ${form.termYears || "—"} years`, mg, y, { maxWidth: cw });
+    doc.text(`${INSURANCE_TYPE_LABELS[form.insuranceType] ?? "—"}    Coverage: PKR ${Number(form.coverageAmount || 0).toLocaleString()}    Term: ${form.termYears || "—"} years`, mg, y, { maxWidth: cw });
     y += 9;
     doc.setDrawColor(226, 232, 240); doc.line(mg, y, pageW - mg, y); y += 8;
 
@@ -392,9 +411,26 @@ export default function LiveEvaluationPage() {
             <section>
               <SectionLabel>Policy</SectionLabel>
               <div className="space-y-3">
-                <InputField label="Product Name"          placeholder="Term Life Insurance" value={form.productName}    onChange={v => setField("productName", v)} />
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">Insurance Type</label>
+                  <select
+                    value={form.insuranceType}
+                    onChange={e => setField("insuranceType", e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                  >
+                    {INSURANCE_TYPE_OPTIONS.map(o => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
                 <InputField label="Coverage Amount (PKR)" type="number" placeholder="5000000" value={form.coverageAmount} onChange={v => setField("coverageAmount", v)} />
                 <InputField label="Term (Years)"           type="number" placeholder="20"      value={form.termYears}     onChange={v => setField("termYears", v)} />
+                {form.insuranceType === "CHILD_EDUCATION_MARRIAGE" && (
+                  <>
+                    <InputField label="Dependent Name" placeholder="Child's full name" value={form.dependentName} onChange={v => setField("dependentName", v)} />
+                    <InputField label="Dependent Date of Birth" type="date" value={form.dependentDob} onChange={v => setField("dependentDob", v)} />
+                  </>
+                )}
               </div>
             </section>
           </div>

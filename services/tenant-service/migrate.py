@@ -166,6 +166,30 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v6e — add unique constraint",
         "ALTER TABLE tenants ADD CONSTRAINT uq_tenants_code UNIQUE (code)",
     ),
+    (
+        "v7a — add insurance_type to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS insurance_type VARCHAR(50)",
+    ),
+    (
+        "v7b — backfill insurance_type",
+        "UPDATE policies SET insurance_type = 'TERM_LIFE' WHERE insurance_type IS NULL",
+    ),
+    (
+        "v7c — set insurance_type not null",
+        "ALTER TABLE policies ALTER COLUMN insurance_type SET NOT NULL",
+    ),
+    (
+        "v7d — add dependent_name to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS dependent_name VARCHAR(255)",
+    ),
+    (
+        "v7e — add dependent_dob to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS dependent_dob DATE",
+    ),
+    (
+        "v7f — add policy_id to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS policy_id UUID REFERENCES policies(id)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

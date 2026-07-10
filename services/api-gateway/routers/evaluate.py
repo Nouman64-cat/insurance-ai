@@ -106,8 +106,11 @@ async def evaluate(
             ),
             policy=PolicyPayload(
                 product_name=request.policy.product_name,
+                insurance_type=request.policy.insurance_type.value,
                 coverage_amount=int(request.policy.coverage_amount),
                 term_years=request.policy.term_years,
+                dependent_name=request.policy.dependent_name,
+                dependent_dob=str(request.policy.dependent_dob) if request.policy.dependent_dob else None,
             ),
         ),
     )
@@ -246,8 +249,11 @@ async def evaluate_stream(
                     tenant_id=tenant_id,
                     applicant_id=applicant.id,
                     product_name=request.policy.product_name,
+                    insurance_type=request.policy.insurance_type,
                     coverage_amount=request.policy.coverage_amount,
                     term_years=request.policy.term_years,
+                    dependent_name=request.policy.dependent_name,
+                    dependent_dob=request.policy.dependent_dob,
                 )
                 db.add(policy)
                 await db.flush()
@@ -255,6 +261,7 @@ async def evaluate_stream(
                 assessment = RiskAssessment(
                     tenant_id=tenant_id,
                     applicant_id=applicant.id,
+                    policy_id=policy.id,
                     case_id=request.case_id,
                     medical_score=final_risk["medical_score"],
                     financial_score=final_risk["financial_score"],

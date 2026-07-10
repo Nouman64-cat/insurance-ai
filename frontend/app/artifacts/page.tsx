@@ -58,7 +58,8 @@ const PRICE_OUTPUT_PER_M = 0.6;
 
 const DOCUMENT_TYPES = [
   "CNIC", "Salary Slip", "Medical Report", "X-Ray", "MRI Scan",
-  "Bank Statement", "Tax Return", "Policy Form", "Claim Form", "Other",
+  "Bank Statement", "Tax Return", "Policy Form", "Claim Form",
+  "Child's Birth Certificate", "Other",
 ];
 
 const STATUS_COLORS: Record<string, string> = {
