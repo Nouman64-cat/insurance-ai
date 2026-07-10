@@ -127,6 +127,26 @@ function FileSvg({ ext, size = 52 }: { ext: string; size?: number }) {
   );
 }
 
+// ── Artifact thumbnail (image preview with graceful fallback) ─────────────────
+
+function ArtifactThumbnail({ artifact, ext }: { artifact: Artifact; ext: string }) {
+  const [failed, setFailed] = useState(false);
+  const isPreviewableImage = artifact.file_type?.startsWith("image/") && artifact.file_type !== "image/tiff";
+
+  if (!isPreviewableImage || !artifact.download_url || failed) {
+    return <FileSvg ext={ext} size={52} />;
+  }
+
+  return (
+    <img
+      src={artifact.download_url}
+      alt={artifact.file_name ?? "Document preview"}
+      className="w-16 h-12 object-cover rounded-md border border-slate-200 bg-white"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 // ── Explorer item card ────────────────────────────────────────────────────────
 
 interface ExplorerItemProps {
@@ -682,6 +702,33 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
                   </p>
                 </div>
               </div>
+
+              {/* Document Preview */}
+              {artifact.download_url && (
+                <div className="space-y-1.5">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Document Preview</p>
+                  <div className="rounded-lg border border-slate-200 overflow-hidden bg-slate-100">
+                    {artifact.file_type === "application/pdf" ? (
+                      <iframe
+                        src={artifact.download_url}
+                        title={artifact.file_name ?? "Document preview"}
+                        className="w-full h-96 bg-white"
+                      />
+                    ) : artifact.file_type?.startsWith("image/") && artifact.file_type !== "image/tiff" ? (
+                      <img
+                        src={artifact.download_url}
+                        alt={artifact.file_name ?? "Document preview"}
+                        className="w-full max-h-96 object-contain bg-slate-100"
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-2 py-10 text-slate-400">
+                        <FileSvg ext={getExt(artifact.file_name ?? "")} size={40} />
+                        <p className="text-xs">Preview not available for this file type.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Download */}
               {artifact.download_url && (
@@ -1289,7 +1336,7 @@ export default function CasesPage() {
                         id={a.id}
                         icon={
                           <div className="relative">
-                            <FileSvg ext={ext} size={52} />
+                            <ArtifactThumbnail artifact={a} ext={ext} />
                             {isProcessing && (
                               <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-white/70">
                                 <SpinnerIcon className="w-5 h-5 text-blue-500" />

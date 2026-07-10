@@ -4,8 +4,8 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from schemas import ApplicantCreate, ApplicantRead, ApplicantUpdate
-from shared.models.core import Applicant, Tenant
+from schemas import ApplicantCreate, ApplicantRead, ApplicantUpdate, PolicyRead
+from shared.models.core import Applicant, Policy, Tenant
 from routers.users import verify_admin   # reuse existing Admin guard
 
 router = APIRouter(prefix="/tenants", tags=["Applicants"])
@@ -91,6 +91,31 @@ async def get_applicant(
             detail="Applicant not found"
         )
     return applicant
+
+@router.get(
+    "/{tenant_id}/applicants/{applicant_id}/policies",
+    response_model=list[PolicyRead],
+    dependencies=[Depends(verify_admin)],
+)
+async def list_applicant_policies(
+    tenant_id: UUID,
+    applicant_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    applicant = await session.get(Applicant, applicant_id)
+    if not applicant or applicant.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Applicant not found"
+        )
+
+    result = await session.exec(
+        select(Policy)
+        .where(Policy.tenant_id == tenant_id, Policy.applicant_id == applicant_id)
+        .order_by(Policy.created_at.desc())
+    )
+    return list(result.all())
+
 
 @router.delete(
     "/{tenant_id}/applicants/{applicant_id}",

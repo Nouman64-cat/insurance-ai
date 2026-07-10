@@ -43,7 +43,9 @@ INBOUND_TOPIC    = "insurance.artifact.ocr.requested.v1"
 
 _OCR_URL    = os.getenv("OCR_ENGINE_URL", "http://ocr-engine:8004")
 _S3_BUCKET  = os.getenv("S3_BUCKET_NAME", "insurance-ai-dev")
-_AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+# S3 has its own region var, separate from AWS_REGION (used by SES) — see
+# routers/artifacts.py for why.
+_AWS_REGION = os.getenv("AWS_S3_REGION") or os.getenv("AWS_REGION", "us-east-1")
 
 
 # ── S3 helpers ─────────────────────────────────────────────────────────────────

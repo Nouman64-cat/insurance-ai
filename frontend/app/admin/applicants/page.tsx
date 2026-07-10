@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
 
 interface Applicant {
@@ -16,6 +18,26 @@ interface Applicant {
   details?: any;
 }
 
+interface Policy {
+  id: string;
+  tenant_id: string;
+  applicant_id: string;
+  product_name: string;
+  insurance_type: string;
+  coverage_amount: number;
+  term_years: number;
+  dependent_name: string | null;
+  dependent_dob: string | null;
+  created_at: string;
+}
+
+const INSURANCE_TYPE_LABELS: Record<string, string> = {
+  TERM_LIFE: "Term Life",
+  WHOLE_LIFE: "Whole Life",
+  ENDOWMENT: "Endowment / Savings Plan",
+  CHILD_EDUCATION_MARRIAGE: "Child Education & Marriage Plan",
+};
+
 const formatCNIC = (value: string): string => {
   const clean = value.replace(/\D/g, "");
   const trimmed = clean.slice(0, 13);
@@ -29,7 +51,9 @@ const formatCNIC = (value: string): string => {
 };
 
 export default function ApplicantsPage() {
+  const router = useRouter();
   const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [latestPlans, setLatestPlans] = useState<Record<string, Policy | null>>({});
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(true);
   const [error, setError] = useState("");
@@ -215,11 +239,24 @@ export default function ApplicantsPage() {
     try {
       const resp = await api.get<Applicant[]>(`/tenants/${tenantId}/applicants`);
       setApplicants(resp.data);
+      fetchLatestPlans(tenantId, resp.data);
     } catch (err: any) {
       setError(err.message ?? "Failed to load applicants directory.");
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchLatestPlans = async (tenantId: string, forApplicants: Applicant[]) => {
+    const results = await Promise.allSettled(
+      forApplicants.map((a) => api.get<Policy[]>(`/tenants/${tenantId}/applicants/${a.id}/policies`))
+    );
+    const plans: Record<string, Policy | null> = {};
+    results.forEach((result, i) => {
+      plans[forApplicants[i].id] =
+        result.status === "fulfilled" && result.value.data.length > 0 ? result.value.data[0] : null;
+    });
+    setLatestPlans(plans);
   };
 
   const handleOpenCreateModal = () => {
@@ -459,12 +496,26 @@ export default function ApplicantsPage() {
             Admin console to configure full multi-module diagnostic profile attributes for underwriting evaluation.
           </p>
         </div>
-        <button
-          onClick={handleOpenCreateModal}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95 self-start"
-        >
-          Add Applicant
-        </button>
+        <div className="flex items-center gap-2 self-start">
+          <button
+            onClick={() => router.push("/plans")}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="9" y1="13" x2="15" y2="13" />
+              <line x1="9" y1="17" x2="13" y2="17" />
+            </svg>
+            Insurance Plans
+          </button>
+          <button
+            onClick={handleOpenCreateModal}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
+          >
+            Add Applicant
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
@@ -491,11 +542,14 @@ export default function ApplicantsPage() {
                   <th className="px-5 py-3 text-left">Age / Gender</th>
                   <th className="px-5 py-3 text-left">Occupation</th>
                   <th className="px-5 py-3 text-right">Income</th>
+                  <th className="px-5 py-3 text-left">Plan</th>
                   <th className="px-5 py-3 text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {applicants.map((applicant) => (
+                {applicants.map((applicant) => {
+                  const plan = latestPlans[applicant.id];
+                  return (
                   <tr key={applicant.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3.5 font-medium text-slate-700">{applicant.cnic}</td>
                     <td className="px-5 py-3.5 font-semibold text-slate-800">{applicant.name}</td>
@@ -505,6 +559,20 @@ export default function ApplicantsPage() {
                     <td className="px-5 py-3.5 text-slate-600">{applicant.occupation}</td>
                     <td className="px-5 py-3.5 text-right font-semibold text-slate-700">
                       PKR {applicant.declared_income.toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {plan === undefined ? (
+                        <span className="text-xs text-slate-300">…</span>
+                      ) : plan ? (
+                        <Link
+                          href={`/admin/applicants/${applicant.id}/plans`}
+                          className="inline-flex px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 transition-colors"
+                        >
+                          {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
+                        </Link>
+                      ) : (
+                        <span className="text-xs text-slate-400">No plan yet</span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-center whitespace-nowrap">
                       <div className="inline-flex rounded-lg shadow-sm border border-slate-200 overflow-hidden divide-x divide-slate-200">
@@ -529,7 +597,8 @@ export default function ApplicantsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -3,7 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr, field_validator
-from shared.models.core import UserStatus, Gender
+from shared.models.core import UserStatus, Gender, InsuranceTypeEnum
 
 
 # ── Tenant ────────────────────────────────────────────────────────────────────
@@ -215,6 +215,23 @@ class ApplicantUpdate(BaseModel):
     occupation:       Optional[str] = None
     declared_income:  Optional[float] = None
     details:          Optional[dict] = None
+
+
+# ── Policy ────────────────────────────────────────────────────────────────────
+
+class PolicyRead(BaseModel):
+    id:               UUID
+    tenant_id:        UUID
+    applicant_id:     UUID
+    product_name:     str
+    insurance_type:   InsuranceTypeEnum
+    coverage_amount:  float
+    term_years:       int
+    dependent_name:   Optional[str] = None
+    dependent_dob:    Optional[date] = None
+    created_at:       datetime
+
+    model_config = {"from_attributes": True}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
