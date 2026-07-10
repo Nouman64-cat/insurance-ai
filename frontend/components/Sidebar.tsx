@@ -195,18 +195,16 @@ const NAV_ITEMS = [
       //   ),
       //   badge: null,
       // },
-      /*
-            {
-              href: "/live-evaluation",
-              label: "Live Evaluation",
-              icon: (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-                </svg>
-              ),
-              badge: null,
-            },
-      */
+      {
+        href: "/live-evaluation",
+        label: "Live Evaluation",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        ),
+        badge: null,
+      },
       {
         href: "/case-summarizer",
         label: "Case Summarizer",
@@ -358,6 +356,8 @@ export function Sidebar() {
   const [userName, setUserName] = useState("Saira Reviewer");
   const [userEmail, setUserEmail] = useState("Senior Underwriter");
   const [userRole, setUserRole] = useState("");
+  const [navMode, setNavMode] = useState<"all" | "working">("all");
+
   useEffect(() => {
     setActiveHref(pathname);
   }, [pathname]);
@@ -366,10 +366,17 @@ export function Sidebar() {
     const storedName = localStorage.getItem("user_name");
     const storedEmail = localStorage.getItem("user_email");
     const storedRole = localStorage.getItem("user_role");
+    const savedMode = localStorage.getItem("demo_nav_mode");
     if (storedName) setUserName(storedName);
     if (storedEmail) setUserEmail(storedEmail);
     if (storedRole) setUserRole(storedRole);
+    if (savedMode === "working") setNavMode("working");
   }, []);
+
+  const handleNavModeChange = (mode: "all" | "working") => {
+    setNavMode(mode);
+    localStorage.setItem("demo_nav_mode", mode);
+  };
 
   const handleLogout = () => {
     localStorage.removeItem("jwt_token");
@@ -392,7 +399,6 @@ export function Sidebar() {
 
   const displayGroups = (userRole === "SuperAdmin"
     ? [
-<<<<<<< HEAD
       {
         group: "PLATFORM ADMINISTRATION",
         links: NAV_ITEMS.flatMap((g) => g.links as any).filter((link: any) => superAdminHrefs.includes(link.href)),
@@ -406,14 +412,6 @@ export function Sidebar() {
         },
       ]
       : NAV_ITEMS) as any;
-=======
-        {
-          group: "PLATFORM ADMINISTRATION",
-          links: NAV_ITEMS.flatMap((g) => g.links as any).filter((link: any) => superAdminHrefs.includes(link.href)),
-        },
-      ]
-    : NAV_ITEMS) as any;
->>>>>>> cf31663 (tenant-id removed)
 
   return (
     <aside
@@ -457,7 +455,6 @@ export function Sidebar() {
         </div>
       )}
 
-<<<<<<< HEAD
       {/* ── View Mode Selector Dropdown ───────────────────────────────────── */}
       {!collapsed && userRole !== "SuperAdmin" && (
         <div className="mx-3 mt-3">
@@ -486,13 +483,10 @@ export function Sidebar() {
           </div>
         </div>
       )}
-=======
-
->>>>>>> cf31663 (tenant-id removed)
 
       {/* ── Nav ───────────────────────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Sidebar navigation">
-        { displayGroups.map((group: any, index: number) => {
+        {displayGroups.map((group: any, index: number) => {
           const visibleLinks = group.links.filter((link: any) => {
             if (link.adminOnly && userRole !== "Admin") return false;
             if (link.superAdminOnly && userRole !== "SuperAdmin") return false;
@@ -510,43 +504,43 @@ export function Sidebar() {
               <div className="space-y-0.5">
                 {visibleLinks.map((link: any) => {
                   const isActive = activeHref === link.href;
-                return (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    title={collapsed ? link.label : undefined}
-                    onClick={() => setActiveHref(link.href)}
-                    className={`
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      title={collapsed ? link.label : undefined}
+                      onClick={() => setActiveHref(link.href)}
+                      className={`
                       sidebar-link group flex items-center transition-all duration-150
                       ${collapsed ? "w-11 h-11 justify-center rounded-xl mx-auto p-0" : "gap-3 px-3 py-2.5 rounded-xl mx-3"}
                       ${isActive
-                        ? "bg-blue-50 text-blue-700 font-bold shadow-sm ring-1 ring-blue-100/50"
-                        : "text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-50"
-                      }
+                          ? "bg-blue-50 text-blue-700 font-bold shadow-sm ring-1 ring-blue-100/50"
+                          : "text-slate-600 font-semibold hover:text-slate-900 hover:bg-slate-50"
+                        }
                     `}
-                  >
-                    <span className={`flex-shrink-0 transition-colors ${isActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"}`}>
-                      {link.icon}
-                    </span>
-                    {!collapsed && (
-                      <span className="flex-1 truncate">{link.label}</span>
-                    )}
-                    {!collapsed && link.badge && (
-                      <span className={`
+                    >
+                      <span className={`flex-shrink-0 transition-colors ${isActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"}`}>
+                        {link.icon}
+                      </span>
+                      {!collapsed && (
+                        <span className="flex-1 truncate">{link.label}</span>
+                      )}
+                      {!collapsed && link.badge && (
+                        <span className={`
                         text-[10px] font-bold px-2 py-0.5 rounded-full flex-shrink-0 ml-auto
                         ${isActive ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}
                       `}>
-                        {link.badge}
-                      </span>
-                    )}
-                    {collapsed && link.badge && (
-                      <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
-                    )}
-                  </Link>
-                );
-              })}
+                          {link.badge}
+                        </span>
+                      )}
+                      {collapsed && link.badge && (
+                        <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
-          </div>
           );
         })}
       </nav>
