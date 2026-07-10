@@ -10,9 +10,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from jose import JWTError
 
 from database import get_session
+from email_utils import send_credentials_email
+from provisioning import generate_password, generate_unique_username, split_full_name
 from schemas import SeedAdminCreate, UserCreate, UserRead, UserUpdate
 from shared.models.core import Role, Tenant, User, UserProfile, UserStatus
-from routers.auth import decode_access_token, oauth2_scheme
+from routers.auth import decode_access_token, oauth2_scheme, verify_superadmin
 
 router = APIRouter(prefix="/tenants", tags=["Users"])
 
@@ -56,6 +58,7 @@ def _verify_tenant(tenant: Tenant | None, tenant_id: UUID) -> Tenant:
 
 
 async def verify_admin(
+    tenant_id: UUID,
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -72,19 +75,25 @@ async def verify_admin(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
         )
-    
+
     user = await session.get(User, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-    
+
     role = await session.get(Role, user.role_id)
-    if not role or role.name != "Admin":
+    if not role or role.name not in ("Admin", "SuperAdmin"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrative privileges required",
+        )
+
+    if role.name == "Admin" and user.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot manage users outside your own tenant",
         )
 
 
@@ -94,10 +103,12 @@ async def verify_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Bootstrap first Admin",
     description=(
-        "Creates the first Admin user for a tenant. **No authentication required.** "
+        "Creates the first Admin user for a tenant. **Requires a SuperAdmin JWT.** "
         "Returns 409 if any user already exists for this tenant — use the normal "
-        "user management endpoints after initial setup."
+        "user management endpoints after initial setup. Emails the new Admin's "
+        "login credentials on success."
     ),
+    dependencies=[Depends(verify_superadmin)],
 )
 async def seed_admin(
     tenant_id: UUID,
@@ -130,20 +141,18 @@ async def seed_admin(
             detail=f"Email '{body.email}' is already registered.",
         )
 
-    existing_username = (await session.exec(select(User).where(User.username == body.username))).first()
-    if existing_username:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Username '{body.username}' is already registered.",
-        )
+    first_name, last_name = split_full_name(body.full_name)
+    local_part = body.email.split("@", 1)[0]
+    username = await generate_unique_username(session, local_part)
+    plaintext_password = generate_password()
 
     user = User(
         tenant_id=tenant_id,
         role_id=admin_role.id,
         email=body.email,
-        username=body.username,
-        hashed_password=_pwd.hash(body.password),
-        full_name=f"{body.first_name} {body.last_name}".strip(),
+        username=username,
+        hashed_password=_pwd.hash(plaintext_password),
+        full_name=body.full_name,
         status=UserStatus.ACTIVE,
         is_active=True,
     )
@@ -152,13 +161,23 @@ async def seed_admin(
 
     profile = UserProfile(
         user_id=user.id,
-        first_name=body.first_name,
-        last_name=body.last_name,
+        first_name=first_name,
+        last_name=last_name,
     )
     session.add(profile)
     await session.commit()
     await session.refresh(user)
     await session.refresh(profile)
+
+    await send_credentials_email(
+        to_email=user.email,
+        full_name=user.full_name,
+        username=username,
+        password=plaintext_password,
+        role_label="Admin",
+        tenant_name=tenant.name,
+    )
+
     return to_user_read(user, profile)
 
 
@@ -190,20 +209,18 @@ async def create_user(
             detail=f"Email '{body.email}' is already registered.",
         )
 
-    existing_username = (await session.exec(select(User).where(User.username == body.username))).first()
-    if existing_username:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Username '{body.username}' is already registered.",
-        )
+    first_name, last_name = split_full_name(body.full_name)
+    local_part = body.email.split("@", 1)[0]
+    username = await generate_unique_username(session, local_part)
+    plaintext_password = generate_password()
 
     user = User(
         tenant_id=tenant_id,
         role_id=body.role_id,
         email=body.email,
-        username=body.username,
-        hashed_password=_pwd.hash(body.password),
-        full_name=f"{body.first_name} {body.last_name}".strip(),
+        username=username,
+        hashed_password=_pwd.hash(plaintext_password),
+        full_name=body.full_name,
         status=UserStatus.ACTIVE,
         is_active=True,
     )
@@ -212,18 +229,23 @@ async def create_user(
 
     profile = UserProfile(
         user_id=user.id,
-        first_name=body.first_name,
-        last_name=body.last_name,
-        phone=body.phone,
-        department=body.department,
-        employee_id=body.employee_id,
-        designation=body.designation,
-        date_of_joining=body.date_of_joining,
+        first_name=first_name,
+        last_name=last_name,
     )
     session.add(profile)
     await session.commit()
     await session.refresh(user)
     await session.refresh(profile)
+
+    await send_credentials_email(
+        to_email=user.email,
+        full_name=user.full_name,
+        username=username,
+        password=plaintext_password,
+        role_label=role.name,
+        tenant_name=tenant.name,
+    )
+
     return to_user_read(user, profile)
 
 

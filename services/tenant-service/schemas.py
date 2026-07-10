@@ -10,6 +10,7 @@ from shared.models.core import UserStatus, Gender
 
 class TenantCreate(BaseModel):
     name: str
+    code: str
 
     @field_validator("name")
     @classmethod
@@ -18,10 +19,21 @@ class TenantCreate(BaseModel):
             raise ValueError("name must not be blank")
         return v.strip()
 
+    @field_validator("code")
+    @classmethod
+    def code_format(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            raise ValueError("code must not be blank")
+        if not v.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("code must be alphanumeric (hyphens/underscores allowed)")
+        return v
+
 
 class TenantRead(BaseModel):
     id: UUID
     name: str
+    code: str
     is_active: bool
     created_at: datetime
 
@@ -30,6 +42,7 @@ class TenantRead(BaseModel):
 
 class TenantUpdate(BaseModel):
     name: Optional[str] = None
+    code: Optional[str] = None
     is_active: Optional[bool] = None
 
 
@@ -46,42 +59,31 @@ class RoleRead(BaseModel):
 # ── User ──────────────────────────────────────────────────────────────────────
 
 class SeedAdminCreate(BaseModel):
-    """Used by the no-auth bootstrap endpoint — creates the first Admin for a tenant."""
+    """Used by the SuperAdmin bootstrap endpoint — creates the first Admin for a
+    tenant. Username and password are auto-generated and emailed to the Admin."""
     email: EmailStr
-    username: str
-    password: str
-    first_name: str
-    last_name: str
+    full_name: str
 
-    @field_validator("password")
+    @field_validator("full_name")
     @classmethod
-    def password_min_length(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("password must be at least 8 characters")
-        return v
+    def full_name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("full_name must not be blank")
+        return v.strip()
 
 
 class UserCreate(BaseModel):
-    username: str
+    """Username and password are auto-generated and emailed to the new user."""
     email: EmailStr
-    password: str
+    full_name: str
     role_id: UUID
-    
-    # Profile fields
-    first_name: str
-    last_name: str
-    phone: Optional[str] = None
-    department: Optional[str] = None
-    employee_id: Optional[str] = None
-    designation: Optional[str] = None
-    date_of_joining: Optional[date] = None
 
-    @field_validator("password")
+    @field_validator("full_name")
     @classmethod
-    def password_min_length(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("password must be at least 8 characters")
-        return v
+    def full_name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("full_name must not be blank")
+        return v.strip()
 
 
 class UserRead(BaseModel):
@@ -128,6 +130,30 @@ class UserUpdate(BaseModel):
     def password_min_length(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and len(v) < 8:
             raise ValueError("password must be at least 8 characters")
+        return v
+
+
+class ProfileUpdate(BaseModel):
+    """Self-service update for the logged-in user's own profile.
+    Deliberately excludes role/status/tenant — those require Admin/SuperAdmin."""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    date_of_joining: Optional[date] = None
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("new_password must be at least 8 characters")
         return v
 
 

@@ -24,7 +24,8 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 # ── Standard RBAC roles seeded once at startup ────────────────────────────────
 
 _SEED_ROLES = [
-    ("Admin",       "Full platform access — manage tenants, users, and all resources."),
+    ("SuperAdmin",  "Platform-level access — create tenants and bootstrap their first Admin."),
+    ("Admin",       "Full tenant access — manage that tenant's users and all resources."),
     ("Underwriter", "Evaluate proposals, review risk assessments, and make decisions."),
     ("Agent",       "Submit proposals and track their status."),
     ("Viewer",      "Read-only access to dashboards and reports."),

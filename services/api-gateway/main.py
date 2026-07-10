@@ -3,12 +3,9 @@ API Gateway — single public entry point for the insurance-ai platform.
 
 Responsibilities:
   - Table initialisation on startup (create_db_and_tables via SQLModel).
-  - Tenant bootstrap endpoints (POST /tenants, GET /tenants/{id}).
+  - Proxying tenant/user/auth endpoints to the tenant-service (which owns
+    that data — see POST /tenants, POST /tenants/{id}/setup).
   - Routing POST /evaluate to the underwriting router.
-
-In a production system the tenant lifecycle would live in a dedicated
-tenant-service; these bootstrap routes are here solely to make the
-prototype runnable without standing up every microservice.
 """
 
 import json
@@ -22,10 +19,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from database import create_db_and_tables, get_session
+from database import create_db_and_tables
 from kafka_producer import create_producer
 from routers.evaluate import router as evaluate_router
 from schemas import (
@@ -36,7 +31,6 @@ from schemas import (
     UserRead,
     UserUpdate,
 )
-from shared.models.core import Tenant
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -161,21 +155,21 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/auth/me")
 
 
-# ── Bootstrap — no auth ───────────────────────────────────────────────────────
+# ── Bootstrap — SuperAdmin only ────────────────────────────────────────────────
 
 @app.post(
     "/tenants/{tenant_id}/setup",
     tags=["Bootstrap"],
     response_model=UserRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Create first Admin user (no auth required)",
+    summary="Create first Admin user (SuperAdmin only)",
     description=(
-        "One-time bootstrap endpoint. Creates the first Admin user for a tenant "
-        "without requiring a JWT token. Returns **409** if any user already exists — "
+        "One-time bootstrap endpoint. Creates the first Admin user for a tenant. "
+        "Requires a SuperAdmin JWT. Returns **409** if any user already exists — "
         "after that, use `POST /auth/token` to log in and manage users normally."
     ),
 )
-async def seed_admin(tenant_id: UUID, request: Request):
+async def seed_admin(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/setup")
 
 
@@ -420,34 +414,23 @@ async def health_check():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tenant bootstrap
-# These routes live here for prototype convenience.
-# Move to the tenant-service when that microservice is implemented.
+# Tenant bootstrap — proxied to the tenant-service, which owns the Tenant table
+# and enforces SuperAdmin auth on creation.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.post(
     "/tenants",
     status_code=status.HTTP_201_CREATED,
     tags=["Bootstrap"],
-    summary="Create a tenant",
+    summary="Create a tenant (SuperAdmin only)",
     description=(
-        "Creates a tenant record. **Required before calling POST /evaluate.** "
-        "Copy the returned `id` and send it as the `X-Tenant-Id` header."
+        "Creates a tenant record. Requires a SuperAdmin JWT. **Required before "
+        "calling POST /evaluate.** Copy the returned `id` and send it as the "
+        "`X-Tenant-Id` header."
     ),
 )
-async def create_tenant(
-    name: str,
-    session: AsyncSession = Depends(get_session),
-):
-    existing = (await session.exec(select(Tenant).where(Tenant.name == name))).first()
-    if existing:
-        return {"id": str(existing.id), "name": existing.name, "created_at": existing.created_at}
-
-    tenant = Tenant(name=name)
-    session.add(tenant)
-    await session.commit()
-    await session.refresh(tenant)
-    return {"id": str(tenant.id), "name": tenant.name, "created_at": tenant.created_at}
+async def create_tenant(request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/")
 
 
 @app.get(
@@ -455,11 +438,8 @@ async def create_tenant(
     tags=["Bootstrap"],
     summary="List all tenants",
 )
-async def list_tenants(
-    session: AsyncSession = Depends(get_session),
-):
-    tenants = list(await session.exec(select(Tenant)))
-    return [{"id": str(t.id), "name": t.name, "created_at": t.created_at} for t in tenants]
+async def list_tenants(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/")
 
 
 @app.get(
@@ -467,18 +447,5 @@ async def list_tenants(
     tags=["Bootstrap"],
     summary="Get a tenant by ID",
 )
-async def get_tenant(
-    tenant_id: UUID,
-    session: AsyncSession = Depends(get_session),
-):
-    tenant: Tenant | None = await session.get(Tenant, tenant_id)
-    if tenant is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Tenant '{tenant_id}' not found.",
-        )
-    return {
-        "id": str(tenant.id),
-        "name": tenant.name,
-        "created_at": tenant.created_at,
-    }
+async def get_tenant(tenant_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")

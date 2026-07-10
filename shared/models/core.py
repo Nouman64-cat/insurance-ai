@@ -37,6 +37,7 @@ class Tenant(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(unique=True, index=True, max_length=255)
+    code: str = Field(unique=True, index=True, max_length=50)
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

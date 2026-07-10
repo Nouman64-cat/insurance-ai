@@ -146,6 +146,26 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v5c — add ai_summary to risk_assessments",
         "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS ai_summary TEXT",
     ),
+    (
+        "v6a — add code to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS code VARCHAR(50)",
+    ),
+    (
+        "v6b — backfill code from name",
+        "UPDATE tenants SET code = upper(left(regexp_replace(name, '[^a-zA-Z0-9]', '', 'g'), 50)) WHERE code IS NULL",
+    ),
+    (
+        "v6c — set code not null",
+        "ALTER TABLE tenants ALTER COLUMN code SET NOT NULL",
+    ),
+    (
+        "v6d — drop constraint if exists",
+        "ALTER TABLE tenants DROP CONSTRAINT IF EXISTS uq_tenants_code",
+    ),
+    (
+        "v6e — add unique constraint",
+        "ALTER TABLE tenants ADD CONSTRAINT uq_tenants_code UNIQUE (code)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

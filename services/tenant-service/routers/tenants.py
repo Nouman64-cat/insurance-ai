@@ -6,13 +6,19 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from routers.auth import verify_superadmin
 from schemas import TenantCreate, TenantRead, TenantUpdate
 from shared.models.core import Tenant
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 
 
-@router.post("/", response_model=TenantRead, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=TenantRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_superadmin)],
+)
 async def create_tenant(
     body: TenantCreate,
     session: AsyncSession = Depends(get_session),
@@ -23,7 +29,15 @@ async def create_tenant(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Tenant with name '{body.name}' already exists.",
         )
-    tenant = Tenant(name=body.name)
+
+    existing_code = (await session.exec(select(Tenant).where(Tenant.code == body.code))).first()
+    if existing_code:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Tenant with code '{body.code}' already exists.",
+        )
+
+    tenant = Tenant(name=body.name, code=body.code)
     session.add(tenant)
     await session.commit()
     await session.refresh(tenant)

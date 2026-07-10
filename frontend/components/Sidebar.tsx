@@ -257,7 +257,7 @@ const NAV_ITEMS = [
         badge: null,
       },
       {
-        href: "/admin",
+        href: "/admin/users",
         label: "User Management",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
@@ -281,6 +281,32 @@ const NAV_ITEMS = [
         ),
         badge: null,
         adminOnly: true,
+      },
+      {
+        href: "/super-admin/tenants",
+        label: "Tenant Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
+        href: "/super-admin/admins",
+        label: "Admin Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4.5 h-4.5">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
+            <path d="M18.5 3.5l1.5 1.5-3 3-1.5-1.5z" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
       },
     ],
   },
@@ -333,9 +359,17 @@ export function Sidebar() {
     .slice(0, 2)
     .toUpperCase() || "SR";
 
-  const workingHrefs = ["/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin", "/admin/applicants"];
+  const workingHrefs = ["/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin/users", "/admin/applicants"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins"];
 
-  const displayGroups = (navMode === "working"
+  const displayGroups = (userRole === "SuperAdmin"
+    ? [
+        {
+          group: "PLATFORM ADMINISTRATION",
+          links: NAV_ITEMS.flatMap((g) => g.links as any).filter((link: any) => superAdminHrefs.includes(link.href)),
+        },
+      ]
+    : navMode === "working"
     ? [
         {
           group: "WORKING MODULES",
@@ -387,7 +421,7 @@ export function Sidebar() {
       )}
 
       {/* ── View Mode Selector Dropdown ───────────────────────────────────── */}
-      {!collapsed && (
+      {!collapsed && userRole !== "SuperAdmin" && (
         <div className="mx-3 mt-3">
           <label className="block text-[9px] font-bold uppercase tracking-wider text-slate-500 mb-1 px-1">
             Navigation Mode
@@ -427,6 +461,9 @@ export function Sidebar() {
             <div className="space-y-0.5">
               {group.links.map((link: any) => {
                 if ((link as any).adminOnly && userRole !== "Admin") {
+                  return null;
+                }
+                if ((link as any).superAdminOnly && userRole !== "SuperAdmin") {
                   return null;
                 }
                 const isActive = activeHref === link.href;
@@ -474,25 +511,31 @@ export function Sidebar() {
       {/* ── User footer ───────────────────────────────────────────────────── */}
       <div className={`border-t border-slate-800 p-3 flex-shrink-0 ${collapsed ? "flex justify-center" : ""}`}>
         <div className={`flex items-center gap-2.5 group rounded-lg p-1.5 hover:bg-slate-800/50 transition-colors ${collapsed ? "" : "w-full"}`}>
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 shadow-md">
-            <span className="text-xs font-bold text-white">{initials}</span>
-          </div>
-          {!collapsed && (
-            <div className="overflow-hidden flex-1 flex items-center justify-between">
+          <Link
+            href="/profile"
+            title="View Profile"
+            className={`flex items-center gap-2.5 min-w-0 ${collapsed ? "" : "flex-1"}`}
+          >
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 shadow-md">
+              <span className="text-xs font-bold text-white">{initials}</span>
+            </div>
+            {!collapsed && (
               <div className="overflow-hidden pr-2">
                 <p className="text-sm font-semibold text-slate-200 truncate leading-none">{userName}</p>
                 <p className="text-[10px] text-slate-500 mt-0.5 truncate">{userEmail}</p>
               </div>
-              <button
-                onClick={handleLogout}
-                className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors flex-shrink-0"
-                title="Log Out"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
-                </svg>
-              </button>
-            </div>
+            )}
+          </Link>
+          {!collapsed && (
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded text-slate-500 hover:text-red-400 hover:bg-slate-800 transition-colors flex-shrink-0"
+              title="Log Out"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+              </svg>
+            </button>
           )}
           {collapsed && (
             <button
