@@ -12,7 +12,6 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 type StreamStatus = "idle" | "streaming" | "done" | "error";
 
 interface FormValues {
-  tenantId:       string;
   cnic:           string;
   name:           string;
   dob:            string;
@@ -76,7 +75,6 @@ const INSURANCE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
 );
 
 const DEFAULT_FORM: FormValues = {
-  tenantId:       process.env.NEXT_PUBLIC_TENANT_ID ?? "",
   cnic:           "",
   name:           "",
   dob:            "",
@@ -125,6 +123,13 @@ export default function LiveEvaluationPage() {
     setResult(INITIAL_EVAL);
     setError(null);
 
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) {
+      setStatus("error");
+      setError("No active tenant session found. Please log in again.");
+      return;
+    }
+
     const payload = {
       applicant: {
         cnic:            form.cnic,
@@ -150,7 +155,7 @@ export default function LiveEvaluationPage() {
         method:  "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Tenant-Id":  form.tenantId,
+          "X-Tenant-Id":  tenantId,
         },
         body:   JSON.stringify(payload),
         signal: abort.signal,
@@ -373,15 +378,6 @@ export default function LiveEvaluationPage() {
           </div>
 
           <div className="p-5 space-y-5">
-
-            {/* Tenant ID */}
-            <InputField
-              label="Tenant ID"
-              placeholder="Paste your X-Tenant-Id UUID"
-              value={form.tenantId}
-              onChange={v => setField("tenantId", v)}
-              mono
-            />
 
             {/* Applicant */}
             <section>

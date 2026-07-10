@@ -358,8 +358,6 @@ export function Sidebar() {
   const [userName, setUserName] = useState("Saira Reviewer");
   const [userEmail, setUserEmail] = useState("Senior Underwriter");
   const [userRole, setUserRole] = useState("");
-  const [navMode, setNavMode] = useState<"all" | "working">("all");
-
   useEffect(() => {
     setActiveHref(pathname);
   }, [pathname]);
@@ -368,17 +366,10 @@ export function Sidebar() {
     const storedName = localStorage.getItem("user_name");
     const storedEmail = localStorage.getItem("user_email");
     const storedRole = localStorage.getItem("user_role");
-    const savedMode = localStorage.getItem("demo_nav_mode");
     if (storedName) setUserName(storedName);
     if (storedEmail) setUserEmail(storedEmail);
     if (storedRole) setUserRole(storedRole);
-    if (savedMode === "working") setNavMode("working");
   }, []);
-
-  const handleNavModeChange = (mode: "all" | "working") => {
-    setNavMode(mode);
-    localStorage.setItem("demo_nav_mode", mode);
-  };
 
   const handleLogout = () => {
     localStorage.removeItem("jwt_token");
@@ -401,6 +392,7 @@ export function Sidebar() {
 
   const displayGroups = (userRole === "SuperAdmin"
     ? [
+<<<<<<< HEAD
       {
         group: "PLATFORM ADMINISTRATION",
         links: NAV_ITEMS.flatMap((g) => g.links as any).filter((link: any) => superAdminHrefs.includes(link.href)),
@@ -414,6 +406,14 @@ export function Sidebar() {
         },
       ]
       : NAV_ITEMS) as any;
+=======
+        {
+          group: "PLATFORM ADMINISTRATION",
+          links: NAV_ITEMS.flatMap((g) => g.links as any).filter((link: any) => superAdminHrefs.includes(link.href)),
+        },
+      ]
+    : NAV_ITEMS) as any;
+>>>>>>> cf31663 (tenant-id removed)
 
   return (
     <aside
@@ -457,6 +457,7 @@ export function Sidebar() {
         </div>
       )}
 
+<<<<<<< HEAD
       {/* ── View Mode Selector Dropdown ───────────────────────────────────── */}
       {!collapsed && userRole !== "SuperAdmin" && (
         <div className="mx-3 mt-3">
@@ -485,6 +486,9 @@ export function Sidebar() {
           </div>
         </div>
       )}
+=======
+
+>>>>>>> cf31663 (tenant-id removed)
 
       {/* ── Nav ───────────────────────────────────────────────────────────── */}
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Sidebar navigation">
