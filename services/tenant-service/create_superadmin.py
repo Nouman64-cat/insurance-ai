@@ -65,7 +65,7 @@ async def create_superadmin(
             await session.exec(select(Tenant).where(Tenant.name == PLATFORM_TENANT_NAME))
         ).first()
         if tenant is None:
-            tenant = Tenant(name=PLATFORM_TENANT_NAME)
+            tenant = Tenant(name=PLATFORM_TENANT_NAME, code="PLATFORM")
             session.add(tenant)
             await session.flush()
 

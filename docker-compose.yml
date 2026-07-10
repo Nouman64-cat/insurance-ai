@@ -19,6 +19,8 @@ x-fastapi-defaults: &fastapi-defaults
   restart: unless-stopped
   networks:
     - insurance-net
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   env_file:
     - .env
   environment:
