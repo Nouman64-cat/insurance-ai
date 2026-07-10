@@ -186,7 +186,16 @@ export default function CaseSummarizerPage() {
       .then(r => {
         const docs: Artifact[] = r.data;
         setArtifacts(docs);
-        setCheckedDocs(new Set(docs.filter(d => d.ocr_result && d.status !== "Processing").map(d => d.id)));
+        const toCheck = new Set(docs.filter(d => d.ocr_result && d.status !== "Processing").map(d => d.id));
+        setCheckedDocs(toCheck);
+
+        if (workflowStore.autoStartSummarize && toCheck.size > 0) {
+          workflowStore.update({ autoStartSummarize: false });
+          const selectedDocs = docs.filter(a => toCheck.has(a.id) && a.ocr_result);
+          workflowStore.startSummarize(API_BASE, localStorage.getItem("jwt_token") ?? "", selectedDocs);
+        } else if (workflowStore.autoStartSummarize) {
+          workflowStore.update({ autoStartSummarize: false });
+        }
       })
       .catch(() => {})
       .finally(() => setLoadingArtifacts(false));

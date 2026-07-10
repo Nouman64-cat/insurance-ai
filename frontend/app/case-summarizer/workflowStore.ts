@@ -87,6 +87,7 @@ export interface WorkflowStoreType {
   selectedApplicant: Applicant | null;
   selectedCase: CaseItem | null;
   checkedDocs: Set<string>;
+  autoStartSummarize: boolean;
   applicantSearch: string;
   sumStatus: SumStatus;
   summary: string;
@@ -114,6 +115,7 @@ export const workflowStore: WorkflowStoreType = {
   selectedApplicant: null,
   selectedCase: null,
   checkedDocs: new Set<string>(),
+  autoStartSummarize: false,
   applicantSearch: "",
   
   // Summary
@@ -158,6 +160,7 @@ export const workflowStore: WorkflowStoreType = {
     this.selectedApplicant = null;
     this.selectedCase = null;
     this.checkedDocs = new Set<string>();
+    this.autoStartSummarize = false;
     this.applicantSearch = "";
     this.sumStatus = "idle";
     this.summary = "";
