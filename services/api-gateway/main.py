@@ -412,6 +412,11 @@ async def proxy_tenant_organizations(tenant_id: UUID, path: str, request: Reques
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/organizations{path}")
 
 
+@app.api_route("/tenants/{tenant_id}/insurance-plans{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_insurance_plans(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/insurance-plans{path}")
+
+
 @app.api_route("/roles", methods=["GET", "OPTIONS"], include_in_schema=False)
 async def proxy_roles(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")

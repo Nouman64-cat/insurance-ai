@@ -32,6 +32,17 @@ class InsuranceTypeEnum(str, Enum):
     GROUP_LIFE = "GROUP_LIFE"
 
 
+class PlanCategoryEnum(str, Enum):
+    INDIVIDUAL = "Individual"
+    GROUP = "Group"
+
+
+class PlanStatusEnum(str, Enum):
+    DRAFT = "Draft"
+    ACTIVE = "Active"
+    ARCHIVED = "Archived"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tenant  —  top-level isolation boundary
 # ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +70,7 @@ class Tenant(SQLModel, table=True):
     artifacts: List["Artifact"] = Relationship(back_populates="tenant")
     commissions: List["Commission"] = Relationship(back_populates="tenant")
     users: List["User"] = Relationship(back_populates="tenant")
+    insurance_plans: List["InsurancePlan"] = Relationship(back_populates="tenant")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -433,6 +445,63 @@ class Commission(SQLModel, table=True):
     # Policy.commission is Optional[Commission] (not a list) → SQLModel sets uselist=False.
     tenant: Optional[Tenant] = Relationship(back_populates="commissions")
     policy: Optional[Policy] = Relationship(back_populates="commission")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# InsurancePlan  —  a tenant's catalog entry defining the eligibility rules and
+# required documents for a plan type. Editable per-tenant by an Admin (the
+# static PLANS list in the frontend and UNDERWRITING_RULES/REQUIRED_DOCUMENTS in
+# the services are the seed defaults this table is populated from).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class InsurancePlan(SQLModel, table=True):
+    __tablename__ = "insurance_plans"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_insurance_plan_code_per_tenant"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    # Identity / classification
+    code: str = Field(index=True, max_length=50)                 # e.g. "TERM_LIFE" — unique per tenant
+    label: str = Field(max_length=255)                           # e.g. "Term Life"
+    insurance_type: InsuranceTypeEnum = Field(max_length=50)
+    category: PlanCategoryEnum = Field(default=PlanCategoryEnum.INDIVIDUAL, max_length=50)
+    status: PlanStatusEnum = Field(default=PlanStatusEnum.DRAFT, max_length=50)
+    description: str = Field(default="", sa_column=Column(Text, nullable=False))
+    color: str = Field(default="blue", max_length=30)            # UI accent/badge colour
+
+    # Eligibility band (proposer)
+    entry_age_min: int = Field(ge=0, le=120)
+    entry_age_max: int = Field(ge=0, le=120)
+    entry_age_label: str = Field(default="Proposer", max_length=100)
+
+    # Dependent band — only meaningful for CHILD_EDUCATION_MARRIAGE
+    dependent_age_min: Optional[int] = Field(default=None, ge=0, le=120)
+    dependent_age_max: Optional[int] = Field(default=None, ge=0, le=120)
+
+    # Term / maturity / coverage limits
+    term_min_years: int = Field(ge=1, le=100)
+    term_max_years: int = Field(ge=1, le=100)
+    max_maturity_age: int = Field(ge=0, le=120)
+    max_income_multiple: float = Field(ge=0)
+
+    # Group-specific (optional; only for GROUP plans)
+    min_group_size: Optional[int] = Field(default=None, ge=0)
+    underwriting_basis: Optional[str] = Field(default=None, max_length=255)
+
+    # Nested reference data stored as JSON:
+    #   medical_exam_tiers: [{"minSumAssured": 0, "tier": "No medical exam required"}, ...]
+    #   required_documents: ["CNIC", "Medical Report", ...]
+    medical_exam_tiers: List[dict] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    required_documents: List[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+
+    is_active: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    tenant: Optional[Tenant] = Relationship(back_populates="insurance_plans")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
