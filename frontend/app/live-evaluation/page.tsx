@@ -105,6 +105,14 @@ export default function LiveEvaluationPage() {
   // Cancel any in-flight request when the component unmounts
   useEffect(() => () => { abortRef.current?.abort(); }, []);
 
+  // Fetch tenant ID from logged in user session
+  useEffect(() => {
+    const storedTenantId = localStorage.getItem("tenant_id");
+    if (storedTenantId) {
+      setForm(f => ({ ...f, tenantId: storedTenantId }));
+    }
+  }, []);
+
   const setField = useCallback(
     (key: keyof FormValues, val: string) => setForm(f => ({ ...f, [key]: val })),
     [],
@@ -378,6 +386,7 @@ export default function LiveEvaluationPage() {
           </div>
 
           <div className="p-5 space-y-5">
+
 
             {/* Applicant */}
             <section>

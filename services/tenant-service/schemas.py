@@ -2,8 +2,14 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, field_validator
-from shared.models.core import UserStatus, Gender, InsuranceTypeEnum
+from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from shared.models.core import (
+    UserStatus,
+    Gender,
+    InsuranceTypeEnum,
+    PlanCategoryEnum,
+    PlanStatusEnum,
+)
 
 
 # ── Tenant ────────────────────────────────────────────────────────────────────
@@ -363,3 +369,146 @@ class CaseCommentCreate(BaseModel):
     commentText: str
     commentType: CommentTypeEnum
     visibilityLevel: VisibilityLevelEnum
+
+
+# ── Insurance Plans ───────────────────────────────────────────────────────────
+
+class MedicalExamTierSchema(BaseModel):
+    minSumAssured: float
+    tier: str
+
+    @field_validator("minSumAssured")
+    @classmethod
+    def non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("minSumAssured must not be negative")
+        return v
+
+    @field_validator("tier")
+    @classmethod
+    def tier_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("tier must not be blank")
+        return v.strip()
+
+
+class InsurancePlanCreate(BaseModel):
+    code: str
+    label: str
+    insurance_type: InsuranceTypeEnum
+    category: PlanCategoryEnum = PlanCategoryEnum.INDIVIDUAL
+    status: PlanStatusEnum = PlanStatusEnum.DRAFT
+    description: str = ""
+    color: str = "blue"
+
+    entry_age_min: int
+    entry_age_max: int
+    entry_age_label: str = "Proposer"
+    dependent_age_min: Optional[int] = None
+    dependent_age_max: Optional[int] = None
+
+    term_min_years: int
+    term_max_years: int
+    max_maturity_age: int
+    max_income_multiple: float
+
+    min_group_size: Optional[int] = None
+    underwriting_basis: Optional[str] = None
+
+    medical_exam_tiers: List[MedicalExamTierSchema] = []
+    required_documents: List[str] = []
+
+    @field_validator("code")
+    @classmethod
+    def code_format(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            raise ValueError("code must not be blank")
+        if not v.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("code must be alphanumeric (hyphens/underscores allowed)")
+        return v
+
+    @field_validator("label")
+    @classmethod
+    def label_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("label must not be blank")
+        return v.strip()
+
+    @model_validator(mode="after")
+    def check_bands(self) -> "InsurancePlanCreate":
+        if self.entry_age_max < self.entry_age_min:
+            raise ValueError("entry_age_max must be >= entry_age_min")
+        if self.term_max_years < self.term_min_years:
+            raise ValueError("term_max_years must be >= term_min_years")
+        if (self.dependent_age_min is None) != (self.dependent_age_max is None):
+            raise ValueError("dependent_age_min and dependent_age_max must be set together")
+        if (
+            self.dependent_age_min is not None
+            and self.dependent_age_max is not None
+            and self.dependent_age_max < self.dependent_age_min
+        ):
+            raise ValueError("dependent_age_max must be >= dependent_age_min")
+        return self
+
+
+class InsurancePlanUpdate(BaseModel):
+    label: Optional[str] = None
+    insurance_type: Optional[InsuranceTypeEnum] = None
+    category: Optional[PlanCategoryEnum] = None
+    status: Optional[PlanStatusEnum] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+
+    entry_age_min: Optional[int] = None
+    entry_age_max: Optional[int] = None
+    entry_age_label: Optional[str] = None
+    dependent_age_min: Optional[int] = None
+    dependent_age_max: Optional[int] = None
+
+    term_min_years: Optional[int] = None
+    term_max_years: Optional[int] = None
+    max_maturity_age: Optional[int] = None
+    max_income_multiple: Optional[float] = None
+
+    min_group_size: Optional[int] = None
+    underwriting_basis: Optional[str] = None
+
+    medical_exam_tiers: Optional[List[MedicalExamTierSchema]] = None
+    required_documents: Optional[List[str]] = None
+    is_active: Optional[bool] = None
+
+
+class InsurancePlanRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    code: str
+    label: str
+    insurance_type: InsuranceTypeEnum
+    category: PlanCategoryEnum
+    status: PlanStatusEnum
+    description: str
+    color: str
+
+    entry_age_min: int
+    entry_age_max: int
+    entry_age_label: str
+    dependent_age_min: Optional[int]
+    dependent_age_max: Optional[int]
+
+    term_min_years: int
+    term_max_years: int
+    max_maturity_age: int
+    max_income_multiple: float
+
+    min_group_size: Optional[int]
+    underwriting_basis: Optional[str]
+
+    medical_exam_tiers: List[MedicalExamTierSchema]
+    required_documents: List[str]
+
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
