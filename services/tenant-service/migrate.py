@@ -244,6 +244,84 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v9h — add partner_bank to insurance_plans",
         "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS partner_bank VARCHAR(255)",
     ),
+    (
+        # Phase 1 of the Rating/Pricing Engine data contract: promote
+        # is_smoker/height_cm/weight_kg out of the freeform `details` JSON
+        # blob into strongly-typed, mandatory columns on applicants.
+        "v10a — add is_smoker to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS is_smoker BOOLEAN",
+    ),
+    (
+        # Legacy rows stored this in details->medical_history->is_smoker (a
+        # frontend-only convention, never enforced) — backfill via a safe
+        # string comparison rather than a ::boolean cast, so a malformed or
+        # missing value can never abort this migration.
+        "v10b — backfill is_smoker from legacy details JSON",
+        "UPDATE applicants SET is_smoker = CASE "
+        "WHEN details->'medical_history'->>'is_smoker' IN ('true','t','1','yes') THEN TRUE "
+        "ELSE FALSE END "
+        "WHERE is_smoker IS NULL",
+    ),
+    (
+        "v10c — set is_smoker not null",
+        "ALTER TABLE applicants ALTER COLUMN is_smoker SET NOT NULL",
+    ),
+    (
+        "v10d — add height_cm to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS height_cm DOUBLE PRECISION",
+    ),
+    (
+        # Legacy rows stored this in details->lifestyle->height_cm — backfill
+        # only when the value is genuinely numeric (regex guard instead of a
+        # bare cast) so a malformed value can never abort this migration.
+        # 0 means "not recorded" for pre-existing rows; new rows must supply
+        # a real value per the now-mandatory ApplicantCreate schema field.
+        "v10e — backfill height_cm from legacy details JSON",
+        r"UPDATE applicants SET height_cm = CASE "
+        r"WHEN details->'lifestyle'->>'height_cm' ~ '^[0-9]+(\.[0-9]+)?$' "
+        r"THEN (details->'lifestyle'->>'height_cm')::double precision "
+        r"ELSE 0 END "
+        r"WHERE height_cm IS NULL",
+    ),
+    (
+        "v10f — set height_cm not null",
+        "ALTER TABLE applicants ALTER COLUMN height_cm SET NOT NULL",
+    ),
+    (
+        "v10g — add weight_kg to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS weight_kg DOUBLE PRECISION",
+    ),
+    (
+        # Same defensive backfill approach as height_cm above.
+        "v10h — backfill weight_kg from legacy details JSON",
+        r"UPDATE applicants SET weight_kg = CASE "
+        r"WHEN details->'lifestyle'->>'weight_kg' ~ '^[0-9]+(\.[0-9]+)?$' "
+        r"THEN (details->'lifestyle'->>'weight_kg')::double precision "
+        r"ELSE 0 END "
+        r"WHERE weight_kg IS NULL",
+    ),
+    (
+        "v10i — set weight_kg not null",
+        "ALTER TABLE applicants ALTER COLUMN weight_kg SET NOT NULL",
+    ),
+    (
+        # Phase 1 pricing framework fields on insurance_plans — neutral
+        # defaults (0 rate / 1.0x factor) so existing seeded plans stay valid
+        # until real rates are loaded.
+        "v10j — add base_premium_rate to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS base_premium_rate DOUBLE PRECISION NOT NULL DEFAULT 0",
+    ),
+    (
+        "v10k — add smoker_factor to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS smoker_factor DOUBLE PRECISION NOT NULL DEFAULT 1",
+    ),
+    (
+        "v10l — add rate_version to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS rate_version VARCHAR(50) NOT NULL DEFAULT 'v1'",
+    ),
+    # Note: the new `premium_quotes` table needs no migration entry here —
+    # it's a brand-new table, so create_all() (which runs before this list)
+    # creates it automatically from the PremiumQuote SQLModel.
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

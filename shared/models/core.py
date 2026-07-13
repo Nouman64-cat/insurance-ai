@@ -82,6 +82,7 @@ class Tenant(SQLModel, table=True):
     commissions: List["Commission"] = Relationship(back_populates="tenant")
     users: List["User"] = Relationship(back_populates="tenant")
     insurance_plans: List["InsurancePlan"] = Relationship(back_populates="tenant")
+    premium_quotes: List["PremiumQuote"] = Relationship(back_populates="tenant")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -239,6 +240,14 @@ class Applicant(SQLModel, table=True):
     # Socio-economic profile used by the risk engine
     occupation: str = Field(max_length=255)
     declared_income: float = Field(ge=0)
+
+    # Pricing-relevant risk flags — promoted out of `details` to strongly-typed
+    # columns so the (upcoming) Rating/Pricing Engine has a validated contract
+    # instead of reading an untyped JSON blob.
+    is_smoker: bool = Field(nullable=False)
+    height_cm: float = Field(gt=0)
+    weight_kg: float = Field(gt=0)
+
     details: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -318,6 +327,7 @@ class Policy(SQLModel, table=True):
     master_policy: Optional[MasterPolicy] = Relationship(back_populates="certificates")
     claims: List["Claim"] = Relationship(back_populates="policy")
     commission: Optional["Commission"] = Relationship(back_populates="policy")
+    premium_quotes: List["PremiumQuote"] = Relationship(back_populates="policy")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -459,6 +469,31 @@ class Commission(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PremiumQuote  —  ledger of premium calculations produced by the (upcoming)
+# Rating/Pricing Engine for a given Policy. Append-only: re-pricing a policy
+# creates a new row rather than overwriting the previous quote.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PremiumQuote(SQLModel, table=True):
+    __tablename__ = "premium_quotes"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    base_premium: float = Field(ge=0)
+    loading_applied: float = Field(default=0.0, ge=0)   # currency amount added on top of base_premium
+    total_premium: float = Field(ge=0)
+    rate_version: str = Field(max_length=50)             # ties the quote back to the InsurancePlan.rate_version used
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="premium_quotes")
+    policy: Optional[Policy] = Relationship(back_populates="premium_quotes")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # InsurancePlan  —  a tenant's catalog entry defining the eligibility rules and
 # required documents for a plan type. Editable per-tenant by an Admin (the
 # static PLANS list in the frontend and UNDERWRITING_RULES/REQUIRED_DOCUMENTS in
@@ -503,6 +538,13 @@ class InsurancePlan(SQLModel, table=True):
     # Group-specific (optional; only for GROUP plans)
     min_group_size: Optional[int] = Field(default=None, ge=0)
     underwriting_basis: Optional[str] = Field(default=None, max_length=255)
+
+    # Pricing framework — consumed by the (upcoming) Rating/Pricing Engine.
+    # Defaults are neutral (0 rate / 1.0x factor) so existing plans stay valid
+    # until real rates are loaded per plan.
+    base_premium_rate: float = Field(default=0.0, ge=0)   # e.g. PKR per 1,000 sum assured per year
+    smoker_factor: float = Field(default=1.0, ge=0)       # multiplier applied to base_premium_rate for smokers
+    rate_version: str = Field(default="v1", max_length=50)  # identifies which rate table these values belong to
 
     # Nested reference data stored as JSON:
     #   medical_exam_tiers: [{"minSumAssured": 0, "tier": "No medical exam required"}, ...]

@@ -53,6 +53,9 @@ async def create_applicant(
         gender          = body.gender,
         occupation      = body.occupation,
         declared_income = body.declared_income,
+        is_smoker       = body.is_smoker,
+        height_cm       = body.height_cm,
+        weight_kg       = body.weight_kg,
         details         = body.details,
     )
     session.add(applicant)
@@ -191,6 +194,12 @@ async def update_applicant(
         applicant.occupation = body.occupation
     if body.declared_income is not None:
         applicant.declared_income = body.declared_income
+    if body.is_smoker is not None:
+        applicant.is_smoker = body.is_smoker
+    if body.height_cm is not None:
+        applicant.height_cm = body.height_cm
+    if body.weight_kg is not None:
+        applicant.weight_kg = body.weight_kg
     if body.details is not None:
         applicant.details = body.details
 

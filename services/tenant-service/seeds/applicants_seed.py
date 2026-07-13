@@ -1096,6 +1096,9 @@ async def seed_applicants(session: AsyncSession, tenant_id: UUID) -> list[Applic
             spec["_policy"] = policy_spec  # restore for repeated calls
             continue
 
+        details = spec.get("details") or {}
+        medical_history = details.get("medical_history") or {}
+        lifestyle = details.get("lifestyle") or {}
         applicant = Applicant(
             tenant_id=tenant_id,
             cnic=cnic,
@@ -1104,7 +1107,10 @@ async def seed_applicants(session: AsyncSession, tenant_id: UUID) -> list[Applic
             gender=spec["gender"],
             occupation=spec["occupation"],
             declared_income=spec["declared_income"],
-            details=spec.get("details"),
+            is_smoker=medical_history.get("is_smoker", False),
+            height_cm=lifestyle.get("height_cm", 170),
+            weight_kg=lifestyle.get("weight_kg", 70),
+            details=details,
         )
         session.add(applicant)
         await session.flush()  # obtain applicant.id before linking the policy
