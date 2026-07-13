@@ -206,6 +206,175 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v8b — add master_policy_id to policies",
         "ALTER TABLE policies ADD COLUMN IF NOT EXISTS master_policy_id UUID REFERENCES master_policies(id)",
     ),
+    (
+        # Same reasoning as v8a-enum: SAVINGS / SINGLE_PREMIUM / HEALTH_CASH
+        # were added to InsuranceTypeEnum for the real Adamjee Life catalog.
+        "v9a-enum — add SAVINGS to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'SAVINGS'",
+    ),
+    (
+        "v9b-enum — add SINGLE_PREMIUM to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'SINGLE_PREMIUM'",
+    ),
+    (
+        "v9c-enum — add HEALTH_CASH to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'HEALTH_CASH'",
+    ),
+    (
+        "v9d — add product_category to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS product_category productcategoryenum",
+    ),
+    (
+        # Postgres enum labels are the Python enum *member name* (e.g.
+        # CONVENTIONAL), not its .value ("Conventional") — SQLAlchemy's
+        # default Enum type stores/reads by name, same as every other enum
+        # column in this schema (see plancategoryenum: INDIVIDUAL/GROUP).
+        "v9e — backfill product_category",
+        "UPDATE insurance_plans SET product_category = 'CONVENTIONAL' WHERE product_category IS NULL",
+    ),
+    (
+        "v9f — set default for product_category",
+        "ALTER TABLE insurance_plans ALTER COLUMN product_category SET DEFAULT 'CONVENTIONAL'",
+    ),
+    (
+        "v9g — set product_category not null",
+        "ALTER TABLE insurance_plans ALTER COLUMN product_category SET NOT NULL",
+    ),
+    (
+        "v9h — add partner_bank to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS partner_bank VARCHAR(255)",
+    ),
+    (
+        # Phase 1 of the Rating/Pricing Engine data contract: promote
+        # is_smoker/height_cm/weight_kg out of the freeform `details` JSON
+        # blob into strongly-typed, mandatory columns on applicants.
+        "v10a — add is_smoker to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS is_smoker BOOLEAN",
+    ),
+    (
+        # Legacy rows stored this in details->medical_history->is_smoker (a
+        # frontend-only convention, never enforced) — backfill via a safe
+        # string comparison rather than a ::boolean cast, so a malformed or
+        # missing value can never abort this migration.
+        "v10b — backfill is_smoker from legacy details JSON",
+        "UPDATE applicants SET is_smoker = CASE "
+        "WHEN details->'medical_history'->>'is_smoker' IN ('true','t','1','yes') THEN TRUE "
+        "ELSE FALSE END "
+        "WHERE is_smoker IS NULL",
+    ),
+    (
+        "v10c — set is_smoker not null",
+        "ALTER TABLE applicants ALTER COLUMN is_smoker SET NOT NULL",
+    ),
+    (
+        "v10d — add height_cm to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS height_cm DOUBLE PRECISION",
+    ),
+    (
+        # Legacy rows stored this in details->lifestyle->height_cm — backfill
+        # only when the value is genuinely numeric (regex guard instead of a
+        # bare cast) so a malformed value can never abort this migration.
+        # 0 means "not recorded" for pre-existing rows; new rows must supply
+        # a real value per the now-mandatory ApplicantCreate schema field.
+        "v10e — backfill height_cm from legacy details JSON",
+        r"UPDATE applicants SET height_cm = CASE "
+        r"WHEN details->'lifestyle'->>'height_cm' ~ '^[0-9]+(\.[0-9]+)?$' "
+        r"THEN (details->'lifestyle'->>'height_cm')::double precision "
+        r"ELSE 0 END "
+        r"WHERE height_cm IS NULL",
+    ),
+    (
+        "v10f — set height_cm not null",
+        "ALTER TABLE applicants ALTER COLUMN height_cm SET NOT NULL",
+    ),
+    (
+        "v10g — add weight_kg to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS weight_kg DOUBLE PRECISION",
+    ),
+    (
+        # Same defensive backfill approach as height_cm above.
+        "v10h — backfill weight_kg from legacy details JSON",
+        r"UPDATE applicants SET weight_kg = CASE "
+        r"WHEN details->'lifestyle'->>'weight_kg' ~ '^[0-9]+(\.[0-9]+)?$' "
+        r"THEN (details->'lifestyle'->>'weight_kg')::double precision "
+        r"ELSE 0 END "
+        r"WHERE weight_kg IS NULL",
+    ),
+    (
+        "v10i — set weight_kg not null",
+        "ALTER TABLE applicants ALTER COLUMN weight_kg SET NOT NULL",
+    ),
+    (
+        # Phase 1 pricing framework fields on insurance_plans — neutral
+        # defaults (0 rate / 1.0x factor) so existing seeded plans stay valid
+        # until real rates are loaded.
+        "v10j — add base_premium_rate to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS base_premium_rate DOUBLE PRECISION NOT NULL DEFAULT 0",
+    ),
+    (
+        "v10k — add smoker_factor to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS smoker_factor DOUBLE PRECISION NOT NULL DEFAULT 1",
+    ),
+    (
+        "v10l — add rate_version to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS rate_version VARCHAR(50) NOT NULL DEFAULT 'v1'",
+    ),
+    # Note: the new `premium_quotes` table needs no migration entry here —
+    # it's a brand-new table, so create_all() (which runs before this list)
+    # creates it automatically from the PremiumQuote SQLModel.
+    (
+        "v11a — add nominee_name to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS nominee_name VARCHAR(255)",
+    ),
+    (
+        "v11b — add nominee_relationship to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS nominee_relationship VARCHAR(100)",
+    ),
+    # Phase 2 of the Rating/Pricing Engine: backfill real v1 placeholder rates
+    # for every plan still sitting at the neutral 0.0 default from v10j — i.e.
+    # every tenant's catalog seeded before real rates existed. Guarded by
+    # `base_premium_rate = 0` so a tenant admin's manually-tuned rate (via the
+    # Plans edit UI) is never overwritten. Rates are PKR per 1,000 sum assured
+    # per year — reasonable v1 estimates (same spirit as underwriting_rules.py
+    # bands), not a regulatory filing.
+    (
+        "v12a — backfill TERM_LIFE rate",
+        "UPDATE insurance_plans SET base_premium_rate = 3.5, smoker_factor = 1.6 "
+        "WHERE insurance_type = 'TERM_LIFE' AND base_premium_rate = 0",
+    ),
+    (
+        "v12b — backfill WHOLE_LIFE rate",
+        "UPDATE insurance_plans SET base_premium_rate = 5.5, smoker_factor = 1.5 "
+        "WHERE insurance_type = 'WHOLE_LIFE' AND base_premium_rate = 0",
+    ),
+    (
+        "v12c — backfill ENDOWMENT rate",
+        "UPDATE insurance_plans SET base_premium_rate = 6.0, smoker_factor = 1.4 "
+        "WHERE insurance_type = 'ENDOWMENT' AND base_premium_rate = 0",
+    ),
+    (
+        "v12d — backfill SAVINGS rate",
+        "UPDATE insurance_plans SET base_premium_rate = 6.0, smoker_factor = 1.4 "
+        "WHERE insurance_type = 'SAVINGS' AND base_premium_rate = 0",
+    ),
+    (
+        "v12e — backfill SINGLE_PREMIUM rate",
+        "UPDATE insurance_plans SET base_premium_rate = 4.0, smoker_factor = 1.3 "
+        "WHERE insurance_type = 'SINGLE_PREMIUM' AND base_premium_rate = 0",
+    ),
+    (
+        "v12f — backfill HEALTH_CASH rate",
+        "UPDATE insurance_plans SET base_premium_rate = 8.0, smoker_factor = 1.2 "
+        "WHERE insurance_type = 'HEALTH_CASH' AND base_premium_rate = 0",
+    ),
+    (
+        "v12g — backfill CHILD_EDUCATION_MARRIAGE rate",
+        "UPDATE insurance_plans SET base_premium_rate = 5.0, smoker_factor = 1.0 "
+        "WHERE insurance_type = 'CHILD_EDUCATION_MARRIAGE' AND base_premium_rate = 0",
+    ),
+    # GROUP_LIFE intentionally left at the neutral 0.0/1.0 default — group
+    # pricing is negotiated per-MasterPolicy and is not served by the
+    # per-applicant /quote endpoint (see shared/pricing/calculator.py).
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -279,12 +448,14 @@ async def run_migrations() -> None:
         await conn.run_sync(SQLModel.metadata.create_all)
         log.info("create_all complete")
 
-        # 2. Apply column / index changes to existing tables.
-        for label, sql in MIGRATIONS:
+    # 2. Apply column / index changes to existing tables in individual transactions.
+    for label, sql in MIGRATIONS:
+        async with _engine.begin() as conn:
             await conn.execute(text(sql))
             log.info("applied: %s", label)
 
-        # 3. Seed user types.
+    # 3. Seed user types.
+    async with _engine.begin() as conn:
         await _seed_user_types(conn)
         log.info("seed_user_types complete")
 

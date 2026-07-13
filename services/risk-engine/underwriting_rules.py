@@ -90,6 +90,41 @@ UNDERWRITING_RULES: Dict[str, PlanRules] = {
             (10_000_000, MedicalExamTier.FULL_MEDICAL_AND_FINANCIALS),
         ],
     ),
+    # Unit-linked flexible savings/investment plans (Adamjee Life catalog —
+    # Apna Savings, Pay Smart, Mustakil Yaqeen, Tahafuzz, Signature Plus, etc.)
+    "SAVINGS": PlanRules(
+        min_entry_age=18, max_entry_age=65,
+        min_term_years=5, max_term_years=25,
+        max_maturity_age=75,
+        max_income_multiple=15,
+        medical_exam_tiers=[
+            (0, MedicalExamTier.NONE),
+            (5_000_000, MedicalExamTier.PARAMEDICAL),
+            (15_000_000, MedicalExamTier.FULL_MEDICAL_AND_FINANCIALS),
+        ],
+    ),
+    # One-time lump-sum investment plans (Shandar Sarmaya, Asaan Takaful).
+    "SINGLE_PREMIUM": PlanRules(
+        min_entry_age=18, max_entry_age=70,
+        min_term_years=1, max_term_years=10,
+        max_maturity_age=75,
+        max_income_multiple=10,
+        medical_exam_tiers=[
+            (0, MedicalExamTier.NONE),
+            (10_000_000, MedicalExamTier.PARAMEDICAL),
+        ],
+    ),
+    # Hospital cash-back / micro-health plans (Sehat Zamanat, Sehat Kafalat,
+    # COVID-19 Protection Plan) — guaranteed-issue, no medical underwriting.
+    "HEALTH_CASH": PlanRules(
+        min_entry_age=18, max_entry_age=59,
+        min_term_years=1, max_term_years=5,
+        max_maturity_age=65,
+        max_income_multiple=5,
+        medical_exam_tiers=[
+            (0, MedicalExamTier.NONE),
+        ],
+    ),
 }
 
 # Used when insurance_type is missing/unrecognized — preserves the original

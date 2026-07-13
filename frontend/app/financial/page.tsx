@@ -32,8 +32,8 @@ export default function FinancialPage() {
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Financial Intelligence</h1>
-        <p className="text-sm text-slate-500 mt-0.5">Dynamic commission calculations, quality incentives, premium forecasting, and portfolio risk analysis.</p>
+        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Financial Underwriting</h1>
+        <p className="text-sm text-slate-500 mt-0.5">Dynamic commission calculations, quality incentives, premium forecasting, and portfolio financial risk analysis.</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

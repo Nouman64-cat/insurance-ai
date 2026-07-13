@@ -5,6 +5,12 @@ Single source of truth for the standard plan catalog. Both the
 CLI import ``INSURANCE_PLAN_SEED_DATA`` / ``seed_insurance_plans`` from here, so
 the data lives in exactly one place.
 
+The individual-life catalog (everything except GROUP_LIFE/GROUP_LIFE_SME) is
+Adamjee Life Insurance's real retail product line, sourced from
+insurance_categories_and_plans.txt plus adamjeelife.com, spanning three
+business/distribution channels (``product_category``):
+Conventional, Takaful (Shariah-compliant), and Bancassurance (bank-partnered).
+
 Every plan is tenant-scoped — it is written with the ``tenant_id`` you pass in,
 so the same catalog can be reproduced on any machine by pointing at that
 tenant's id. Seeding is idempotent: a plan whose ``code`` already exists for the
@@ -47,17 +53,20 @@ DOC_CENSUS = "Employee Census"
 DOC_BUSINESS_REG = "Business Registration"
 
 
-# ── The catalog — 8 plans (5 core types + 3 variants) ─────────────────────────
-# Each entry is a dict of InsurancePlan column values (minus tenant_id / status,
-# which seed_insurance_plans() fills in). `code` is unique per tenant.
+# ── Underwriting bands, shared across every plan of a given mechanic ──────────
+# (mirrors services/risk-engine/underwriting_rules.py and
+# services/tenant-service/document_requirements.py, which key off the same
+# insurance_type buckets)
 
-INSURANCE_PLAN_SEED_DATA: list[dict] = [
-    {
-        "code": "TERM_LIFE", "label": "Term Life", "insurance_type": "TERM_LIFE",
-        "category": "Individual", "color": "blue",
-        "description": "Pure protection for a fixed term — no maturity value. The cheapest way to secure a large sum assured; pays out only on death within the term.",
+_BANDS: dict[str, dict] = {
+    "TERM_LIFE": {
+        "color": "blue",
         "entry_age_min": 18, "entry_age_max": 65, "entry_age_label": "Proposer",
         "term_min_years": 5, "term_max_years": 30, "max_maturity_age": 70, "max_income_multiple": 20,
+        # v1 placeholder actuarial rates (PKR per 1,000 sum assured per year) —
+        # see shared/pricing/calculator.py for how these combine with age/BMI
+        # factors into a quote. Not a regulatory filing.
+        "base_premium_rate": 3.5, "smoker_factor": 1.6,
         "medical_exam_tiers": [
             {"minSumAssured": 0, "tier": TIER_NONE},
             {"minSumAssured": 5_000_000, "tier": TIER_PARAMEDICAL},
@@ -65,64 +74,46 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         ],
         "required_documents": [DOC_CNIC, DOC_MEDICAL, DOC_SALARY],
     },
-    {
-        "code": "TERM_LIFE_PREMIER", "label": "Term Life Premier", "insurance_type": "TERM_LIFE",
-        "category": "Individual", "color": "blue",
-        "description": "A high-coverage term plan for higher earners — larger sum-assured limits and financial underwriting, with the same pure-protection structure as standard Term Life.",
-        "entry_age_min": 25, "entry_age_max": 60, "entry_age_label": "Proposer",
-        "term_min_years": 10, "term_max_years": 30, "max_maturity_age": 70, "max_income_multiple": 30,
-        "medical_exam_tiers": [
-            {"minSumAssured": 0, "tier": TIER_PARAMEDICAL},
-            {"minSumAssured": 10_000_000, "tier": TIER_FULL},
-        ],
-        "required_documents": [DOC_CNIC, DOC_MEDICAL, DOC_SALARY, DOC_BANK],
-    },
-    {
-        "code": "WHOLE_LIFE", "label": "Whole Life", "insurance_type": "WHOLE_LIFE",
-        "category": "Individual", "color": "violet",
-        "description": "Lifetime coverage with an accumulating cash value. Typically more expensive than term life, but the policy never expires and can be borrowed against.",
+    "SAVINGS": {
+        "color": "amber",
         "entry_age_min": 18, "entry_age_max": 65, "entry_age_label": "Proposer",
-        "term_min_years": 1, "term_max_years": 40, "max_maturity_age": 99, "max_income_multiple": 25,
+        "term_min_years": 5, "term_max_years": 25, "max_maturity_age": 75, "max_income_multiple": 15,
+        "base_premium_rate": 6.0, "smoker_factor": 1.4,
         "medical_exam_tiers": [
             {"minSumAssured": 0, "tier": TIER_NONE},
             {"minSumAssured": 5_000_000, "tier": TIER_PARAMEDICAL},
             {"minSumAssured": 15_000_000, "tier": TIER_FULL},
-        ],
-        "required_documents": [DOC_CNIC, DOC_MEDICAL, DOC_SALARY, DOC_BANK],
-    },
-    {
-        "code": "ENDOWMENT", "label": "Endowment / Savings Plan", "insurance_type": "ENDOWMENT",
-        "category": "Individual", "color": "amber",
-        "description": "A with-profits savings policy that pays a lump sum (sum assured plus accrued bonuses) at maturity, or a death benefit if the proposer dies during the term.",
-        "entry_age_min": 18, "entry_age_max": 60, "entry_age_label": "Proposer",
-        "term_min_years": 10, "term_max_years": 30, "max_maturity_age": 70, "max_income_multiple": 15,
-        "medical_exam_tiers": [
-            {"minSumAssured": 0, "tier": TIER_NONE},
-            {"minSumAssured": 5_000_000, "tier": TIER_PARAMEDICAL},
-            {"minSumAssured": 15_000_000, "tier": TIER_FULL},
-        ],
-        "required_documents": [DOC_CNIC, DOC_MEDICAL, DOC_SALARY, DOC_BANK],
-    },
-    {
-        "code": "RETIREMENT_SAVINGS", "label": "Retirement Savings Plan", "insurance_type": "ENDOWMENT",
-        "category": "Individual", "color": "amber",
-        "description": "A long-horizon endowment aimed at retirement — builds a lump sum payable at the chosen maturity age, with a death benefit during the accumulation term.",
-        "entry_age_min": 25, "entry_age_max": 55, "entry_age_label": "Proposer",
-        "term_min_years": 10, "term_max_years": 35, "max_maturity_age": 65, "max_income_multiple": 20,
-        "medical_exam_tiers": [
-            {"minSumAssured": 0, "tier": TIER_NONE},
-            {"minSumAssured": 5_000_000, "tier": TIER_PARAMEDICAL},
-            {"minSumAssured": 20_000_000, "tier": TIER_FULL},
         ],
         "required_documents": [DOC_CNIC, DOC_SALARY, DOC_BANK],
     },
-    {
-        "code": "CHILD_EDUCATION_MARRIAGE", "label": "Child Education & Marriage Plan",
-        "insurance_type": "CHILD_EDUCATION_MARRIAGE", "category": "Individual", "color": "emerald",
-        "description": "An endowment plan tied to a dependent's milestone age (typically 18, 21, or 25) rather than the proposer's — pays out for education or marriage expenses. If the proposer dies during the term, future premiums are waived and the policy stays in force for the child.",
+    "SINGLE_PREMIUM": {
+        "color": "violet",
+        "entry_age_min": 18, "entry_age_max": 70, "entry_age_label": "Proposer",
+        "term_min_years": 1, "term_max_years": 10, "max_maturity_age": 75, "max_income_multiple": 10,
+        "base_premium_rate": 4.0, "smoker_factor": 1.3,
+        "medical_exam_tiers": [
+            {"minSumAssured": 0, "tier": TIER_NONE},
+            {"minSumAssured": 10_000_000, "tier": TIER_PARAMEDICAL},
+        ],
+        "required_documents": [DOC_CNIC, DOC_BANK],
+    },
+    "HEALTH_CASH": {
+        "color": "rose",
+        "entry_age_min": 18, "entry_age_max": 59, "entry_age_label": "Proposer",
+        "term_min_years": 1, "term_max_years": 5, "max_maturity_age": 65, "max_income_multiple": 5,
+        "base_premium_rate": 8.0, "smoker_factor": 1.2,
+        "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_NONE}],
+        "required_documents": [DOC_CNIC],
+    },
+    "CHILD_EDUCATION_MARRIAGE": {
+        "color": "emerald",
         "entry_age_min": 20, "entry_age_max": 60, "entry_age_label": "Proposer",
         "dependent_age_min": 1, "dependent_age_max": 15,
         "term_min_years": 10, "term_max_years": 24, "max_maturity_age": 70, "max_income_multiple": 15,
+        # Proposer smoking status is kept neutral here — the insured benefit
+        # belongs to the dependent, not the proposer, so it isn't loaded the
+        # way a proposer's own life cover is.
+        "base_premium_rate": 5.0, "smoker_factor": 1.0,
         "medical_exam_tiers": [
             {"minSumAssured": 0, "tier": TIER_NONE},
             {"minSumAssured": 3_000_000, "tier": TIER_PARAMEDICAL},
@@ -130,9 +121,239 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         ],
         "required_documents": [DOC_CNIC, DOC_SALARY, DOC_BANK, DOC_BIRTH],
     },
+}
+
+
+def _plan(
+    code: str,
+    label: str,
+    insurance_type: str,
+    product_category: str,
+    description: str,
+    partner_bank: str | None = None,
+) -> dict:
+    """Build a plan spec from its mechanic band, plus per-plan identity fields."""
+    band = _BANDS[insurance_type]
+    spec = {
+        "code": code, "label": label, "insurance_type": insurance_type,
+        "category": "Individual", "product_category": product_category,
+        "partner_bank": partner_bank, "color": band["color"], "description": description,
+        **{k: v for k, v in band.items() if k != "color"},
+    }
+    return spec
+
+
+# ── The catalog — Adamjee Life's real retail life-insurance products ──────────
+# (Conventional / Takaful / Bancassurance) plus the two generic Group plans
+# that back the unrelated Organization/MasterPolicy group-insurance feature.
+
+INSURANCE_PLAN_SEED_DATA: list[dict] = [
+    # ── Conventional ────────────────────────────────────────────────────────
+    _plan(
+        "ROSHAN_AAJ_AUR_KAL", "Roshan Aaj Aur Kal", "CHILD_EDUCATION_MARRIAGE", "Conventional",
+        "Goal-based savings plan for a child's education or wedding, investing across three "
+        "risk-based fund options. Includes a premium-waiver benefit — Adamjee Life pays future "
+        "premiums if the proposer dies — and a loyalty bonus.",
+    ),
+    _plan(
+        "SALARY_PROTECTION_PLAN", "Salary Protection Plan", "TERM_LIFE", "Conventional",
+        "Term life plan that replaces a selected percentage of the insured's monthly salary for "
+        "the beneficiary(ies) for a fixed term on death or permanent total disability, with an "
+        "optional annual benefit-increase rider.",
+    ),
+    _plan(
+        "APNA_SAVINGS", "Apna Savings", "SAVINGS", "Conventional",
+        "Low-entry-cost savings plan balancing basic protection with savings — minimum annual "
+        "premium of PKR 8,000, three fund investment options, and a loyalty bonus.",
+    ),
+    _plan(
+        "PAY_SMART_PLAN", "Pay Smart Plan", "SAVINGS", "Conventional",
+        "Flexible savings plan with high premium allocation and 8+ year payment terms, bundling "
+        "a hospital cash-back rider alongside education, wedding, retirement, or property goals.",
+    ),
+    _plan(
+        "SHANDAR_SARMAYA", "Shandar Sarmaya", "SINGLE_PREMIUM", "Conventional",
+        "Single-premium (one-time payment) plan focused on high-yield investment — life "
+        "protection up to 10x the amount invested, a minimal 5% bid/offer spread, and partial "
+        "withdrawals allowed after 6 months.",
+    ),
+    _plan(
+        "MUSTAKIL_YAQEEN", "Mustakil Yaqeen", "SAVINGS", "Conventional",
+        "Long-term savings plan geared towards retirement or property goals, with three fund "
+        "options matched to risk appetite and a loyalty bonus for long-term policyholders.",
+    ),
+    _plan(
+        "MEHFOOZ_MUNAFA", "Mehfooz Munafa", "SAVINGS", "Conventional",
+        "High premium-allocation savings plan for maximum fund growth — minimum 5-year flexible "
+        "payment term, three investment funds, and a loyalty bonus.",
+    ),
+    _plan(
+        "TAHAFUZZ_PLAN", "Tahafuzz Plan", "SAVINGS", "Conventional",
+        "Adamjee Life's flagship 10-year flexible savings and protection plan, with a loyalty "
+        "bonus from year 6 and a loan facility of up to 50% of the surrender value.",
+    ),
+    _plan(
+        "SEHAT_ZAMANAT", "Sehat Zamanat", "HEALTH_CASH", "Conventional",
+        "Micro-health plan providing lump-sum and daily cash benefits during hospitalization, "
+        "plus accidental-disability coverage up to PKR 750,000, with digital policy management.",
+    ),
+    _plan(
+        "SEHAT_KAFALAT", "Sehat Kafalat", "HEALTH_CASH", "Conventional",
+        "Ultra-low-cost hospital cash-back plan — annual premium as low as PKR 500 — paying "
+        "PKR 2,000/day for up to 30 days of hospitalization, for ages 18–59.",
+    ),
+    _plan(
+        "PROTECT_PLAN", "Protect Plan", "TERM_LIFE", "Conventional",
+        "Low-cost, digital-first pure life cover (term insurance) of up to PKR 1 million, with "
+        "premiums starting from PKR 625 annually.",
+    ),
+    _plan(
+        "COVID19_PROTECTION_PLAN", "COVID-19 Protection Plan", "HEALTH_CASH", "Conventional",
+        "Short-term coverage designed specifically for pandemic-related hospitalization, sold in "
+        "individual or family options across three coverage levels for 3- or 6-month terms.",
+    ),
+
+    # ── Takaful (Shariah-compliant) ─────────────────────────────────────────
+    _plan(
+        "NIBAH", "Nibah", "CHILD_EDUCATION_MARRIAGE", "Takaful",
+        "Shariah-compliant goal-based savings for a child's education or wedding, investing "
+        "across three Takaful funds, with a loyalty benefit of 5x the annual contribution paid "
+        "as a lump sum plus ongoing contributions funded by Adamjee Life.",
+    ),
+    _plan(
+        "ZORAIZ_SAVINGS_TAKAFUL", "Zoraiz Savings Takaful", "SAVINGS", "Takaful",
+        "Unit-linked Takaful investment plan with built-in Hajj coverage — PKR 1 million "
+        "accidental-death benefit during Hajj — alongside multiple risk-based Shariah-compliant "
+        "fund options.",
+    ),
+    _plan(
+        "SALSABIL_PLUS_FAMILY_TAKAFUL", "Salsabil Plus Family Takaful", "SAVINGS", "Takaful",
+        "Family Takaful plan allowing highly flexible payment terms (minimum 5 years), high "
+        "premium allocation, PKR 1 million Hajj accidental-death coverage, and three "
+        "Shariah-compliant fund choices.",
+    ),
+    _plan(
+        "BARAKAH_PLAN", "Barakah Plan", "SAVINGS", "Takaful",
+        "Highly flexible Takaful savings plan offering loyalty bonuses for long-term "
+        "participants, PKR 1 million Hajj coverage, and three Shariah-compliant fund options.",
+    ),
+    _plan(
+        "KEFAYAT_PLAN", "Kefayat Plan", "CHILD_EDUCATION_MARRIAGE", "Takaful",
+        "Low-entry Takaful plan for basic Islamic education/wedding savings — minimum "
+        "contribution of PKR 8,000 annually — with a loyalty bonus and three fund options.",
+    ),
+    _plan(
+        "ASAAN_TAKAFUL", "Asaan Takaful", "SINGLE_PREMIUM", "Takaful",
+        "Single-payment Islamic investment architecture with no bid/offer spread, Takaful "
+        "protection up to 10x the amount invested, and partial withdrawals allowed after 6 "
+        "months.",
+    ),
+    _plan(
+        "ZAYED_SAVINGS_TAKAFUL", "Zayed Savings Takaful", "SAVINGS", "Takaful",
+        "Fixed 8-year term Takaful savings plan with high allocation, PKR 1 million Hajj "
+        "coverage, a hospital cash-back rider, and three Shariah-compliant fund options.",
+    ),
+
+    # ── Bancassurance (bank-partnered) ──────────────────────────────────────
+    _plan(
+        "LIFE_PROTECTION_PLUS", "Life Protection Plus", "TERM_LIFE", "Bancassurance",
+        "Premium core protection plan sold through MCB Bank — coverage up to PKR 2.5 million, a "
+        "14-day free-look period, complimentary e-health consultations, and premiums starting "
+        "from PKR 3,450 annually.",
+        partner_bank="MCB Bank",
+    ),
+    _plan(
+        "LIFE_SIGNATURE_PLUS", "Life Signature Plus", "SAVINGS", "Bancassurance",
+        "High-tier bancassurance investment and savings plan — 75% first-year premium "
+        "allocation, coverage flexible between 5–30x the premium, a savings booster of 103%, "
+        "multiple fund options, and continuation bonuses of up to 50%.",
+    ),
+    _plan(
+        "LIFE_MAYMAR_MUSTAKBIL", "Life Maymar Mustakbil", "SAVINGS", "Bancassurance",
+        "Long-term future-planning bancassurance savings plan — 70% first-year allocation, low "
+        "minimum premiums (PKR 25,000–50,000), a maturity payout equal to the account value, and "
+        "an optional savings booster.",
+    ),
+    _plan(
+        "LIFE_SAVE_AND_ASSURE", "Life Save And Assure", "SAVINGS", "Bancassurance",
+        "General balanced savings and life-cover bancassurance plan — high loyalty bonuses, "
+        "coverage multiples of 5–200x the premium, customizable riders, and a minimum "
+        "investment of PKR 20,000.",
+    ),
+    _plan(
+        "LIFE_TAMEER_EDUCATION", "Life Tameer Education", "CHILD_EDUCATION_MARRIAGE", "Bancassurance",
+        "Bancassurance education-savings plan tuned for university fee maturity, sold through "
+        "MCB Bank — multiple professionally managed funds, a low minimum premium of PKR 20,000, "
+        "and no policy fees.",
+        partner_bank="MCB Bank",
+    ),
+    _plan(
+        "LIFE_PARVAAZ_SAVINGS", "Life Parvaaz – Savings", "SAVINGS", "Bancassurance",
+        "Modular Parvaaz savings variant — coverage 5–200x the premium, up to 100% bonus at the "
+        "20th policy year, minimum investment PKR 20,000, entry age 18–70.",
+    ),
+    _plan(
+        "LIFE_PARVAAZ_HEALTH", "Life Parvaaz – Savings & Health", "HEALTH_CASH", "Bancassurance",
+        "Modular Parvaaz Savings & Health variant, integrating savings and life protection with "
+        "a hospitalization cash-back rider and multiple fund options.",
+    ),
+    _plan(
+        "LIFE_PARVAAZ_EDUCATION_MARRIAGE", "Life Parvaaz – Education & Marriage",
+        "CHILD_EDUCATION_MARRIAGE", "Bancassurance",
+        "Modular Parvaaz Education & Marriage variant — a one-time life-event bonus equal to the "
+        "initial basic premium after 10 policy years, a free premium-waiver rider, and 100%+ "
+        "allocation from year 6.",
+    ),
+    _plan(
+        "PASBAAN_PROTECTION_PLAN", "Pasbaan Protection Plan", "SAVINGS", "Bancassurance",
+        "Standard financial safety-net plan for Khushhali Bank clients — loyalty bonuses from "
+        "year 5, coverage 5–200x the premium, customizable riders, minimum premium PKR 175,000.",
+        partner_bank="Khushhali Bank",
+    ),
+    _plan(
+        "WASEELA_ZINDAGI", "Waseela Zindagi", "SAVINGS", "Bancassurance",
+        "Inclusive life-protection savings plan sold through Mobilink Microfinance Bank — "
+        "investment from PKR 8,000 annually, a minimum 5-year premium term, and coverage "
+        "5–200x the premium.",
+        partner_bank="Mobilink Microfinance Bank",
+    ),
+    _plan(
+        "WASEELA_ZINDAGI_PLUS", "Waseela Zindagi Plus", "SAVINGS", "Bancassurance",
+        "Enhanced Waseela Zindagi variant with a 25% loyalty bonus after year 5, a fixed 5-year "
+        "term and paying period, and coverage 5–200x the premium.",
+        partner_bank="Mobilink Microfinance Bank",
+    ),
+    _plan(
+        "ZAMANAT_SAVINGS_PLAN", "Zamanat Savings Plan", "SAVINGS", "Bancassurance",
+        "High-security savings engine sold through Khushhali Bank — annual premium from "
+        "PKR 12,000, coverage 5–200x the premium, and continuation loyalty bonuses.",
+        partner_bank="Khushhali Bank",
+    ),
+    _plan(
+        "KHIDMAT_EDUCATION_AND_MARRIAGE_PLAN", "Khidmat Education and Marriage Plan",
+        "CHILD_EDUCATION_MARRIAGE", "Bancassurance",
+        "Dedicated family goal-funding plan sold through Khushhali Bank — loyalty bonus from "
+        "year 5, coverage 5–200x the premium, policy term up to 40 years or age 80.",
+        partner_bank="Khushhali Bank",
+    ),
+    _plan(
+        "MUSTAQBIL_KI_ZAMANAT_PLAN", "Mustaqbil Ki Zamanat Plan", "TERM_LIFE", "Bancassurance",
+        "Direct monthly income-replacement plan sold through Bank Alfalah — three coverage tiers "
+        "with monthly benefits of PKR 20,000–40,000, for ages 18–59.",
+        partner_bank="Bank Alfalah",
+    ),
+    _plan(
+        "NIGRAAN", "Nigraan", "TERM_LIFE", "Bancassurance",
+        "Tiered medical and life coverage sold through Bank Alfalah in Silver, Gold, and "
+        "Platinum levels, for ages 18–59, with maximum coverage of PKR 1 million.",
+        partner_bank="Bank Alfalah",
+    ),
+
+    # ── Group (unrelated to the Adamjee retail catalog above — backs the
+    #    Organization/MasterPolicy group-insurance feature) ─────────────────
     {
         "code": "GROUP_LIFE", "label": "Group Life", "insurance_type": "GROUP_LIFE",
-        "category": "Group", "color": "indigo",
+        "category": "Group", "product_category": "Conventional", "partner_bank": None, "color": "indigo",
         "description": "A single Master Policy issued to a business, covering its staff under one contract — employees get a Certificate of Insurance, not their own individual policy. Pays out only on death during employment; no maturity/surrender value.",
         "entry_age_min": 18, "entry_age_max": 65, "entry_age_label": "Employee",
         "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 70, "max_income_multiple": 36,
@@ -143,7 +364,7 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
     },
     {
         "code": "GROUP_LIFE_SME", "label": "Group Life — SME", "insurance_type": "GROUP_LIFE",
-        "category": "Group", "color": "indigo",
+        "category": "Group", "product_category": "Conventional", "partner_bank": None, "color": "indigo",
         "description": "A group life contract sized for small businesses — a lower minimum group size and reduced sum-assured multiple, otherwise guaranteed-issue like standard Group Life.",
         "entry_age_min": 18, "entry_age_max": 60, "entry_age_label": "Employee",
         "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 65, "max_income_multiple": 24,

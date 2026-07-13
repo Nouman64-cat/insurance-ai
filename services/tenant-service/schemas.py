@@ -8,6 +8,7 @@ from shared.models.core import (
     Gender,
     InsuranceTypeEnum,
     PlanCategoryEnum,
+    ProductCategoryEnum,
     PlanStatusEnum,
 )
 
@@ -183,6 +184,9 @@ class ApplicantCreate(BaseModel):
     nationality:      str = "Pakistani"
     occupation:       str
     declared_income:  float        # annual PKR
+    is_smoker:        bool         # mandatory — pricing-relevant risk flag
+    height_cm:        float        # mandatory — pricing-relevant risk flag
+    weight_kg:        float        # mandatory — pricing-relevant risk flag
     details:          Optional[dict] = None
 
     @field_validator("cnic")
@@ -196,6 +200,20 @@ class ApplicantCreate(BaseModel):
             raise ValueError("cnic must be 13 digits or in the format XXXXX-XXXXXXX-X")
         return v
 
+    @field_validator("height_cm")
+    @classmethod
+    def height_cm_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("height_cm must be greater than 0")
+        return v
+
+    @field_validator("weight_kg")
+    @classmethod
+    def weight_kg_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("weight_kg must be greater than 0")
+        return v
+
 class ApplicantRead(BaseModel):
     id:               UUID
     tenant_id:        UUID
@@ -205,6 +223,9 @@ class ApplicantRead(BaseModel):
     gender:           Gender
     occupation:       str
     declared_income:  float
+    is_smoker:        bool
+    height_cm:        float
+    weight_kg:        float
     created_at:       datetime
     details:          Optional[dict] = None
 
@@ -220,7 +241,24 @@ class ApplicantUpdate(BaseModel):
     nationality:      Optional[str] = None
     occupation:       Optional[str] = None
     declared_income:  Optional[float] = None
+    is_smoker:        Optional[bool] = None
+    height_cm:        Optional[float] = None
+    weight_kg:        Optional[float] = None
     details:          Optional[dict] = None
+
+    @field_validator("height_cm")
+    @classmethod
+    def height_cm_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("height_cm must be greater than 0")
+        return v
+
+    @field_validator("weight_kg")
+    @classmethod
+    def weight_kg_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
+            raise ValueError("weight_kg must be greater than 0")
+        return v
 
 
 # ── Policy ────────────────────────────────────────────────────────────────────
@@ -397,6 +435,8 @@ class InsurancePlanCreate(BaseModel):
     label: str
     insurance_type: InsuranceTypeEnum
     category: PlanCategoryEnum = PlanCategoryEnum.INDIVIDUAL
+    product_category: ProductCategoryEnum = ProductCategoryEnum.CONVENTIONAL
+    partner_bank: Optional[str] = None
     status: PlanStatusEnum = PlanStatusEnum.DRAFT
     description: str = ""
     color: str = "blue"
@@ -414,6 +454,12 @@ class InsurancePlanCreate(BaseModel):
 
     min_group_size: Optional[int] = None
     underwriting_basis: Optional[str] = None
+
+    # Pricing framework — defaults are neutral (0 rate / 1.0x factor) until
+    # real rates are loaded per plan.
+    base_premium_rate: float = 0.0
+    smoker_factor: float = 1.0
+    rate_version: str = "v1"
 
     medical_exam_tiers: List[MedicalExamTierSchema] = []
     required_documents: List[str] = []
@@ -456,6 +502,8 @@ class InsurancePlanUpdate(BaseModel):
     label: Optional[str] = None
     insurance_type: Optional[InsuranceTypeEnum] = None
     category: Optional[PlanCategoryEnum] = None
+    product_category: Optional[ProductCategoryEnum] = None
+    partner_bank: Optional[str] = None
     status: Optional[PlanStatusEnum] = None
     description: Optional[str] = None
     color: Optional[str] = None
@@ -474,6 +522,10 @@ class InsurancePlanUpdate(BaseModel):
     min_group_size: Optional[int] = None
     underwriting_basis: Optional[str] = None
 
+    base_premium_rate: Optional[float] = None
+    smoker_factor: Optional[float] = None
+    rate_version: Optional[str] = None
+
     medical_exam_tiers: Optional[List[MedicalExamTierSchema]] = None
     required_documents: Optional[List[str]] = None
     is_active: Optional[bool] = None
@@ -486,6 +538,8 @@ class InsurancePlanRead(BaseModel):
     label: str
     insurance_type: InsuranceTypeEnum
     category: PlanCategoryEnum
+    product_category: ProductCategoryEnum
+    partner_bank: Optional[str]
     status: PlanStatusEnum
     description: str
     color: str
@@ -503,6 +557,10 @@ class InsurancePlanRead(BaseModel):
 
     min_group_size: Optional[int]
     underwriting_basis: Optional[str]
+
+    base_premium_rate: float
+    smoker_factor: float
+    rate_version: str
 
     medical_exam_tiers: List[MedicalExamTierSchema]
     required_documents: List[str]

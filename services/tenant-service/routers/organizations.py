@@ -211,6 +211,11 @@ async def confirm_employee_census(
             gender=row["gender"],
             occupation=row["occupation"],
             declared_income=declared_income,
+            # Group/census enrollment is guaranteed-issue — no individual medical
+            # data is collected, so these pricing-relevant fields are unknown.
+            is_smoker=bool(row.get("is_smoker", False)),
+            height_cm=float(row.get("height_cm", 170)),
+            weight_kg=float(row.get("weight_kg", 70)),
         )
         session.add(applicant)
         await session.flush()

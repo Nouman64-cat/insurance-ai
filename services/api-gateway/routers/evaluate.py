@@ -241,6 +241,12 @@ async def evaluate_stream(
                         gender=request.applicant.gender,
                         occupation=request.applicant.occupation,
                         declared_income=request.applicant.declared_income,
+                        # Live Evaluation is a quick what-if risk check, not formal
+                        # onboarding — it doesn't collect these pricing-relevant
+                        # fields, so they're recorded as unknown placeholders here.
+                        is_smoker=False,
+                        height_cm=170,
+                        weight_kg=70,
                     )
                     db.add(applicant)
                     await db.flush()

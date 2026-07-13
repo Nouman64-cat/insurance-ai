@@ -5,6 +5,12 @@ import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { useEffect, useState, useCallback, useRef } from "react";
 import api from "@/app/services/api";
+import { listQuotes } from "@/app/services/quotes";
+import { PENDING_QUOTES_STORAGE_KEY, PENDING_QUOTES_EVENT, PendingQuoteWatch } from "@/lib/pendingQuotes";
+
+// Give up watching an applicant after this many polls (~2 min at 4s/poll) —
+// they simply didn't qualify for any active plan, so no quote will ever land.
+const MAX_QUOTE_POLL_ATTEMPTS = 30;
 
 interface ToastMsg { id: number; text: string; ok: boolean }
 
@@ -144,6 +150,75 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       active = false;
       if (timerId) clearTimeout(timerId);
       window.removeEventListener("insurance_ai_new_processing", handleNewDoc);
+    };
+  }, [authChecked, isLoginPage, showToast]);
+
+  // Poll for background-generated quotations (Kafka quote worker) globally
+  // across navigation, so the toast fires no matter which page the user is on.
+  useEffect(() => {
+    if (!authChecked || isLoginPage) return;
+
+    let active = true;
+    let timerId: NodeJS.Timeout | null = null;
+
+    const readPending = (): (PendingQuoteWatch & { attempts?: number })[] => {
+      try {
+        return JSON.parse(localStorage.getItem(PENDING_QUOTES_STORAGE_KEY) || "[]");
+      } catch {
+        return [];
+      }
+    };
+
+    const poll = async () => {
+      if (!active) return;
+      const pending = readPending();
+      const tenantId = localStorage.getItem("tenant_id");
+
+      if (pending.length === 0 || !tenantId) {
+        timerId = setTimeout(poll, 4000);
+        return;
+      }
+
+      let quotedApplicantIds = new Set<string>();
+      try {
+        const quotes = await listQuotes();
+        quotedApplicantIds = new Set(quotes.map((q) => q.applicant_id));
+      } catch {
+        timerId = setTimeout(poll, 4000);
+        return;
+      }
+
+      const remaining: (PendingQuoteWatch & { attempts?: number })[] = [];
+      for (const watch of pending) {
+        if (quotedApplicantIds.has(watch.id)) {
+          showToast(`Quotation generated for ${watch.name}!`, true);
+          continue;
+        }
+        const attempts = (watch.attempts ?? 0) + 1;
+        if (attempts < MAX_QUOTE_POLL_ATTEMPTS) {
+          remaining.push({ ...watch, attempts });
+        }
+      }
+
+      if (active) {
+        localStorage.setItem(PENDING_QUOTES_STORAGE_KEY, JSON.stringify(remaining));
+      }
+
+      timerId = setTimeout(poll, 4000);
+    };
+
+    const handleNewPending = () => {
+      if (timerId) clearTimeout(timerId);
+      poll();
+    };
+
+    window.addEventListener(PENDING_QUOTES_EVENT, handleNewPending);
+    poll();
+
+    return () => {
+      active = false;
+      if (timerId) clearTimeout(timerId);
+      window.removeEventListener(PENDING_QUOTES_EVENT, handleNewPending);
     };
   }, [authChecked, isLoginPage, showToast]);
 

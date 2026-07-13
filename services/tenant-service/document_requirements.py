@@ -16,6 +16,9 @@ REQUIRED_DOCUMENTS: Dict[Tuple[str, str], List[str]] = {
     ("CHILD_EDUCATION_MARRIAGE", "Underwriting"): [
         "CNIC", "Salary Slip", "Bank Statement", "Child's Birth Certificate",
     ],
+    ("SAVINGS", "Underwriting"): ["CNIC", "Salary Slip", "Bank Statement"],
+    ("SINGLE_PREMIUM", "Underwriting"): ["CNIC", "Bank Statement"],
+    ("HEALTH_CASH", "Underwriting"): ["CNIC"],
     ("*", "Claim"): ["CNIC", "Policy Form", "Bank Statement", "Claim Form"],
     ("*", "Inquiry"): [],
 }

@@ -66,48 +66,45 @@ const NAV_ITEMS = [
   {
     group: "Underwriting",
     links: [
-      /*
-            {
-              href: "/proposals",
-              label: "Proposals",
-              icon: (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                  <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
-                  <rect x="8" y="2" width="8" height="4" rx="1" />
-                  <line x1="9" y1="12" x2="15" y2="12" /><line x1="9" y1="16" x2="13" y2="16" />
-                </svg>
-              ),
-              badge: null,
-            },
-      */
-      /*
-            {
-              href: "/medical",
-              label: "Medical Underwriting",
-              icon: (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                </svg>
-              ),
-              badge: null,
-            },
-      */
-      /*
-            {
-              href: "/corporate",
-              label: "Corporate",
-              icon: (
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-                  <path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" />
-                  <path d="M6 12H4a2 2 0 00-2 2v8h4" />
-                  <path d="M18 9h2a2 2 0 012 2v11h-4" />
-                  <line x1="10" y1="6" x2="14" y2="6" /><line x1="10" y1="10" x2="14" y2="10" />
-                  <line x1="10" y1="14" x2="14" y2="14" /><line x1="10" y1="18" x2="14" y2="18" />
-                </svg>
-              ),
-              badge: null,
-            },
-      */
+      {
+        href: "/medical",
+        label: "Medical Underwriting",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/financial",
+        label: "Financial Underwriting",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <line x1="12" y1="1" x2="12" y2="23" />
+            <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/occupational",
+        label: "Occupational Underwriting",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+            <circle cx="9" cy="7" r="4" />
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+            <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
+  {
+    group: "Documents",
+    links: [
       {
         href: "/cases",
         label: "Cases",
@@ -118,11 +115,6 @@ const NAV_ITEMS = [
         ),
         badge: "7",
       },
-    ],
-  },
-  {
-    group: "Documents",
-    links: [
       {
         href: "/artifacts",
         label: "Artifacts",
@@ -195,6 +187,17 @@ const NAV_ITEMS = [
       //   ),
       //   badge: null,
       // },
+      {
+        href: "/quote",
+        label: "Get a Quote",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <line x1="12" y1="1" x2="12" y2="23" />
+            <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+          </svg>
+        ),
+        badge: null,
+      },
       {
         href: "/live-evaluation",
         label: "Live Evaluation",
@@ -394,7 +397,11 @@ export function Sidebar() {
     .slice(0, 2)
     .toUpperCase() || "SR";
 
+<<<<<<< HEAD
   const workingHrefs = ["/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin/users", "/admin/applicants"];
+=======
+  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin/users", "/admin/applicants", "/medical", "/financial", "/occupational"];
+>>>>>>> 830aec90322fd776df2bbd3648eb882974efcc6d
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins"];
 
   const displayGroups = (userRole === "SuperAdmin"
