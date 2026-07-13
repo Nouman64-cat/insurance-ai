@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { useForm } from "react-hook-form";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listQuotes, QuoteListItem } from "../services/quotes";
+import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -20,6 +20,10 @@ function formatPKR(n: number): string {
   return `Rs. ${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
+function formatDate(s: string): string {
+  return new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function QuotePage() {
@@ -27,6 +31,32 @@ export default function QuotePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+
+  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [detail, setDetail] = useState<QuoteDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const openQuote = useCallback(async (quoteId: string) => {
+    setSelectedQuoteId(quoteId);
+    setDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    try {
+      const data = await getQuote(quoteId);
+      setDetail(data);
+    } catch (err: any) {
+      setDetailError(err.message ?? "Failed to load quotation details.");
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
+
+  const closeQuote = useCallback(() => {
+    setSelectedQuoteId(null);
+    setDetail(null);
+    setDetailError(null);
+  }, []);
 
   const fetchQuotes = useCallback(async () => {
     setError(null);
@@ -135,7 +165,11 @@ export default function QuotePage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filtered.map((row) => (
-                  <tr key={row.quote_id} className="hover:bg-slate-50 transition-colors">
+                  <tr
+                    key={row.quote_id}
+                    onClick={() => openQuote(row.quote_id)}
+                    className="hover:bg-slate-50 transition-colors cursor-pointer"
+                  >
                     <td className="px-5 py-3.5">
                       <p className="font-semibold text-slate-800">{row.applicant_name}</p>
                       <p className="text-xs text-slate-400">{row.applicant_cnic}</p>
@@ -161,6 +195,142 @@ export default function QuotePage() {
           </div>
         )}
       </div>
+
+      {selectedQuoteId && (
+        <QuoteDetailModal
+          detail={detail}
+          loading={detailLoading}
+          error={detailError}
+          onClose={closeQuote}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Detail modal ─────────────────────────────────────────────────────────────
+
+function QuoteDetailModal({
+  detail, loading, error, onClose,
+}: {
+  detail: QuoteDetail | null;
+  loading: boolean;
+  error: string | null;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center overflow-y-auto py-10 px-4"
+      onClick={onClose}
+    >
+      <div
+        className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
+          <p className="text-sm font-semibold text-slate-700">Quotation Details</p>
+          <button
+            onClick={onClose}
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+
+        {loading && (
+          <div className="py-16 flex flex-col items-center justify-center gap-2">
+            <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
+            <span className="text-xs text-slate-400">Loading details…</span>
+          </div>
+        )}
+
+        {error && (
+          <div className="p-5">
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+              <p className="text-xs font-bold text-red-700 uppercase tracking-widest mb-1">Error</p>
+              <p className="text-xs text-red-600">{error}</p>
+            </div>
+          </div>
+        )}
+
+        {detail && !loading && (
+          <div className="p-5 space-y-5">
+            {/* Headline */}
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">{detail.applicant_name}</h2>
+              <p className="text-xs text-slate-400">{detail.applicant_cnic}</p>
+            </div>
+
+            {/* Applicant */}
+            <section>
+              <SectionLabel>Applicant</SectionLabel>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <DetailField label="Date of Birth" value={`${formatDate(detail.applicant_dob)} (${detail.applicant_age} yrs)`} />
+                <DetailField label="Gender" value={detail.applicant_gender} />
+                <DetailField label="Occupation" value={detail.applicant_occupation} />
+                <DetailField label="Annual Income" value={formatPKR(detail.applicant_declared_income)} />
+                <DetailField label="Smoker" value={detail.applicant_is_smoker ? "Yes" : "No"} />
+                <DetailField
+                  label="Height / Weight"
+                  value={`${detail.applicant_height_cm} cm / ${detail.applicant_weight_kg} kg${detail.applicant_bmi ? ` (BMI ${detail.applicant_bmi})` : ""}`}
+                />
+              </div>
+            </section>
+
+            {/* Policy */}
+            <section>
+              <SectionLabel>Policy</SectionLabel>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <DetailField label="Plan" value={detail.plan_label} />
+                <DetailField label="Type" value={INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type} />
+                <DetailField label="Coverage" value={formatPKR(detail.coverage_amount)} />
+                <DetailField label="Term" value={`${detail.term_years} years`} />
+                {detail.nominee_name && <DetailField label="Nominee" value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
+                {detail.dependent_name && <DetailField label="Dependent" value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
+              </div>
+            </section>
+
+            {/* Premium breakdown */}
+            <section>
+              <SectionLabel>Premium Breakdown</SectionLabel>
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile label="Base Premium" value={formatPKR(detail.base_premium)} />
+                <StatTile label="Loading" value={formatPKR(detail.loading_applied)} />
+                <StatTile label="Total / Year" value={formatPKR(detail.total_premium)} highlight />
+              </div>
+              <p className="text-[11px] text-slate-400 mt-2">
+                Rate version {detail.rate_version} · Generated {new Date(detail.created_at).toLocaleString()}
+              </p>
+            </section>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2.5">{children}</p>;
+}
+
+function DetailField({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide mb-0.5">{label}</p>
+      <p className="text-sm text-slate-700 font-medium">{value}</p>
+    </div>
+  );
+}
+
+function StatTile({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className={`rounded-lg p-3 ${highlight ? "bg-slate-900" : "bg-slate-50"}`}>
+      <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${highlight ? "text-slate-300" : "text-slate-400"}`}>
+        {label}
+      </p>
+      <p className={`text-sm font-bold ${highlight ? "text-white" : "text-slate-800"}`}>{value}</p>
     </div>
   );
 }

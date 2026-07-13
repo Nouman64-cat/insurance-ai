@@ -14,6 +14,9 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     if (err.response?.status === 401) {
+      if (typeof window !== "undefined" && window.location.pathname === "/login") {
+        return Promise.reject(err);
+      }
       localStorage.removeItem("jwt_token");
       localStorage.removeItem("tenant_id");
       localStorage.removeItem("user_email");

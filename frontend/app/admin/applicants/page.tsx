@@ -259,10 +259,24 @@ export default function ApplicantsPage() {
         financial_burden_score: 0,
         dependency_ratio: 0
       }
+    },
+    habit_check: {
+      smoking_status: "Non-smoker",
+      alcohol_consumption_frequency: "None",
+      recreational_drug_use_history: false,
+      participates_in_extreme_sports: false,
+      extreme_sports_details: [] as string[],
+      private_aviation: false,
+      frequent_high_risk_travel: false,
+      travel_destinations: [] as string[],
+      moving_violations_past_3_years: 0,
+      dui_dwi_history: false,
+      criminal_record: false
     }
   };
 
   const [details, setDetails] = useState<typeof defaultDetails>(defaultDetails);
+  const [newDestination, setNewDestination] = useState("");
 
   // Sub-record helpers for lists
   const [newCondition, setNewCondition] = useState({ condition_name: "", severity: "Mild", diagnosis_date: "", is_chronic: false });
@@ -434,7 +448,14 @@ export default function ApplicantsPage() {
 
     // Import existing details or fill defaults
     const importedDetails = applicant.details
-      ? { ...defaultDetails, ...applicant.details }
+      ? { 
+          ...JSON.parse(JSON.stringify(defaultDetails)), 
+          ...applicant.details,
+          habit_check: {
+            ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
+            ...(applicant.details.habit_check || {})
+          }
+        }
       : JSON.parse(JSON.stringify(defaultDetails));
 
     setDetails(importedDetails);
@@ -534,7 +555,14 @@ export default function ApplicantsPage() {
   const handleOpenProfileModal = async (applicant: Applicant) => {
     setSelectedApplicant(applicant);
     const importedDetails = applicant.details
-      ? { ...defaultDetails, ...applicant.details }
+      ? { 
+          ...JSON.parse(JSON.stringify(defaultDetails)), 
+          ...applicant.details,
+          habit_check: {
+            ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
+            ...(applicant.details.habit_check || {})
+          }
+        }
       : JSON.parse(JSON.stringify(defaultDetails));
     setDetails(importedDetails);
     setViewTab("demographics");
@@ -623,6 +651,7 @@ export default function ApplicantsPage() {
     { id: "cnic", label: "CNIC & Docs" },
     { id: "employment", label: "Occupation & Income" },
     { id: "medical", label: "Medical & Lifestyle" },
+    { id: "habit_check", label: "Habit Check" },
     { id: "financial", label: "Financial Profile" },
     { id: "beneficiary", label: "Nominee Details" },
     { id: "insurance_plan", label: "Insurance Plans" }
@@ -1289,6 +1318,294 @@ export default function ApplicantsPage() {
                           <option value="VeryActive">Very Active</option>
                         </select>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4.5: Habit Check */}
+              {formTab === "habit_check" && (
+                <div className="space-y-6">
+                  {/* 1. Substance Consumption */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">Substance Consumption</h4>
+                        <p className="text-[11px] text-slate-400">Critical fields for mortality pricing & risk assessment.</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-600">Smoking Status</label>
+                        <select
+                          value={details.habit_check.smoking_status}
+                          onChange={(e) => updateField("habit_check", "smoking_status", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        >
+                          <option value="Non-smoker">Non-smoker</option>
+                          <option value="Occasional">Occasional</option>
+                          <option value="Heavy Smoker">Heavy Smoker</option>
+                          <option value="Vaper">Vaper</option>
+                          <option value="Chewing Tobacco">Chewing Tobacco</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-600">Alcohol Consumption Frequency</label>
+                        <select
+                          value={details.habit_check.alcohol_consumption_frequency}
+                          onChange={(e) => updateField("habit_check", "alcohol_consumption_frequency", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        >
+                          <option value="None">None</option>
+                          <option value="Occasional">Occasional</option>
+                          <option value="Moderate">Moderate</option>
+                          <option value="Heavy">Heavy</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.recreational_drug_use_history}
+                          onChange={(e) => updateField("habit_check", "recreational_drug_use_history", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <span>Recreational Drug Use History (Past 3-5 Years)</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Check if the applicant has used illegal or non-prescribed substances.</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 2. High-Risk Hobbies */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">High-Risk Hobbies (Avocations)</h4>
+                        <p className="text-[11px] text-slate-400">Identifies activities with high fatality rates.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.participates_in_extreme_sports}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            setDetails(prev => ({
+                              ...prev,
+                              habit_check: {
+                                ...prev.habit_check,
+                                participates_in_extreme_sports: val,
+                                extreme_sports_details: val ? prev.habit_check.extreme_sports_details : []
+                              }
+                            }));
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Participates in Extreme Sports</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Trigger flag for adventure/high-risk sports.</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.private_aviation}
+                          onChange={(e) => updateField("habit_check", "private_aviation", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Private Aviation</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Flies private aircraft or experimental planes (commercial passengers exempt).</span>
+                        </div>
+                      </label>
+                    </div>
+
+                    {details.habit_check.participates_in_extreme_sports && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
+                        <span className="text-xs font-bold text-slate-700 block">Select Extreme Sports:</span>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {["Skydiving", "Scuba Diving (past 100ft)", "Bungee Jumping", "Rock/Ice Climbing", "Motorsports/Racing"].map((sport) => {
+                            const isChecked = details.habit_check.extreme_sports_details.includes(sport);
+                            return (
+                              <label key={sport} className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    const nextList = isChecked
+                                      ? details.habit_check.extreme_sports_details.filter(s => s !== sport)
+                                      : [...details.habit_check.extreme_sports_details, sport];
+                                    updateField("habit_check", "extreme_sports_details", nextList);
+                                  }}
+                                  className="rounded text-blue-600 focus:ring-blue-500"
+                                />
+                                {sport}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Travel & Location Risks */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h2m-4-3.5a2.5 2.5 0 014 2.828v1.172c0 .417-.18.823-.495 1.109l-2.091 1.909A2.5 2.5 0 0113.5 16h-.146A2 2 0 0111.854 15.1l-.854-.854A2 2 0 0110 12.854V11H8.5a1.5 1.5 0 00-1.5 1.5v3h-.5" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">Travel & Location Risks</h4>
+                        <p className="text-[11px] text-slate-400">Underwriting travel to politically unstable or disease outbreak zones.</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.frequent_high_risk_travel}
+                          onChange={(e) => updateField("habit_check", "frequent_high_risk_travel", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Frequent High-Risk Travel</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Travel planned or taken to politically unstable regions, active war zones, or severe outbreak areas.</span>
+                        </div>
+                      </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 block">Travel Destinations (Past/Next 12 Months)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. Iraq, Somalia, Ukraine"
+                          value={newDestination}
+                          onChange={(e) => setNewDestination(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              if (newDestination.trim()) {
+                                const dest = newDestination.trim();
+                                if (!details.habit_check.travel_destinations.includes(dest)) {
+                                  updateField("habit_check", "travel_destinations", [...details.habit_check.travel_destinations, dest]);
+                                }
+                                setNewDestination("");
+                              }
+                            }
+                          }}
+                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (newDestination.trim()) {
+                              const dest = newDestination.trim();
+                              if (!details.habit_check.travel_destinations.includes(dest)) {
+                                updateField("habit_check", "travel_destinations", [...details.habit_check.travel_destinations, dest]);
+                              }
+                              setNewDestination("");
+                            }
+                          }}
+                          className="bg-blue-600 text-white font-bold text-xs px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          + Add
+                        </button>
+                      </div>
+
+                      {details.habit_check.travel_destinations.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {details.habit_check.travel_destinations.map((dest, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
+                              {dest}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  updateField("habit_check", "travel_destinations", details.habit_check.travel_destinations.filter((_, idx) => idx !== i));
+                                }}
+                                className="text-blue-500 hover:text-blue-800 font-bold"
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 4. Behavioral & Legal History */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-purple-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">Behavioral & Legal History</h4>
+                        <p className="text-[11px] text-slate-400">Assessing general recklessness & legal risks.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-600">Moving Violations (Past 3 Years)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={details.habit_check.moving_violations_past_3_years}
+                          onChange={(e) => updateField("habit_check", "moving_violations_past_3_years", parseInt(e.target.value) || 0)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        />
+                      </div>
+                      <div className="flex flex-col justify-end space-y-2">
+                        <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={details.habit_check.dui_dwi_history}
+                            onChange={(e) => updateField("habit_check", "dui_dwi_history", e.target.checked)}
+                            className="rounded text-blue-600 focus:ring-blue-500"
+                          />
+                          DUI / DWI History
+                        </label>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.criminal_record}
+                          onChange={(e) => updateField("habit_check", "criminal_record", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Criminal Record</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Check if the applicant has felony convictions or pending criminal charges.</span>
+                        </div>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -1984,6 +2301,110 @@ export default function ApplicantsPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {viewTab === "habit_check" && (
+                  <div className="space-y-8 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Habit Check Summary</h4>
+                    
+                    {/* Substance Consumption */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Substance Consumption</h5>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Smoking Status</span>
+                          <span className="text-sm font-semibold text-slate-800">{details.habit_check.smoking_status}</span>
+                        </div>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Alcohol Consumption</span>
+                          <span className="text-sm font-semibold text-slate-800">{details.habit_check.alcohol_consumption_frequency}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-semibold text-slate-500 mb-0.5">Recreational Drug Use History</span>
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.recreational_drug_use_history ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                          {details.habit_check.recreational_drug_use_history ? "Yes (Within last 3-5 years)" : "No history"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* High-Risk Hobbies */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">High-Risk Hobbies (Avocations)</h5>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Participates in Extreme Sports</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.participates_in_extreme_sports ? "bg-orange-50 text-orange-700 border border-orange-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                            {details.habit_check.participates_in_extreme_sports ? "Yes" : "No"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Private Aviation</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.private_aviation ? "bg-orange-50 text-orange-700 border border-orange-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                            {details.habit_check.private_aviation ? "Yes (Pilot/Crew)" : "No"}
+                          </span>
+                        </div>
+                      </div>
+                      {details.habit_check.participates_in_extreme_sports && details.habit_check.extreme_sports_details.length > 0 && (
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-1.5">Registered Extreme Sports</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {details.habit_check.extreme_sports_details.map((sport: string) => (
+                              <span key={sport} className="bg-orange-50 border border-orange-100 text-orange-700 text-xs px-2 py-1 rounded-full font-semibold">
+                                {sport}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Travel & Location Risks */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Travel & Location Risks</h5>
+                      <div>
+                        <span className="block text-xs font-semibold text-slate-500 mb-0.5">Frequent High-Risk Travel</span>
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.frequent_high_risk_travel ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                          {details.habit_check.frequent_high_risk_travel ? "Yes (Active risk region)" : "No"}
+                        </span>
+                      </div>
+                      {details.habit_check.travel_destinations.length > 0 && (
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-1.5">Travel Destinations (Past/Next 12 Months)</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {details.habit_check.travel_destinations.map((dest: string) => (
+                              <span key={dest} className="bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-semibold">
+                                {dest}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Behavioral & Legal History */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Behavioral & Legal History</h5>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Moving Violations (Past 3 Years)</span>
+                          <span className="text-sm font-semibold text-slate-800">{details.habit_check.moving_violations_past_3_years}</span>
+                        </div>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">DUI / DWI History</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.dui_dwi_history ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                            {details.habit_check.dui_dwi_history ? "Yes" : "No"}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-semibold text-slate-500 mb-0.5">Criminal Record</span>
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.criminal_record ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                          {details.habit_check.criminal_record ? "Yes" : "No"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
 

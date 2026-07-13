@@ -20,6 +20,10 @@ class ApplicantInput(BaseModel):
     gender: str
     occupation: str
     declared_income: float
+    is_smoker: Optional[bool] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class PolicyInput(BaseModel):

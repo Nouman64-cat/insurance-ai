@@ -165,7 +165,20 @@ async def evaluate_stream(
             detail=f"Tenant '{tenant_id}' not found. Create it first via POST /tenants.",
         )
 
+    stmt = select(Applicant).where(
+        Applicant.tenant_id == tenant_id,
+        Applicant.cnic == request.applicant.cnic,
+    )
+    existing_applicant = (await session.exec(stmt)).first()
+
     applicant_payload = request.applicant.model_dump(mode="json")
+    if existing_applicant is not None:
+        applicant_payload["is_smoker"] = existing_applicant.is_smoker
+        applicant_payload["height_cm"] = existing_applicant.height_cm
+        applicant_payload["weight_kg"] = existing_applicant.weight_kg
+        if existing_applicant.details:
+            applicant_payload["details"] = existing_applicant.details
+
     policy_payload = request.policy.model_dump(mode="json")
 
     async def generate():

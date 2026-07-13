@@ -123,6 +123,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Medium"
             },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Heavy Smoker",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
+            },
             "financial_records": {
                 "tax_records": [],
                 "bank_statement": {
@@ -223,6 +243,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "exercise_frequency": "Active", "diet_type": "Balanced",
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
+            },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Non-smoker",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": True,
+                    "extreme_sports_details": ["Rock/Ice Climbing"],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
             },
             "financial_records": {
                 "tax_records": [],
@@ -331,6 +371,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
             },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Non-smoker",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": True,
+                    "has_dui_history": False
+                }
+            },
             "financial_records": {
                 "tax_records": [],
                 "bank_statement": {
@@ -433,6 +493,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
             },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Non-smoker",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
+            },
             "financial_records": {
                 "tax_records": [],
                 "bank_statement": {
@@ -532,6 +612,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "exercise_frequency": "Light", "diet_type": "Regular",
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
+            },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Non-smoker",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
             },
             "financial_records": {
                 "tax_records": [],
@@ -638,6 +738,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
             },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Occasional",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": True,
+                    "high_risk_travel_destinations": "Afghanistan border regions (business)"
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
+            },
             "financial_records": {
                 "tax_records": [],
                 "bank_statement": {
@@ -738,6 +858,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "exercise_frequency": "Sedentary", "diet_type": "Regular",
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
+            },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Vaper",
+                    "alcohol_consumption_frequency": "Occasional",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
             },
             "financial_records": {
                 "tax_records": [],
@@ -845,6 +985,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
             },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Non-smoker",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
+            },
             "financial_records": {
                 "tax_records": [],
                 "bank_statement": {
@@ -945,6 +1105,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "exercise_frequency": "Moderate", "diet_type": "Balanced",
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
+            },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Non-smoker",
+                    "alcohol_consumption_frequency": "Occasional",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": True,
+                    "extreme_sports_details": ["Skydiving"],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
             },
             "financial_records": {
                 "tax_records": [],
@@ -1048,6 +1228,26 @@ APPLICANT_SEED_DATA: list[dict] = [
                 "exercise_frequency": "Moderate", "diet_type": "Balanced",
                 "has_hazardous_hobby": False, "hazardous_hobby_details": "",
                 "occupation_hazard_level": "Low"
+            },
+            "habit_check": {
+                "substance_consumption": {
+                    "smoking_status": "Non-smoker",
+                    "alcohol_consumption_frequency": "None",
+                    "recreational_drug_use_history": False
+                },
+                "high_risk_hobbies": {
+                    "participates_in_extreme_sports": False,
+                    "extreme_sports_details": [],
+                    "private_aviation": False
+                },
+                "travel_location_risks": {
+                    "frequent_high_risk_travel": False,
+                    "high_risk_travel_destinations": ""
+                },
+                "driving_legal_history": {
+                    "driving_violations_history": False,
+                    "has_dui_history": False
+                }
             },
             "financial_records": {
                 "tax_records": [],

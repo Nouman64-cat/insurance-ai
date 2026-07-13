@@ -13,7 +13,8 @@ export interface Applicant {
 export interface CaseItem {
   caseld: string;
   caseNumber: string;
-  status: string;
+  status?: string;
+  caseStatus?: string;
 }
 
 export interface Artifact {

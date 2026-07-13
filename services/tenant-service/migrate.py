@@ -450,13 +450,15 @@ async def run_migrations() -> None:
         await conn.commit()
         log.info("create_all complete")
 
-        # 2. Apply column / index changes to existing tables.
-        for label, sql in MIGRATIONS:
+    # 2. Apply column / index changes to existing tables in individual transactions.
+    for label, sql in MIGRATIONS:
+        async with _engine.begin() as conn:
             await conn.execute(text(sql))
             await conn.commit()
             log.info("applied: %s", label)
 
-        # 3. Seed user types.
+    # 3. Seed user types.
+    async with _engine.begin() as conn:
         await _seed_user_types(conn)
         await conn.commit()
         log.info("seed_user_types complete")
