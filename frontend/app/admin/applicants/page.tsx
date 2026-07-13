@@ -91,6 +91,18 @@ export default function ApplicantsPage() {
   const [policyDependentName, setPolicyDependentName] = useState("");
   const [policyDependentDob, setPolicyDependentDob] = useState("");
 
+  // Applicant policies (view + edit modals)
+  const [applicantPolicies, setApplicantPolicies] = useState<Policy[]>([]);
+  const [viewPoliciesLoading, setViewPoliciesLoading] = useState(false);
+  // Edit modal — adding a new policy
+  const [editSelectedPlanId, setEditSelectedPlanId] = useState<string>("");
+  const [editPolicyCoverage, setEditPolicyCoverage] = useState("");
+  const [editPolicyTerm, setEditPolicyTerm] = useState("");
+  const [editPolicyDependentName, setEditPolicyDependentName] = useState("");
+  const [editPolicyDependentDob, setEditPolicyDependentDob] = useState("");
+  const [editAddingPolicy, setEditAddingPolicy] = useState(false);
+  const [editPolicyLoading, setEditPolicyLoading] = useState(false);
+
   // Extended sections (18 sections matching PDF Spec)
   const defaultDetails = {
     cnic_metadata: {
@@ -372,7 +384,7 @@ export default function ApplicantsPage() {
     }
   };
 
-  const handleOpenEditModal = (applicant: Applicant) => {
+  const handleOpenEditModal = async (applicant: Applicant) => {
     setSelectedApplicant(applicant);
     setCnic(applicant.cnic);
     const parts = applicant.name.split(" ");
@@ -392,6 +404,33 @@ export default function ApplicantsPage() {
     setFormTab("demographics");
     setError("");
     setSuccess("");
+
+    // Reset edit-policy add form
+    setEditSelectedPlanId("");
+    setEditPolicyCoverage("");
+    setEditPolicyTerm("");
+    setEditPolicyDependentName("");
+    setEditPolicyDependentDob("");
+    setEditAddingPolicy(false);
+
+    // Fetch existing policies
+    const tenantId = localStorage.getItem("tenant_id");
+    if (tenantId) {
+      setViewPoliciesLoading(true);
+      try {
+        const [polRes, plansRes] = await Promise.all([
+          api.get(`/tenants/${tenantId}/applicants/${applicant.id}/policies`),
+          listInsurancePlans(tenantId),
+        ]);
+        setApplicantPolicies(polRes.data ?? []);
+        setAvailablePlans((plansRes ?? []).filter((p: InsurancePlan) => p.status === "Active"));
+      } catch {
+        setApplicantPolicies([]);
+      } finally {
+        setViewPoliciesLoading(false);
+      }
+    }
+
     setShowEditModal(true);
   };
 
@@ -453,7 +492,7 @@ export default function ApplicantsPage() {
     }
   };
 
-  const handleOpenProfileModal = (applicant: Applicant) => {
+  const handleOpenProfileModal = async (applicant: Applicant) => {
     setSelectedApplicant(applicant);
     const importedDetails = applicant.details
       ? { ...defaultDetails, ...applicant.details }
@@ -461,6 +500,20 @@ export default function ApplicantsPage() {
     setDetails(importedDetails);
     setViewTab("demographics");
     setShowProfileModal(true);
+
+    // Fetch this applicant's policies
+    const tenantId = localStorage.getItem("tenant_id");
+    if (tenantId) {
+      setViewPoliciesLoading(true);
+      try {
+        const res = await api.get(`/tenants/${tenantId}/applicants/${applicant.id}/policies`);
+        setApplicantPolicies(res.data ?? []);
+      } catch {
+        setApplicantPolicies([]);
+      } finally {
+        setViewPoliciesLoading(false);
+      }
+    }
   };
 
   // BMI calculator
@@ -532,13 +585,11 @@ export default function ApplicantsPage() {
     { id: "employment", label: "Occupation & Income" },
     { id: "medical", label: "Medical & Lifestyle" },
     { id: "financial", label: "Financial Profile" },
-    { id: "beneficiary", label: "Nominee Details" }
+    { id: "beneficiary", label: "Nominee Details" },
+    { id: "insurance_plan", label: "Insurance Plans" }
   ];
 
-  const createTabs = [
-    ...tabs,
-    { id: "insurance_plan", label: "Insurance Plan" }
-  ];
+  const createTabs = tabs;
 
   const PLAN_TYPE_COLORS: Record<string, string> = {
     TERM_LIFE: "border-blue-400 bg-blue-50",
@@ -1343,6 +1394,221 @@ export default function ApplicantsPage() {
                 </div>
               )}
 
+              {/* TAB 7: Insurance Plans (edit modal) */}
+              {formTab === "insurance_plan" && showEditModal && (
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Insurance Plans</h4>
+                    <p className="text-xs text-slate-400 mb-5">Existing policies for this applicant. You can assign an additional plan below.</p>
+
+                    {/* Existing policies */}
+                    {viewPoliciesLoading ? (
+                      <div className="flex items-center gap-2 py-6 justify-center">
+                        <div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" />
+                        <span className="text-xs text-slate-400">Loading policies...</span>
+                      </div>
+                    ) : applicantPolicies.length === 0 ? (
+                      <div className="text-center py-8 text-sm text-slate-400 italic">No policies assigned yet.</div>
+                    ) : (
+                      <div className="space-y-3 mb-6">
+                        {applicantPolicies.map((pol) => {
+                          const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
+                          const textClass  = PLAN_TYPE_TEXT[pol.insurance_type]  ?? "text-slate-700";
+                          return (
+                            <div key={pol.id} className={`border-l-4 rounded-xl p-4 ${colorClass}`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <p className={`text-sm font-bold ${textClass}`}>{pol.product_name}</p>
+                                  <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
+                                    {INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type}
+                                  </p>
+                                </div>
+                                <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70`}>{pol.term_years} yr</span>
+                              </div>
+                              <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Coverage</span>
+                                  <span className="font-bold text-slate-800">PKR {pol.coverage_amount.toLocaleString()}</span>
+                                </div>
+                                <div>
+                                  <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Assigned</span>
+                                  <span className="text-slate-600">{new Date(pol.created_at).toLocaleDateString()}</span>
+                                </div>
+                                {pol.dependent_name && (
+                                  <div className="col-span-2">
+                                    <span className="block text-[10px] font-bold text-slate-400 uppercase mb-0.5">Dependent</span>
+                                    <span className="text-slate-600">{pol.dependent_name} · {pol.dependent_dob}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Add new policy toggle */}
+                    {!editAddingPolicy ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditAddingPolicy(true)}
+                        className="w-full py-3 border-2 border-dashed border-slate-200 rounded-xl text-xs font-semibold text-slate-500 hover:border-blue-300 hover:text-blue-600 transition-colors"
+                      >
+                        + Assign New Insurance Plan
+                      </button>
+                    ) : (
+                      <div className="border border-slate-200 rounded-xl p-5 space-y-5 bg-slate-50">
+                        <div className="flex items-center justify-between">
+                          <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Assign New Plan</h5>
+                          <button type="button" onClick={() => { setEditAddingPolicy(false); setEditSelectedPlanId(""); }} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                        </div>
+
+                        {availablePlans.length === 0 ? (
+                          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-700 font-medium">
+                            No active plans found. Create plans from the Insurance Plans page first.
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {availablePlans.map((plan) => {
+                              const isSelected = editSelectedPlanId === plan.id;
+                              const colorClass = PLAN_TYPE_COLORS[plan.insurance_type] ?? "border-slate-200 bg-white";
+                              const textClass  = PLAN_TYPE_TEXT[plan.insurance_type]  ?? "text-slate-700";
+                              return (
+                                <button
+                                  key={plan.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setEditSelectedPlanId(isSelected ? "" : plan.id);
+                                    if (!isSelected) {
+                                      setEditPolicyCoverage("");
+                                      setEditPolicyTerm(String(plan.term_min_years));
+                                    }
+                                  }}
+                                  className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
+                                    isSelected
+                                      ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
+                                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                                  }`}
+                                >
+                                  {isSelected && (
+                                    <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500 text-white text-[9px] font-bold">✓</span>
+                                  )}
+                                  <p className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}>{plan.label}</p>
+                                  <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
+                                    {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
+                                  </p>
+                                  <div className="flex gap-3 mt-2 text-[10px] font-semibold text-slate-500">
+                                    <span>Age {plan.entry_age_min}–{plan.entry_age_max}</span>
+                                    <span>·</span>
+                                    <span>Term {plan.term_min_years}–{plan.term_max_years} yrs</span>
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {editSelectedPlanId && (() => {
+                          const plan = availablePlans.find((p) => p.id === editSelectedPlanId);
+                          if (!plan) return null;
+                          return (
+                            <div className="space-y-4 pt-2">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                  <label className="text-xs font-semibold text-slate-600">Coverage Amount (PKR) *</label>
+                                  <input
+                                    type="number" min={0}
+                                    value={editPolicyCoverage}
+                                    onChange={(e) => setEditPolicyCoverage(e.target.value)}
+                                    placeholder="e.g. 5000000"
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                  />
+                                  <p className="text-[10px] text-slate-400">Max {plan.max_income_multiple}× declared income</p>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-xs font-semibold text-slate-600">Policy Term (Years) *</label>
+                                  <input
+                                    type="number"
+                                    min={plan.term_min_years} max={plan.term_max_years}
+                                    value={editPolicyTerm}
+                                    onChange={(e) => setEditPolicyTerm(e.target.value)}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                  />
+                                  <p className="text-[10px] text-slate-400">Range: {plan.term_min_years}–{plan.term_max_years} yrs</p>
+                                </div>
+                              </div>
+                              {plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                  <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-600">Dependent Name</label>
+                                    <input
+                                      type="text"
+                                      value={editPolicyDependentName}
+                                      onChange={(e) => setEditPolicyDependentName(e.target.value)}
+                                      placeholder="Child's full name"
+                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                  <div className="space-y-1">
+                                    <label className="text-xs font-semibold text-slate-600">Dependent Date of Birth</label>
+                                    <input
+                                      type="date"
+                                      value={editPolicyDependentDob}
+                                      onChange={(e) => setEditPolicyDependentDob(e.target.value)}
+                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+                              <button
+                                type="button"
+                                disabled={editPolicyLoading || !editPolicyCoverage || !editPolicyTerm}
+                                onClick={async () => {
+                                  const tenantId = localStorage.getItem("tenant_id");
+                                  if (!tenantId || !selectedApplicant) return;
+                                  setEditPolicyLoading(true);
+                                  try {
+                                    const payload: any = {
+                                      plan_id: editSelectedPlanId,
+                                      product_name: plan.label,
+                                      insurance_type: plan.insurance_type,
+                                      coverage_amount: parseFloat(editPolicyCoverage),
+                                      term_years: parseInt(editPolicyTerm),
+                                    };
+                                    if (plan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
+                                      payload.dependent_name = editPolicyDependentName || null;
+                                      payload.dependent_dob  = editPolicyDependentDob  || null;
+                                    }
+                                    await api.post(`/tenants/${tenantId}/applicants/${selectedApplicant.id}/policies`, payload);
+                                    // Refresh list
+                                    const res = await api.get(`/tenants/${tenantId}/applicants/${selectedApplicant.id}/policies`);
+                                    setApplicantPolicies(res.data ?? []);
+                                    setEditAddingPolicy(false);
+                                    setEditSelectedPlanId("");
+                                    setEditPolicyCoverage("");
+                                    setEditPolicyTerm("");
+                                    setEditPolicyDependentName("");
+                                    setEditPolicyDependentDob("");
+                                    setSuccess("Policy assigned successfully!");
+                                  } catch (err: any) {
+                                    setError(err.response?.data?.detail ?? "Failed to assign policy.");
+                                  } finally {
+                                    setEditPolicyLoading(false);
+                                  }
+                                }}
+                                className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 rounded-lg transition-colors"
+                              >
+                                {editPolicyLoading ? "Assigning..." : "Confirm & Assign Policy"}
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* TAB 7: Insurance Plan (create only) */}
               {formTab === "insurance_plan" && showCreateModal && (
                 <div className="space-y-6">
@@ -1704,6 +1970,61 @@ export default function ApplicantsPage() {
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Share Percentage</span><span className="text-sm font-bold text-slate-800">{details.beneficiary.share_percentage}%</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">CNIC</span><span className="text-sm font-mono text-slate-800">{details.beneficiary.cnic_number || "-"}</span></div>
                     </div>
+                  </div>
+                )}
+
+                {viewTab === "insurance_plan" && (
+                  <div className="space-y-5 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Insurance Plans</h4>
+                    {viewPoliciesLoading ? (
+                      <div className="flex items-center justify-center py-12">
+                        <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : applicantPolicies.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-14 text-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-2xl">📋</div>
+                        <p className="text-sm font-semibold text-slate-500">No policies assigned yet.</p>
+                        <p className="text-xs text-slate-400">Use the Edit Profile to add an insurance plan.</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-3">
+                        {applicantPolicies.map((pol) => {
+                          const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
+                          const textClass  = PLAN_TYPE_TEXT[pol.insurance_type]  ?? "text-slate-700";
+                          return (
+                            <div key={pol.id} className={`border-l-4 rounded-xl p-5 ${colorClass}`}>
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm font-bold ${textClass}`}>{pol.product_name}</p>
+                                  <p className="text-xs text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
+                                    {INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type}
+                                  </p>
+                                </div>
+                                <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70 border border-current/20`}>
+                                  {pol.term_years} yr
+                                </span>
+                              </div>
+                              <div className="mt-4 grid grid-cols-2 gap-3">
+                                <div>
+                                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Coverage</span>
+                                  <span className="text-sm font-bold text-slate-800">PKR {pol.coverage_amount.toLocaleString()}</span>
+                                </div>
+                                <div>
+                                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Since</span>
+                                  <span className="text-sm font-medium text-slate-600">{new Date(pol.created_at).toLocaleDateString()}</span>
+                                </div>
+                                {pol.dependent_name && (
+                                  <div className="col-span-2">
+                                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Dependent</span>
+                                    <span className="text-sm font-medium text-slate-600">{pol.dependent_name} · {pol.dependent_dob}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
 
