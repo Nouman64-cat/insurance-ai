@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import api from "../services/api";
 import { InsurancePlan, listInsurancePlans } from "../services/insurancePlans";
+import { CNIC_PATTERN, formatCnic } from "@/lib/cnic";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ export default function QuotePage() {
             <section>
               <SectionLabel>Applicant</SectionLabel>
               <div className="space-y-3">
-                <InputField label="CNIC" placeholder="35201-1234567-1" value={form.cnic} onChange={(v) => setField("cnic", v)} />
+                <InputField label="CNIC" placeholder="35201-1234567-1" value={form.cnic} onChange={(v) => setField("cnic", formatCnic(v))} inputMode="numeric" maxLength={15} pattern={CNIC_PATTERN} title="Format: 35201-1234567-1" />
                 <InputField label="Full Name" placeholder="Muhammad Ali Khan" value={form.name} onChange={(v) => setField("name", v)} />
                 <InputField label="Date of Birth" type="date" value={form.dob} onChange={(v) => setField("dob", v)} />
                 <div>
@@ -335,13 +336,17 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function InputField({
-  label, type = "text", placeholder, value, onChange,
+  label, type = "text", placeholder, value, onChange, inputMode, maxLength, pattern, title,
 }: {
   label: string;
   type?: string;
   placeholder?: string;
   value: string;
   onChange: (v: string) => void;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  maxLength?: number;
+  pattern?: string;
+  title?: string;
 }) {
   return (
     <div>
@@ -352,6 +357,10 @@ function InputField({
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        inputMode={inputMode}
+        maxLength={maxLength}
+        pattern={pattern}
+        title={title}
         className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
       />
     </div>
