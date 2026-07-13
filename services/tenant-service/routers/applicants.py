@@ -7,7 +7,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from schemas import ApplicantCreate, ApplicantRead, ApplicantUpdate, PolicyRead
 from shared.events.kafka_events import APPLICANT_CREATED_TOPIC, ApplicantCreatedEvent, ApplicantCreatedPayload
-from shared.models.core import Applicant, Policy, Tenant
+from shared.models.core import Applicant, Policy, RiskAssessment, Tenant
 from routers.users import verify_admin   # reuse existing Admin guard
 
 logger = logging.getLogger("tenant-service.applicants")
@@ -176,6 +176,20 @@ async def delete_applicant(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Applicant not found"
         )
+    # Delete related risk assessments first (FK → applicant_id)
+    assessments = (await session.exec(
+        select(RiskAssessment).where(RiskAssessment.applicant_id == applicant_id)
+    )).all()
+    for a in assessments:
+        await session.delete(a)
+
+    # Delete related policies (FK → applicant_id is NOT NULL — must go before applicant)
+    policies = (await session.exec(
+        select(Policy).where(Policy.applicant_id == applicant_id)
+    )).all()
+    for p in policies:
+        await session.delete(p)
+
     await session.delete(applicant)
     await session.commit()
     return None
