@@ -265,6 +265,29 @@ class QuoteListItem(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /quotes/{quote_id} — full detail behind a single quotation row
+# ─────────────────────────────────────────────────────────────────────────────
+
+class QuoteDetail(QuoteListItem):
+    # Applicant — full risk profile, not just name/CNIC
+    applicant_dob: date
+    applicant_age: int
+    applicant_gender: Gender
+    applicant_occupation: str
+    applicant_declared_income: float
+    applicant_is_smoker: bool
+    applicant_height_cm: float
+    applicant_weight_kg: float
+    applicant_bmi: Optional[float] = None
+
+    # Policy — beneficiary / dependent details, when set
+    nominee_name: Optional[str] = None
+    nominee_relationship: Optional[str] = None
+    dependent_name: Optional[str] = None
+    dependent_dob: Optional[date] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Async / Kafka response
 # ─────────────────────────────────────────────────────────────────────────────
 

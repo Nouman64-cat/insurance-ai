@@ -24,7 +24,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from dependencies import get_tenant_id
-from schemas import QuoteListItem, QuoteRequest, QuoteResponse
+from schemas import QuoteDetail, QuoteListItem, QuoteRequest, QuoteResponse
 from shared.models.core import Applicant, InsurancePlan, InsuranceTypeEnum, Policy, PremiumQuote, Tenant
 from shared.pricing.calculator import calculate_premium
 
@@ -68,6 +68,66 @@ async def list_quotes(
         )
         for quote, policy, applicant in rows
     ]
+
+
+@router.get(
+    "/quotes/{quote_id}",
+    response_model=QuoteDetail,
+    summary="Get full detail (applicant + policy + premium breakdown) for a single quotation",
+)
+async def get_quote_detail(
+    quote_id: UUID,
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+) -> QuoteDetail:
+    stmt = (
+        select(PremiumQuote, Policy, Applicant)
+        .join(Policy, PremiumQuote.policy_id == Policy.id)
+        .join(Applicant, Policy.applicant_id == Applicant.id)
+        .where(PremiumQuote.id == quote_id, PremiumQuote.tenant_id == tenant_id)
+    )
+    row = (await session.exec(stmt)).first()
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Quote '{quote_id}' not found for this tenant.",
+        )
+    quote, policy, applicant = row
+
+    bmi: float | None = None
+    if applicant.height_cm > 0:
+        height_m = applicant.height_cm / 100
+        bmi = round(applicant.weight_kg / (height_m * height_m), 1)
+
+    return QuoteDetail(
+        quote_id=quote.id,
+        applicant_id=applicant.id,
+        applicant_name=applicant.name,
+        applicant_cnic=applicant.cnic,
+        policy_id=policy.id,
+        plan_label=policy.product_name,
+        insurance_type=policy.insurance_type,
+        coverage_amount=policy.coverage_amount,
+        term_years=policy.term_years,
+        base_premium=quote.base_premium,
+        loading_applied=quote.loading_applied,
+        total_premium=quote.total_premium,
+        rate_version=quote.rate_version,
+        created_at=quote.created_at,
+        applicant_dob=applicant.dob,
+        applicant_age=_age_from_dob(applicant.dob),
+        applicant_gender=applicant.gender,
+        applicant_occupation=applicant.occupation,
+        applicant_declared_income=applicant.declared_income,
+        applicant_is_smoker=applicant.is_smoker,
+        applicant_height_cm=applicant.height_cm,
+        applicant_weight_kg=applicant.weight_kg,
+        applicant_bmi=bmi,
+        nominee_name=policy.nominee_name,
+        nominee_relationship=policy.nominee_relationship,
+        dependent_name=policy.dependent_name,
+        dependent_dob=policy.dependent_dob,
+    )
 
 
 def _age_from_dob(dob: date) -> int:
