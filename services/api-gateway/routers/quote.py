@@ -24,11 +24,50 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from dependencies import get_tenant_id
-from schemas import QuoteRequest, QuoteResponse
+from schemas import QuoteListItem, QuoteRequest, QuoteResponse
 from shared.models.core import Applicant, InsurancePlan, InsuranceTypeEnum, Policy, PremiumQuote, Tenant
 from shared.pricing.calculator import calculate_premium
 
 router = APIRouter(tags=["Quotation"])
+
+
+@router.get(
+    "/quotes",
+    response_model=list[QuoteListItem],
+    summary="List all generated quotations for this tenant (manual + auto-generated)",
+)
+async def list_quotes(
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+) -> list[QuoteListItem]:
+    stmt = (
+        select(PremiumQuote, Policy, Applicant)
+        .join(Policy, PremiumQuote.policy_id == Policy.id)
+        .join(Applicant, Policy.applicant_id == Applicant.id)
+        .where(PremiumQuote.tenant_id == tenant_id)
+        .order_by(PremiumQuote.created_at.desc())
+    )
+    rows = (await session.exec(stmt)).all()
+
+    return [
+        QuoteListItem(
+            quote_id=quote.id,
+            applicant_id=applicant.id,
+            applicant_name=applicant.name,
+            applicant_cnic=applicant.cnic,
+            policy_id=policy.id,
+            plan_label=policy.product_name,
+            insurance_type=policy.insurance_type,
+            coverage_amount=policy.coverage_amount,
+            term_years=policy.term_years,
+            base_premium=quote.base_premium,
+            loading_applied=quote.loading_applied,
+            total_premium=quote.total_premium,
+            rate_version=quote.rate_version,
+            created_at=quote.created_at,
+        )
+        for quote, policy, applicant in rows
+    ]
 
 
 def _age_from_dob(dob: date) -> int:

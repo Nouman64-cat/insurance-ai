@@ -8,6 +8,7 @@ Responsibilities:
   - Routing POST /evaluate to the underwriting router.
 """
 
+import asyncio
 import json
 import os
 import httpx
@@ -22,6 +23,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from database import create_db_and_tables
 from kafka_producer import create_producer
+from quote_worker import start_quote_worker
 from routers.evaluate import router as evaluate_router
 from routers.quote import router as quote_router
 from schemas import (
@@ -42,7 +44,16 @@ from schemas import (
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
     app.state.kafka_producer = await create_producer()
+
+    # Quote worker — background asyncio task, generates quotations for newly
+    # created applicants (see quote_worker.py).
+    stop_event = asyncio.Event()
+    worker_task = start_quote_worker(stop_event)
+
     yield
+
+    stop_event.set()
+    await worker_task
     await app.state.kafka_producer.stop()
 
 

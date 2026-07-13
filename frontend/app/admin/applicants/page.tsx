@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
+import { registerPendingQuote } from "@/lib/pendingQuotes";
 
 interface Applicant {
   id: string;
@@ -379,6 +380,7 @@ export default function ApplicantsPage() {
 
       setSuccess("Applicant registered successfully with full diagnostic profile!");
       setShowCreateModal(false);
+      registerPendingQuote(applicantResp.data.id, applicantResp.data.name);
       fetchApplicants();
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to register applicant.");

@@ -244,6 +244,27 @@ class QuoteResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# GET /quotes — tenant-wide list of generated quotations (manual + auto)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class QuoteListItem(BaseModel):
+    quote_id: UUID
+    applicant_id: UUID
+    applicant_name: str
+    applicant_cnic: str
+    policy_id: UUID
+    plan_label: str
+    insurance_type: InsuranceTypeEnum
+    coverage_amount: float
+    term_years: int
+    base_premium: float
+    loading_applied: float
+    total_premium: float
+    rate_version: str
+    created_at: datetime
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Async / Kafka response
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -19,13 +19,20 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
+import os
 from datetime import date
+from typing import Optional
 from uuid import UUID
 
+from aiokafka import AIOKafkaProducer
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
+from shared.events.kafka_events import APPLICANT_CREATED_TOPIC, ApplicantCreatedEvent, ApplicantCreatedPayload
 from shared.models.core import Applicant, Policy, Tenant
+
+logger = logging.getLogger("tenant-service.seeds.applicants")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1075,11 +1082,48 @@ APPLICANT_SEED_DATA: list[dict] = [
 # Core seed function
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def seed_applicants(session: AsyncSession, tenant_id: UUID) -> list[Applicant]:
+async def _publish_applicant_created(producer: AIOKafkaProducer, tenant_id: UUID, applicant: Applicant) -> None:
+    """Mirrors routers/applicants.py::create_applicant so seeded applicants
+    trigger the same background quote-generation job (see quote_worker.py in
+    api-gateway) that a real POST /applicants call does."""
+    event = ApplicantCreatedEvent(
+        tenant_id=tenant_id,
+        payload=ApplicantCreatedPayload(
+            applicant_id=applicant.id,
+            cnic=applicant.cnic,
+            name=applicant.name,
+            dob=str(applicant.dob),
+            gender=applicant.gender.value,
+            occupation=applicant.occupation,
+            declared_income=applicant.declared_income,
+            is_smoker=applicant.is_smoker,
+            height_cm=applicant.height_cm,
+            weight_kg=applicant.weight_kg,
+        ),
+    )
+    try:
+        await producer.send_and_wait(
+            APPLICANT_CREATED_TOPIC,
+            value=event.model_dump_json(),
+            key=str(tenant_id),
+        )
+    except Exception:
+        logger.exception("Failed to publish ApplicantCreated event | applicant_id=%s", applicant.id)
+
+
+async def seed_applicants(
+    session: AsyncSession,
+    tenant_id: UUID,
+    producer: Optional[AIOKafkaProducer] = None,
+) -> list[Applicant]:
     """Insert 10 applicants (+ one policy each) for a single tenant.
 
     Idempotent — skips any CNIC already registered for this tenant.
     Commits once at the end; returns the Applicant rows actually created.
+
+    When `producer` is given, publishes ApplicantCreated to Kafka for each
+    newly created applicant — same background quote-generation trigger a real
+    POST /tenants/{id}/applicants call fires.
     """
     existing_result = await session.exec(
         select(Applicant.cnic).where(Applicant.tenant_id == tenant_id)
@@ -1134,6 +1178,10 @@ async def seed_applicants(session: AsyncSession, tenant_id: UUID) -> list[Applic
     for a in created:
         await session.refresh(a)
 
+    if producer is not None:
+        for a in created:
+            await _publish_applicant_created(producer, tenant_id, a)
+
     return created
 
 
@@ -1144,27 +1192,41 @@ async def seed_applicants(session: AsyncSession, tenant_id: UUID) -> list[Applic
 async def _run(tenant_id: UUID | None, all_tenants: bool) -> None:
     from database import _session_factory  # lazy import — avoids DB engine at module load
 
-    async with _session_factory() as session:
-        if all_tenants:
-            tenants = list((await session.exec(select(Tenant))).all())
-            if not tenants:
-                print("No tenants found — nothing to seed.")
-                return
-        else:
-            tenant = await session.get(Tenant, tenant_id)
-            if tenant is None:
-                raise SystemExit(f"Tenant '{tenant_id}' not found.")
-            tenants = [tenant]
+    kafka_bootstrap = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
+    producer = AIOKafkaProducer(
+        bootstrap_servers=kafka_bootstrap,
+        value_serializer=lambda v: v.encode("utf-8"),
+        key_serializer=lambda k: k.encode("utf-8") if k else None,
+        acks="all",
+        enable_idempotence=True,
+    )
+    await producer.start()
 
-        for tenant in tenants:
-            created = await seed_applicants(session, tenant.id)
-            skipped = len(APPLICANT_SEED_DATA) - len(created)
-            print(
-                f"[{tenant.name}] {tenant.id}: "
-                f"created {len(created)} applicant(s) ({skipped} already present)"
-            )
-            for a in created:
-                print(f"  ✓ {a.name}")
+    try:
+        async with _session_factory() as session:
+            if all_tenants:
+                tenants = list((await session.exec(select(Tenant))).all())
+                if not tenants:
+                    print("No tenants found — nothing to seed.")
+                    return
+            else:
+                tenant = await session.get(Tenant, tenant_id)
+                if tenant is None:
+                    raise SystemExit(f"Tenant '{tenant_id}' not found.")
+                tenants = [tenant]
+
+            for tenant in tenants:
+                created = await seed_applicants(session, tenant.id, producer)
+                skipped = len(APPLICANT_SEED_DATA) - len(created)
+                print(
+                    f"[{tenant.name}] {tenant.id}: "
+                    f"created {len(created)} applicant(s) ({skipped} already present) "
+                    f"— quote worker notified in the background"
+                )
+                for a in created:
+                    print(f"  ✓ {a.name}")
+    finally:
+        await producer.stop()
 
 
 def main() -> None:
