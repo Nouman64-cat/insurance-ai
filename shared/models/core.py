@@ -30,11 +30,22 @@ class InsuranceTypeEnum(str, Enum):
     ENDOWMENT = "ENDOWMENT"
     CHILD_EDUCATION_MARRIAGE = "CHILD_EDUCATION_MARRIAGE"
     GROUP_LIFE = "GROUP_LIFE"
+    SAVINGS = "SAVINGS"
+    SINGLE_PREMIUM = "SINGLE_PREMIUM"
+    HEALTH_CASH = "HEALTH_CASH"
 
 
 class PlanCategoryEnum(str, Enum):
     INDIVIDUAL = "Individual"
     GROUP = "Group"
+
+
+class ProductCategoryEnum(str, Enum):
+    """Business/distribution channel a plan is sold through — orthogonal to
+    PlanCategoryEnum (Individual/Group, the underwriting axis)."""
+    CONVENTIONAL = "Conventional"
+    TAKAFUL = "Takaful"
+    BANCASSURANCE = "Bancassurance"
 
 
 class PlanStatusEnum(str, Enum):
@@ -468,6 +479,8 @@ class InsurancePlan(SQLModel, table=True):
     label: str = Field(max_length=255)                           # e.g. "Term Life"
     insurance_type: InsuranceTypeEnum = Field(max_length=50)
     category: PlanCategoryEnum = Field(default=PlanCategoryEnum.INDIVIDUAL, max_length=50)
+    product_category: ProductCategoryEnum = Field(default=ProductCategoryEnum.CONVENTIONAL, max_length=50)
+    partner_bank: Optional[str] = Field(default=None, max_length=255)  # set for Bancassurance plans
     status: PlanStatusEnum = Field(default=PlanStatusEnum.DRAFT, max_length=50)
     description: str = Field(default="", sa_column=Column(Text, nullable=False))
     color: str = Field(default="blue", max_length=30)            # UI accent/badge colour

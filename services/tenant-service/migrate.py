@@ -206,6 +206,44 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v8b — add master_policy_id to policies",
         "ALTER TABLE policies ADD COLUMN IF NOT EXISTS master_policy_id UUID REFERENCES master_policies(id)",
     ),
+    (
+        # Same reasoning as v8a-enum: SAVINGS / SINGLE_PREMIUM / HEALTH_CASH
+        # were added to InsuranceTypeEnum for the real Adamjee Life catalog.
+        "v9a-enum — add SAVINGS to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'SAVINGS'",
+    ),
+    (
+        "v9b-enum — add SINGLE_PREMIUM to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'SINGLE_PREMIUM'",
+    ),
+    (
+        "v9c-enum — add HEALTH_CASH to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'HEALTH_CASH'",
+    ),
+    (
+        "v9d — add product_category to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS product_category productcategoryenum",
+    ),
+    (
+        # Postgres enum labels are the Python enum *member name* (e.g.
+        # CONVENTIONAL), not its .value ("Conventional") — SQLAlchemy's
+        # default Enum type stores/reads by name, same as every other enum
+        # column in this schema (see plancategoryenum: INDIVIDUAL/GROUP).
+        "v9e — backfill product_category",
+        "UPDATE insurance_plans SET product_category = 'CONVENTIONAL' WHERE product_category IS NULL",
+    ),
+    (
+        "v9f — set default for product_category",
+        "ALTER TABLE insurance_plans ALTER COLUMN product_category SET DEFAULT 'CONVENTIONAL'",
+    ),
+    (
+        "v9g — set product_category not null",
+        "ALTER TABLE insurance_plans ALTER COLUMN product_category SET NOT NULL",
+    ),
+    (
+        "v9h — add partner_bank to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS partner_bank VARCHAR(255)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

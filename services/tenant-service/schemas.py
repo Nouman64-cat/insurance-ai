@@ -8,6 +8,7 @@ from shared.models.core import (
     Gender,
     InsuranceTypeEnum,
     PlanCategoryEnum,
+    ProductCategoryEnum,
     PlanStatusEnum,
 )
 
@@ -397,6 +398,8 @@ class InsurancePlanCreate(BaseModel):
     label: str
     insurance_type: InsuranceTypeEnum
     category: PlanCategoryEnum = PlanCategoryEnum.INDIVIDUAL
+    product_category: ProductCategoryEnum = ProductCategoryEnum.CONVENTIONAL
+    partner_bank: Optional[str] = None
     status: PlanStatusEnum = PlanStatusEnum.DRAFT
     description: str = ""
     color: str = "blue"
@@ -456,6 +459,8 @@ class InsurancePlanUpdate(BaseModel):
     label: Optional[str] = None
     insurance_type: Optional[InsuranceTypeEnum] = None
     category: Optional[PlanCategoryEnum] = None
+    product_category: Optional[ProductCategoryEnum] = None
+    partner_bank: Optional[str] = None
     status: Optional[PlanStatusEnum] = None
     description: Optional[str] = None
     color: Optional[str] = None
@@ -486,6 +491,8 @@ class InsurancePlanRead(BaseModel):
     label: str
     insurance_type: InsuranceTypeEnum
     category: PlanCategoryEnum
+    product_category: ProductCategoryEnum
+    partner_bank: Optional[str]
     status: PlanStatusEnum
     description: str
     color: str

@@ -62,6 +62,9 @@ export const INSURANCE_TYPE_OPTIONS = [
   { value: "WHOLE_LIFE",               label: "Whole Life" },
   { value: "ENDOWMENT",                label: "Endowment / Savings Plan" },
   { value: "CHILD_EDUCATION_MARRIAGE", label: "Child Education & Marriage Plan" },
+  { value: "SAVINGS",                  label: "Savings / Investment Plan" },
+  { value: "SINGLE_PREMIUM",           label: "Single Premium Investment" },
+  { value: "HEALTH_CASH",              label: "Hospital Cash / Health Plan" },
 ] as const;
 
 export const INSURANCE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
