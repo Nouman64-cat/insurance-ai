@@ -310,6 +310,15 @@ class OrganizationRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class OrganizationUpdate(BaseModel):
+    name: Optional[str] = None
+    registration_number: Optional[str] = None
+    industry: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+
+
 class MasterPolicyCreate(BaseModel):
     sum_assured_multiple: float
     term_years: int

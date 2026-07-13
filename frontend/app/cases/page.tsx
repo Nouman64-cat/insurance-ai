@@ -4,6 +4,20 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEv
 import { useRouter } from "next/navigation";
 import { workflowStore } from "../case-summarizer/workflowStore";
 import api from "@/app/services/api";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+const createCaseSchema = z.object({
+  caseType: z.string().min(1, "Case Type is required"),
+  priority: z.string().min(1, "Priority is required"),
+  channel: z.string().min(1, "Source Channel is required"),
+});
+
+const editCaseSchema = z.object({
+  priority: z.string().min(1, "Priority is required"),
+  status: z.string().min(1, "Status is required"),
+});
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -306,14 +320,16 @@ function ModalShell({ title, subtitle, onClose, children }: { title: string; sub
 }
 
 function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applicant; onClose: () => void; onCreated: () => void }) {
-  const [caseType, setCaseType] = useState("Underwriting");
-  const [priority, setPriority] = useState("Normal");
-  const [channel, setChannel] = useState("Online");
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<z.infer<typeof createCaseSchema>>({
+    resolver: zodResolver(createCaseSchema),
+    mode: "onChange",
+    defaultValues: { caseType: "Underwriting", priority: "Normal", channel: "Online" }
+  });
+
+  const submit = async (data: z.infer<typeof createCaseSchema>) => {
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     setSubmitting(true);
@@ -321,9 +337,9 @@ function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applica
     try {
       await api.post(`/tenants/${tenantId}/cases`, {
         applicant_id: applicant.id,
-        caseType,
-        priorityLevel: priority,
-        sourceChannel: channel,
+        caseType: data.caseType,
+        priorityLevel: data.priority,
+        sourceChannel: data.channel,
       });
       onCreated();
     } catch (err: any) {
@@ -335,21 +351,24 @@ function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applica
 
   return (
     <ModalShell title="New Case" subtitle={`Applicant: ${applicant.name}`} onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={form.handleSubmit(submit)} className="space-y-4">
         <Field label="Case Type">
-          <select value={caseType} onChange={e => setCaseType(e.target.value)} className={SELECT}>
+          <select {...form.register("caseType")} className={`w-full bg-slate-50 border ${form.formState.errors.caseType ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400`}>
             {CASE_TYPE_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
+          {form.formState.errors.caseType && <span className="text-[10px] text-red-500">{form.formState.errors.caseType.message}</span>}
         </Field>
         <Field label="Priority">
-          <select value={priority} onChange={e => setPriority(e.target.value)} className={SELECT}>
+          <select {...form.register("priority")} className={`w-full bg-slate-50 border ${form.formState.errors.priority ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400`}>
             {PRIORITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
+          {form.formState.errors.priority && <span className="text-[10px] text-red-500">{form.formState.errors.priority.message}</span>}
         </Field>
         <Field label="Source Channel">
-          <select value={channel} onChange={e => setChannel(e.target.value)} className={SELECT}>
+          <select {...form.register("channel")} className={`w-full bg-slate-50 border ${form.formState.errors.channel ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400`}>
             {CHANNEL_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
+          {form.formState.errors.channel && <span className="text-[10px] text-red-500">{form.formState.errors.channel.message}</span>}
         </Field>
         {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
         <div className="flex justify-end gap-3 pt-2">
@@ -364,24 +383,29 @@ function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applica
 }
 
 function EditCaseModal({ caseItem, onClose, onSaved }: { caseItem: CaseItem; onClose: () => void; onSaved: () => void }) {
-  const [priority, setPriority] = useState(caseItem.priorityLevel);
-  const [status, setStatus] = useState(caseItem.caseStatus);
   const [submitting, setSubmitting] = useState(false);
   const [err, setErr] = useState("");
 
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const form = useForm<z.infer<typeof editCaseSchema>>({
+    resolver: zodResolver(editCaseSchema),
+    mode: "onChange",
+    defaultValues: { priority: caseItem.priorityLevel, status: caseItem.caseStatus }
+  });
+
+  const currentValues = form.watch();
+
+  const submit = async (data: z.infer<typeof editCaseSchema>) => {
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     setSubmitting(true);
     setErr("");
     try {
       const tasks: Promise<any>[] = [];
-      if (priority !== caseItem.priorityLevel) {
-        tasks.push(api.put(`/tenants/${tenantId}/cases/${caseItem.caseld}`, { priorityLevel: priority }));
+      if (data.priority !== caseItem.priorityLevel) {
+        tasks.push(api.put(`/tenants/${tenantId}/cases/${caseItem.caseld}`, { priorityLevel: data.priority }));
       }
-      if (status !== caseItem.caseStatus) {
-        tasks.push(api.patch(`/tenants/${tenantId}/cases/${caseItem.caseld}/status`, { status }));
+      if (data.status !== caseItem.caseStatus) {
+        tasks.push(api.patch(`/tenants/${tenantId}/cases/${caseItem.caseld}/status`, { status: data.status }));
       }
       await Promise.all(tasks);
       onSaved();
@@ -394,22 +418,24 @@ function EditCaseModal({ caseItem, onClose, onSaved }: { caseItem: CaseItem; onC
 
   return (
     <ModalShell title="Edit Case" subtitle={caseItem.caseNumber} onClose={onClose}>
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={form.handleSubmit(submit)} className="space-y-4">
         <Field label="Priority">
-          <select value={priority} onChange={e => setPriority(e.target.value)} className={SELECT}>
+          <select {...form.register("priority")} className={`w-full bg-slate-50 border ${form.formState.errors.priority ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400`}>
             {PRIORITY_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
+          {form.formState.errors.priority && <span className="text-[10px] text-red-500">{form.formState.errors.priority.message}</span>}
         </Field>
         <Field label="Status">
-          <select value={status} onChange={e => setStatus(e.target.value)} className={SELECT}>
+          <select {...form.register("status")} className={`w-full bg-slate-50 border ${form.formState.errors.status ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-400`}>
             {STATUS_OPTIONS.map(o => <option key={o}>{o}</option>)}
           </select>
+          {form.formState.errors.status && <span className="text-[10px] text-red-500">{form.formState.errors.status.message}</span>}
         </Field>
         {err && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{err}</p>}
         <p className="text-[10px] text-slate-400">Status changes are appended to the immutable CaseHistory audit trail.</p>
         <div className="flex justify-end gap-3 pt-2">
           <button type="button" onClick={onClose} className={BTN_GHOST}>Cancel</button>
-          <button type="submit" disabled={submitting || (priority === caseItem.priorityLevel && status === caseItem.caseStatus)} className={BTN_PRIMARY}>
+          <button type="submit" disabled={submitting || (currentValues.priority === caseItem.priorityLevel && currentValues.status === caseItem.caseStatus)} className={BTN_PRIMARY}>
             {submitting ? <SpinnerIcon /> : "Save Changes"}
           </button>
         </div>

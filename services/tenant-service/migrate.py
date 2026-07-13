@@ -431,10 +431,11 @@ async def _seed_user_types(conn) -> None:
 async def run_migrations() -> None:
     import shared.models.core  # noqa: F401 — registers all SQLModel metadata
 
-    async with _engine.begin() as conn:
+    async with _engine.connect() as conn:
         # 1. Create enum types idempotently before create_all so that restarts
         #    with an existing volume do not raise UniqueViolationError.
         await _create_enums_idempotent(conn)
+        await conn.commit()
 
         # 2. Tell SQLAlchemy the enum types already exist so create_all only
         #    issues CREATE TABLE statements (never CREATE TYPE).
@@ -446,15 +447,18 @@ async def run_migrations() -> None:
 
         # 3. Create any tables that do not yet exist (fully idempotent).
         await conn.run_sync(SQLModel.metadata.create_all)
+        await conn.commit()
         log.info("create_all complete")
 
         # 2. Apply column / index changes to existing tables.
         for label, sql in MIGRATIONS:
             await conn.execute(text(sql))
+            await conn.commit()
             log.info("applied: %s", label)
 
         # 3. Seed user types.
         await _seed_user_types(conn)
+        await conn.commit()
         log.info("seed_user_types complete")
 
     log.info("all migrations complete")

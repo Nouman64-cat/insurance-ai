@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { AIDecision } from "@/lib/mock-data";
@@ -8,23 +11,35 @@ import { CNIC_PATTERN, formatCnic } from "@/lib/cnic";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types & Validation ────────────────────────────────────────────────────────
 
 type StreamStatus = "idle" | "streaming" | "done" | "error";
 
-interface FormValues {
-  cnic:           string;
-  name:           string;
-  dob:            string;
-  gender:         string;
-  occupation:     string;
-  declaredIncome: string;
-  insuranceType:  string;
-  coverageAmount: string;
-  termYears:      string;
-  dependentName:  string;
-  dependentDob:   string;
-}
+const liveEvalSchema = z.object({
+  tenantId:       z.string().optional(),
+  cnic:           z.string().regex(/^\d{5}-\d{7}-\d{1}$/, "Format: 35201-1234567-1"),
+  name:           z.string().min(2, "Name is required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
+  dob:            z.string().min(1, "Date of birth is required"),
+  gender:         z.enum(["Male", "Female", "Other"]),
+  occupation:     z.string().min(2, "Occupation is required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
+  declaredIncome: z.coerce.number().min(0, "Income must be a positive number"),
+  insuranceType:  z.string().min(1, "Insurance type is required"),
+  coverageAmount: z.coerce.number().min(1000, "Minimum coverage is 1000"),
+  termYears:      z.coerce.number().min(1, "Term must be at least 1 year"),
+  dependentName:  z.string().regex(/^[A-Za-z\s]*$/, "Only alphabets and spaces allowed").optional(),
+  dependentDob:   z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.insuranceType === "CHILD_EDUCATION_MARRIAGE") {
+    if (!data.dependentName || data.dependentName.length < 2) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Dependent name is required", path: ["dependentName"] });
+    }
+    if (!data.dependentDob) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Dependent DOB is required", path: ["dependentDob"] });
+    }
+  }
+});
+
+type FormValues = z.infer<typeof liveEvalSchema>;
 
 interface EvalState {
   completedNodes:   string[];
@@ -78,19 +93,7 @@ const INSURANCE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   INSURANCE_TYPE_OPTIONS.map(o => [o.value, o.label]),
 );
 
-const DEFAULT_FORM: FormValues = {
-  cnic:           "",
-  name:           "",
-  dob:            "",
-  gender:         "Male",
-  occupation:     "",
-  declaredIncome: "",
-  insuranceType:  "TERM_LIFE",
-  coverageAmount: "",
-  termYears:      "",
-  dependentName:  "",
-  dependentDob:   "",
-};
+
 
 const VALID_DECISIONS = new Set<string>(["Auto Approve", "Approve with Loading", "Human Review", "Decline"]);
 function asDecision(v: string | null): AIDecision | null {
@@ -100,7 +103,26 @@ function asDecision(v: string | null): AIDecision | null {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function LiveEvaluationPage() {
-  const [form,   setForm]   = useState<FormValues>(DEFAULT_FORM);
+  const { register, handleSubmit: hookFormSubmit, watch, setValue, formState: { errors } } = useForm<FormValues>({
+    resolver: zodResolver(liveEvalSchema),
+    mode: "onChange",
+    defaultValues: {
+      cnic:           "",
+      name:           "",
+      dob:            "",
+      gender:         "Male",
+      occupation:     "",
+      declaredIncome: "" as any,
+      insuranceType:  "TERM_LIFE",
+      coverageAmount: "" as any,
+      termYears:      "" as any,
+      dependentName:  "",
+      dependentDob:   "",
+    },
+  });
+
+  const formValues = watch();
+
   const [status, setStatus] = useState<StreamStatus>("idle");
   const [result, setResult] = useState<EvalState>(INITIAL_EVAL);
   const [error,  setError]  = useState<string | null>(null);
@@ -113,19 +135,13 @@ export default function LiveEvaluationPage() {
   useEffect(() => {
     const storedTenantId = localStorage.getItem("tenant_id");
     if (storedTenantId) {
-      setForm(f => ({ ...f, tenantId: storedTenantId }));
+      setValue("tenantId", storedTenantId);
     }
-  }, []);
-
-  const setField = useCallback(
-    (key: keyof FormValues, val: string) => setForm(f => ({ ...f, [key]: val })),
-    [],
-  );
+  }, [setValue]);
 
   // ── Stream handler ───────────────────────────────────────────────────────────
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const onSubmit = async (data: FormValues) => {
 
     abortRef.current?.abort();
     const abort = new AbortController();
@@ -135,7 +151,7 @@ export default function LiveEvaluationPage() {
     setResult(INITIAL_EVAL);
     setError(null);
 
-    const tenantId = localStorage.getItem("tenant_id");
+    const tenantId = data.tenantId || localStorage.getItem("tenant_id");
     if (!tenantId) {
       setStatus("error");
       setError("No active tenant session found. Please log in again.");
@@ -144,20 +160,20 @@ export default function LiveEvaluationPage() {
 
     const payload = {
       applicant: {
-        cnic:            form.cnic,
-        name:            form.name,
-        dob:             form.dob,
-        gender:          form.gender,
-        occupation:      form.occupation,
-        declared_income: parseFloat(form.declaredIncome) || 0,
+        cnic:            data.cnic,
+        name:            data.name,
+        dob:             data.dob,
+        gender:          data.gender,
+        occupation:      data.occupation,
+        declared_income: data.declaredIncome,
       },
       policy: {
-        product_name:    INSURANCE_TYPE_LABELS[form.insuranceType] ?? form.insuranceType,
-        insurance_type:  form.insuranceType,
-        coverage_amount: parseFloat(form.coverageAmount) || 0,
-        term_years:      parseInt(form.termYears)         || 0,
-        ...(form.insuranceType === "CHILD_EDUCATION_MARRIAGE"
-          ? { dependent_name: form.dependentName, dependent_dob: form.dependentDob }
+        product_name:    INSURANCE_TYPE_LABELS[data.insuranceType] ?? data.insuranceType,
+        insurance_type:  data.insuranceType,
+        coverage_amount: data.coverageAmount,
+        term_years:      data.termYears,
+        ...(data.insuranceType === "CHILD_EDUCATION_MARRIAGE"
+          ? { dependent_name: data.dependentName, dependent_dob: data.dependentDob }
           : {}),
       },
     };
@@ -298,14 +314,14 @@ export default function LiveEvaluationPage() {
     doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
     doc.text("APPLICANT DETAILS", mg, y); y += 5;
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 23, 42);
-    doc.text(form.name || "—", mg, y); y += 6;
+    doc.text(formValues.name || "—", mg, y); y += 6;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
-    doc.text([`CNIC: ${form.cnic || "—"}`, `DOB: ${form.dob || "—"}`, `Gender: ${form.gender}`, `Occupation: ${form.occupation || "—"}`, `Annual Income: PKR ${Number(form.declaredIncome || 0).toLocaleString()}`].join("    "), mg, y, { maxWidth: cw });
+    doc.text([`CNIC: ${formValues.cnic || "—"}`, `DOB: ${formValues.dob || "—"}`, `Gender: ${formValues.gender}`, `Occupation: ${formValues.occupation || "—"}`, `Annual Income: PKR ${Number(formValues.declaredIncome || 0).toLocaleString()}`].join("    "), mg, y, { maxWidth: cw });
     y += 7;
     doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
     doc.text("POLICY", mg, y); y += 4;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
-    doc.text(`${INSURANCE_TYPE_LABELS[form.insuranceType] ?? "—"}    Coverage: PKR ${Number(form.coverageAmount || 0).toLocaleString()}    Term: ${form.termYears || "—"} years`, mg, y, { maxWidth: cw });
+    doc.text(`${INSURANCE_TYPE_LABELS[formValues.insuranceType!] ?? "—"}    Coverage: PKR ${Number(formValues.coverageAmount || 0).toLocaleString()}    Term: ${formValues.termYears || "—"} years`, mg, y, { maxWidth: cw });
     y += 9;
     doc.setDrawColor(226, 232, 240); doc.line(mg, y, pageW - mg, y); y += 8;
 
@@ -356,7 +372,7 @@ export default function LiveEvaluationPage() {
       doc.text(`Page ${p} of ${total}`, pageW - mg, pageH - 7, { align: "right" });
     }
 
-    doc.save(`live-evaluation-${form.cnic || "report"}-${new Date().toISOString().split("T")[0]}.pdf`);
+    doc.save(`live-evaluation-${formValues.cnic || "report"}-${new Date().toISOString().split("T")[0]}.pdf`);
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -381,7 +397,7 @@ export default function LiveEvaluationPage() {
 
         {/* ── LEFT — Form ───────────────────────────────────────────────────── */}
         <form
-          onSubmit={handleSubmit}
+          onSubmit={hookFormSubmit(onSubmit)}
           className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden"
         >
           <div className="px-5 py-3 border-b border-slate-100">
@@ -396,23 +412,23 @@ export default function LiveEvaluationPage() {
             <section>
               <SectionLabel>Applicant</SectionLabel>
               <div className="space-y-3">
-                <InputField label="CNIC"            placeholder="35201-1234567-1"   value={form.cnic}           onChange={v => setField("cnic", formatCnic(v))} inputMode="numeric" maxLength={15} pattern={CNIC_PATTERN} title="Format: 35201-1234567-1" />
-                <InputField label="Full Name"        placeholder="Muhammad Ali Khan" value={form.name}           onChange={v => setField("name", v)} />
-                <InputField label="Date of Birth"    type="date"                    value={form.dob}            onChange={v => setField("dob", v)} />
+                <InputField label="CNIC" placeholder="35201-1234567-1" inputMode="numeric" maxLength={15} pattern={CNIC_PATTERN} title="Format: 35201-1234567-1" registration={{...register("cnic", { onChange: (e) => e.target.value = formatCnic(e.target.value) })}} error={errors.cnic?.message} />
+                <InputField label="Full Name" placeholder="Muhammad Ali Khan" registration={{...register("name", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}} error={errors.name?.message} />
+                <InputField label="Date of Birth" type="date" registration={register("dob")} error={errors.dob?.message} />
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Gender</label>
                   <select
-                    value={form.gender}
-                    onChange={e => setField("gender", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                    {...register("gender")}
+                    className={`w-full px-3 py-2 text-sm border ${errors.gender ? 'border-red-400 focus:ring-red-500/30' : 'border-slate-200 focus:ring-blue-500/30 focus:border-blue-400'} rounded-lg bg-white focus:outline-none focus:ring-2`}
                   >
-                    <option>Male</option>
-                    <option>Female</option>
-                    <option>Other</option>
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
                   </select>
+                  {errors.gender && <p className="mt-1 text-xs text-red-500">{errors.gender.message}</p>}
                 </div>
-                <InputField label="Occupation"        placeholder="Software Engineer" value={form.occupation}      onChange={v => setField("occupation", v)} />
-                <InputField label="Annual Income (PKR)" type="number" placeholder="1200000" value={form.declaredIncome} onChange={v => setField("declaredIncome", v)} />
+                <InputField label="Occupation" placeholder="Software Engineer" registration={{...register("occupation", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}} error={errors.occupation?.message} />
+                <InputField label="Annual Income (PKR)" type="number" placeholder="1200000" registration={register("declaredIncome")} error={errors.declaredIncome?.message} />
               </div>
             </section>
 
@@ -423,21 +439,21 @@ export default function LiveEvaluationPage() {
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">Insurance Type</label>
                   <select
-                    value={form.insuranceType}
-                    onChange={e => setField("insuranceType", e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+                    {...register("insuranceType")}
+                    className={`w-full px-3 py-2 text-sm border ${errors.insuranceType ? 'border-red-400 focus:ring-red-500/30' : 'border-slate-200 focus:ring-blue-500/30 focus:border-blue-400'} rounded-lg bg-white focus:outline-none focus:ring-2`}
                   >
                     {INSURANCE_TYPE_OPTIONS.map(o => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
+                  {errors.insuranceType && <p className="mt-1 text-xs text-red-500">{errors.insuranceType.message}</p>}
                 </div>
-                <InputField label="Coverage Amount (PKR)" type="number" placeholder="5000000" value={form.coverageAmount} onChange={v => setField("coverageAmount", v)} />
-                <InputField label="Term (Years)"           type="number" placeholder="20"      value={form.termYears}     onChange={v => setField("termYears", v)} />
-                {form.insuranceType === "CHILD_EDUCATION_MARRIAGE" && (
+                <InputField label="Coverage Amount (PKR)" type="number" placeholder="5000000" registration={register("coverageAmount")} error={errors.coverageAmount?.message} />
+                <InputField label="Term (Years)" type="number" placeholder="20" registration={register("termYears")} error={errors.termYears?.message} />
+                {formValues.insuranceType === "CHILD_EDUCATION_MARRIAGE" && (
                   <>
-                    <InputField label="Dependent Name" placeholder="Child's full name" value={form.dependentName} onChange={v => setField("dependentName", v)} />
-                    <InputField label="Dependent Date of Birth" type="date" value={form.dependentDob} onChange={v => setField("dependentDob", v)} />
+                    <InputField label="Dependent Name" placeholder="Child's full name" registration={{...register("dependentName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}} error={errors.dependentName?.message} />
+                    <InputField label="Dependent Date of Birth" type="date" registration={register("dependentDob")} error={errors.dependentDob?.message} />
                   </>
                 )}
               </div>
@@ -678,36 +694,35 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function InputField({
-  label, type = "text", placeholder, value, onChange, mono = false, inputMode, maxLength, pattern, title,
+  label, type = "text", placeholder, mono = false, inputMode, maxLength, pattern, title, registration, error
 }: {
   label:       string;
   type?:       string;
   placeholder?: string;
-  value:       string;
-  onChange:    (v: string) => void;
   mono?:       boolean;
   inputMode?:  React.HTMLAttributes<HTMLInputElement>["inputMode"];
   maxLength?:  number;
   pattern?:    string;
   title?:      string;
+  registration?: any;
+  error?:      string;
 }) {
   return (
     <div>
       <label className="block text-xs font-medium text-slate-600 mb-1">{label}</label>
       <input
         type={type}
-        required
         placeholder={placeholder}
-        value={value}
-        onChange={e => onChange(e.target.value)}
         inputMode={inputMode}
         maxLength={maxLength}
         pattern={pattern}
         title={title}
-        className={`w-full px-3 py-2 text-sm border border-slate-200 rounded-lg
-          focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400
+        {...registration}
+        className={`w-full px-3 py-2 text-sm border text-slate-900 placeholder:text-slate-400 ${error ? 'border-red-400 focus:ring-red-500/30' : 'border-slate-200 focus:ring-blue-500/30 focus:border-blue-400'} rounded-lg
+          focus:outline-none focus:ring-2
           ${mono ? "font-mono" : ""}`}
       />
+      {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
     </div>
   );
 }

@@ -17,6 +17,7 @@ from schemas import (
     MasterPolicyRead,
     OrganizationCreate,
     OrganizationRead,
+    OrganizationUpdate,
 )
 from shared.models.core import Applicant, InsuranceTypeEnum, MasterPolicy, Organization, Policy, Tenant
 from routers.users import verify_admin   # reuse existing Admin guard — tenant-scoped for Admin, cross-tenant for SuperAdmin
@@ -84,6 +85,43 @@ async def list_organizations(tenant_id: UUID, session: AsyncSession = Depends(ge
 )
 async def get_organization(tenant_id: UUID, org_id: UUID, session: AsyncSession = Depends(get_session)):
     return await _get_organization(tenant_id, org_id, session)
+
+
+@router.patch(
+    "/{tenant_id}/organizations/{org_id}",
+    response_model=OrganizationRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_organization(
+    tenant_id: UUID,
+    org_id: UUID,
+    body: OrganizationUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    org = await _get_organization(tenant_id, org_id, session)
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(org, key, value)
+    
+    session.add(org)
+    await session.commit()
+    await session.refresh(org)
+    return org
+
+
+@router.delete(
+    "/{tenant_id}/organizations/{org_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_organization(
+    tenant_id: UUID,
+    org_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    org = await _get_organization(tenant_id, org_id, session)
+    await session.delete(org)
+    await session.commit()
 
 
 @router.get(

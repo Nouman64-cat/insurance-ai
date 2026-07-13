@@ -2,6 +2,28 @@
 
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+
+const createUserSchema = z.object({
+  fullName: z.string().min(2, "Full name must be at least 2 characters"),
+  email: z.string().email("Invalid email address"),
+  roleId: z.string().min(1, "Role is required"),
+});
+
+const editUserSchema = z.object({
+  firstName: z.string().min(2, "First name must be at least 2 characters"),
+  lastName: z.string().min(2, "Last name must be at least 2 characters"),
+  password: z.string().optional(),
+  roleId: z.string().min(1, "Role is required"),
+  status: z.string(),
+  phone: z.string().optional(),
+  department: z.string().optional(),
+  employeeId: z.string().optional(),
+  designation: z.string().optional(),
+  dateOfJoining: z.string().optional(),
+});
 
 interface User {
   id: string;
@@ -41,23 +63,23 @@ export default function UserManagementPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
 
-  // Create form fields (kept minimal — username/password are auto-generated server-side)
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [roleId, setRoleId] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
-  // Edit form fields
-  const [editFirstName, setEditFirstName] = useState("");
-  const [editLastName, setEditLastName] = useState("");
-  const [editPassword, setEditPassword] = useState("");
-  const [editRoleId, setEditRoleId] = useState("");
-  const [editStatus, setEditStatus] = useState("ACTIVE");
-  const [editPhone, setEditPhone] = useState("");
-  const [editDepartment, setEditDepartment] = useState("");
-  const [editEmployeeId, setEditEmployeeId] = useState("");
-  const [editDesignation, setEditDesignation] = useState("");
-  const [editDateOfJoining, setEditDateOfJoining] = useState("");
+  const createForm = useForm<z.infer<typeof createUserSchema>>({
+    resolver: zodResolver(createUserSchema),
+    mode: "onChange",
+    defaultValues: { fullName: "", email: "", roleId: "" }
+  });
+
+  const editForm = useForm<z.infer<typeof editUserSchema>>({
+    resolver: zodResolver(editUserSchema),
+    mode: "onChange",
+    defaultValues: {
+      firstName: "", lastName: "", password: "", roleId: "",
+      status: "ACTIVE", phone: "", department: "", employeeId: "",
+      designation: "", dateOfJoining: ""
+    }
+  });
 
   useEffect(() => {
     const role = localStorage.getItem("user_role");
@@ -89,9 +111,6 @@ export default function UserManagementPage() {
 
       setUsers(usersResp.data);
       setRoles(rolesResp.data);
-      if (rolesResp.data.length > 0) {
-        setRoleId(rolesResp.data[0].id);
-      }
     } catch (err: any) {
       setError(err.message ?? "Failed to load admin management data.");
     } finally {
@@ -105,9 +124,7 @@ export default function UserManagementPage() {
   };
 
   const handleOpenCreateModal = () => {
-    setFullName("");
-    setEmail("");
-    if (roles.length > 0) setRoleId(roles[0].id);
+    createForm.reset({ fullName: "", email: "", roleId: roles[0]?.id ?? "" });
     setError("");
     setSuccess("");
     setShowCreateModal(true);
@@ -115,23 +132,24 @@ export default function UserManagementPage() {
 
   const handleOpenEditModal = (user: User) => {
     setSelectedUser(user);
-    setEditFirstName(user.first_name ?? "");
-    setEditLastName(user.last_name ?? "");
-    setEditPassword("");
-    setEditRoleId(user.role_id);
-    setEditStatus(user.status ?? "ACTIVE");
-    setEditPhone(user.phone ?? "");
-    setEditDepartment(user.department ?? "");
-    setEditEmployeeId(user.employee_id ?? "");
-    setEditDesignation(user.designation ?? "");
-    setEditDateOfJoining(user.date_of_joining ?? "");
+    editForm.reset({
+      firstName: user.first_name ?? "",
+      lastName: user.last_name ?? "",
+      password: "",
+      roleId: user.role_id,
+      status: user.status ?? "ACTIVE",
+      phone: user.phone ?? "",
+      department: user.department ?? "",
+      employeeId: user.employee_id ?? "",
+      designation: user.designation ?? "",
+      dateOfJoining: user.date_of_joining ?? "",
+    });
     setError("");
     setSuccess("");
     setShowEditModal(true);
   };
 
-  const handleCreateUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateUser = async (data: z.infer<typeof createUserSchema>) => {
     setError("");
     setSuccess("");
     setFormLoading(true);
@@ -139,12 +157,12 @@ export default function UserManagementPage() {
 
     try {
       await api.post(`/tenants/${tenantId}/users/`, {
-        email,
-        full_name: fullName,
-        role_id: roleId,
+        email: data.email,
+        full_name: data.fullName,
+        role_id: data.roleId,
       });
 
-      setSuccess(`User created successfully! Login credentials were emailed to ${email}.`);
+      setSuccess(`User created successfully! Login credentials were emailed to ${data.email}.`);
       setShowCreateModal(false);
       fetchUsersAndRoles();
     } catch (err: any) {
@@ -154,8 +172,7 @@ export default function UserManagementPage() {
     }
   };
 
-  const handleEditUser = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleEditUser = async (data: z.infer<typeof editUserSchema>) => {
     setError("");
     setSuccess("");
     setFormLoading(true);
@@ -165,19 +182,19 @@ export default function UserManagementPage() {
 
     try {
       const updateData: any = {
-        role_id: editRoleId,
-        status: editStatus,
-        first_name: editFirstName,
-        last_name: editLastName,
-        phone: editPhone || null,
-        department: editDepartment || null,
-        employee_id: editEmployeeId || null,
-        designation: editDesignation || null,
-        date_of_joining: editDateOfJoining || null,
+        role_id: data.roleId,
+        status: data.status,
+        first_name: data.firstName,
+        last_name: data.lastName,
+        phone: data.phone || null,
+        department: data.department || null,
+        employee_id: data.employeeId || null,
+        designation: data.designation || null,
+        date_of_joining: data.dateOfJoining || null,
       };
 
-      if (editPassword) {
-        updateData.password = editPassword;
+      if (data.password) {
+        updateData.password = data.password;
       }
 
       await api.patch(`/tenants/${tenantId}/users/${selectedUser.id}`, updateData);
@@ -389,37 +406,34 @@ export default function UserManagementPage() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateUser} className="space-y-4">
+            <form onSubmit={createForm.handleSubmit(handleCreateUser)} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
                 <input
                   type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
+                  {...createForm.register("fullName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
                   placeholder="e.g. Ali Raza"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  className={`w-full bg-slate-50 border ${createForm.formState.errors.fullName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                 />
+                {createForm.formState.errors.fullName && <span className="text-[10px] text-red-500">{createForm.formState.errors.fullName.message}</span>}
               </div>
 
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Email Address *</label>
                 <input
                   type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  {...createForm.register("email")}
                   placeholder="e.g. ali@adamjeelife.com"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  className={`w-full bg-slate-50 border ${createForm.formState.errors.email ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                 />
+                {createForm.formState.errors.email && <span className="text-[10px] text-red-500">{createForm.formState.errors.email.message}</span>}
               </div>
 
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Portal Role *</label>
                 <select
-                  value={roleId}
-                  onChange={(e) => setRoleId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                  {...createForm.register("roleId")}
+                  className={`w-full bg-slate-50 border ${createForm.formState.errors.roleId ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer`}
                 >
                   {roles.map((r) => (
                     <option key={r.id} value={r.id}>
@@ -476,7 +490,7 @@ export default function UserManagementPage() {
               </button>
             </div>
 
-            <form onSubmit={handleEditUser} className="space-y-4">
+            <form onSubmit={editForm.handleSubmit(handleEditUser)} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Username (Read Only)</label>
@@ -502,41 +516,38 @@ export default function UserManagementPage() {
                   <label className="block text-xs font-semibold text-slate-600">First Name *</label>
                   <input
                     type="text"
-                    required
-                    value={editFirstName}
-                    onChange={(e) => setEditFirstName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    {...editForm.register("firstName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.firstName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.firstName && <span className="text-[10px] text-red-500">{editForm.formState.errors.firstName.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Last Name *</label>
                   <input
                     type="text"
-                    required
-                    value={editLastName}
-                    onChange={(e) => setEditLastName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    {...editForm.register("lastName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.lastName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.lastName && <span className="text-[10px] text-red-500">{editForm.formState.errors.lastName.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Password (Leave blank to keep same)</label>
                   <input
                     type="password"
-                    value={editPassword}
-                    onChange={(e) => setEditPassword(e.target.value)}
+                    {...editForm.register("password")}
                     placeholder="Enter new password if updating"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.password ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.password && <span className="text-[10px] text-red-500">{editForm.formState.errors.password.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Portal Role *</label>
                   <select
-                    value={editRoleId}
-                    onChange={(e) => setEditRoleId(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                    {...editForm.register("roleId")}
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.roleId ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer`}
                   >
                     {roles.map((r) => (
                       <option key={r.id} value={r.id}>
@@ -550,62 +561,61 @@ export default function UserManagementPage() {
                   <label className="block text-xs font-semibold text-slate-600">Phone</label>
                   <input
                     type="text"
-                    value={editPhone}
-                    onChange={(e) => setEditPhone(e.target.value)}
+                    {...editForm.register("phone")}
                     placeholder="e.g. +923001234567"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.phone ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.phone && <span className="text-[10px] text-red-500">{editForm.formState.errors.phone.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Department</label>
                   <input
                     type="text"
-                    value={editDepartment}
-                    onChange={(e) => setEditDepartment(e.target.value)}
+                    {...editForm.register("department")}
                     placeholder="e.g. Underwriting"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.department ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.department && <span className="text-[10px] text-red-500">{editForm.formState.errors.department.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Employee ID</label>
                   <input
                     type="text"
-                    value={editEmployeeId}
-                    onChange={(e) => setEditEmployeeId(e.target.value)}
+                    {...editForm.register("employeeId")}
                     placeholder="e.g. EMP-1049"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.employeeId ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.employeeId && <span className="text-[10px] text-red-500">{editForm.formState.errors.employeeId.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Designation</label>
                   <input
                     type="text"
-                    value={editDesignation}
-                    onChange={(e) => setEditDesignation(e.target.value)}
+                    {...editForm.register("designation")}
                     placeholder="e.g. Senior Underwriter"
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.designation ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.designation && <span className="text-[10px] text-red-500">{editForm.formState.errors.designation.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Date of Joining</label>
                   <input
                     type="date"
-                    value={editDateOfJoining}
-                    onChange={(e) => setEditDateOfJoining(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    {...editForm.register("dateOfJoining")}
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.dateOfJoining ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all`}
                   />
+                  {editForm.formState.errors.dateOfJoining && <span className="text-[10px] text-red-500">{editForm.formState.errors.dateOfJoining.message}</span>}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold text-slate-600">Account Status *</label>
                   <select
-                    value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                    {...editForm.register("status")}
+                    className={`w-full bg-slate-50 border ${editForm.formState.errors.status ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer`}
                   >
                     <option value="ACTIVE">Active</option>
                     <option value="INACTIVE">Inactive</option>
