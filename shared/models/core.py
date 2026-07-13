@@ -319,6 +319,12 @@ class Policy(SQLModel, table=True):
     dependent_name: Optional[str] = Field(default=None, max_length=255)
     dependent_dob: Optional[date] = Field(default=None)
 
+    # Beneficiary on death — optional at the DB layer (nullable, like
+    # dependent_name/dependent_dob above) so existing rows stay valid; the
+    # quote/onboarding API layer enforces it as required for new policies.
+    nominee_name: Optional[str] = Field(default=None, max_length=255)
+    nominee_relationship: Optional[str] = Field(default=None, max_length=100)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships

@@ -192,6 +192,58 @@ class EvaluateResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POST /quote — instant, deterministic premium quotation (no AI, no Kafka)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class QuoteApplicantIn(BaseModel):
+    cnic: str = Field(..., description="Pakistani National Identity Card number.", examples=["3520112345671"])
+    name: str = Field(..., examples=["Muhammad Ali Khan"])
+    dob: date = Field(..., description="Date of birth (YYYY-MM-DD).", examples=["1990-04-01"])
+    gender: Gender = Field(..., examples=["Male"])
+    occupation: str = Field(..., examples=["Software Engineer"])
+    monthly_income: float = Field(
+        ..., gt=0, description="Gross monthly salary in PKR — annualized (x12) server-side.", examples=[250000]
+    )
+    is_smoker: bool = Field(..., examples=[False])
+    height_cm: float = Field(..., gt=0, examples=[175])
+    weight_kg: float = Field(..., gt=0, examples=[75])
+
+
+class QuotePolicyIn(BaseModel):
+    plan_code: str = Field(..., description="InsurancePlan.code from the tenant's catalog.", examples=["SALARY_PROTECTION_PLAN"])
+    coverage_amount: float = Field(..., gt=0, description="Requested coverage amount in PKR.", examples=[10_000_000])
+    term_years: int = Field(..., ge=1, le=40, examples=[10])
+    nominee_name: str = Field(..., examples=["Amna Khan"])
+    nominee_relationship: str = Field(..., examples=["Mother"])
+
+
+class QuoteRequest(BaseModel):
+    applicant: QuoteApplicantIn
+    policy: QuotePolicyIn
+
+
+class QuoteResponse(BaseModel):
+    eligible: bool
+    eligibility_errors: List[str] = Field(default_factory=list)
+
+    # Populated only when eligible=True
+    quote_id: Optional[UUID] = None
+    applicant_id: Optional[UUID] = None
+    policy_id: Optional[UUID] = None
+    annual_income: Optional[float] = None
+    plan_code: Optional[str] = None
+    plan_label: Optional[str] = None
+    coverage_amount: Optional[float] = None
+    term_years: Optional[int] = None
+    base_premium: Optional[float] = None
+    loading_applied: Optional[float] = None
+    total_premium: Optional[float] = None
+    rate_version: Optional[str] = None
+    reasons: List[str] = Field(default_factory=list)
+    created_at: Optional[datetime] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Async / Kafka response
 # ─────────────────────────────────────────────────────────────────────────────
 

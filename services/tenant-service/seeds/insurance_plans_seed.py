@@ -63,6 +63,10 @@ _BANDS: dict[str, dict] = {
         "color": "blue",
         "entry_age_min": 18, "entry_age_max": 65, "entry_age_label": "Proposer",
         "term_min_years": 5, "term_max_years": 30, "max_maturity_age": 70, "max_income_multiple": 20,
+        # v1 placeholder actuarial rates (PKR per 1,000 sum assured per year) —
+        # see shared/pricing/calculator.py for how these combine with age/BMI
+        # factors into a quote. Not a regulatory filing.
+        "base_premium_rate": 3.5, "smoker_factor": 1.6,
         "medical_exam_tiers": [
             {"minSumAssured": 0, "tier": TIER_NONE},
             {"minSumAssured": 5_000_000, "tier": TIER_PARAMEDICAL},
@@ -74,6 +78,7 @@ _BANDS: dict[str, dict] = {
         "color": "amber",
         "entry_age_min": 18, "entry_age_max": 65, "entry_age_label": "Proposer",
         "term_min_years": 5, "term_max_years": 25, "max_maturity_age": 75, "max_income_multiple": 15,
+        "base_premium_rate": 6.0, "smoker_factor": 1.4,
         "medical_exam_tiers": [
             {"minSumAssured": 0, "tier": TIER_NONE},
             {"minSumAssured": 5_000_000, "tier": TIER_PARAMEDICAL},
@@ -85,6 +90,7 @@ _BANDS: dict[str, dict] = {
         "color": "violet",
         "entry_age_min": 18, "entry_age_max": 70, "entry_age_label": "Proposer",
         "term_min_years": 1, "term_max_years": 10, "max_maturity_age": 75, "max_income_multiple": 10,
+        "base_premium_rate": 4.0, "smoker_factor": 1.3,
         "medical_exam_tiers": [
             {"minSumAssured": 0, "tier": TIER_NONE},
             {"minSumAssured": 10_000_000, "tier": TIER_PARAMEDICAL},
@@ -95,6 +101,7 @@ _BANDS: dict[str, dict] = {
         "color": "rose",
         "entry_age_min": 18, "entry_age_max": 59, "entry_age_label": "Proposer",
         "term_min_years": 1, "term_max_years": 5, "max_maturity_age": 65, "max_income_multiple": 5,
+        "base_premium_rate": 8.0, "smoker_factor": 1.2,
         "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_NONE}],
         "required_documents": [DOC_CNIC],
     },
@@ -103,6 +110,10 @@ _BANDS: dict[str, dict] = {
         "entry_age_min": 20, "entry_age_max": 60, "entry_age_label": "Proposer",
         "dependent_age_min": 1, "dependent_age_max": 15,
         "term_min_years": 10, "term_max_years": 24, "max_maturity_age": 70, "max_income_multiple": 15,
+        # Proposer smoking status is kept neutral here — the insured benefit
+        # belongs to the dependent, not the proposer, so it isn't loaded the
+        # way a proposer's own life cover is.
+        "base_premium_rate": 5.0, "smoker_factor": 1.0,
         "medical_exam_tiers": [
             {"minSumAssured": 0, "tier": TIER_NONE},
             {"minSumAssured": 3_000_000, "tier": TIER_PARAMEDICAL},

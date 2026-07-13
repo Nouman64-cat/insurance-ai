@@ -66,6 +66,9 @@ function emptyForm(): InsurancePlanCreate {
     term_max_years: 30,
     max_maturity_age: 70,
     max_income_multiple: 20,
+    base_premium_rate: 0,
+    smoker_factor: 1,
+    rate_version: "v1",
     min_group_size: null,
     underwriting_basis: null,
     medical_exam_tiers: [{ minSumAssured: 0, tier: "No medical exam required" }],
@@ -149,6 +152,9 @@ export default function InsurancePlansPage() {
       term_max_years: plan.term_max_years,
       max_maturity_age: plan.max_maturity_age,
       max_income_multiple: plan.max_income_multiple,
+      base_premium_rate: plan.base_premium_rate,
+      smoker_factor: plan.smoker_factor,
+      rate_version: plan.rate_version,
       min_group_size: plan.min_group_size,
       underwriting_basis: plan.underwriting_basis,
       medical_exam_tiers: plan.medical_exam_tiers,
@@ -571,6 +577,11 @@ function PlanDetailDrawer({
                 <PlanDetailRow label="Policy Term" value={`${plan.term_min_years}–${plan.term_max_years} years`} />
                 <PlanDetailRow label="Max Maturity Age" value={`${plan.max_maturity_age} years`} />
                 <PlanDetailRow label="Max Coverage" value={`${plan.max_income_multiple}× annual income`} />
+                <PlanDetailRow
+                  label="Base Premium Rate"
+                  value={`PKR ${plan.base_premium_rate} / 1,000 sum assured / yr (rate ${plan.rate_version})`}
+                />
+                <PlanDetailRow label="Smoker Factor" value={`${plan.smoker_factor}x`} />
                 {plan.dependent_age_min != null && plan.dependent_age_max != null && (
                   <PlanDetailRow
                     label="Dependent Age (at entry)"
@@ -797,6 +808,22 @@ function PlanFormModal({
             <NumField label="Term Max (yrs)" value={form.term_max_years} onChange={(v) => setField("term_max_years", v)} />
             <NumField label="Max Maturity Age" value={form.max_maturity_age} onChange={(v) => setField("max_maturity_age", v)} />
             <NumField label="Max Income Multiple" value={form.max_income_multiple} onChange={(v) => setField("max_income_multiple", v)} step="any" />
+            <NumField
+              label="Base Premium Rate (PKR/1,000 sum assured/yr)"
+              value={form.base_premium_rate}
+              onChange={(v) => setField("base_premium_rate", v)}
+              step="any"
+            />
+            <NumField
+              label="Smoker Factor (x)"
+              value={form.smoker_factor}
+              onChange={(v) => setField("smoker_factor", v)}
+              step="any"
+            />
+            <div>
+              <label className={labelCls}>Rate Version</label>
+              <input className={inputCls} value={form.rate_version} onChange={(e) => setField("rate_version", e.target.value)} placeholder="v1" />
+            </div>
             <NumField
               label="Dependent Age Min"
               value={form.dependent_age_min}

@@ -48,6 +48,11 @@ export interface InsurancePlan {
   medical_exam_tiers: MedicalExamTier[];
   required_documents: string[];
 
+  // Pricing framework — consumed by POST /quote (see routers/quote.py).
+  base_premium_rate: number;
+  smoker_factor: number;
+  rate_version: string;
+
   is_active: boolean;
   created_at: string;
   updated_at: string;

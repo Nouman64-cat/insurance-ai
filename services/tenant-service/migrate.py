@@ -322,6 +322,59 @@ MIGRATIONS: list[tuple[str, str]] = [
     # Note: the new `premium_quotes` table needs no migration entry here —
     # it's a brand-new table, so create_all() (which runs before this list)
     # creates it automatically from the PremiumQuote SQLModel.
+    (
+        "v11a — add nominee_name to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS nominee_name VARCHAR(255)",
+    ),
+    (
+        "v11b — add nominee_relationship to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS nominee_relationship VARCHAR(100)",
+    ),
+    # Phase 2 of the Rating/Pricing Engine: backfill real v1 placeholder rates
+    # for every plan still sitting at the neutral 0.0 default from v10j — i.e.
+    # every tenant's catalog seeded before real rates existed. Guarded by
+    # `base_premium_rate = 0` so a tenant admin's manually-tuned rate (via the
+    # Plans edit UI) is never overwritten. Rates are PKR per 1,000 sum assured
+    # per year — reasonable v1 estimates (same spirit as underwriting_rules.py
+    # bands), not a regulatory filing.
+    (
+        "v12a — backfill TERM_LIFE rate",
+        "UPDATE insurance_plans SET base_premium_rate = 3.5, smoker_factor = 1.6 "
+        "WHERE insurance_type = 'TERM_LIFE' AND base_premium_rate = 0",
+    ),
+    (
+        "v12b — backfill WHOLE_LIFE rate",
+        "UPDATE insurance_plans SET base_premium_rate = 5.5, smoker_factor = 1.5 "
+        "WHERE insurance_type = 'WHOLE_LIFE' AND base_premium_rate = 0",
+    ),
+    (
+        "v12c — backfill ENDOWMENT rate",
+        "UPDATE insurance_plans SET base_premium_rate = 6.0, smoker_factor = 1.4 "
+        "WHERE insurance_type = 'ENDOWMENT' AND base_premium_rate = 0",
+    ),
+    (
+        "v12d — backfill SAVINGS rate",
+        "UPDATE insurance_plans SET base_premium_rate = 6.0, smoker_factor = 1.4 "
+        "WHERE insurance_type = 'SAVINGS' AND base_premium_rate = 0",
+    ),
+    (
+        "v12e — backfill SINGLE_PREMIUM rate",
+        "UPDATE insurance_plans SET base_premium_rate = 4.0, smoker_factor = 1.3 "
+        "WHERE insurance_type = 'SINGLE_PREMIUM' AND base_premium_rate = 0",
+    ),
+    (
+        "v12f — backfill HEALTH_CASH rate",
+        "UPDATE insurance_plans SET base_premium_rate = 8.0, smoker_factor = 1.2 "
+        "WHERE insurance_type = 'HEALTH_CASH' AND base_premium_rate = 0",
+    ),
+    (
+        "v12g — backfill CHILD_EDUCATION_MARRIAGE rate",
+        "UPDATE insurance_plans SET base_premium_rate = 5.0, smoker_factor = 1.0 "
+        "WHERE insurance_type = 'CHILD_EDUCATION_MARRIAGE' AND base_premium_rate = 0",
+    ),
+    # GROUP_LIFE intentionally left at the neutral 0.0/1.0 default — group
+    # pricing is negotiated per-MasterPolicy and is not served by the
+    # per-applicant /quote endpoint (see shared/pricing/calculator.py).
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
