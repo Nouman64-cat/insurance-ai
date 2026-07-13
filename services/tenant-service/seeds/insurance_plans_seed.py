@@ -222,7 +222,7 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         "Shariah-compliant fund choices.",
     ),
     _plan(
-        "ADAMJEE_BARAKAH_PLAN", "Adamjee Barakah Plan", "SAVINGS", "Takaful",
+        "ADAMJEE_BARAKAH_PLAN", "Barakah Plan", "SAVINGS", "Takaful",
         "Highly flexible Takaful savings plan offering loyalty bonuses for long-term "
         "participants, PKR 1 million Hajj coverage, and three Shariah-compliant fund options.",
     ),
@@ -245,49 +245,49 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
 
     # ── Bancassurance (bank-partnered) ──────────────────────────────────────
     _plan(
-        "ADAMJEE_LIFE_PROTECTION_PLUS", "Adamjee Life Protection Plus", "TERM_LIFE", "Bancassurance",
+        "ADAMJEE_LIFE_PROTECTION_PLUS", "Life Protection Plus", "TERM_LIFE", "Bancassurance",
         "Premium core protection plan sold through MCB Bank — coverage up to PKR 2.5 million, a "
         "14-day free-look period, complimentary e-health consultations, and premiums starting "
         "from PKR 3,450 annually.",
         partner_bank="MCB Bank",
     ),
     _plan(
-        "ADAMJEE_LIFE_SIGNATURE_PLUS", "Adamjee Life Signature Plus", "SAVINGS", "Bancassurance",
+        "ADAMJEE_LIFE_SIGNATURE_PLUS", "Life Signature Plus", "SAVINGS", "Bancassurance",
         "High-tier bancassurance investment and savings plan — 75% first-year premium "
         "allocation, coverage flexible between 5–30x the premium, a savings booster of 103%, "
         "multiple fund options, and continuation bonuses of up to 50%.",
     ),
     _plan(
-        "ADAMJEE_LIFE_MAYMAR_MUSTAKBIL", "Adamjee Life Maymar Mustakbil", "SAVINGS", "Bancassurance",
+        "ADAMJEE_LIFE_MAYMAR_MUSTAKBIL", "Life Maymar Mustakbil", "SAVINGS", "Bancassurance",
         "Long-term future-planning bancassurance savings plan — 70% first-year allocation, low "
         "minimum premiums (PKR 25,000–50,000), a maturity payout equal to the account value, and "
         "an optional savings booster.",
     ),
     _plan(
-        "ADAMJEE_LIFE_SAVE_AND_ASSURE", "Adamjee Life Save And Assure", "SAVINGS", "Bancassurance",
+        "ADAMJEE_LIFE_SAVE_AND_ASSURE", "Life Save And Assure", "SAVINGS", "Bancassurance",
         "General balanced savings and life-cover bancassurance plan — high loyalty bonuses, "
         "coverage multiples of 5–200x the premium, customizable riders, and a minimum "
         "investment of PKR 20,000.",
     ),
     _plan(
-        "ADAMJEE_LIFE_TAMEER_EDUCATION", "Adamjee Life Tameer Education", "CHILD_EDUCATION_MARRIAGE", "Bancassurance",
+        "ADAMJEE_LIFE_TAMEER_EDUCATION", "Life Tameer Education", "CHILD_EDUCATION_MARRIAGE", "Bancassurance",
         "Bancassurance education-savings plan tuned for university fee maturity, sold through "
         "MCB Bank — multiple professionally managed funds, a low minimum premium of PKR 20,000, "
         "and no policy fees.",
         partner_bank="MCB Bank",
     ),
     _plan(
-        "ADAMJEE_LIFE_PARVAAZ_SAVINGS", "Adamjee Life Parvaaz – Savings", "SAVINGS", "Bancassurance",
+        "ADAMJEE_LIFE_PARVAAZ_SAVINGS", "Life Parvaaz – Savings", "SAVINGS", "Bancassurance",
         "Modular Parvaaz savings variant — coverage 5–200x the premium, up to 100% bonus at the "
         "20th policy year, minimum investment PKR 20,000, entry age 18–70.",
     ),
     _plan(
-        "ADAMJEE_LIFE_PARVAAZ_HEALTH", "Adamjee Life Parvaaz – Savings & Health", "HEALTH_CASH", "Bancassurance",
+        "ADAMJEE_LIFE_PARVAAZ_HEALTH", "Life Parvaaz – Savings & Health", "HEALTH_CASH", "Bancassurance",
         "Modular Parvaaz Savings & Health variant, integrating savings and life protection with "
         "a hospitalization cash-back rider and multiple fund options.",
     ),
     _plan(
-        "ADAMJEE_LIFE_PARVAAZ_EDUCATION_MARRIAGE", "Adamjee Life Parvaaz – Education & Marriage",
+        "ADAMJEE_LIFE_PARVAAZ_EDUCATION_MARRIAGE", "Life Parvaaz – Education & Marriage",
         "CHILD_EDUCATION_MARRIAGE", "Bancassurance",
         "Modular Parvaaz Education & Marriage variant — a one-time life-event bonus equal to the "
         "initial basic premium after 10 policy years, a free premium-waiver rider, and 100%+ "
