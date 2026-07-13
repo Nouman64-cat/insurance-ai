@@ -108,10 +108,14 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
     structured_llm = _llm().with_structured_output(MedicalScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert life insurance medical underwriter.
-         Evaluate the following applicant's baseline medical risk based on:
+         Evaluate the following applicant's baseline medical and lifestyle risk based on:
          1. Age (Calculate from DOB. Older = higher risk).
          2. Gender (Standard actuarial mortality differentials).
-         3. Occupation Hazard (High hazard like mining/military = high points, office work = 0 points).
+         3. Occupation Hazard (High hazard like mining/military/deep sea diver = high points).
+         4. Substance Consumption (Smoking status/vaper, alcohol consumption frequency, recreational drug use history).
+         5. High-Risk Hobbies / Avocations (Participates in extreme sports, private aviation).
+         6. Travel & Location Risks (Frequent travel to politically unstable or high-risk regions).
+         7. Driving & Legal History (Driving violations, DUI history).
 
          Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons."""),
         ("user", "Applicant Data: {applicant}")
