@@ -397,11 +397,7 @@ export function Sidebar() {
     .slice(0, 2)
     .toUpperCase() || "SR";
 
-<<<<<<< HEAD
-  const workingHrefs = ["/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin/users", "/admin/applicants"];
-=======
   const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/admin/users", "/admin/applicants", "/medical", "/financial", "/occupational"];
->>>>>>> 830aec90322fd776df2bbd3648eb882974efcc6d
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins"];
 
   const displayGroups = (userRole === "SuperAdmin"
