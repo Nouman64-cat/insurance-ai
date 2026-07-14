@@ -25,6 +25,15 @@ export default function TenantManagementPage() {
   const [tenantCode, setTenantCode] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editActive, setEditActive] = useState(true);
+
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
+  const [deleteConfirmationCode, setDeleteConfirmationCode] = useState("");
+
   useEffect(() => {
     const role = localStorage.getItem("user_role");
     if (role !== "SuperAdmin") {
@@ -73,6 +82,78 @@ export default function TenantManagementPage() {
         Array.isArray(detail)
           ? detail.map((d: any) => d.msg).join(", ")
           : detail ?? err.message ?? "Failed to create tenant."
+      );
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleOpenEditModal = (tenant: Tenant) => {
+    setEditingTenant(tenant);
+    setEditName(tenant.name);
+    setEditActive(tenant.is_active);
+    setError("");
+    setSuccess("");
+    setShowEditModal(true);
+  };
+
+  const handleEditTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTenant) return;
+    setError("");
+    setSuccess("");
+    setFormLoading(true);
+
+    try {
+      await api.patch(`/tenants/${editingTenant.id}`, {
+        name: editName,
+        is_active: editActive,
+      });
+      setSuccess(`Tenant "${editName}" updated successfully!`);
+      setShowEditModal(false);
+      fetchTenants();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(
+        Array.isArray(detail)
+          ? detail.map((d: any) => d.msg).join(", ")
+          : detail ?? err.message ?? "Failed to update tenant."
+      );
+    } finally {
+      setFormLoading(false);
+    }
+  };
+
+  const handleOpenDeleteModal = (tenant: Tenant) => {
+    setDeletingTenant(tenant);
+    setDeleteConfirmationCode("");
+    setError("");
+    setSuccess("");
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deletingTenant) return;
+    if (deleteConfirmationCode !== deletingTenant.code) {
+      setError("Confirmation code does not match.");
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setFormLoading(true);
+
+    try {
+      await api.delete(`/tenants/${deletingTenant.id}`);
+      setSuccess(`Tenant "${deletingTenant.name}" deleted successfully!`);
+      setShowDeleteModal(false);
+      fetchTenants();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(
+        Array.isArray(detail)
+          ? detail.map((d: any) => d.msg).join(", ")
+          : detail ?? err.message ?? "Failed to delete tenant."
       );
     } finally {
       setFormLoading(false);
@@ -200,12 +281,32 @@ export default function TenantManagementPage() {
                       })}
                     </td>
                     <td className="px-5 py-3.5 text-right">
-                      <button
-                        onClick={() => router.push(`/super-admin/admins?tenantId=${tenant.id}`)}
-                        className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                      >
-                        Add Admin →
-                      </button>
+                      <div className="flex items-center justify-end gap-3">
+                        <button
+                          onClick={() => router.push(`/super-admin/admins?tenantId=${tenant.id}`)}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors mr-2"
+                        >
+                          Add Admin
+                        </button>
+                        <button
+                          onClick={() => handleOpenEditModal(tenant)}
+                          className="text-slate-400 hover:text-blue-600 transition-colors"
+                          title="Edit Tenant"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.83 20.082a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleOpenDeleteModal(tenant)}
+                          className="text-slate-400 hover:text-red-600 transition-colors"
+                          title="Delete Tenant"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                          </svg>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -277,6 +378,149 @@ export default function TenantManagementPage() {
                     </svg>
                   )}
                   Create Tenant
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT TENANT MODAL ── */}
+      {showEditModal && editingTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Edit Tenant</h3>
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleEditTenant} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Tenant Name *</label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  placeholder="e.g. Adamjee Life Assurance"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Tenant Code</label>
+                <input
+                  type="text"
+                  disabled
+                  value={editingTenant.code}
+                  className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-400 font-mono focus:outline-none cursor-not-allowed"
+                />
+                <p className="text-[11px] text-slate-400">Tenant code cannot be modified.</p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1.5">
+                <input
+                  type="checkbox"
+                  id="editActive"
+                  checked={editActive}
+                  onChange={(e) => setEditActive(e.target.checked)}
+                  className="rounded border-slate-300 text-blue-600 focus:ring-blue-500/20 h-4 w-4"
+                />
+                <label htmlFor="editActive" className="text-xs font-semibold text-slate-700 select-none">
+                  Tenant Active Status
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={formLoading}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  {formLoading && (
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE TENANT MODAL ── */}
+      {showDeleteModal && deletingTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-red-600">Delete Tenant</h3>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleDeleteTenant} className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-700 leading-relaxed space-y-2">
+                <p className="font-bold">⚠️ Warning: This is a permanent action!</p>
+                <p>Deleting tenant <strong>"{deletingTenant.name}"</strong> ({deletingTenant.code}) will perform a cascade deletion of all associated users, cases, policies, plans, and applicant data.</p>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">
+                  To confirm, type the tenant code <strong>"{deletingTenant.code}"</strong> below:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={deleteConfirmationCode}
+                  onChange={(e) => setDeleteConfirmationCode(e.target.value.toUpperCase())}
+                  placeholder={deletingTenant.code}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 font-mono placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500 transition-all"
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={formLoading || deleteConfirmationCode !== deletingTenant.code}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-600/30 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  {formLoading && (
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  Permanently Delete
                 </button>
               </div>
             </form>
