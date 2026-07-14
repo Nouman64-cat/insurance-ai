@@ -526,6 +526,7 @@ export default function UserManagementPage() {
                   <label className="block text-xs font-semibold text-slate-600">Password (Leave blank to keep same)</label>
                   <input
                     type="password"
+                    autoComplete="new-password"
                     value={editPassword}
                     onChange={(e) => setEditPassword(e.target.value)}
                     placeholder="Enter new password if updating"
