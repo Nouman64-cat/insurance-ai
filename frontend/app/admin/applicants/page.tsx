@@ -11,7 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 
 const applicantCoreSchema = z.object({
-  cnic: z.string().regex(/^\d{5}-\d{7}-\d{1}$/, "Format: 35201-1234567-1"),
+  cnic: z.string().trim().regex(/^\d{5}-\d{7}-\d{1}$/, "Format: XXXXX-XXXXXXX-X"),
   firstName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
   lastName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
   dob: z.string().min(1, "Required"),
@@ -119,6 +119,8 @@ export default function ApplicantsPage() {
   // Insurance Plan Selection (create modal only)
   const [availablePlans, setAvailablePlans] = useState<InsurancePlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
+  const [isSuggestingPlan, setIsSuggestingPlan] = useState(false);
+  const [suggestedReasoning, setSuggestedReasoning] = useState("");
 
   // Applicant policies (view + edit modals)
   const [applicantPolicies, setApplicantPolicies] = useState<Policy[]>([]);
@@ -345,6 +347,7 @@ export default function ApplicantsPage() {
     setFormTab("demographics");
     setError("");
     setSuccess("");
+    setSuggestedReasoning("");
     // Fetch available plans
     const tenantId = localStorage.getItem("tenant_id");
     if (tenantId) {
@@ -359,6 +362,37 @@ export default function ApplicantsPage() {
       }
     }
     setShowCreateModal(true);
+  };
+
+  const handleSuggestPlan = async () => {
+    if (availablePlans.length === 0) return;
+    setIsSuggestingPlan(true);
+    setSuggestedReasoning("");
+    setError("");
+
+    try {
+      const applicantData = {
+        ...formValues,
+        ...details,
+        // Calculate age for the LLM based on DOB
+        age: formValues.dob ? new Date().getFullYear() - new Date(formValues.dob).getFullYear() : 30
+      };
+      
+      const res = await api.post(`/suggest-plan`, {
+        applicant: applicantData,
+        plans: availablePlans
+      });
+      const data = res.data;
+      
+      setValue("selectedPlanId", data.suggested_plan_id);
+      setValue("policyCoverage", data.suggested_coverage);
+      setValue("policyTerm", data.suggested_term);
+      setSuggestedReasoning(data.reasoning);
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to suggest plan.");
+    } finally {
+      setIsSuggestingPlan(false);
+    }
   };
 
   const handleCreateApplicant = async (data: z.infer<typeof applicantCoreSchema>) => {
@@ -871,7 +905,13 @@ export default function ApplicantsPage() {
                         <label className="text-xs font-semibold text-slate-600">CNIC *</label>
                         <input
                           type="text"
-                          {...register("cnic", { onChange: (e) => e.target.value = formatCNIC(e.target.value) })}
+                          {...register("cnic", { 
+                            onChange: (e) => {
+                              const formatted = formatCNIC(e.target.value);
+                              e.target.value = formatted;
+                              setValue("cnic", formatted, { shouldValidate: true });
+                            }
+                          })}
                           placeholder="35201-XXXXXXX-X"
                           maxLength={15}
                           className={`w-full bg-slate-50 border ${errors.cnic ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
@@ -1970,7 +2010,44 @@ export default function ApplicantsPage() {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Select Insurance Plan</h4>
-                    <p className="text-xs text-slate-400 mb-4">Choose a plan from your tenant catalog. Coverage and term are required. You can always change this later from the applicant's plan page.</p>
+                    
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                      <p className="text-xs text-slate-400">Choose a plan from your tenant catalog. Coverage and term are required.</p>
+                      <button
+                        type="button"
+                        onClick={handleSuggestPlan}
+                        disabled={isSuggestingPlan || availablePlans.length === 0}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-300 transition-colors shadow-sm whitespace-nowrap"
+                      >
+                        {isSuggestingPlan ? (
+                          <>
+                            <div className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-indigo-200 border-t-white" />
+                            Analyzing Profile...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            Suggest Plan with AI
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {suggestedReasoning && (
+                      <div className="mb-6 p-4 rounded-xl bg-indigo-50 border border-indigo-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+                        <div className="flex gap-3">
+                          <svg className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          <div>
+                            <h5 className="text-xs font-bold text-indigo-900 mb-1">AI Recommendation</h5>
+                            <p className="text-xs text-indigo-800 leading-relaxed">{suggestedReasoning}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {plansLoading ? (
                       <div className="flex items-center gap-2 py-6 justify-center">
