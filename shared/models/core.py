@@ -834,5 +834,18 @@ class CaseAuditTrail(SQLModel, table=True):
     previousValue: Optional[str] = Field(default=None, nullable=True)
     newValue: Optional[str] = Field(default=None, nullable=True)
     performedBy: UUID = Field(foreign_key="users.id", index=True)
-    timestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     ipAddress: Optional[str] = Field(default=None, max_length=45, nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. TokenUsage
+# ─────────────────────────────────────────────────────────────────────────────
+class TokenUsage(SQLModel, table=True):
+    __tablename__ = "token_usage"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    service_name: str = Field(index=True, max_length=100)
+    input_tokens: int = Field(default=0)
+    output_tokens: int = Field(default=0)
+    total_tokens: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)

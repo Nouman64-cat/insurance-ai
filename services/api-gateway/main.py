@@ -437,6 +437,11 @@ async def proxy_roles(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
 
 
+@app.api_route("/tokens/usage", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_tokens_usage(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tokens/usage")
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Health
