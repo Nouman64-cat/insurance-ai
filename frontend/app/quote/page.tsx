@@ -257,6 +257,36 @@ function QuoteDetailModal({
 
         {detail && !loading && (
           <div className="p-5 space-y-5">
+            {/* Quotation Statement */}
+            <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-4 space-y-1.5">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Quotation Statement</p>
+                <span className="text-[10px] font-mono text-slate-400">Ref: {detail.quote_id.slice(0, 8).toUpperCase()}</span>
+              </div>
+              <p className="text-sm text-slate-700 leading-relaxed">
+                We are pleased to present the following insurance quotation for{" "}
+                <span className="font-semibold text-slate-900">{detail.applicant_name}</span>. Based on the
+                information provided, we propose a{" "}
+                <span className="font-semibold text-slate-900">
+                  {INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type}
+                </span>{" "}
+                policy under the{" "}
+                <span className="font-semibold text-slate-900">{detail.plan_label}</span>{" "}
+                plan, providing a sum assured of{" "}
+                <span className="font-semibold text-slate-900">{formatPKR(detail.coverage_amount)}</span>{" "}
+                over a term of{" "}
+                <span className="font-semibold text-slate-900">{detail.term_years} years</span>.
+              </p>
+              <p className="text-sm text-slate-700 leading-relaxed">
+                The total annual premium for this coverage is{" "}
+                <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
+                (base premium of {formatPKR(detail.base_premium)} plus a risk loading of{" "}
+                {formatPKR(detail.loading_applied)}). This quotation is valid subject to
+                satisfactory underwriting assessment and is generated as of{" "}
+                <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
+              </p>
+            </div>
+
             {/* Headline */}
             <div>
               <h2 className="text-lg font-bold text-slate-900">{detail.applicant_name}</h2>

@@ -5,6 +5,26 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+import httpx
+import google.generativeai as genai
+
+TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+
+async def _record_token_usage(usage_dict: dict):
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{TENANT_SERVICE_URL}/tokens/usage",
+                json={
+                    "service_name": "Text Summarizer",
+                    "input_tokens": usage_dict["input"],
+                    "output_tokens": usage_dict["output"],
+                    "total_tokens": usage_dict["total"]
+                },
+                timeout=5.0
+            )
+    except Exception as e:
+        print(f"Failed to record token usage: {e}")
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
@@ -105,6 +125,11 @@ async def _stream_summarize_sse(prompt: str):
                     },
                 },
             )
+            loop.create_task(_record_token_usage({
+                "input": usage.prompt_token_count,
+                "output": usage.candidates_token_count,
+                "total": usage.total_token_count,
+            }))
         except Exception as exc:
             loop.call_soon_threadsafe(
                 queue.put_nowait, {"type": "error", "message": str(exc)}
@@ -148,6 +173,12 @@ async def summarize_text(request: SummarizeRequest):
         usage = response.usage_metadata
         if not usage:
             raise ValueError("No token usage metadata in response")
+
+        asyncio.create_task(_record_token_usage({
+            "input": usage.prompt_token_count,
+            "output": usage.candidates_token_count,
+            "total": usage.total_token_count,
+        }))
 
         return SummarizeResponse(
             summary=response.text,

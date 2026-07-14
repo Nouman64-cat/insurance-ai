@@ -26,6 +26,7 @@ from kafka_producer import create_producer
 from quote_worker import start_quote_worker
 from routers.evaluate import router as evaluate_router
 from routers.quote import router as quote_router
+from routers.suggest import router as suggest_router
 from schemas import (
     CurrentUserResponse,
     RoleRead,
@@ -106,6 +107,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 app.include_router(evaluate_router)
 app.include_router(quote_router)
+app.include_router(suggest_router)
 
 
 # ── Proxy routing to tenant-service ───────────────────────────────────────────
@@ -433,6 +435,11 @@ async def proxy_tenant_insurance_plans(tenant_id: UUID, path: str, request: Requ
 @app.api_route("/roles", methods=["GET", "OPTIONS"], include_in_schema=False)
 async def proxy_roles(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
+
+
+@app.api_route("/tokens/usage", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_tokens_usage(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tokens/usage")
 
 
 

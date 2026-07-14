@@ -53,6 +53,18 @@ class EvaluationRequest(BaseModel):
     policy: PolicyInput
 
 
+class SuggestPlanRequest(BaseModel):
+    applicant: Dict[str, Any]
+    plans: list[Dict[str, Any]]
+
+
+class SuggestPlanResponse(BaseModel):
+    suggested_plan_id: str
+    suggested_coverage: int
+    suggested_term: int
+    reasoning: str
+
+
 class EvaluationResponse(BaseModel):
     is_valid: bool
     validation_errors: list[str]
@@ -175,3 +187,16 @@ async def evaluate_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+@app.post("/suggest-plan", response_model=SuggestPlanResponse)
+async def suggest_plan_endpoint(
+    request: SuggestPlanRequest,
+    x_tenant_id: str = Header(default=""),
+):
+    """Uses LLM to recommend the best plan for the applicant."""
+    try:
+        result = suggest_plan(request.applicant, request.plans)
+        return SuggestPlanResponse(**result)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
