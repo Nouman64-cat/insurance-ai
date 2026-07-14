@@ -19,6 +19,7 @@ from routers.cases import router as cases_router
 from routers.artifacts import router as artifacts_router
 from routers.organizations import router as organizations_router
 from routers.insurance_plans import router as insurance_plans_router
+from routers.tokens import router as tokens_router
 from shared.models.core import Role
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
@@ -99,6 +100,7 @@ app.include_router(cases_router)
 app.include_router(artifacts_router)
 app.include_router(organizations_router)
 app.include_router(insurance_plans_router)
+app.include_router(tokens_router)
 
 
 @app.get("/health", tags=["Ops"])

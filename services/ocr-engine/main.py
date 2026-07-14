@@ -4,8 +4,27 @@ import json
 import os
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+import httpx
 from fastapi.responses import StreamingResponse
 import google.generativeai as genai
+
+TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+
+async def _record_token_usage(usage_dict: dict):
+    try:
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{TENANT_SERVICE_URL}/tokens/usage",
+                json={
+                    "service_name": "OCR Engine",
+                    "input_tokens": usage_dict["input"],
+                    "output_tokens": usage_dict["output"],
+                    "total_tokens": usage_dict["total"]
+                },
+                timeout=5.0
+            )
+    except Exception as e:
+        print(f"Failed to record token usage: {e}")
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 if not GEMINI_API_KEY:
@@ -113,6 +132,11 @@ async def _stream_ocr_sse(file_bytes: bytes, mime_type: str):
                     },
                 },
             )
+            loop.create_task(_record_token_usage({
+                "input": usage.prompt_token_count,
+                "output": usage.candidates_token_count,
+                "total": usage.total_token_count,
+            }))
         except Exception as exc:
             loop.call_soon_threadsafe(
                 queue.put_nowait, {"type": "error", "message": str(exc)}
@@ -151,6 +175,7 @@ async def extract_text(file: UploadFile = File(...)):
 
     try:
         result = _run_ocr(file_bytes, mime_type)
+        asyncio.create_task(_record_token_usage(result["token_usage"]))
         return {
             "filename": file.filename,
             "extracted_text": result["text"],
@@ -201,6 +226,7 @@ async def extract_text_from_path(input_path: str, output_path: str | None = None
             file_bytes = f.read()
 
         result = _run_ocr(file_bytes, mime_type)
+        asyncio.create_task(_record_token_usage(result["token_usage"]))
 
         if output_path:
             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
