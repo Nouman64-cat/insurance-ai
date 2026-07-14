@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional
 from graph_writer import write_applicant_to_graph
 from workflow import run_evaluation, stream_evaluation
 from consumer import start_consumer_task
+from suggestion import suggest_plan
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
