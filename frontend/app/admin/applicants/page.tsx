@@ -6,6 +6,26 @@ import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { registerPendingQuote } from "@/lib/pendingQuotes";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+
+const applicantCoreSchema = z.object({
+  cnic: z.string().trim().regex(/^\d{5}-\d{7}-\d{1}$/, "Format: XXXXX-XXXXXXX-X"),
+  firstName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
+  lastName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
+  dob: z.string().min(1, "Required"),
+  gender: z.enum(["Male", "Female", "Other"]),
+  maritalStatus: z.enum(["Single", "Married", "Divorced", "Widowed"]),
+  nationality: z.string().min(2, "Required"),
+  occupation: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
+  declaredIncome: z.coerce.number().min(0, "Must be positive"),
+  selectedPlanId: z.string().optional(),
+  policyCoverage: z.coerce.number().optional(),
+  policyTerm: z.coerce.number().optional(),
+  policyDependentName: z.string().regex(/^[A-Za-z\s]*$/, "Only alphabets and spaces allowed").optional(),
+  policyDependentDob: z.string().optional(),
+});
 
 interface Applicant {
   id: string;
@@ -74,26 +94,33 @@ export default function ApplicantsPage() {
   const [formTab, setFormTab] = useState("demographics");
   const [viewTab, setViewTab] = useState("demographics");
 
-  // Core fields
-  const [cnic, setCnic] = useState("");
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [dob, setDob] = useState("");
-  const [gender, setGender] = useState("Male");
-  const [maritalStatus, setMaritalStatus] = useState("Single");
-  const [nationality, setNationality] = useState("Pakistani");
-  const [occupation, setOccupation] = useState("");
-  const [declaredIncome, setDeclaredIncome] = useState("");
+  const {
+    register,
+    handleSubmit: hookFormSubmit,
+    formState: { errors },
+    reset,
+    watch,
+    setValue,
+  } = useForm<z.infer<typeof applicantCoreSchema>>({
+    resolver: zodResolver(applicantCoreSchema),
+    mode: "onChange",
+    defaultValues: {
+      gender: "Male",
+      maritalStatus: "Single",
+      nationality: "Pakistani",
+      selectedPlanId: "",
+    }
+  });
+  const formValues = watch();
+  const { selectedPlanId, policyCoverage, policyTerm, policyDependentName, policyDependentDob } = formValues;
+
   const [formLoading, setFormLoading] = useState(false);
 
   // Insurance Plan Selection (create modal only)
   const [availablePlans, setAvailablePlans] = useState<InsurancePlan[]>([]);
   const [plansLoading, setPlansLoading] = useState(false);
-  const [selectedPlanId, setSelectedPlanId] = useState<string>("");
-  const [policyCoverage, setPolicyCoverage] = useState<string>("");
-  const [policyTerm, setPolicyTerm] = useState<string>("");
-  const [policyDependentName, setPolicyDependentName] = useState("");
-  const [policyDependentDob, setPolicyDependentDob] = useState("");
+  const [isSuggestingPlan, setIsSuggestingPlan] = useState(false);
+  const [suggestedReasoning, setSuggestedReasoning] = useState("");
 
   // Applicant policies (view + edit modals)
   const [applicantPolicies, setApplicantPolicies] = useState<Policy[]>([]);
@@ -234,10 +261,24 @@ export default function ApplicantsPage() {
         financial_burden_score: 0,
         dependency_ratio: 0
       }
+    },
+    habit_check: {
+      smoking_status: "Non-smoker",
+      alcohol_consumption_frequency: "None",
+      recreational_drug_use_history: false,
+      participates_in_extreme_sports: false,
+      extreme_sports_details: [] as string[],
+      private_aviation: false,
+      frequent_high_risk_travel: false,
+      travel_destinations: [] as string[],
+      moving_violations_past_3_years: 0,
+      dui_dwi_history: false,
+      criminal_record: false
     }
   };
 
   const [details, setDetails] = useState<typeof defaultDetails>(defaultDetails);
+  const [newDestination, setNewDestination] = useState("");
 
   // Sub-record helpers for lists
   const [newCondition, setNewCondition] = useState({ condition_name: "", severity: "Mild", diagnosis_date: "", is_chronic: false });
@@ -286,25 +327,27 @@ export default function ApplicantsPage() {
   };
 
   const handleOpenCreateModal = async () => {
-    setCnic("");
-    setFirstName("");
-    setLastName("");
-    setDob("");
-    setGender("Male");
-    setMaritalStatus("Single");
-    setNationality("Pakistani");
-    setOccupation("");
-    setDeclaredIncome("");
+    reset({
+      cnic: "",
+      firstName: "",
+      lastName: "",
+      dob: "",
+      gender: "Male",
+      maritalStatus: "Single",
+      nationality: "Pakistani",
+      occupation: "",
+      declaredIncome: undefined,
+      selectedPlanId: "",
+      policyCoverage: undefined,
+      policyTerm: undefined,
+      policyDependentName: "",
+      policyDependentDob: ""
+    });
     setDetails(JSON.parse(JSON.stringify(defaultDetails)));
     setFormTab("demographics");
     setError("");
     setSuccess("");
-    // Reset plan selection
-    setSelectedPlanId("");
-    setPolicyCoverage("");
-    setPolicyTerm("");
-    setPolicyDependentName("");
-    setPolicyDependentDob("");
+    setSuggestedReasoning("");
     // Fetch available plans
     const tenantId = localStorage.getItem("tenant_id");
     if (tenantId) {
@@ -321,8 +364,38 @@ export default function ApplicantsPage() {
     setShowCreateModal(true);
   };
 
-  const handleCreateApplicant = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSuggestPlan = async () => {
+    if (availablePlans.length === 0) return;
+    setIsSuggestingPlan(true);
+    setSuggestedReasoning("");
+    setError("");
+
+    try {
+      const applicantData = {
+        ...formValues,
+        ...details,
+        // Calculate age for the LLM based on DOB
+        age: formValues.dob ? new Date().getFullYear() - new Date(formValues.dob).getFullYear() : 30
+      };
+      
+      const res = await api.post(`/suggest-plan`, {
+        applicant: applicantData,
+        plans: availablePlans
+      });
+      const data = res.data;
+      
+      setValue("selectedPlanId", data.suggested_plan_id);
+      setValue("policyCoverage", data.suggested_coverage);
+      setValue("policyTerm", data.suggested_term);
+      setSuggestedReasoning(data.reasoning);
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to suggest plan.");
+    } finally {
+      setIsSuggestingPlan(false);
+    }
+  };
+
+  const handleCreateApplicant = async (data: z.infer<typeof applicantCoreSchema>) => {
     setError("");
     setSuccess("");
     setFormLoading(true);
@@ -339,37 +412,40 @@ export default function ApplicantsPage() {
         ...details,
         income_record: {
           ...details.income_record,
-          declared_income: parseFloat(declaredIncome) || 0,
-          annual_income: parseFloat(declaredIncome) || 0
+          declared_income: data.declaredIncome,
+          annual_income: data.declaredIncome
         }
       };
 
       const applicantResp = await api.post<Applicant>(`/tenants/${tenantId}/applicants`, {
-        cnic,
-        first_name: firstName,
-        last_name: lastName,
-        date_of_birth: dob,
-        gender,
-        marital_status: maritalStatus,
-        nationality,
-        occupation,
-        declared_income: parseFloat(declaredIncome) || 0,
+        cnic: data.cnic,
+        first_name: data.firstName,
+        last_name: data.lastName,
+        date_of_birth: data.dob,
+        gender: data.gender,
+        marital_status: data.maritalStatus,
+        nationality: data.nationality,
+        occupation: data.occupation,
+        declared_income: data.declaredIncome,
+        is_smoker: !!payloadDetails.medical_history.is_smoker,
+        height_cm: parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
+        weight_kg: parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
         details: payloadDetails
       });
 
       // If a plan was selected, create the policy for this applicant
-      if (selectedPlanId && policyCoverage && policyTerm) {
-        const selectedPlan = availablePlans.find((p) => p.id === selectedPlanId);
+      if (data.selectedPlanId && data.policyCoverage && data.policyTerm) {
+        const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
         if (selectedPlan) {
           const policyPayload: any = {
             product_name: selectedPlan.label,
             insurance_type: selectedPlan.insurance_type,
-            coverage_amount: parseFloat(policyCoverage),
-            term_years: parseInt(policyTerm),
+            coverage_amount: data.policyCoverage,
+            term_years: data.policyTerm,
           };
           if (selectedPlan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
-            policyPayload.dependent_name = policyDependentName || null;
-            policyPayload.dependent_dob = policyDependentDob || null;
+            policyPayload.dependent_name = data.policyDependentName || null;
+            policyPayload.dependent_dob = data.policyDependentDob || null;
           }
           await api.post(
             `/tenants/${tenantId}/applicants/${applicantResp.data.id}/policies`,
@@ -391,18 +467,29 @@ export default function ApplicantsPage() {
 
   const handleOpenEditModal = async (applicant: Applicant) => {
     setSelectedApplicant(applicant);
-    setCnic(applicant.cnic);
     const parts = applicant.name.split(" ");
-    setFirstName(parts[0] || "");
-    setLastName(parts.slice(1).join(" ") || "");
-    setDob(applicant.dob);
-    setGender(applicant.gender);
-    setOccupation(applicant.occupation);
-    setDeclaredIncome(applicant.declared_income.toString());
+    reset({
+      cnic: applicant.cnic,
+      firstName: parts[0] || "",
+      lastName: parts.slice(1).join(" ") || "",
+      dob: applicant.dob,
+      gender: applicant.gender as any,
+      occupation: applicant.occupation,
+      declaredIncome: applicant.declared_income,
+      maritalStatus: applicant.details?.marital_status || "Single",
+      nationality: applicant.details?.nationality || "Pakistani",
+    });
 
     // Import existing details or fill defaults
     const importedDetails = applicant.details
-      ? { ...defaultDetails, ...applicant.details }
+      ? { 
+          ...JSON.parse(JSON.stringify(defaultDetails)), 
+          ...applicant.details,
+          habit_check: {
+            ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
+            ...(applicant.details.habit_check || {})
+          }
+        }
       : JSON.parse(JSON.stringify(defaultDetails));
 
     setDetails(importedDetails);
@@ -439,8 +526,7 @@ export default function ApplicantsPage() {
     setShowEditModal(true);
   };
 
-  const handleEditApplicant = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleEditApplicant = async (data: z.infer<typeof applicantCoreSchema>) => {
     setError("");
     setSuccess("");
     setFormLoading(true);
@@ -456,19 +542,22 @@ export default function ApplicantsPage() {
         ...details,
         income_record: {
           ...details.income_record,
-          declared_income: parseFloat(declaredIncome) || 0,
-          annual_income: parseFloat(declaredIncome) || 0
+          declared_income: data.declaredIncome,
+          annual_income: data.declaredIncome
         }
       };
 
       await api.put(`/tenants/${tenantId}/applicants/${selectedApplicant.id}`, {
-        cnic,
-        first_name: firstName,
-        last_name: lastName,
-        date_of_birth: dob,
-        gender,
-        occupation,
-        declared_income: parseFloat(declaredIncome) || 0,
+        cnic: data.cnic,
+        first_name: data.firstName,
+        last_name: data.lastName,
+        date_of_birth: data.dob,
+        gender: data.gender,
+        occupation: data.occupation,
+        declared_income: data.declaredIncome,
+        is_smoker: !!payloadDetails.medical_history.is_smoker,
+        height_cm: parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
+        weight_kg: parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
         details: payloadDetails
       });
 
@@ -500,7 +589,14 @@ export default function ApplicantsPage() {
   const handleOpenProfileModal = async (applicant: Applicant) => {
     setSelectedApplicant(applicant);
     const importedDetails = applicant.details
-      ? { ...defaultDetails, ...applicant.details }
+      ? { 
+          ...JSON.parse(JSON.stringify(defaultDetails)), 
+          ...applicant.details,
+          habit_check: {
+            ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
+            ...(applicant.details.habit_check || {})
+          }
+        }
       : JSON.parse(JSON.stringify(defaultDetails));
     setDetails(importedDetails);
     setViewTab("demographics");
@@ -589,6 +685,7 @@ export default function ApplicantsPage() {
     { id: "cnic", label: "CNIC & Docs" },
     { id: "employment", label: "Occupation & Income" },
     { id: "medical", label: "Medical & Lifestyle" },
+    { id: "habit_check", label: "Habit Check" },
     { id: "financial", label: "Financial Profile" },
     { id: "beneficiary", label: "Nominee Details" },
     { id: "insurance_plan", label: "Insurance Plans" }
@@ -757,7 +854,7 @@ export default function ApplicantsPage() {
             </div>
 
             {/* Tab navigation */}
-            <div className="px-6 border-b border-slate-100 bg-white flex gap-1 overflow-x-auto whitespace-nowrap scrollbar-none">
+            <div className="px-6 border-b border-slate-100 bg-white flex flex-wrap gap-1">
               {(showCreateModal ? createTabs : tabs).map((tab) => (
                 <button
                   key={tab.id}
@@ -778,7 +875,7 @@ export default function ApplicantsPage() {
             </div>
 
             {/* Scrollable Form Body */}
-            <form onSubmit={showCreateModal ? handleCreateApplicant : handleEditApplicant} className="flex-1 overflow-y-auto p-6 space-y-6">
+            <form onSubmit={hookFormSubmit(showCreateModal ? handleCreateApplicant : handleEditApplicant)} className="flex-1 overflow-y-auto p-6 space-y-6">
               
               {/* TAB 1: Demographics & Contact */}
               {formTab === "demographics" && (
@@ -790,68 +887,70 @@ export default function ApplicantsPage() {
                         <label className="text-xs font-semibold text-slate-600">First Name *</label>
                         <input
                           type="text"
-                          required
-                          value={firstName}
-                          onChange={(e) => setFirstName(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          {...register("firstName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                          className={`w-full bg-slate-50 border ${errors.firstName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
+                        {errors.firstName && <span className="text-[10px] text-red-500">{errors.firstName.message}</span>}
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">Last Name *</label>
                         <input
                           type="text"
-                          required
-                          value={lastName}
-                          onChange={(e) => setLastName(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          {...register("lastName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                          className={`w-full bg-slate-50 border ${errors.lastName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
+                        {errors.lastName && <span className="text-[10px] text-red-500">{errors.lastName.message}</span>}
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">CNIC *</label>
                         <input
                           type="text"
-                          required
-                          value={cnic}
-                          onChange={(e) => setCnic(formatCNIC(e.target.value))}
+                          {...register("cnic", { 
+                            onChange: (e) => {
+                              const formatted = formatCNIC(e.target.value);
+                              e.target.value = formatted;
+                              setValue("cnic", formatted, { shouldValidate: true });
+                            }
+                          })}
                           placeholder="35201-XXXXXXX-X"
                           maxLength={15}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className={`w-full bg-slate-50 border ${errors.cnic ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
+                        {errors.cnic && <span className="text-[10px] text-red-500">{errors.cnic.message}</span>}
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">Date of Birth *</label>
                         <input
                           type="date"
-                          required
-                          value={dob}
-                          onChange={(e) => setDob(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          {...register("dob")}
+                          className={`w-full bg-slate-50 border ${errors.dob ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
+                        {errors.dob && <span className="text-[10px] text-red-500">{errors.dob.message}</span>}
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">Gender *</label>
                         <select
-                          value={gender}
-                          onChange={(e) => setGender(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          {...register("gender")}
+                          className={`w-full bg-slate-50 border ${errors.gender ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         >
                           <option value="Male">Male</option>
                           <option value="Female">Female</option>
                           <option value="Other">Other</option>
                         </select>
+                        {errors.gender && <span className="text-[10px] text-red-500">{errors.gender.message}</span>}
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">Marital Status</label>
                         <select
-                          value={maritalStatus}
-                          onChange={(e) => setMaritalStatus(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          {...register("maritalStatus")}
+                          className={`w-full bg-slate-50 border ${errors.maritalStatus ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         >
                           <option value="Single">Single</option>
                           <option value="Married">Married</option>
                           <option value="Divorced">Divorced</option>
                           <option value="Widowed">Widowed</option>
                         </select>
+                        {errors.maritalStatus && <span className="text-[10px] text-red-500">{errors.maritalStatus.message}</span>}
                       </div>
                     </div>
                   </div>
@@ -867,7 +966,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.contact.mobile_number}
                           onChange={(e) => updateField("contact", "mobile_number", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -876,7 +975,7 @@ export default function ApplicantsPage() {
                           type="email"
                           value={details.contact.email}
                           onChange={(e) => updateField("contact", "email", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -885,7 +984,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.contact.emergency_contact_name}
                           onChange={(e) => updateField("contact", "emergency_contact_name", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                     </div>
@@ -902,7 +1001,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.address.street_address}
                           onChange={(e) => updateField("address", "street_address", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -911,7 +1010,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.address.city}
                           onChange={(e) => updateField("address", "city", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -920,7 +1019,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.address.province}
                           onChange={(e) => updateField("address", "province", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -929,7 +1028,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.address.postal_code}
                           onChange={(e) => updateField("address", "postal_code", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                     </div>
@@ -949,7 +1048,7 @@ export default function ApplicantsPage() {
                           type="date"
                           value={details.cnic_metadata.issue_date}
                           onChange={(e) => updateField("cnic_metadata", "issue_date", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -958,7 +1057,7 @@ export default function ApplicantsPage() {
                           type="date"
                           value={details.cnic_metadata.expiry_date}
                           onChange={(e) => updateField("cnic_metadata", "expiry_date", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -966,7 +1065,7 @@ export default function ApplicantsPage() {
                         <select
                           value={details.cnic_metadata.validation_status}
                           onChange={(e) => updateField("cnic_metadata", "validation_status", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         >
                           <option value="Valid">Valid</option>
                           <option value="Invalid">Invalid</option>
@@ -1024,7 +1123,7 @@ export default function ApplicantsPage() {
                         <select
                           value={details.occupation_details.employment_type}
                           onChange={(e) => updateField("occupation_details", "employment_type", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         >
                           <option value="Salaried">Salaried</option>
                           <option value="Self-Employed">Self-Employed</option>
@@ -1035,14 +1134,13 @@ export default function ApplicantsPage() {
                         </select>
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-600">Job Title / Designation *</label>
+                        <label className="text-xs font-semibold text-slate-600">Occupation *</label>
                         <input
                           type="text"
-                          required
-                          value={occupation}
-                          onChange={(e) => setOccupation(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          {...register("occupation", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                          className={`w-full bg-slate-50 border ${errors.occupation ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
+                        {errors.occupation && <span className="text-[10px] text-red-500">{errors.occupation.message}</span>}
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">Employer Name</label>
@@ -1050,7 +1148,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.occupation_details.employer_name}
                           onChange={(e) => updateField("occupation_details", "employer_name", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1060,7 +1158,7 @@ export default function ApplicantsPage() {
                           value={details.occupation_details.industry}
                           onChange={(e) => updateField("occupation_details", "industry", e.target.value)}
                           placeholder="e.g. IT, Healthcare"
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1069,7 +1167,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.occupation_details.years_of_experience}
                           onChange={(e) => updateField("occupation_details", "years_of_experience", parseInt(e.target.value) || 0)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1077,7 +1175,7 @@ export default function ApplicantsPage() {
                         <select
                           value={details.occupation_details.occupation_hazard_level}
                           onChange={(e) => updateField("occupation_details", "occupation_hazard_level", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         >
                           <option value="Low">Low</option>
                           <option value="Medium">Medium</option>
@@ -1097,11 +1195,10 @@ export default function ApplicantsPage() {
                         <label className="text-xs font-semibold text-slate-600">Declared Annual Income (PKR) *</label>
                         <input
                           type="number"
-                          required
-                          value={declaredIncome}
-                          onChange={(e) => setDeclaredIncome(e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          {...register("declaredIncome")}
+                          className={`w-full bg-slate-50 border ${errors.declaredIncome ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
+                        {errors.declaredIncome && <span className="text-[10px] text-red-500">{errors.declaredIncome.message}</span>}
                       </div>
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">Monthly Income Equivalent</label>
@@ -1109,7 +1206,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.income_record.monthly_income}
                           onChange={(e) => updateField("income_record", "monthly_income", parseFloat(e.target.value) || 0)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1120,7 +1217,7 @@ export default function ApplicantsPage() {
                           max="100"
                           value={details.income_record.income_stability_score}
                           onChange={(e) => updateField("income_record", "income_stability_score", parseInt(e.target.value) || 100)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                     </div>
@@ -1226,7 +1323,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.lifestyle.height_cm}
                           onChange={(e) => updateField("lifestyle", "height_cm", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1235,7 +1332,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.lifestyle.weight_kg}
                           onChange={(e) => updateField("lifestyle", "weight_kg", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1252,7 +1349,7 @@ export default function ApplicantsPage() {
                         <select
                           value={details.lifestyle.exercise_frequency}
                           onChange={(e) => updateField("lifestyle", "exercise_frequency", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         >
                           <option value="Sedentary">Sedentary</option>
                           <option value="Light">Light</option>
@@ -1261,6 +1358,294 @@ export default function ApplicantsPage() {
                           <option value="VeryActive">Very Active</option>
                         </select>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 4.5: Habit Check */}
+              {formTab === "habit_check" && (
+                <div className="space-y-6">
+                  {/* 1. Substance Consumption */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center text-red-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">Substance Consumption</h4>
+                        <p className="text-[11px] text-slate-400">Critical fields for mortality pricing & risk assessment.</p>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-600">Smoking Status</label>
+                        <select
+                          value={details.habit_check.smoking_status}
+                          onChange={(e) => updateField("habit_check", "smoking_status", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        >
+                          <option value="Non-smoker">Non-smoker</option>
+                          <option value="Occasional">Occasional</option>
+                          <option value="Heavy Smoker">Heavy Smoker</option>
+                          <option value="Vaper">Vaper</option>
+                          <option value="Chewing Tobacco">Chewing Tobacco</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-600">Alcohol Consumption Frequency</label>
+                        <select
+                          value={details.habit_check.alcohol_consumption_frequency}
+                          onChange={(e) => updateField("habit_check", "alcohol_consumption_frequency", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        >
+                          <option value="None">None</option>
+                          <option value="Occasional">Occasional</option>
+                          <option value="Moderate">Moderate</option>
+                          <option value="Heavy">Heavy</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="pt-2">
+                      <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.recreational_drug_use_history}
+                          onChange={(e) => updateField("habit_check", "recreational_drug_use_history", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500"
+                        />
+                        <div>
+                          <span>Recreational Drug Use History (Past 3-5 Years)</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Check if the applicant has used illegal or non-prescribed substances.</span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 2. High-Risk Hobbies */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-orange-50 flex items-center justify-center text-orange-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">High-Risk Hobbies (Avocations)</h4>
+                        <p className="text-[11px] text-slate-400">Identifies activities with high fatality rates.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.participates_in_extreme_sports}
+                          onChange={(e) => {
+                            const val = e.target.checked;
+                            setDetails(prev => ({
+                              ...prev,
+                              habit_check: {
+                                ...prev.habit_check,
+                                participates_in_extreme_sports: val,
+                                extreme_sports_details: val ? prev.habit_check.extreme_sports_details : []
+                              }
+                            }));
+                          }}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Participates in Extreme Sports</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Trigger flag for adventure/high-risk sports.</span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.private_aviation}
+                          onChange={(e) => updateField("habit_check", "private_aviation", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Private Aviation</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Flies private aircraft or experimental planes (commercial passengers exempt).</span>
+                        </div>
+                      </label>
+                    </div>
+
+                    {details.habit_check.participates_in_extreme_sports && (
+                      <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 space-y-2">
+                        <span className="text-xs font-bold text-slate-700 block">Select Extreme Sports:</span>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                          {["Skydiving", "Scuba Diving (past 100ft)", "Bungee Jumping", "Rock/Ice Climbing", "Motorsports/Racing"].map((sport) => {
+                            const isChecked = details.habit_check.extreme_sports_details.includes(sport);
+                            return (
+                              <label key={sport} className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {
+                                    const nextList = isChecked
+                                      ? details.habit_check.extreme_sports_details.filter(s => s !== sport)
+                                      : [...details.habit_check.extreme_sports_details, sport];
+                                    updateField("habit_check", "extreme_sports_details", nextList);
+                                  }}
+                                  className="rounded text-blue-600 focus:ring-blue-500"
+                                />
+                                {sport}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 3. Travel & Location Risks */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 002 2h2m-4-3.5a2.5 2.5 0 014 2.828v1.172c0 .417-.18.823-.495 1.109l-2.091 1.909A2.5 2.5 0 0113.5 16h-.146A2 2 0 0111.854 15.1l-.854-.854A2 2 0 0110 12.854V11H8.5a1.5 1.5 0 00-1.5 1.5v3h-.5" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">Travel & Location Risks</h4>
+                        <p className="text-[11px] text-slate-400">Underwriting travel to politically unstable or disease outbreak zones.</p>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.frequent_high_risk_travel}
+                          onChange={(e) => updateField("habit_check", "frequent_high_risk_travel", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Frequent High-Risk Travel</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Travel planned or taken to politically unstable regions, active war zones, or severe outbreak areas.</span>
+                        </div>
+                      </label>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-xs font-semibold text-slate-600 block">Travel Destinations (Past/Next 12 Months)</label>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          placeholder="e.g. Iraq, Somalia, Ukraine"
+                          value={newDestination}
+                          onChange={(e) => setNewDestination(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              if (newDestination.trim()) {
+                                const dest = newDestination.trim();
+                                if (!details.habit_check.travel_destinations.includes(dest)) {
+                                  updateField("habit_check", "travel_destinations", [...details.habit_check.travel_destinations, dest]);
+                                }
+                                setNewDestination("");
+                              }
+                            }
+                          }}
+                          className="flex-1 bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (newDestination.trim()) {
+                              const dest = newDestination.trim();
+                              if (!details.habit_check.travel_destinations.includes(dest)) {
+                                updateField("habit_check", "travel_destinations", [...details.habit_check.travel_destinations, dest]);
+                              }
+                              setNewDestination("");
+                            }
+                          }}
+                          className="bg-blue-600 text-white font-bold text-xs px-4 py-1.5 rounded-lg hover:bg-blue-700 transition-colors"
+                        >
+                          + Add
+                        </button>
+                      </div>
+
+                      {details.habit_check.travel_destinations.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-2">
+                          {details.habit_check.travel_destinations.map((dest, i) => (
+                            <span key={i} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full">
+                              {dest}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  updateField("habit_check", "travel_destinations", details.habit_check.travel_destinations.filter((_, idx) => idx !== i));
+                                }}
+                                className="text-blue-500 hover:text-blue-800 font-bold"
+                              >
+                                &times;
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 4. Behavioral & Legal History */}
+                  <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                      <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-purple-500">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">Behavioral & Legal History</h4>
+                        <p className="text-[11px] text-slate-400">Assessing general recklessness & legal risks.</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-xs font-semibold text-slate-600">Moving Violations (Past 3 Years)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          value={details.habit_check.moving_violations_past_3_years}
+                          onChange={(e) => updateField("habit_check", "moving_violations_past_3_years", parseInt(e.target.value) || 0)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                        />
+                      </div>
+                      <div className="flex flex-col justify-end space-y-2">
+                        <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={details.habit_check.dui_dwi_history}
+                            onChange={(e) => updateField("habit_check", "dui_dwi_history", e.target.checked)}
+                            className="rounded text-blue-600 focus:ring-blue-500"
+                          />
+                          DUI / DWI History
+                        </label>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="flex items-start gap-2 text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={details.habit_check.criminal_record}
+                          onChange={(e) => updateField("habit_check", "criminal_record", e.target.checked)}
+                          className="rounded text-blue-600 focus:ring-blue-500 mt-0.5"
+                        />
+                        <div>
+                          <span>Criminal Record</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Check if the applicant has felony convictions or pending criminal charges.</span>
+                        </div>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -1278,7 +1663,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.financial_records.credit_bureau.credit_score}
                           onChange={(e) => updateSubField("financial_records", "credit_bureau", "credit_score", parseInt(e.target.value) || 0)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1287,7 +1672,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.financial_records.credit_bureau.delinquency_count}
                           onChange={(e) => updateSubField("financial_records", "credit_bureau", "delinquency_count", parseInt(e.target.value) || 0)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1295,7 +1680,7 @@ export default function ApplicantsPage() {
                         <select
                           value={details.financial_records.credit_bureau.risk_grade}
                           onChange={(e) => updateSubField("financial_records", "credit_bureau", "risk_grade", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         >
                           <option value="A">Grade A</option>
                           <option value="B">Grade B</option>
@@ -1319,7 +1704,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.financial_records.dependents.number_of_dependents}
                           onChange={(e) => updateSubField("financial_records", "dependents", "number_of_dependents", parseInt(e.target.value) || 0)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1327,7 +1712,7 @@ export default function ApplicantsPage() {
                         <select
                           value={details.financial_records.dependents.dependent_type}
                           onChange={(e) => updateSubField("financial_records", "dependents", "dependent_type", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         >
                           <option value="Spouse">Spouse</option>
                           <option value="Child">Child</option>
@@ -1353,7 +1738,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.beneficiary.first_name}
                           onChange={(e) => updateField("beneficiary", "first_name", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1362,7 +1747,7 @@ export default function ApplicantsPage() {
                           type="text"
                           value={details.beneficiary.last_name}
                           onChange={(e) => updateField("beneficiary", "last_name", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1373,7 +1758,7 @@ export default function ApplicantsPage() {
                           onChange={(e) => updateField("beneficiary", "cnic_number", formatCNIC(e.target.value))}
                           placeholder="35201-XXXXXXX-X"
                           maxLength={15}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                       <div className="space-y-1">
@@ -1381,7 +1766,7 @@ export default function ApplicantsPage() {
                         <select
                           value={details.beneficiary.relationship}
                           onChange={(e) => updateField("beneficiary", "relationship", e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         >
                           <option value="Spouse">Spouse</option>
                           <option value="Parent">Parent</option>
@@ -1397,7 +1782,7 @@ export default function ApplicantsPage() {
                           type="number"
                           value={details.beneficiary.share_percentage}
                           onChange={(e) => updateField("beneficiary", "share_percentage", parseInt(e.target.value) || 0)}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                          className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                         />
                       </div>
                     </div>
@@ -1532,7 +1917,7 @@ export default function ApplicantsPage() {
                                     value={editPolicyCoverage}
                                     onChange={(e) => setEditPolicyCoverage(e.target.value)}
                                     placeholder="e.g. 5000000"
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                                   />
                                   <p className="text-[10px] text-slate-400">Max {plan.max_income_multiple}× declared income</p>
                                 </div>
@@ -1543,7 +1928,7 @@ export default function ApplicantsPage() {
                                     min={plan.term_min_years} max={plan.term_max_years}
                                     value={editPolicyTerm}
                                     onChange={(e) => setEditPolicyTerm(e.target.value)}
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                                   />
                                   <p className="text-[10px] text-slate-400">Range: {plan.term_min_years}–{plan.term_max_years} yrs</p>
                                 </div>
@@ -1557,7 +1942,7 @@ export default function ApplicantsPage() {
                                       value={editPolicyDependentName}
                                       onChange={(e) => setEditPolicyDependentName(e.target.value)}
                                       placeholder="Child's full name"
-                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                                     />
                                   </div>
                                   <div className="space-y-1">
@@ -1566,7 +1951,7 @@ export default function ApplicantsPage() {
                                       type="date"
                                       value={editPolicyDependentDob}
                                       onChange={(e) => setEditPolicyDependentDob(e.target.value)}
-                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                      className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                                     />
                                   </div>
                                 </div>
@@ -1625,7 +2010,44 @@ export default function ApplicantsPage() {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Select Insurance Plan</h4>
-                    <p className="text-xs text-slate-400 mb-4">Choose a plan from your tenant catalog. Coverage and term are required. You can always change this later from the applicant's plan page.</p>
+                    
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                      <p className="text-xs text-slate-400">Choose a plan from your tenant catalog. Coverage and term are required.</p>
+                      <button
+                        type="button"
+                        onClick={handleSuggestPlan}
+                        disabled={isSuggestingPlan || availablePlans.length === 0}
+                        className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-300 transition-colors shadow-sm whitespace-nowrap"
+                      >
+                        {isSuggestingPlan ? (
+                          <>
+                            <div className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-indigo-200 border-t-white" />
+                            Analyzing Profile...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                            </svg>
+                            Suggest Plan with AI
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {suggestedReasoning && (
+                      <div className="mb-6 p-4 rounded-xl bg-indigo-50 border border-indigo-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+                        <div className="flex gap-3">
+                          <svg className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                          </svg>
+                          <div>
+                            <h5 className="text-xs font-bold text-indigo-900 mb-1">AI Recommendation</h5>
+                            <p className="text-xs text-indigo-800 leading-relaxed">{suggestedReasoning}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {plansLoading ? (
                       <div className="flex items-center gap-2 py-6 justify-center">
@@ -1647,10 +2069,10 @@ export default function ApplicantsPage() {
                               key={plan.id}
                               type="button"
                               onClick={() => {
-                                setSelectedPlanId(isSelected ? "" : plan.id);
+                                setValue("selectedPlanId", isSelected ? "" : plan.id);
                                 if (!isSelected) {
-                                  setPolicyCoverage("");
-                                  setPolicyTerm(String(plan.term_min_years));
+                                  setValue("policyCoverage", undefined);
+                                  setValue("policyTerm", plan.term_min_years);
                                 }
                               }}
                               className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
@@ -1691,13 +2113,12 @@ export default function ApplicantsPage() {
                               </label>
                               <input
                                 type="number"
-                                required
                                 min={0}
-                                value={policyCoverage}
-                                onChange={(e) => setPolicyCoverage(e.target.value)}
+                                {...register("policyCoverage")}
                                 placeholder="e.g. 5000000"
-                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                className={`w-full bg-white border ${errors.policyCoverage ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                               />
+                              {errors.policyCoverage && <span className="text-[10px] text-red-500">{errors.policyCoverage.message}</span>}
                               <p className="text-[10px] text-slate-400">
                                 Max {plan.max_income_multiple}× declared income recommended
                               </p>
@@ -1708,13 +2129,12 @@ export default function ApplicantsPage() {
                               </label>
                               <input
                                 type="number"
-                                required
                                 min={plan.term_min_years}
                                 max={plan.term_max_years}
-                                value={policyTerm}
-                                onChange={(e) => setPolicyTerm(e.target.value)}
-                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                {...register("policyTerm")}
+                                className={`w-full bg-white border ${errors.policyTerm ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                               />
+                              {errors.policyTerm && <span className="text-[10px] text-red-500">{errors.policyTerm.message}</span>}
                               <p className="text-[10px] text-slate-400">
                                 Allowed range: {plan.term_min_years}–{plan.term_max_years} years
                               </p>
@@ -1730,20 +2150,20 @@ export default function ApplicantsPage() {
                                   <label className="text-xs font-semibold text-slate-600">Dependent Name</label>
                                   <input
                                     type="text"
-                                    value={policyDependentName}
-                                    onChange={(e) => setPolicyDependentName(e.target.value)}
+                                    {...register("policyDependentName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
                                     placeholder="Child's full name"
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                    className={`w-full bg-white border ${errors.policyDependentName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                                   />
+                                  {errors.policyDependentName && <span className="text-[10px] text-red-500">{errors.policyDependentName.message}</span>}
                                 </div>
                                 <div className="space-y-1">
                                   <label className="text-xs font-semibold text-slate-600">Dependent Date of Birth</label>
                                   <input
                                     type="date"
-                                    value={policyDependentDob}
-                                    onChange={(e) => setPolicyDependentDob(e.target.value)}
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                                    {...register("policyDependentDob")}
+                                    className={`w-full bg-white border ${errors.policyDependentDob ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                                   />
+                                  {errors.policyDependentDob && <span className="text-[10px] text-red-500">{errors.policyDependentDob.message}</span>}
                                 </div>
                               </div>
                             </>
@@ -1958,6 +2378,110 @@ export default function ApplicantsPage() {
                         </div>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {viewTab === "habit_check" && (
+                  <div className="space-y-8 max-w-2xl">
+                    <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Habit Check Summary</h4>
+                    
+                    {/* Substance Consumption */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Substance Consumption</h5>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Smoking Status</span>
+                          <span className="text-sm font-semibold text-slate-800">{details.habit_check.smoking_status}</span>
+                        </div>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Alcohol Consumption</span>
+                          <span className="text-sm font-semibold text-slate-800">{details.habit_check.alcohol_consumption_frequency}</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-semibold text-slate-500 mb-0.5">Recreational Drug Use History</span>
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.recreational_drug_use_history ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                          {details.habit_check.recreational_drug_use_history ? "Yes (Within last 3-5 years)" : "No history"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* High-Risk Hobbies */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">High-Risk Hobbies (Avocations)</h5>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Participates in Extreme Sports</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.participates_in_extreme_sports ? "bg-orange-50 text-orange-700 border border-orange-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                            {details.habit_check.participates_in_extreme_sports ? "Yes" : "No"}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Private Aviation</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.private_aviation ? "bg-orange-50 text-orange-700 border border-orange-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                            {details.habit_check.private_aviation ? "Yes (Pilot/Crew)" : "No"}
+                          </span>
+                        </div>
+                      </div>
+                      {details.habit_check.participates_in_extreme_sports && details.habit_check.extreme_sports_details.length > 0 && (
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-1.5">Registered Extreme Sports</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {details.habit_check.extreme_sports_details.map((sport: string) => (
+                              <span key={sport} className="bg-orange-50 border border-orange-100 text-orange-700 text-xs px-2 py-1 rounded-full font-semibold">
+                                {sport}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Travel & Location Risks */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Travel & Location Risks</h5>
+                      <div>
+                        <span className="block text-xs font-semibold text-slate-500 mb-0.5">Frequent High-Risk Travel</span>
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.frequent_high_risk_travel ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                          {details.habit_check.frequent_high_risk_travel ? "Yes (Active risk region)" : "No"}
+                        </span>
+                      </div>
+                      {details.habit_check.travel_destinations.length > 0 && (
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-1.5">Travel Destinations (Past/Next 12 Months)</span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {details.habit_check.travel_destinations.map((dest: string) => (
+                              <span key={dest} className="bg-blue-50 border border-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-semibold">
+                                {dest}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Behavioral & Legal History */}
+                    <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
+                      <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Behavioral & Legal History</h5>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">Moving Violations (Past 3 Years)</span>
+                          <span className="text-sm font-semibold text-slate-800">{details.habit_check.moving_violations_past_3_years}</span>
+                        </div>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-500 mb-0.5">DUI / DWI History</span>
+                          <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.dui_dwi_history ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                            {details.habit_check.dui_dwi_history ? "Yes" : "No"}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="block text-xs font-semibold text-slate-500 mb-0.5">Criminal Record</span>
+                        <span className={`inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full ${details.habit_check.criminal_record ? "bg-red-50 text-red-700 border border-red-100" : "bg-emerald-50 text-emerald-700 border border-emerald-100"}`}>
+                          {details.habit_check.criminal_record ? "Yes" : "No"}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
 

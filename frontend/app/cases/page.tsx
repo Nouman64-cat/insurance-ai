@@ -11,6 +11,10 @@ interface Applicant {
   id: string;
   cnic: string;
   name: string;
+  dob: string;
+  gender: string;
+  occupation: string;
+  declared_income: number;
 }
 
 interface CaseItem {

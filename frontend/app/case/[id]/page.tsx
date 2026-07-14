@@ -20,9 +20,7 @@ export async function generateMetadata({
   return { title: `${c.id} — ${c.applicantName}` };
 }
 
-export function generateStaticParams() {
-  return Object.keys(CASE_DETAILS).map((id) => ({ id }));
-}
+export const dynamic = "force-dynamic";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sub-components
