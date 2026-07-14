@@ -1,5 +1,6 @@
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -7,9 +8,21 @@ from typing import Any, Dict, Optional
 
 from graph_writer import write_applicant_to_graph
 from workflow import run_evaluation, stream_evaluation
-from suggestion import suggest_plan
+from consumer import start_consumer_task
 
-app = FastAPI(title="Risk Engine", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the Kafka consumer daemon in the background
+    stop_event = asyncio.Event()
+    consumer_task = start_consumer_task(stop_event)
+    
+    yield
+    
+    # Graceful shutdown
+    stop_event.set()
+    await consumer_task
+
+app = FastAPI(title="Risk Engine", version="0.1.0", lifespan=lifespan)
 
 
 # ─── Request / response shapes (Pydantic, not SQLModel — no DB writes here) ──

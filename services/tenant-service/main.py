@@ -1,12 +1,17 @@
 import asyncio
 import os
+import logging
 from contextlib import asynccontextmanager
 
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import KafkaConnectionError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
+
+logger = logging.getLogger("tenant-service.main")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 from database import _session_factory
 from migrate import run_migrations
@@ -57,7 +62,22 @@ async def lifespan(app: FastAPI):
         acks="all",
         enable_idempotence=True,
     )
-    await producer.start()
+    
+    retries = 30
+    delay = 2
+    for attempt in range(1, retries + 1):
+        try:
+            logger.info(f"Connecting to Kafka at {KAFKA_BOOTSTRAP} (attempt {attempt}/{retries})...")
+            await producer.start()
+            logger.info("Successfully connected to Kafka.")
+            break
+        except (KafkaConnectionError, Exception) as e:
+            if attempt == retries:
+                logger.error(f"Failed to connect to Kafka after {retries} attempts: {e}")
+                raise e
+            logger.warning(f"Kafka connection attempt {attempt} failed, retrying in {delay}s...")
+            await asyncio.sleep(delay)
+
     app.state.kafka_producer = producer
 
     # OCR worker — background asyncio task

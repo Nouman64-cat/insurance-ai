@@ -488,3 +488,23 @@ async def list_tenants(request: Request):
 )
 async def get_tenant(tenant_id: UUID, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")
+
+
+@app.patch(
+    "/tenants/{tenant_id}",
+    tags=["Bootstrap"],
+    summary="Update a tenant (SuperAdmin only)",
+)
+async def update_tenant(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")
+
+
+@app.delete(
+    "/tenants/{tenant_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Bootstrap"],
+    summary="Delete a tenant (SuperAdmin only)",
+)
+async def delete_tenant(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")
+

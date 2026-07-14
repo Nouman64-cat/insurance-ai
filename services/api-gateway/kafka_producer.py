@@ -6,16 +6,22 @@ can inject them without code changes.
 """
 
 import os
+import logging
+import asyncio
 
 from aiokafka import AIOKafkaProducer
+from aiokafka.errors import KafkaConnectionError
 from fastapi import Request
+
+logger = logging.getLogger("api-gateway.kafka_producer")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 PROPOSAL_TOPIC = "insurance.proposal.submitted.v1"
 
 
 async def create_producer() -> AIOKafkaProducer:
-    """Start and return a ready-to-use producer instance."""
+    """Start and return a ready-to-use producer instance with retry logic."""
     producer = AIOKafkaProducer(
         bootstrap_servers=KAFKA_BOOTSTRAP,
         # Serialise str → bytes at the transport layer so callers pass plain str.
@@ -26,8 +32,22 @@ async def create_producer() -> AIOKafkaProducer:
         # Idempotent producer deduplicates retries at the broker level.
         enable_idempotence=True,
     )
-    await producer.start()
-    return producer
+    
+    retries = 30
+    delay = 2
+    for attempt in range(1, retries + 1):
+        try:
+            logger.info(f"Connecting to Kafka at {KAFKA_BOOTSTRAP} (attempt {attempt}/{retries})...")
+            await producer.start()
+            logger.info("Successfully connected to Kafka.")
+            return producer
+        except (KafkaConnectionError, Exception) as e:
+            if attempt == retries:
+                logger.error(f"Failed to connect to Kafka after {retries} attempts: {e}")
+                raise e
+            logger.warning(f"Kafka connection attempt {attempt} failed, retrying in {delay}s...")
+            await asyncio.sleep(delay)
+
 
 
 # ── FastAPI dependency ────────────────────────────────────────────────────────

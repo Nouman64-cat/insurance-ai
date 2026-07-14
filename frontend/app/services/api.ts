@@ -10,6 +10,20 @@ const api = axios.create({
   timeout: 30_000,
 });
 
+const getErrorMessage = (err: any, fallbackMessage: string): string => {
+  const detail = err.response?.data?.detail;
+  if (detail) {
+    if (typeof detail === "string") {
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      return detail.map((d: any) => d.msg || JSON.stringify(d)).join(", ");
+    }
+    return JSON.stringify(detail);
+  }
+  return err.message ?? fallbackMessage;
+};
+
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -23,8 +37,7 @@ api.interceptors.response.use(
       window.location.href = "/login";
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
-    const message =
-      err.response?.data?.detail ?? err.message ?? "An unexpected error occurred.";
+    const message = getErrorMessage(err, "An unexpected error occurred.");
     return Promise.reject(new Error(message));
   },
 );
@@ -44,8 +57,7 @@ ocrApi.interceptors.response.use(
       window.location.href = "/login";
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
-    const message =
-      err.response?.data?.detail ?? err.message ?? "OCR processing failed.";
+    const message = getErrorMessage(err, "OCR processing failed.");
     return Promise.reject(new Error(message));
   },
 );
@@ -66,8 +78,7 @@ summarizerApi.interceptors.response.use(
       window.location.href = "/login";
       return Promise.reject(new Error("Session expired. Redirecting to login..."));
     }
-    const message =
-      err.response?.data?.detail ?? err.message ?? "Summarization failed.";
+    const message = getErrorMessage(err, "Summarization failed.");
     return Promise.reject(new Error(message));
   },
 );

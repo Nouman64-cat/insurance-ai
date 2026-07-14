@@ -22,6 +22,7 @@ import signal
 from typing import Any, Dict
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
+from aiokafka.errors import KafkaConnectionError
 from pydantic import ValidationError
 
 from graph_writer import write_applicant_to_graph
@@ -142,8 +143,26 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
         enable_idempotence=True,
     )
 
-    await consumer.start()
-    await producer.start()
+    retries = 30
+    delay = 2
+    for attempt in range(1, retries + 1):
+        try:
+            logger.info(f"Starting Kafka consumer & producer at {KAFKA_BOOTSTRAP} (attempt {attempt}/{retries})...")
+            await consumer.start()
+            try:
+                await producer.start()
+                logger.info("Successfully connected consumer and producer to Kafka.")
+                break
+            except Exception as prod_err:
+                await consumer.stop()
+                raise prod_err
+        except (KafkaConnectionError, Exception) as e:
+            if attempt == retries:
+                logger.error(f"Failed to start consumer/producer after {retries} attempts: {e}")
+                raise e
+            logger.warning(f"Kafka connection attempt {attempt} failed, retrying in {delay}s...")
+            await asyncio.sleep(delay)
+
     logger.info("consumer started — polling %s", INBOUND_TOPIC)
 
     try:
