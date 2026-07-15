@@ -348,12 +348,12 @@ export default function UserManagementPage() {
                     <td className="px-5 py-3.5 text-center">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${user.status === "ACTIVE"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : user.status === "SUSPENDED"
-                              ? "bg-amber-50 text-amber-700 border-amber-200"
-                              : user.status === "LOCKED"
-                                ? "bg-rose-50 text-rose-700 border-rose-200"
-                                : "bg-slate-100 text-slate-700 border-slate-200"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : user.status === "SUSPENDED"
+                            ? "bg-amber-50 text-amber-700 border-amber-200"
+                            : user.status === "LOCKED"
+                              ? "bg-rose-50 text-rose-700 border-rose-200"
+                              : "bg-slate-100 text-slate-700 border-slate-200"
                           }`}
                       >
                         {user.status === "ACTIVE"
@@ -445,7 +445,7 @@ export default function UserManagementPage() {
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Portal Role *</label>
+                <label className="block text-xs font-semibold text-slate-600">Role *</label>
                 <select
                   value={roleId}
                   onChange={(e) => setRoleId(e.target.value)}
@@ -563,7 +563,7 @@ export default function UserManagementPage() {
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold text-slate-600">Portal Role *</label>
+                  <label className="block text-xs font-semibold text-slate-600">Role *</label>
                   <select
                     value={editRoleId}
                     onChange={(e) => setEditRoleId(e.target.value)}
