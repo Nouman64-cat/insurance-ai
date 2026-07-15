@@ -9,8 +9,12 @@ interface Me {
   username: string;
   full_name: string;
   tenant_id: string;
+  tenant_name: string | null;
   role_id: string;
   role_name: string;
+  branch_id: string | null;
+  branch_name: string | null;
+  branch_code: string | null;
   is_active: boolean;
   status: string;
   first_name: string | null;
@@ -165,6 +169,34 @@ export default function ProfilePage() {
           <p className="text-sm text-slate-500 mt-0.5">
             {me?.email} · <span className="font-semibold text-blue-600">{me?.role_name}</span>
           </p>
+        </div>
+      </div>
+
+      {/* ── Organization ── */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+          <p className="text-sm font-semibold text-slate-700">Organization</p>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5">
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Tenant</p>
+            <p className="text-sm font-medium text-slate-800">{me?.tenant_name ?? "—"}</p>
+          </div>
+          <div className="space-y-1">
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Branch</p>
+            <p className="text-sm font-medium text-slate-800">
+              {me?.branch_name ? (
+                <>
+                  {me.branch_name}{" "}
+                  <span className="font-mono text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
+                    {me.branch_code}
+                  </span>
+                </>
+              ) : (
+                "Not assigned"
+              )}
+            </p>
+          </div>
         </div>
       </div>
 

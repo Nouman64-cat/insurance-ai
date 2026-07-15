@@ -9,7 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from schemas import ChangePasswordRequest, ProfileUpdate
-from shared.models.core import Role, User, UserProfile
+from shared.models.core import Branch, Role, Tenant, User, UserProfile
 
 SECRET_KEY  = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
 ALGORITHM   = "HS256"
@@ -56,16 +56,23 @@ async def _role_name(user: User, session: AsyncSession) -> str:
     return role.name if role else "Viewer"
 
 
-def _me_payload(user: User, profile: UserProfile | None, role_name: str) -> dict:
+async def _me_payload(
+    user: User, profile: UserProfile | None, role_name: str, session: AsyncSession
+) -> dict:
+    tenant = await session.get(Tenant, user.tenant_id)
+    branch = await session.get(Branch, user.branch_id) if user.branch_id else None
     return {
         "id": str(user.id),
         "email": user.email,
         "username": user.username,
         "full_name": user.full_name,
         "tenant_id": str(user.tenant_id),
+        "tenant_name": tenant.name if tenant else None,
         "role_id": str(user.role_id),
         "role_name": role_name,
         "branch_id": str(user.branch_id) if user.branch_id else None,
+        "branch_name": branch.name if branch else None,
+        "branch_code": branch.branch_code if branch else None,
         "is_active": user.is_active,
         "status": user.status,
         "first_name": profile.first_name if profile else None,
@@ -112,7 +119,7 @@ async def read_users_me(
     user = await _get_current_user(token, session)
     role_name = await _role_name(user, session)
     profile = (await session.exec(select(UserProfile).where(UserProfile.user_id == user.id))).first()
-    return _me_payload(user, profile, role_name)
+    return await _me_payload(user, profile, role_name, session)
 
 
 @router.patch("/me")
@@ -144,7 +151,7 @@ async def update_own_profile(
     await session.refresh(profile)
 
     role_name = await _role_name(user, session)
-    return _me_payload(user, profile, role_name)
+    return await _me_payload(user, profile, role_name, session)
 
 
 @router.post("/change-password")

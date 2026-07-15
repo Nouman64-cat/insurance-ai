@@ -29,9 +29,12 @@ class CurrentUserResponse(BaseModel):
     email: str
     full_name: str
     tenant_id: UUID
+    tenant_name: Optional[str] = None
     role_id: UUID
     role_name: str
     branch_id: Optional[UUID] = None
+    branch_name: Optional[str] = None
+    branch_code: Optional[str] = None
     is_active: bool
 
 
