@@ -720,7 +720,7 @@ export default function ApplicantsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Customer Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Customer Profile</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Admin console to configure full multi-module diagnostic profile attributes for underwriting evaluation.
           </p>
