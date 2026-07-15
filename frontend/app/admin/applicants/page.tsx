@@ -377,13 +377,13 @@ export default function ApplicantsPage() {
         // Calculate age for the LLM based on DOB
         age: formValues.dob ? new Date().getFullYear() - new Date(formValues.dob).getFullYear() : 30
       };
-      
+
       const res = await api.post(`/suggest-plan`, {
         applicant: applicantData,
         plans: availablePlans
       });
       const data = res.data;
-      
+
       setValue("selectedPlanId", data.suggested_plan_id);
       setValue("policyCoverage", data.suggested_coverage);
       setValue("policyTerm", data.suggested_term);
@@ -482,14 +482,14 @@ export default function ApplicantsPage() {
 
     // Import existing details or fill defaults
     const importedDetails = applicant.details
-      ? { 
-          ...JSON.parse(JSON.stringify(defaultDetails)), 
-          ...applicant.details,
-          habit_check: {
-            ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
-            ...(applicant.details.habit_check || {})
-          }
+      ? {
+        ...JSON.parse(JSON.stringify(defaultDetails)),
+        ...applicant.details,
+        habit_check: {
+          ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
+          ...(applicant.details.habit_check || {})
         }
+      }
       : JSON.parse(JSON.stringify(defaultDetails));
 
     setDetails(importedDetails);
@@ -589,14 +589,14 @@ export default function ApplicantsPage() {
   const handleOpenProfileModal = async (applicant: Applicant) => {
     setSelectedApplicant(applicant);
     const importedDetails = applicant.details
-      ? { 
-          ...JSON.parse(JSON.stringify(defaultDetails)), 
-          ...applicant.details,
-          habit_check: {
-            ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
-            ...(applicant.details.habit_check || {})
-          }
+      ? {
+        ...JSON.parse(JSON.stringify(defaultDetails)),
+        ...applicant.details,
+        habit_check: {
+          ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
+          ...(applicant.details.habit_check || {})
         }
+      }
       : JSON.parse(JSON.stringify(defaultDetails));
     setDetails(importedDetails);
     setViewTab("demographics");
@@ -716,7 +716,7 @@ export default function ApplicantsPage() {
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
-      
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -779,53 +779,53 @@ export default function ApplicantsPage() {
                 {applicants.map((applicant) => {
                   const plan = latestPlans[applicant.id];
                   return (
-                  <tr key={applicant.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3.5 font-medium text-slate-700">{applicant.cnic}</td>
-                    <td className="px-5 py-3.5 font-semibold text-slate-800">{applicant.name}</td>
-                    <td className="px-5 py-3.5 text-slate-600">
-                      {new Date().getFullYear() - new Date(applicant.dob).getFullYear()} yrs · {applicant.gender}
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-600">{applicant.occupation}</td>
-                    <td className="px-5 py-3.5 text-right font-semibold text-slate-700">
-                      PKR {applicant.declared_income.toLocaleString()}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      {plan === undefined ? (
-                        <span className="text-xs text-slate-300">…</span>
-                      ) : plan ? (
-                        <Link
-                          href={`/admin/applicants/${applicant.id}/plans`}
-                          className="inline-flex px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 transition-colors"
-                        >
-                          {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-slate-400">No plan yet</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5 text-center whitespace-nowrap">
-                      <div className="inline-flex rounded-lg shadow-sm border border-slate-200 overflow-hidden divide-x divide-slate-200">
-                        <button
-                          onClick={() => handleOpenProfileModal(applicant)}
-                          className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
-                        >
-                          View
-                        </button>
-                        <button
-                          onClick={() => handleOpenEditModal(applicant)}
-                          className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleDeleteApplicant(applicant.id, applicant.name)}
-                          className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-red-50 transition-colors"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
+                    <tr key={applicant.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-3.5 font-medium text-slate-700">{applicant.cnic}</td>
+                      <td className="px-5 py-3.5 font-semibold text-slate-800">{applicant.name}</td>
+                      <td className="px-5 py-3.5 text-slate-600">
+                        {new Date().getFullYear() - new Date(applicant.dob).getFullYear()} yrs · {applicant.gender}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-600">{applicant.occupation}</td>
+                      <td className="px-5 py-3.5 text-right font-semibold text-slate-700">
+                        PKR {applicant.declared_income.toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {plan === undefined ? (
+                          <span className="text-xs text-slate-300">…</span>
+                        ) : plan ? (
+                          <Link
+                            href={`/admin/applicants/${applicant.id}/plans`}
+                            className="inline-flex px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 transition-colors"
+                          >
+                            {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
+                          </Link>
+                        ) : (
+                          <span className="text-xs text-slate-400">No plan yet</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-center whitespace-nowrap">
+                        <div className="inline-flex rounded-lg shadow-sm border border-slate-200 overflow-hidden divide-x divide-slate-200">
+                          <button
+                            onClick={() => handleOpenProfileModal(applicant)}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() => handleOpenEditModal(applicant)}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteApplicant(applicant.id, applicant.name)}
+                            className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-red-50 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
@@ -838,7 +838,7 @@ export default function ApplicantsPage() {
       {(showCreateModal || showEditModal) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-            
+
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div>
@@ -860,11 +860,10 @@ export default function ApplicantsPage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setFormTab(tab.id)}
-                  className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${
-                    formTab === tab.id
-                      ? "border-blue-600 text-blue-600"
-                      : "border-transparent text-slate-400 hover:text-slate-600"
-                  }`}
+                  className={`px-4 py-3 text-xs font-semibold border-b-2 transition-all ${formTab === tab.id
+                    ? "border-blue-600 text-blue-600"
+                    : "border-transparent text-slate-400 hover:text-slate-600"
+                    }`}
                 >
                   {tab.label}
                   {tab.id === "insurance_plan" && selectedPlanId && (
@@ -876,7 +875,7 @@ export default function ApplicantsPage() {
 
             {/* Scrollable Form Body */}
             <form onSubmit={hookFormSubmit(showCreateModal ? handleCreateApplicant : handleEditApplicant)} className="flex-1 overflow-y-auto p-6 space-y-6">
-              
+
               {/* TAB 1: Demographics & Contact */}
               {formTab === "demographics" && (
                 <div className="space-y-6">
@@ -905,7 +904,7 @@ export default function ApplicantsPage() {
                         <label className="text-xs font-semibold text-slate-600">CNIC *</label>
                         <input
                           type="text"
-                          {...register("cnic", { 
+                          {...register("cnic", {
                             onChange: (e) => {
                               const formatted = formatCNIC(e.target.value);
                               e.target.value = formatted;
@@ -1379,7 +1378,7 @@ export default function ApplicantsPage() {
                         <p className="text-[11px] text-slate-400">Critical fields for mortality pricing & risk assessment.</p>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1">
                         <label className="text-xs font-semibold text-slate-600">Smoking Status</label>
@@ -1809,7 +1808,7 @@ export default function ApplicantsPage() {
                       <div className="space-y-3 mb-6">
                         {applicantPolicies.map((pol) => {
                           const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
-                          const textClass  = PLAN_TYPE_TEXT[pol.insurance_type]  ?? "text-slate-700";
+                          const textClass = PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
                           return (
                             <div key={pol.id} className={`border-l-4 rounded-xl p-4 ${colorClass}`}>
                               <div className="flex items-start justify-between gap-3">
@@ -1868,7 +1867,7 @@ export default function ApplicantsPage() {
                             {availablePlans.map((plan) => {
                               const isSelected = editSelectedPlanId === plan.id;
                               const colorClass = PLAN_TYPE_COLORS[plan.insurance_type] ?? "border-slate-200 bg-white";
-                              const textClass  = PLAN_TYPE_TEXT[plan.insurance_type]  ?? "text-slate-700";
+                              const textClass = PLAN_TYPE_TEXT[plan.insurance_type] ?? "text-slate-700";
                               return (
                                 <button
                                   key={plan.id}
@@ -1880,11 +1879,10 @@ export default function ApplicantsPage() {
                                       setEditPolicyTerm(String(plan.term_min_years));
                                     }
                                   }}
-                                  className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
-                                    isSelected
-                                      ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
-                                      : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-                                  }`}
+                                  className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
+                                    ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
+                                    : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                                    }`}
                                 >
                                   {isSelected && (
                                     <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500 text-white text-[9px] font-bold">✓</span>
@@ -1973,7 +1971,7 @@ export default function ApplicantsPage() {
                                     };
                                     if (plan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
                                       payload.dependent_name = editPolicyDependentName || null;
-                                      payload.dependent_dob  = editPolicyDependentDob  || null;
+                                      payload.dependent_dob = editPolicyDependentDob || null;
                                     }
                                     await api.post(`/tenants/${tenantId}/applicants/${selectedApplicant.id}/policies`, payload);
                                     // Refresh list
@@ -2010,7 +2008,7 @@ export default function ApplicantsPage() {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Select Insurance Plan</h4>
-                    
+
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
                       <p className="text-xs text-slate-400">Choose a plan from your tenant catalog. Coverage and term are required.</p>
                       <button
@@ -2075,11 +2073,10 @@ export default function ApplicantsPage() {
                                   setValue("policyTerm", plan.term_min_years);
                                 }
                               }}
-                              className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${
-                                isSelected
-                                  ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
-                                  : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
-                              }`}
+                              className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
+                                ? `${colorClass} shadow-md ring-2 ring-offset-1 ${textClass.replace("text-", "ring-")}`
+                                : "border-slate-200 bg-white hover:border-slate-300 hover:shadow-sm"
+                                }`}
                             >
                               {isSelected && (
                                 <span className="absolute top-3 right-3 flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">✓</span>
@@ -2238,7 +2235,7 @@ export default function ApplicantsPage() {
       {showProfileModal && selectedApplicant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden">
-            
+
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-3">
@@ -2255,7 +2252,7 @@ export default function ApplicantsPage() {
 
             {/* Split View Layout */}
             <div className="flex flex-1 overflow-hidden h-[600px]">
-              
+
               {/* Sidebar Navigation */}
               <div className="w-64 bg-slate-50 border-r border-slate-100 flex flex-col py-6 px-4 space-y-1.5 overflow-y-auto">
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Applicant Profile</p>
@@ -2263,11 +2260,10 @@ export default function ApplicantsPage() {
                   <button
                     key={tab.id}
                     onClick={() => setViewTab(tab.id)}
-                    className={`text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${
-                      viewTab === tab.id
-                        ? "bg-white text-blue-600 shadow-sm border border-slate-200"
-                        : "text-slate-500 hover:bg-slate-200/50 border border-transparent"
-                    }`}
+                    className={`text-left px-4 py-3 rounded-xl text-xs font-bold transition-all flex items-center gap-3 ${viewTab === tab.id
+                      ? "bg-white text-blue-600 shadow-sm border border-slate-200"
+                      : "text-slate-500 hover:bg-slate-200/50 border border-transparent"
+                      }`}
                   >
                     {tab.label}
                   </button>
@@ -2276,7 +2272,7 @@ export default function ApplicantsPage() {
 
               {/* Main Content Pane */}
               <div className="flex-1 overflow-y-auto bg-white p-8">
-                
+
                 {viewTab === "demographics" && (
                   <div className="space-y-6 max-w-2xl">
                     <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Identity & Contact</h4>
@@ -2302,7 +2298,7 @@ export default function ApplicantsPage() {
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Issue Date</span><span className="text-sm font-medium text-slate-800">{details.cnic_metadata.issue_date || "-"}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Expiry Date</span><span className="text-sm font-medium text-slate-800">{details.cnic_metadata.expiry_date || "-"}</span></div>
                     </div>
-                    
+
                     <div className="mt-8">
                       <span className="block text-xs font-semibold text-slate-400 uppercase mb-4">Document Previews</span>
                       <div className="grid grid-cols-2 gap-6">
@@ -2344,7 +2340,7 @@ export default function ApplicantsPage() {
                 {viewTab === "medical" && (
                   <div className="space-y-8 max-w-2xl">
                     <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Medical & Lifestyle</h4>
-                    
+
                     <div className="grid grid-cols-3 gap-4">
                       <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-200 flex flex-col items-center justify-center text-center">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-1">Pre-Existing</span>
@@ -2381,7 +2377,7 @@ export default function ApplicantsPage() {
                 {viewTab === "habit_check" && (
                   <div className="space-y-8 max-w-2xl">
                     <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Habit Check Summary</h4>
-                    
+
                     {/* Substance Consumption */}
                     <div className="bg-slate-50 rounded-xl p-5 border border-slate-100 space-y-4">
                       <h5 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Substance Consumption</h5>
@@ -2522,7 +2518,7 @@ export default function ApplicantsPage() {
                       <div className="space-y-3">
                         {applicantPolicies.map((pol) => {
                           const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
-                          const textClass  = PLAN_TYPE_TEXT[pol.insurance_type]  ?? "text-slate-700";
+                          const textClass = PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
                           return (
                             <div key={pol.id} className={`border-l-4 rounded-xl p-5 ${colorClass}`}>
                               <div className="flex items-start justify-between gap-3">
