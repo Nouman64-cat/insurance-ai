@@ -24,6 +24,7 @@ from shared.models.core import (
     PolicyStatusEnum,
     RiskAssessment,
     User,
+    InsurancePlan,
 )
 from schemas import (
     ApplicantRead,
@@ -222,7 +223,21 @@ async def get_case_detail(
         policy = (await session.execute(policy_stmt)).scalars().first()
 
     insurance_type = policy.insurance_type.value if policy else None
-    required = get_required_documents(insurance_type, case.caseType.value)
+
+    required = None
+    if case.caseType.value == "Underwriting" and policy:
+        plan_stmt = select(InsurancePlan).where(
+            InsurancePlan.tenant_id == tenant_id,
+            InsurancePlan.insurance_type == policy.insurance_type,
+            InsurancePlan.label == policy.product_name
+        )
+        plan = (await session.execute(plan_stmt)).scalars().first()
+        if plan:
+            required = plan.required_documents
+
+    if required is None:
+        required = get_required_documents(insurance_type, case.caseType.value)
+
     artifacts_stmt = select(Artifact.document_type).where(Artifact.case_id == case_id)
     received = sorted({row[0] for row in (await session.execute(artifacts_stmt)).all()})
     missing = [doc for doc in required if doc not in received]
@@ -391,15 +406,33 @@ async def get_document_checklist(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    policy_stmt = (
-        select(Policy)
-        .where(Policy.tenant_id == tenant_id, Policy.applicant_id == case.applicant_id)
-        .order_by(Policy.created_at.desc())
-    )
-    policy = (await session.execute(policy_stmt)).scalars().first()
+    policy: Optional[Policy] = None
+    if case.policy_id is not None:
+        policy = await session.get(Policy, case.policy_id)
+    if policy is None:
+        policy_stmt = (
+            select(Policy)
+            .where(Policy.tenant_id == tenant_id, Policy.applicant_id == case.applicant_id)
+            .order_by(Policy.created_at.desc())
+        )
+        policy = (await session.execute(policy_stmt)).scalars().first()
+        
     insurance_type = policy.insurance_type.value if policy else None
 
-    required = get_required_documents(insurance_type, case.caseType.value)
+    required = None
+    if case.caseType.value == "Underwriting" and policy:
+        plan_stmt = select(InsurancePlan).where(
+            InsurancePlan.tenant_id == tenant_id,
+            InsurancePlan.insurance_type == policy.insurance_type,
+            InsurancePlan.label == policy.product_name
+        )
+        plan = (await session.execute(plan_stmt)).scalars().first()
+        if plan:
+            required = plan.required_documents
+
+    if required is None:
+        required = get_required_documents(insurance_type, case.caseType.value)
+
 
     artifacts_stmt = select(Artifact.document_type).where(Artifact.case_id == case_id)
     received = sorted({row[0] for row in (await session.execute(artifacts_stmt)).all()})
