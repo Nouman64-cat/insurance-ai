@@ -29,6 +29,13 @@ interface Role {
   description: string;
 }
 
+interface Branch {
+  id: string;
+  branch_code: string;
+  name: string;
+  city: string;
+}
+
 export default function UserManagementPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -37,6 +44,7 @@ export default function UserManagementPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [myBranch, setMyBranch] = useState<Branch | null>(null);
 
   // Modal / Form state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -70,7 +78,19 @@ export default function UserManagementPage() {
     }
     setCurrentUserEmail(localStorage.getItem("user_email") ?? "");
     fetchUsersAndRoles();
+    fetchMyBranch();
   }, []);
+
+  const fetchMyBranch = async () => {
+    const branchId = localStorage.getItem("branch_id");
+    if (!branchId) return;
+    try {
+      const resp = await api.get<Branch>(`/branches/${branchId}`);
+      setMyBranch(resp.data);
+    } catch {
+      // Non-critical — the create-user flow works regardless of whether this loads.
+    }
+  };
 
   const fetchUsersAndRoles = async () => {
     setLoading(true);
@@ -394,6 +414,12 @@ export default function UserManagementPage() {
             </div>
 
             <form onSubmit={handleCreateUser} className="space-y-4">
+              {myBranch && (
+                <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  New users will be added to your branch: <span className="font-semibold text-slate-700">{myBranch.name} ({myBranch.branch_code})</span>
+                </p>
+              )}
+
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
                 <input

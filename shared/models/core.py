@@ -214,6 +214,7 @@ class User(SQLModel, table=True):
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     role_id: UUID = Field(foreign_key="roles.id", nullable=False)
     user_type_id: Optional[UUID] = Field(default=None, foreign_key="user_types.id", nullable=True)
+    branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", nullable=True)
 
     email: str = Field(unique=True, index=True, max_length=255)
     username: str = Field(unique=True, index=True, max_length=255)

@@ -448,6 +448,13 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v14j — add established_date to tenants",
         "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS established_date DATE",
     ),
+    # v15: Users are now scoped to a branch within their tenant — an Admin is
+    # created against one branch, and every User that Admin subsequently
+    # creates inherits that same branch (see routers/users.py create_user).
+    (
+        "v15a — add branch_id to users",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

@@ -31,6 +31,7 @@ class CurrentUserResponse(BaseModel):
     tenant_id: UUID
     role_id: UUID
     role_name: str
+    branch_id: Optional[UUID] = None
     is_active: bool
 
 
@@ -39,6 +40,7 @@ class UserCreate(BaseModel):
     email: str
     password: str
     role_id: UUID
+    branch_id: Optional[UUID] = None
     first_name: str
     last_name: str
     phone: Optional[str] = None
@@ -52,6 +54,7 @@ class UserRead(BaseModel):
     id: UUID
     tenant_id: UUID
     role_id: UUID
+    branch_id: Optional[UUID] = None
     email: str
     username: str
     full_name: str

@@ -16,12 +16,20 @@ interface Role {
   name: string;
 }
 
+interface Branch {
+  id: string;
+  branch_code: string;
+  name: string;
+  city: string;
+}
+
 interface AdminUser {
   id: string;
   email: string;
   username: string;
   full_name: string;
   role_id: string;
+  branch_id?: string | null;
   is_active?: boolean;
   status: string;
   created_at: string;
@@ -48,7 +56,11 @@ function AdminManagementContent() {
   const [tenantId, setTenantId] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
+  const [branchId, setBranchId] = useState("");
   const [formLoading, setFormLoading] = useState(false);
+
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
 
   const [admins, setAdmins] = useState<AdminUser[]>([]);
   const [adminsLoading, setAdminsLoading] = useState(false);
@@ -82,8 +94,10 @@ function AdminManagementContent() {
   useEffect(() => {
     if (tenantId) {
       fetchAdmins(tenantId);
+      fetchBranches(tenantId);
     } else {
       setAdmins([]);
+      setBranches([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
@@ -125,6 +139,25 @@ function AdminManagementContent() {
     }
   };
 
+  const fetchBranches = async (forTenantId: string) => {
+    setBranchesLoading(true);
+    setBranchId("");
+    try {
+      const resp = await api.get<Branch[]>(`/tenants/${forTenantId}/branches`);
+      setBranches(resp.data);
+    } catch (err: any) {
+      setBranches([]);
+    } finally {
+      setBranchesLoading(false);
+    }
+  };
+
+  const branchLabel = (id?: string | null) => {
+    if (!id) return "—";
+    const b = branches.find((b) => b.id === id);
+    return b ? `${b.name} (${b.branch_code})` : "—";
+  };
+
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -137,6 +170,11 @@ function AdminManagementContent() {
       setFormLoading(false);
       return;
     }
+    if (!branchId) {
+      setError("Please select a branch.");
+      setFormLoading(false);
+      return;
+    }
 
     try {
       if (admins.length > 0) {
@@ -144,12 +182,14 @@ function AdminManagementContent() {
           email,
           full_name: fullName,
           role_id: adminRole.id,
+          branch_id: branchId,
         });
       } else {
         try {
           await api.post(`/tenants/${tenantId}/setup`, {
             email,
             full_name: fullName,
+            branch_id: branchId,
           });
         } catch (setupErr: any) {
           if (setupErr.response?.status === 409) {
@@ -157,6 +197,7 @@ function AdminManagementContent() {
               email,
               full_name: fullName,
               role_id: adminRole.id,
+              branch_id: branchId,
             });
           } else {
             throw setupErr;
@@ -333,6 +374,31 @@ function AdminManagementContent() {
               </div>
 
               <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Branch *</label>
+                <select
+                  required
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                  disabled={branchesLoading || branches.length === 0}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option value="" disabled>
+                    {branchesLoading ? "Loading branches..." : branches.length === 0 ? "No branches for this tenant" : "Select a branch"}
+                  </option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.branch_code}) — {b.city}
+                    </option>
+                  ))}
+                </select>
+                {!branchesLoading && branches.length === 0 && (
+                  <p className="text-[11px] text-slate-400">
+                    This tenant has no branches yet — add one from Branch Management first.
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
                 <input
                   type="text"
@@ -408,6 +474,7 @@ function AdminManagementContent() {
                     <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
                       <th className="px-5 py-3.5 text-left">Full Name</th>
                       <th className="px-5 py-3.5 text-left">Email</th>
+                      <th className="px-5 py-3.5 text-left">Branch</th>
                       <th className="px-5 py-3.5 text-center">Status</th>
                       <th className="px-5 py-3.5 text-left">Created</th>
                       <th className="px-5 py-3.5 text-right">Actions</th>
@@ -418,6 +485,7 @@ function AdminManagementContent() {
                       <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-5 py-3.5 font-semibold text-slate-800">{admin.full_name}</td>
                         <td className="px-5 py-3.5 text-slate-600">{admin.email}</td>
+                        <td className="px-5 py-3.5 text-slate-600">{branchLabel(admin.branch_id)}</td>
                         <td className="px-5 py-3.5 text-center">
                           <span
                             className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${

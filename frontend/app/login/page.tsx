@@ -48,6 +48,7 @@ export default function LoginPage() {
         tenant_id: string;
         role_id: string;
         role_name: string;
+        branch_id: string | null;
       }>("/auth/me", {
         headers: {
           Authorization: `Bearer ${access_token}`,
@@ -61,6 +62,11 @@ export default function LoginPage() {
       localStorage.setItem("user_email", profileResponse.data.email);
       localStorage.setItem("user_name", profileResponse.data.full_name);
       localStorage.setItem("user_role", profileResponse.data.role_name);
+      if (profileResponse.data.branch_id) {
+        localStorage.setItem("branch_id", profileResponse.data.branch_id);
+      } else {
+        localStorage.removeItem("branch_id");
+      }
 
       // Apply the active tenant header for subsequent client actions
       api.defaults.headers.common["X-Tenant-Id"] = userTenantId;

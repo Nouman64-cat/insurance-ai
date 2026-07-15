@@ -180,9 +180,12 @@ class RoleRead(BaseModel):
 
 class SeedAdminCreate(BaseModel):
     """Used by the SuperAdmin bootstrap endpoint — creates the first Admin for a
-    tenant. Username and password are auto-generated and emailed to the Admin."""
+    tenant. Username and password are auto-generated and emailed to the Admin.
+    branch_id is required — a SuperAdmin always picks which office this Admin
+    runs (see routers/users.py seed_admin)."""
     email: EmailStr
     full_name: str
+    branch_id: UUID
 
     @field_validator("full_name")
     @classmethod
@@ -193,10 +196,15 @@ class SeedAdminCreate(BaseModel):
 
 
 class UserCreate(BaseModel):
-    """Username and password are auto-generated and emailed to the new user."""
+    """Username and password are auto-generated and emailed to the new user.
+
+    branch_id is required when a SuperAdmin creates an Admin, but ignored when
+    an Admin creates a User — the new User instead inherits the creating
+    Admin's own branch_id (see routers/users.py create_user)."""
     email: EmailStr
     full_name: str
     role_id: UUID
+    branch_id: Optional[UUID] = None
 
     @field_validator("full_name")
     @classmethod
@@ -210,6 +218,7 @@ class UserRead(BaseModel):
     id: UUID
     tenant_id: UUID
     role_id: UUID
+    branch_id: Optional[UUID] = None
     email: str
     username: str
     full_name: str
@@ -232,6 +241,7 @@ class UserRead(BaseModel):
 
 class UserUpdate(BaseModel):
     role_id: Optional[UUID] = None
+    branch_id: Optional[UUID] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
     status: Optional[UserStatus] = None

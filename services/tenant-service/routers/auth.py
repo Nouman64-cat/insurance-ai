@@ -65,6 +65,7 @@ def _me_payload(user: User, profile: UserProfile | None, role_name: str) -> dict
         "tenant_id": str(user.tenant_id),
         "role_id": str(user.role_id),
         "role_name": role_name,
+        "branch_id": str(user.branch_id) if user.branch_id else None,
         "is_active": user.is_active,
         "status": user.status,
         "first_name": profile.first_name if profile else None,
