@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import api from "../services/api";
 import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -27,6 +29,7 @@ function formatDate(s: string): string {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function QuotePage() {
+  const router = useRouter();
   const [quotes, setQuotes] = useState<QuoteListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -202,6 +205,18 @@ export default function QuotePage() {
           loading={detailLoading}
           error={detailError}
           onClose={closeQuote}
+          onStartUnderwriting={async () => {
+            if (!detail) return;
+            const tenantId = localStorage.getItem("tenant_id");
+            if (!tenantId) return;
+            const res = await api.post(`/tenants/${tenantId}/cases`, {
+              applicant_id: detail.applicant_id,
+              policy_id: detail.policy_id,
+              caseType: "Underwriting",
+              sourceChannel: "Online",
+            });
+            router.push(`/case/${res.data.caseld}`);
+          }}
         />
       )}
     </div>
@@ -211,13 +226,28 @@ export default function QuotePage() {
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
 function QuoteDetailModal({
-  detail, loading, error, onClose,
+  detail, loading, error, onClose, onStartUnderwriting,
 }: {
   detail: QuoteDetail | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
+  onStartUnderwriting: () => Promise<void>;
 }) {
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+
+  const handleStart = async () => {
+    setStarting(true);
+    setStartError(null);
+    try {
+      await onStartUnderwriting();
+    } catch (err: any) {
+      setStartError(err.message ?? "Failed to start underwriting.");
+      setStarting(false);
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center overflow-y-auto py-10 px-4"
@@ -332,6 +362,26 @@ function QuoteDetailModal({
               </div>
               <p className="text-[11px] text-slate-400 mt-2">
                 Rate version {detail.rate_version} · Generated {new Date(detail.created_at).toLocaleString()}
+              </p>
+            </section>
+
+            {/* Proceed to underwriting */}
+            <section className="pt-1 border-t border-slate-100">
+              {startError && (
+                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{startError}</p>
+              )}
+              <button
+                onClick={handleStart}
+                disabled={starting}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
+              >
+                {starting ? (
+                  <span className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white" />
+                ) : null}
+                {starting ? "Opening case…" : "Proceed to Underwriting"}
+              </button>
+              <p className="text-[11px] text-slate-400 mt-2 text-center">
+                Opens an Underwriting case for this applicant on this exact quote — documents, AI risk scoring, and the final decision all happen there.
               </p>
             </section>
           </div>

@@ -10,6 +10,7 @@ from shared.models.core import (
     PlanCategoryEnum,
     ProductCategoryEnum,
     PlanStatusEnum,
+    PolicyStatusEnum,
 )
 
 
@@ -273,6 +274,9 @@ class PolicyRead(BaseModel):
     term_years:       int
     dependent_name:   Optional[str] = None
     dependent_dob:    Optional[date] = None
+    nominee_name:      Optional[str] = None
+    nominee_relationship: Optional[str] = None
+    status:           PolicyStatusEnum
     created_at:       datetime
 
     model_config = {"from_attributes": True}
@@ -365,6 +369,7 @@ from shared.models.core import (
 
 class CaseCreate(BaseModel):
     applicant_id:     UUID
+    policy_id:        Optional[UUID] = None
     caseType:         CaseTypeEnum
     priorityLevel:    CasePriorityEnum = CasePriorityEnum.NORMAL
     sourceChannel:    SourceChannelEnum
@@ -382,6 +387,7 @@ class CaseRead(BaseModel):
     caseNumber:       str
     tenant_id:        UUID
     applicant_id:     UUID
+    policy_id:        Optional[UUID] = None
     caseType:         CaseTypeEnum
     caseStatus:       CaseStatusEnum
     priorityLevel:    CasePriorityEnum
@@ -393,6 +399,15 @@ class CaseRead(BaseModel):
     slaDeadline:      Optional[datetime] = None
     escalationLevel:  int
     parentCaseld:     Optional[UUID] = None
+
+    # Enrichment — only populated by GET /cases (the Underwriting queue);
+    # None on create/update/get-single responses, which return the bare Case row.
+    applicant_name:        Optional[str] = None
+    applicant_cnic:        Optional[str] = None
+    product_name:           Optional[str] = None
+    coverage_amount:         Optional[float] = None
+    latest_ai_decision:      Optional[str] = None
+    latest_composite_score:  Optional[int] = None
 
     model_config = {"from_attributes": True}
 

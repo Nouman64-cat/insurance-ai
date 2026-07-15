@@ -54,6 +54,28 @@ class PlanStatusEnum(str, Enum):
     ARCHIVED = "Archived"
 
 
+class PolicyStatusEnum(str, Enum):
+    """Lifecycle of a single Policy row, from indicative quote to bound cover.
+
+    Quoted     — auto-priced or /quote-priced, no case opened yet (non-binding).
+    Proposed   — applicant selected this quote; an Underwriting Case is open.
+    UnderReview— AI returned Human Review / Approve with Loading; awaiting an
+                 underwriter decision (or the aggregation node hasn't run yet).
+    Approved   — AI Auto Approve, or an underwriter approved the case.
+    Declined   — AI hard-declined, or an underwriter rejected the case.
+    Issued     — approved policy accepted + first premium paid (not yet wired
+                 to a payment flow — set manually until that exists).
+    Lapsed     — issued policy that later lapsed (non-payment, cancellation).
+    """
+    QUOTED = "Quoted"
+    PROPOSED = "Proposed"
+    UNDER_REVIEW = "UnderReview"
+    APPROVED = "Approved"
+    DECLINED = "Declined"
+    ISSUED = "Issued"
+    LAPSED = "Lapsed"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tenant  —  top-level isolation boundary
 # ─────────────────────────────────────────────────────────────────────────────
@@ -324,6 +346,11 @@ class Policy(SQLModel, table=True):
     # quote/onboarding API layer enforces it as required for new policies.
     nominee_name: Optional[str] = Field(default=None, max_length=255)
     nominee_relationship: Optional[str] = Field(default=None, max_length=100)
+
+    # Lifecycle status — see PolicyStatusEnum. Defaults to Quoted so existing
+    # rows (and every row created by the quote worker / POST /quote) stay
+    # correct without a backfill.
+    status: PolicyStatusEnum = Field(default=PolicyStatusEnum.QUOTED, max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -667,6 +694,13 @@ class Case(SQLModel, table=True):
     caseld: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
     applicant_id: UUID = Field(foreign_key="applicants.id", index=True)
+
+    # The specific Policy application this case is underwriting/claiming
+    # against. Optional since older cases predate this column and generic
+    # Inquiry cases may not have one — falls back to the applicant's most
+    # recent Policy (see document-checklist) when absent.
+    policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
+
     caseNumber: str = Field(index=True, unique=True, max_length=50)
     caseType: CaseTypeEnum = Field(max_length=50)
     caseStatus: CaseStatusEnum = Field(default=CaseStatusEnum.NEW, max_length=50)
@@ -834,6 +868,7 @@ class CaseAuditTrail(SQLModel, table=True):
     previousValue: Optional[str] = Field(default=None, nullable=True)
     newValue: Optional[str] = Field(default=None, nullable=True)
     performedBy: UUID = Field(foreign_key="users.id", index=True)
+    timestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     ipAddress: Optional[str] = Field(default=None, max_length=45, nullable=True)
 
 

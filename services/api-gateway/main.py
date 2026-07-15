@@ -280,6 +280,15 @@ async def list_cases(tenant_id: UUID, request: Request, token: str = Depends(oau
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases")
 
 
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/detail",
+    tags=["Cases"],
+    summary="Get bundled case + applicant + policy + document checklist + latest risk assessment",
+)
+async def get_case_detail(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/detail")
+
+
 @app.get("/tenants/{tenant_id}/cases/{case_id}", tags=["Cases"], summary="Get a case by ID")
 async def get_case(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}")

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import api from "@/app/services/api";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
@@ -440,9 +441,12 @@ function DetailPanel({
                   </p>
                 )}
                 {detail.case_id && (
-                  <p className="text-[10px] text-slate-400">
-                    Linked to case <span className="font-mono text-slate-500">{detail.case_id.slice(0, 8)}…</span>
-                  </p>
+                  <Link
+                    href={`/case/${detail.case_id}`}
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    Open underwriting folder <span className="font-mono text-blue-400">{detail.case_id.slice(0, 8)}…</span> →
+                  </Link>
                 )}
               </div>
             </div>

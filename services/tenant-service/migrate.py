@@ -375,6 +375,34 @@ MIGRATIONS: list[tuple[str, str]] = [
     # GROUP_LIFE intentionally left at the neutral 0.0/1.0 default — group
     # pricing is negotiated per-MasterPolicy and is not served by the
     # per-applicant /quote endpoint (see shared/pricing/calculator.py).
+
+    # v13: Policy lifecycle status + Case→Policy linkage, so a quote's journey
+    # from indicative price through underwriting to issuance is traceable
+    # instead of one undifferentiated Policy row per quote.
+    (
+        "v13a — add status to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'Quoted'",
+    ),
+    (
+        "v13b — add policy_id to cases",
+        "ALTER TABLE cases ADD COLUMN IF NOT EXISTS policy_id UUID REFERENCES policies(id)",
+    ),
+    # v13a seeded policies.status with the enum *value* ('Quoted'). SQLAlchemy's
+    # Enum type round-trips Python Enum <-> DB string via the member *name*
+    # (confirmed against this DB's existing users.status/cases.caseStatus
+    # columns, which store 'ACTIVE'/'NEW' etc, not 'Active'/'New') — so every
+    # ORM read of a 'Quoted' row raised LookupError. Correct the stored value
+    # and the column default to the name form; the Applicant/User pattern
+    # elsewhere in this file never needed this because those columns were
+    # only ever written through the ORM, never seeded via raw SQL.
+    (
+        "v13c — fix policies.status value to match SQLAlchemy Enum name storage",
+        "UPDATE policies SET status = 'QUOTED' WHERE status = 'Quoted'",
+    ),
+    (
+        "v13d — align policies.status column default with enum name storage",
+        "ALTER TABLE policies ALTER COLUMN status SET DEFAULT 'QUOTED'",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
