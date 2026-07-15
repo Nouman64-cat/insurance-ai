@@ -720,7 +720,7 @@ export default function ApplicantsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Applicant Management</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Customer Profile</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Admin console to configure full multi-module diagnostic profile attributes for underwriting evaluation.
           </p>
@@ -742,7 +742,7 @@ export default function ApplicantsPage() {
             onClick={handleOpenCreateModal}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            Add Applicant
+            Add Customer
           </button>
         </div>
       </div>
