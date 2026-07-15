@@ -90,9 +90,12 @@ export default function UserManagementPage() {
       ]);
 
       setUsers(usersResp.data);
-      setRoles(rolesResp.data);
-      if (rolesResp.data.length > 0) {
-        setRoleId(rolesResp.data[0].id);
+      const filteredRoles = rolesResp.data.filter(
+        (r) => r.name.toLowerCase() !== "superadmin"
+      );
+      setRoles(filteredRoles);
+      if (filteredRoles.length > 0) {
+        setRoleId(filteredRoles[0].id);
       }
     } catch (err: any) {
       setError(err.message ?? "Failed to load admin management data.");
@@ -324,25 +327,24 @@ export default function UserManagementPage() {
                     <td className="px-5 py-3.5 text-slate-600">{user.department ?? "—"}</td>
                     <td className="px-5 py-3.5 text-center">
                       <span
-                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                          user.status === "ACTIVE"
+                        className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${user.status === "ACTIVE"
                             ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                             : user.status === "SUSPENDED"
-                            ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : user.status === "LOCKED"
-                            ? "bg-rose-50 text-rose-700 border-rose-200"
-                            : "bg-slate-100 text-slate-700 border-slate-200"
-                        }`}
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : user.status === "LOCKED"
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : "bg-slate-100 text-slate-700 border-slate-200"
+                          }`}
                       >
                         {user.status === "ACTIVE"
                           ? "Active"
                           : user.status === "SUSPENDED"
-                          ? "Suspended"
-                          : user.status === "LOCKED"
-                          ? "Locked"
-                          : user.status === "INACTIVE"
-                          ? "Inactive"
-                          : "Active"}
+                            ? "Suspended"
+                            : user.status === "LOCKED"
+                              ? "Locked"
+                              : user.status === "INACTIVE"
+                                ? "Inactive"
+                                : "Active"}
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-xs text-slate-400">
@@ -380,7 +382,7 @@ export default function UserManagementPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Add New Portal Account</h3>
+              <h3 className="text-base font-bold text-slate-900">Add New User</h3>
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"

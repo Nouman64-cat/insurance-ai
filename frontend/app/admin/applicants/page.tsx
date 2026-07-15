@@ -2217,10 +2217,7 @@ export default function ApplicantsPage() {
                         </button>
                       ) : (
                         <button
-                          onClick={(e) => {
-                            if (showCreateModal) handleCreateApplicant(e);
-                            else handleEditApplicant(e);
-                          }}
+                          type="submit"
                           disabled={formLoading}
                           className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm"
                         >
