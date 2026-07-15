@@ -55,6 +55,13 @@ export default function TenantManagementPage() {
   const [authorized, setAuthorized] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const handleCopyId = async (id: string) => {
+    await navigator.clipboard.writeText(id);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId((current) => (current === id ? null : current)), 2000);
+  };
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [tenantName, setTenantName] = useState("");
@@ -306,6 +313,7 @@ export default function TenantManagementPage() {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
                   <th className="px-5 py-3.5 text-left">Tenant Name</th>
+                  <th className="px-5 py-3.5 text-left">Tenant ID</th>
                   <th className="px-5 py-3.5 text-left">Code</th>
                   <th className="px-5 py-3.5 text-center">Status</th>
                   <th className="px-5 py-3.5 text-left">Created Date</th>
@@ -316,6 +324,31 @@ export default function TenantManagementPage() {
                 {tenants.map((tenant) => (
                   <tr key={tenant.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3.5 font-semibold text-slate-800">{tenant.name}</td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className="font-mono text-xs text-slate-500"
+                          title={tenant.id}
+                        >
+                          {tenant.id.slice(0, 8)}…
+                        </span>
+                        <button
+                          onClick={() => handleCopyId(tenant.id)}
+                          className="text-slate-400 hover:text-blue-600 transition-colors"
+                          title="Copy full tenant ID"
+                        >
+                          {copiedId === tenant.id ? (
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-4 h-4 text-emerald-600">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                            </svg>
+                          ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" stroke="currentColor" className="w-4 h-4">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 0 1-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H9.75" />
+                            </svg>
+                          )}
+                        </button>
+                      </div>
+                    </td>
                     <td className="px-5 py-3.5">
                       <span className="inline-flex px-2 py-0.5 rounded text-xs font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                         {tenant.code}
