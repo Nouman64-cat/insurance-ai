@@ -533,9 +533,9 @@ function PlanDetailDrawer({
   const tiers = [...plan.medical_exam_tiers].sort((a, b) => a.minSumAssured - b.minSumAssured);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
       <div
-        className="h-full w-full max-w-lg bg-white shadow-xl overflow-y-auto"
+        className="w-full max-w-lg max-h-[90vh] bg-white rounded-xl shadow-2xl overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className={`border-t-4 ${colors.accent} p-6 space-y-4`}>

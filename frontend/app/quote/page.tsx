@@ -160,9 +160,9 @@ export default function QuotePage() {
                   <th className="px-5 py-3 text-left">Plan</th>
                   <th className="px-5 py-3 text-right">Coverage</th>
                   <th className="px-5 py-3 text-center">Term</th>
-                  <th className="px-5 py-3 text-right">Base Premium</th>
-                  <th className="px-5 py-3 text-right">Loading</th>
-                  <th className="px-5 py-3 text-right">Total / Year</th>
+                  <th className="px-5 py-3 text-right">Expected Premium</th>
+                  <th className="px-5 py-3 text-right">Risk</th>
+                  <th className="px-5 py-3 text-right">Total payable</th>
                   <th className="px-5 py-3 text-left">Generated</th>
                 </tr>
               </thead>
@@ -310,12 +310,16 @@ function QuoteDetailModal({
               <p className="text-sm text-slate-700 leading-relaxed">
                 The total annual premium for this coverage is{" "}
                 <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
-                (base premium of {formatPKR(detail.base_premium)} plus a risk loading of{" "}
+                (expected premium of {formatPKR(detail.base_premium)} plus a risk of{" "}
                 {formatPKR(detail.loading_applied)}). This quotation is valid subject to
                 satisfactory underwriting assessment and is generated as of{" "}
                 <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
               </p>
             </div>
+
+            <p className="text-[11px] text-slate-500 mt-1 mb-2 text-center italic">
+              Opens an Underwriting case for this applicant on this exact quote — documents, AI risk scoring, and the final decision all happen there.
+            </p>
 
             {/* Headline */}
             <div>
@@ -356,9 +360,18 @@ function QuoteDetailModal({
             <section>
               <SectionLabel>Premium Breakdown</SectionLabel>
               <div className="grid grid-cols-3 gap-3">
-                <StatTile label="Base Premium" value={formatPKR(detail.base_premium)} />
-                <StatTile label="Loading" value={formatPKR(detail.loading_applied)} />
-                <StatTile label="Total / Year" value={formatPKR(detail.total_premium)} highlight />
+                <StatTile label="Expected Premium" value={formatPKR(detail.base_premium)} />
+                <StatTile label="Risk" value={formatPKR(detail.loading_applied)} />
+                <StatTile 
+                  label="Total Payable" 
+                  value={
+                    <span>
+                      {formatPKR(detail.total_premium)}{" "}
+                      <span className="text-[10px] font-medium text-slate-300">(Premium + Risk)</span>
+                    </span>
+                  } 
+                  highlight 
+                />
               </div>
               <p className="text-[11px] text-slate-400 mt-2">
                 Rate version {detail.rate_version} · Generated {new Date(detail.created_at).toLocaleString()}
@@ -380,9 +393,6 @@ function QuoteDetailModal({
                 ) : null}
                 {starting ? "Opening case…" : "Proceed to Underwriting"}
               </button>
-              <p className="text-[11px] text-slate-400 mt-2 text-center">
-                Opens an Underwriting case for this applicant on this exact quote — documents, AI risk scoring, and the final decision all happen there.
-              </p>
             </section>
           </div>
         )}
@@ -404,7 +414,7 @@ function DetailField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function StatTile({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
+function StatTile({ label, value, highlight }: { label: string; value: React.ReactNode; highlight?: boolean }) {
   return (
     <div className={`rounded-lg p-3 ${highlight ? "bg-slate-900" : "bg-slate-50"}`}>
       <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${highlight ? "text-slate-300" : "text-slate-400"}`}>

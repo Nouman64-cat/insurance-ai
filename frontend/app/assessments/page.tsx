@@ -399,7 +399,14 @@ function DetailPanel({
   };
 
   return (
-    <div className="fixed inset-y-0 right-0 w-[480px] bg-white border-l border-slate-200 flex flex-col z-50 shadow-2xl">
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-[540px] max-h-[90vh] bg-white rounded-xl border border-slate-200 flex flex-col shadow-2xl overflow-hidden"
+        onClick={(e) => e.stopPropagation()}
+      >
       {/* Header */}
       <div className="flex items-start justify-between p-5 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
         <div>
@@ -511,6 +518,7 @@ function DetailPanel({
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }
@@ -776,12 +784,9 @@ export default function AssessmentHistoryPage() {
         )}
       </div>
 
-      {/* Slide-out */}
+      {/* Modal */}
       {selected && (
-        <>
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40" onClick={() => setSelected(null)} />
-          <DetailPanel item={selected} tenantId={tenantId} onClose={() => setSelected(null)} />
-        </>
+        <DetailPanel item={selected} tenantId={tenantId} onClose={() => setSelected(null)} />
       )}
     </div>
   );
