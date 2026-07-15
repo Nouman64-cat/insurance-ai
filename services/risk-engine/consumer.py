@@ -166,40 +166,44 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
     logger.info("consumer started — polling %s", INBOUND_TOPIC)
 
     try:
-        async for msg in consumer:
-            # Honour external stop signal without abandoning the current message.
-            if stop_event and stop_event.is_set():
-                break
+        # getmany(timeout_ms=...) returns (possibly empty) on a bounded wait,
+        # unlike `async for msg in consumer` which blocks indefinitely for the
+        # next message. That's what lets this loop notice stop_event promptly
+        # even when the topic is idle — required for --reload (or any embedder
+        # calling start_consumer_task) to ever be able to tear this down.
+        while not (stop_event and stop_event.is_set()):
+            batches = await consumer.getmany(timeout_ms=1000)
+            for msgs in batches.values():
+                for msg in msgs:
+                    logger.info(
+                        "received message | partition=%s offset=%s",
+                        msg.partition,
+                        msg.offset,
+                    )
 
-            logger.info(
-                "received message | partition=%s offset=%s",
-                msg.partition,
-                msg.offset,
-            )
+                    # ── Deserialise ───────────────────────────────────────────
+                    try:
+                        event = ProposalSubmittedEvent.model_validate_json(msg.value)
+                    except ValidationError as exc:
+                        # Poison-pill: log and skip — never block the partition.
+                        logger.error("invalid event schema, skipping | error=%s", exc)
+                        await consumer.commit()
+                        continue
 
-            # ── Deserialise ───────────────────────────────────────────────────
-            try:
-                event = ProposalSubmittedEvent.model_validate_json(msg.value)
-            except ValidationError as exc:
-                # Poison-pill: log and skip — never block the partition.
-                logger.error("invalid event schema, skipping | error=%s", exc)
-                await consumer.commit()
-                continue
+                    # ── Process + publish ─────────────────────────────────────
+                    try:
+                        await _process(event, producer)
+                    except Exception as exc:
+                        # Do NOT commit — retry on next consumer restart.
+                        logger.exception(
+                            "processing failed, offset will be retried | event_id=%s error=%s",
+                            event.event_id,
+                            exc,
+                        )
+                        continue
 
-            # ── Process + publish ─────────────────────────────────────────────
-            try:
-                await _process(event, producer)
-            except Exception as exc:
-                # Do NOT commit — retry on next consumer restart.
-                logger.exception(
-                    "processing failed, offset will be retried | event_id=%s error=%s",
-                    event.event_id,
-                    exc,
-                )
-                continue
-
-            # ── Commit only after successful publish ──────────────────────────
-            await consumer.commit()
+                    # ── Commit only after successful publish ──────────────────
+                    await consumer.commit()
 
     finally:
         await consumer.stop()

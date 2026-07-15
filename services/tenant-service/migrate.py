@@ -403,6 +403,51 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v13d — align policies.status column default with enum name storage",
         "ALTER TABLE policies ALTER COLUMN status SET DEFAULT 'QUOTED'",
     ),
+    # v14: Tenant company-profile fields (SuperAdmin onboarding now captures
+    # registration/license numbers, head office address, and contact info) plus
+    # the new tenant-scoped `branches` table for regional offices/branch codes.
+    # Note: `branches` itself needs no migration entry — it's a brand-new table,
+    # so create_all() (which runs before this list) creates it automatically.
+    (
+        "v14a — add registration_number to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS registration_number VARCHAR(100)",
+    ),
+    (
+        "v14b — add license_number to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS license_number VARCHAR(100)",
+    ),
+    (
+        "v14c — add head_office_address to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS head_office_address VARCHAR(500)",
+    ),
+    (
+        "v14d — add city to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+    ),
+    (
+        "v14e — add province to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS province VARCHAR(100)",
+    ),
+    (
+        "v14f — add contact_person to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_person VARCHAR(255)",
+    ),
+    (
+        "v14g — add contact_email to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_email VARCHAR(255)",
+    ),
+    (
+        "v14h — add contact_phone to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(50)",
+    ),
+    (
+        "v14i — add website to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS website VARCHAR(255)",
+    ),
+    (
+        "v14j — add established_date to tenants",
+        "ALTER TABLE tenants ADD COLUMN IF NOT EXISTS established_date DATE",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

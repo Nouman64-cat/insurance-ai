@@ -517,3 +517,55 @@ async def update_tenant(tenant_id: UUID, request: Request, token: str = Depends(
 async def delete_tenant(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Branches — proxied to the tenant-service, which owns the Branch table and
+# enforces SuperAdmin auth on writes (see services/tenant-service/routers/branches.py).
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/branches",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Branches"],
+    summary="Create a branch for a tenant (SuperAdmin only)",
+)
+async def create_branch(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/branches")
+
+
+@app.get(
+    "/tenants/{tenant_id}/branches",
+    tags=["Branches"],
+    summary="List branches for a tenant",
+)
+async def list_branches(tenant_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/branches")
+
+
+@app.get(
+    "/branches/{branch_id}",
+    tags=["Branches"],
+    summary="Get a branch by ID",
+)
+async def get_branch(branch_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/branches/{branch_id}")
+
+
+@app.patch(
+    "/branches/{branch_id}",
+    tags=["Branches"],
+    summary="Update a branch (SuperAdmin only)",
+)
+async def update_branch(branch_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/branches/{branch_id}")
+
+
+@app.delete(
+    "/branches/{branch_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Branches"],
+    summary="Delete a branch (SuperAdmin only)",
+)
+async def delete_branch(branch_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/branches/{branch_id}")
+

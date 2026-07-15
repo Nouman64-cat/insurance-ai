@@ -183,31 +183,36 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
     logger.info("Quote worker started — polling %s", INBOUND_TOPIC)
 
     try:
-        async for msg in consumer:
-            if stop_event and stop_event.is_set():
-                break
+        # getmany(timeout_ms=...) returns (possibly empty) on a bounded wait,
+        # unlike `async for msg in consumer` which blocks indefinitely for the
+        # next message. That's what lets this loop notice stop_event promptly
+        # even when the topic is idle — required for --reload to ever be able
+        # to tear this task down (see main.py's lifespan shutdown).
+        while not (stop_event and stop_event.is_set()):
+            batches = await consumer.getmany(timeout_ms=1000)
+            for msgs in batches.values():
+                for msg in msgs:
+                    logger.info("received | partition=%s offset=%s", msg.partition, msg.offset)
 
-            logger.info("received | partition=%s offset=%s", msg.partition, msg.offset)
+                    try:
+                        event = ApplicantCreatedEvent.model_validate_json(msg.value)
+                    except ValidationError as exc:
+                        logger.error("invalid event schema, skipping | error=%s", exc)
+                        await consumer.commit()
+                        continue
 
-            try:
-                event = ApplicantCreatedEvent.model_validate_json(msg.value)
-            except ValidationError as exc:
-                logger.error("invalid event schema, skipping | error=%s", exc)
-                await consumer.commit()
-                continue
+                    try:
+                        await _process(event)
+                    except Exception as exc:
+                        # DB write failed — do NOT commit; retry on next worker restart
+                        logger.exception(
+                            "quote generation failed, will retry | applicant_id=%s error=%s",
+                            event.payload.applicant_id,
+                            exc,
+                        )
+                        continue
 
-            try:
-                await _process(event)
-            except Exception as exc:
-                # DB write failed — do NOT commit; retry on next worker restart
-                logger.exception(
-                    "quote generation failed, will retry | applicant_id=%s error=%s",
-                    event.payload.applicant_id,
-                    exc,
-                )
-                continue
-
-            await consumer.commit()
+                    await consumer.commit()
 
     finally:
         await consumer.stop()

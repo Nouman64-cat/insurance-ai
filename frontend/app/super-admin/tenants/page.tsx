@@ -10,7 +10,43 @@ interface Tenant {
   code: string;
   is_active: boolean;
   created_at: string;
+  registration_number?: string | null;
+  license_number?: string | null;
+  head_office_address?: string | null;
+  city?: string | null;
+  province?: string | null;
+  contact_person?: string | null;
+  contact_email?: string | null;
+  contact_phone?: string | null;
+  website?: string | null;
+  established_date?: string | null;
 }
+
+interface TenantProfileFields {
+  registration_number: string;
+  license_number: string;
+  head_office_address: string;
+  city: string;
+  province: string;
+  contact_person: string;
+  contact_email: string;
+  contact_phone: string;
+  website: string;
+  established_date: string;
+}
+
+const emptyProfileFields: TenantProfileFields = {
+  registration_number: "",
+  license_number: "",
+  head_office_address: "",
+  city: "",
+  province: "",
+  contact_person: "",
+  contact_email: "",
+  contact_phone: "",
+  website: "",
+  established_date: "",
+};
 
 export default function TenantManagementPage() {
   const router = useRouter();
@@ -23,12 +59,14 @@ export default function TenantManagementPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [tenantName, setTenantName] = useState("");
   const [tenantCode, setTenantCode] = useState("");
+  const [createProfile, setCreateProfile] = useState<TenantProfileFields>(emptyProfileFields);
   const [formLoading, setFormLoading] = useState(false);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [editName, setEditName] = useState("");
   const [editActive, setEditActive] = useState(true);
+  const [editProfile, setEditProfile] = useState<TenantProfileFields>(emptyProfileFields);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
@@ -60,6 +98,7 @@ export default function TenantManagementPage() {
   const handleOpenCreateModal = () => {
     setTenantName("");
     setTenantCode("");
+    setCreateProfile(emptyProfileFields);
     setError("");
     setSuccess("");
     setShowCreateModal(true);
@@ -72,7 +111,11 @@ export default function TenantManagementPage() {
     setFormLoading(true);
 
     try {
-      await api.post("/tenants", { name: tenantName, code: tenantCode });
+      const payload: Record<string, any> = { name: tenantName, code: tenantCode };
+      for (const [key, value] of Object.entries(createProfile)) {
+        if (value.trim() !== "") payload[key] = value;
+      }
+      await api.post("/tenants", payload);
       setSuccess(`Tenant "${tenantName}" created successfully!`);
       setShowCreateModal(false);
       fetchTenants();
@@ -92,6 +135,18 @@ export default function TenantManagementPage() {
     setEditingTenant(tenant);
     setEditName(tenant.name);
     setEditActive(tenant.is_active);
+    setEditProfile({
+      registration_number: tenant.registration_number ?? "",
+      license_number: tenant.license_number ?? "",
+      head_office_address: tenant.head_office_address ?? "",
+      city: tenant.city ?? "",
+      province: tenant.province ?? "",
+      contact_person: tenant.contact_person ?? "",
+      contact_email: tenant.contact_email ?? "",
+      contact_phone: tenant.contact_phone ?? "",
+      website: tenant.website ?? "",
+      established_date: tenant.established_date?.slice(0, 10) ?? "",
+    });
     setError("");
     setSuccess("");
     setShowEditModal(true);
@@ -105,10 +160,14 @@ export default function TenantManagementPage() {
     setFormLoading(true);
 
     try {
-      await api.patch(`/tenants/${editingTenant.id}`, {
+      const payload: Record<string, any> = {
         name: editName,
         is_active: editActive,
-      });
+      };
+      for (const [key, value] of Object.entries(editProfile)) {
+        payload[key] = value.trim() === "" ? null : value;
+      }
+      await api.patch(`/tenants/${editingTenant.id}`, payload);
       setSuccess(`Tenant "${editName}" updated successfully!`);
       setShowEditModal(false);
       fetchTenants();
@@ -289,6 +348,12 @@ export default function TenantManagementPage() {
                           Add Admin
                         </button>
                         <button
+                          onClick={() => router.push(`/super-admin/branches?tenantId=${tenant.id}`)}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors mr-2"
+                        >
+                          Branches
+                        </button>
+                        <button
                           onClick={() => handleOpenEditModal(tenant)}
                           className="text-slate-400 hover:text-blue-600 transition-colors"
                           title="Edit Tenant"
@@ -319,7 +384,7 @@ export default function TenantManagementPage() {
       {/* ── CREATE TENANT MODAL ── */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">Add New Tenant</h3>
               <button
@@ -358,6 +423,117 @@ export default function TenantManagementPage() {
                 <p className="text-[11px] text-slate-400">A short, unique identifier for this tenant. Cannot be changed later.</p>
               </div>
 
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Company Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Registration Number</label>
+                    <input
+                      type="text"
+                      value={createProfile.registration_number}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, registration_number: e.target.value }))}
+                      placeholder="SECP / NTN No."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">License Number</label>
+                    <input
+                      type="text"
+                      value={createProfile.license_number}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, license_number: e.target.value }))}
+                      placeholder="SECP Insurance License No."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Head Office Address</label>
+                    <input
+                      type="text"
+                      value={createProfile.head_office_address}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, head_office_address: e.target.value }))}
+                      placeholder="Street address"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">City</label>
+                    <input
+                      type="text"
+                      value={createProfile.city}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, city: e.target.value }))}
+                      placeholder="e.g. Karachi"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Province</label>
+                    <input
+                      type="text"
+                      value={createProfile.province}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, province: e.target.value }))}
+                      placeholder="e.g. Sindh"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Website</label>
+                    <input
+                      type="text"
+                      value={createProfile.website}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, website: e.target.value }))}
+                      placeholder="https://example.com"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Established Date</label>
+                    <input
+                      type="date"
+                      value={createProfile.established_date}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, established_date: e.target.value }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Contact</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Contact Person</label>
+                    <input
+                      type="text"
+                      value={createProfile.contact_person}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, contact_person: e.target.value }))}
+                      placeholder="Full name"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Contact Phone</label>
+                    <input
+                      type="text"
+                      value={createProfile.contact_phone}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, contact_phone: e.target.value }))}
+                      placeholder="+92 300 0000000"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Contact Email</label>
+                    <input
+                      type="email"
+                      value={createProfile.contact_email}
+                      onChange={(e) => setCreateProfile((p) => ({ ...p, contact_email: e.target.value }))}
+                      placeholder="contact@example.com"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -388,7 +564,7 @@ export default function TenantManagementPage() {
       {/* ── EDIT TENANT MODAL ── */}
       {showEditModal && editingTenant && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">Edit Tenant</h3>
               <button
@@ -436,6 +612,117 @@ export default function TenantManagementPage() {
                 <label htmlFor="editActive" className="text-xs font-semibold text-slate-700 select-none">
                   Tenant Active Status
                 </label>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Company Details</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Registration Number</label>
+                    <input
+                      type="text"
+                      value={editProfile.registration_number}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, registration_number: e.target.value }))}
+                      placeholder="SECP / NTN No."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">License Number</label>
+                    <input
+                      type="text"
+                      value={editProfile.license_number}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, license_number: e.target.value }))}
+                      placeholder="SECP Insurance License No."
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Head Office Address</label>
+                    <input
+                      type="text"
+                      value={editProfile.head_office_address}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, head_office_address: e.target.value }))}
+                      placeholder="Street address"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">City</label>
+                    <input
+                      type="text"
+                      value={editProfile.city}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, city: e.target.value }))}
+                      placeholder="e.g. Karachi"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Province</label>
+                    <input
+                      type="text"
+                      value={editProfile.province}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, province: e.target.value }))}
+                      placeholder="e.g. Sindh"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Website</label>
+                    <input
+                      type="text"
+                      value={editProfile.website}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, website: e.target.value }))}
+                      placeholder="https://example.com"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Established Date</label>
+                    <input
+                      type="date"
+                      value={editProfile.established_date}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, established_date: e.target.value }))}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-500 uppercase tracking-wide pt-3 pb-1">Contact</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Contact Person</label>
+                    <input
+                      type="text"
+                      value={editProfile.contact_person}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, contact_person: e.target.value }))}
+                      placeholder="Full name"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Contact Phone</label>
+                    <input
+                      type="text"
+                      value={editProfile.contact_phone}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, contact_phone: e.target.value }))}
+                      placeholder="+92 300 0000000"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                  <div className="col-span-2 space-y-1.5">
+                    <label className="block text-xs font-semibold text-slate-600">Contact Email</label>
+                    <input
+                      type="email"
+                      value={editProfile.contact_email}
+                      onChange={(e) => setEditProfile((p) => ({ ...p, contact_email: e.target.value }))}
+                      placeholder="contact@example.com"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">

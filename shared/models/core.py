@@ -93,6 +93,19 @@ class Tenant(SQLModel, table=True):
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+    # Company profile — captured at onboarding, all optional so existing rows
+    # (and any code that only ever set name/code) keep working.
+    registration_number: Optional[str] = Field(default=None, max_length=100)  # SECP/company reg. no.
+    license_number: Optional[str] = Field(default=None, max_length=100)       # SECP insurance license no.
+    head_office_address: Optional[str] = Field(default=None, max_length=500)
+    city: Optional[str] = Field(default=None, max_length=100)
+    province: Optional[str] = Field(default=None, max_length=100)
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+    website: Optional[str] = Field(default=None, max_length=255)
+    established_date: Optional[date] = Field(default=None)
+
     # Relationships
     applicants: List["Applicant"] = Relationship(back_populates="tenant")
     organizations: List["Organization"] = Relationship(back_populates="tenant")
@@ -105,6 +118,52 @@ class Tenant(SQLModel, table=True):
     users: List["User"] = Relationship(back_populates="tenant")
     insurance_plans: List["InsurancePlan"] = Relationship(back_populates="tenant")
     premium_quotes: List["PremiumQuote"] = Relationship(back_populates="tenant")
+    branches: List["Branch"] = Relationship(back_populates="tenant")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Branch  —  a physical office (head office / regional / branch / liaison)
+# operated by a Tenant, identified by a tenant-scoped branch code.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BranchTypeEnum(str, Enum):
+    HEAD_OFFICE = "HEAD_OFFICE"
+    REGIONAL_OFFICE = "REGIONAL_OFFICE"
+    BRANCH = "BRANCH"
+    LIAISON_OFFICE = "LIAISON_OFFICE"
+
+
+class Branch(SQLModel, table=True):
+    """
+    One row per physical office of a Tenant. branch_code is unique per tenant
+    (not globally) since codes are tenant-issued, e.g. "LHR-01".
+    """
+    __tablename__ = "branches"
+    __table_args__ = (UniqueConstraint("tenant_id", "branch_code", name="uq_branch_tenant_code"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    branch_code: str = Field(max_length=50, index=True)
+    name: str = Field(max_length=255)
+    branch_type: BranchTypeEnum = Field(default=BranchTypeEnum.BRANCH, max_length=50)
+
+    region: Optional[str] = Field(default=None, max_length=100)
+    city: str = Field(max_length=100)
+    address: Optional[str] = Field(default=None, max_length=500)
+    postal_code: Optional[str] = Field(default=None, max_length=20)
+
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+
+    manager_user_id: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+    is_active: bool = Field(default=True, nullable=False)
+    opened_date: Optional[date] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="branches")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -37,7 +37,7 @@ async def create_tenant(
             detail=f"Tenant with code '{body.code}' already exists.",
         )
 
-    tenant = Tenant(name=body.name, code=body.code)
+    tenant = Tenant(**body.model_dump())
     session.add(tenant)
     await session.commit()
     await session.refresh(tenant)
@@ -87,7 +87,7 @@ from shared.models.core import (
     User, UserProfile, Organization, Applicant, MasterPolicy, Policy,
     RiskAssessment, Claim, Artifact, Commission, PremiumQuote, InsurancePlan,
     Case, CaseWorkflow, CaseAssignment, CaseHistory, CaseEscalation, CaseComment,
-    CaseAttachment, CaseAuditTrail
+    CaseAttachment, CaseAuditTrail, Branch
 )
 
 @router.delete(
@@ -138,6 +138,7 @@ async def delete_tenant(
     await session.exec(delete(Organization).where(Organization.tenant_id == tenant_id))
     await session.exec(delete(User).where(User.tenant_id == tenant_id))
     await session.exec(delete(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id))
+    await session.exec(delete(Branch).where(Branch.tenant_id == tenant_id))
 
     # 6. Delete the tenant itself
     await session.delete(tenant)

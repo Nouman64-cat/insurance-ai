@@ -624,6 +624,32 @@ const NAV_ITEMS = [
 
       {
 
+        href: "/super-admin/branches",
+
+        label: "Branch Management",
+
+        icon: (
+
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+
+            <path d="M3 21h18" />
+
+            <path d="M5 21V7l7-4 7 4v14" />
+
+            <path d="M9 21v-6h6v6" />
+
+          </svg>
+
+        ),
+
+        badge: null,
+
+        superAdminOnly: true,
+
+      },
+
+      {
+
         href: "/super-admin/tokens",
 
         label: "Token Economy",
@@ -814,7 +840,7 @@ export function Sidebar() {
 
   const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/applicants", "/financial"];
 
-  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/tokens"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens"];
 
 
 

@@ -11,6 +11,7 @@ from shared.models.core import (
     ProductCategoryEnum,
     PlanStatusEnum,
     PolicyStatusEnum,
+    BranchTypeEnum,
 )
 
 
@@ -19,6 +20,18 @@ from shared.models.core import (
 class TenantCreate(BaseModel):
     name: str
     code: str
+
+    # Company profile — optional, captured at onboarding
+    registration_number: Optional[str] = None
+    license_number: Optional[str] = None
+    head_office_address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    website: Optional[str] = None
+    established_date: Optional[date] = None
 
     @field_validator("name")
     @classmethod
@@ -45,6 +58,17 @@ class TenantRead(BaseModel):
     is_active: bool
     created_at: datetime
 
+    registration_number: Optional[str] = None
+    license_number: Optional[str] = None
+    head_office_address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    website: Optional[str] = None
+    established_date: Optional[date] = None
+
     model_config = {"from_attributes": True}
 
 
@@ -52,6 +76,94 @@ class TenantUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
     is_active: Optional[bool] = None
+
+    registration_number: Optional[str] = None
+    license_number: Optional[str] = None
+    head_office_address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    website: Optional[str] = None
+    established_date: Optional[date] = None
+
+
+# ── Branch ────────────────────────────────────────────────────────────────────
+
+class BranchCreate(BaseModel):
+    branch_code: str
+    name: str
+    branch_type: BranchTypeEnum = BranchTypeEnum.BRANCH
+    region: Optional[str] = None
+    city: str
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    manager_user_id: Optional[UUID] = None
+    opened_date: Optional[date] = None
+
+    @field_validator("branch_code")
+    @classmethod
+    def branch_code_format(cls, v: str) -> str:
+        v = v.strip().upper()
+        if not v:
+            raise ValueError("branch_code must not be blank")
+        if not v.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("branch_code must be alphanumeric (hyphens/underscores allowed)")
+        return v
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+    @field_validator("city")
+    @classmethod
+    def city_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("city must not be blank")
+        return v.strip()
+
+
+class BranchRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    branch_code: str
+    name: str
+    branch_type: BranchTypeEnum
+    region: Optional[str] = None
+    city: str
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    manager_user_id: Optional[UUID] = None
+    is_active: bool
+    opened_date: Optional[date] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BranchUpdate(BaseModel):
+    name: Optional[str] = None
+    branch_type: Optional[BranchTypeEnum] = None
+    region: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    postal_code: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    manager_user_id: Optional[UUID] = None
+    is_active: Optional[bool] = None
+    opened_date: Optional[date] = None
 
 
 # ── Role ──────────────────────────────────────────────────────────────────────

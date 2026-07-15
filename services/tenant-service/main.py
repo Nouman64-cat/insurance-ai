@@ -17,6 +17,7 @@ from database import _session_factory
 from migrate import run_migrations
 from ocr_worker import start_ocr_worker
 from routers.tenants import router as tenants_router
+from routers.branches import router as branches_router
 from routers.users import router as users_router
 from routers.auth import router as auth_router
 from routers.applicants import router as applicants_router
@@ -113,6 +114,7 @@ app.add_middleware(
 )
 
 app.include_router(tenants_router)
+app.include_router(branches_router)
 app.include_router(users_router)
 app.include_router(auth_router)
 app.include_router(applicants_router)
