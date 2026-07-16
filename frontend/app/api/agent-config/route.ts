@@ -2,17 +2,14 @@ import { NextResponse } from 'next/server';
 
 export async function GET() {
   const deepgramApiKey = process.env.DEEPGRAM_API_KEY;
-  const groqApiKey = process.env.GROQ_API_KEY;
 
-  if (!deepgramApiKey || !groqApiKey) {
-    return NextResponse.json({ error: 'Missing required API keys in environment' }, { status: 500 });
+  // The live voice agent only needs the Deepgram key — it opens the browser
+  // WebSocket to Deepgram's Voice Agent (which hosts the STT / LLM / TTS legs).
+  // (An earlier version also required GROQ_API_KEY, but the client never used
+  //  it — the agent's `think` provider is Deepgram-hosted, not Groq.)
+  if (!deepgramApiKey) {
+    return NextResponse.json({ error: 'Live voice is not configured (missing DEEPGRAM_API_KEY).' }, { status: 500 });
   }
 
-  // Note: For a production app, do NOT expose GROQ_API_KEY to the client.
-  // Deepgram Agent allows bringing your own LLM, but requires passing the endpoint & headers 
-  // from the client when establishing the WS connection.
-  return NextResponse.json({
-    deepgramApiKey,
-    groqApiKey
-  });
+  return NextResponse.json({ deepgramApiKey });
 }

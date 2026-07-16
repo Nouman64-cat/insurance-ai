@@ -449,6 +449,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const [artifacts, setArtifacts] = useState<ArtifactData[]>([]);
   const [showUpload, setShowUpload] = useState(false);
+  const [downloadingApp, setDownloadingApp] = useState(false);
 
   const [docSummary, setDocSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
@@ -884,6 +885,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  // Generate the full application dossier PDF from the current case detail.
+  const downloadApplication = async () => {
+    if (!detail) return;
+    setDownloadingApp(true);
+    setError(null);
+    try {
+      const { generateApplicationPDF } = await import("@/lib/application-pdf");
+      await generateApplicationPDF(detail as any);
+    } catch (err: any) {
+      setError(err.message ?? "Failed to generate application PDF.");
+    } finally {
+      setDownloadingApp(false);
+    }
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   if (loading) {
@@ -1034,6 +1050,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
             {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
           </button>
         </div> */}
+
+        {/* Final step after underwriting — generate the full application dossier */}
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+          <button
+            onClick={downloadApplication}
+            disabled={downloadingApp}
+            title={hasAny ? "Download the complete application dossier (PDF)" : "Best generated after underwriting — includes whatever detail is available"}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-700 rounded-lg hover:bg-blue-800 disabled:opacity-50 transition-colors shadow-sm"
+          >
+            {downloadingApp ? <Spinner /> : (
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+              </svg>
+            )}
+            {downloadingApp ? "Generating…" : "Download Application"}
+          </button>
+        </div>
       </div>
 
       {/* ── Plan switcher (multi-plan underwriting group) ─────────────────── */}

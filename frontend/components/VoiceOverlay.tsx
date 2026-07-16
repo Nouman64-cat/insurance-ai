@@ -72,8 +72,11 @@ export default function VoiceOverlay({ onClose }: Props) {
     const init = async () => {
       try {
         const r = await fetch("/api/agent-config");
-        if (!r.ok) throw new Error("Failed to load config");
-        const { deepgramApiKey, groqApiKey } = await r.json();
+        if (!r.ok) {
+          const body = await r.json().catch(() => ({}));
+          throw new Error(body.error || "Live voice is not configured.");
+        }
+        const { deepgramApiKey } = await r.json();
 
         // Auth via subprotocol for browser WebSockets
         const ws = new WebSocket(
