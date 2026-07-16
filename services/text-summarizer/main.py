@@ -60,6 +60,13 @@ class SummarizeRequest(BaseModel):
     documents: list[str]  # Updated to accept a list of strings
     max_words: int | None = None
 
+class UnderwriterNoteRequest(BaseModel):
+    """Structured case context used to draft a concise underwriter note.
+    The frontend assembles `context` from the customer, policy, risk scores,
+    AI decision, and explainability reasons already on screen."""
+    context: str
+    max_words: int | None = 90
+
 class TokenUsage(BaseModel):
     input: int
     output: int
@@ -131,6 +138,23 @@ def _build_underwriting_prompt(request: SummarizeRequest) -> str:
     for i, doc_text in enumerate(request.documents):
         prompt += f"\n<document_{i+1}>\n{doc_text}\n</document_{i+1}>\n"
     return prompt
+
+
+def _build_underwriter_note_prompt(request: UnderwriterNoteRequest) -> str:
+    """Draft a short, human-sounding internal underwriter note from the case
+    context. The output is plain prose (no markdown) so it drops straight into
+    the notes textarea for the underwriter to review and edit before posting."""
+    max_words = request.max_words or 90
+    return (
+        "You are an experienced life insurance underwriter writing a brief internal "
+        "case note for the file. Based only on the case data below, write a concise "
+        f"note (2-4 sentences, under {max_words} words) that captures what is going on "
+        "with this case: who the applicant is, the main medical / financial / fraud risk "
+        "drivers, and the AI's recommended decision. Write in plain professional prose — "
+        "no markdown, no headings, no bullet points. Do not invent facts that are not in "
+        "the data.\n\n"
+        f"CASE DATA:\n{request.context}\n"
+    )
 
 
 async def _stream_summarize_sse(prompt: str):
@@ -271,6 +295,50 @@ async def summarize_underwriting(request: SummarizeRequest):
     except Exception as e:
         error_msg = str(e) if str(e) else "Unknown error during summarization"
         raise HTTPException(status_code=500, detail=f"Summarization error: {error_msg}")
+
+
+@app.post("/summarize/underwriter-note", response_model=SummarizeResponse)
+async def summarize_underwriter_note(request: UnderwriterNoteRequest):
+    """Draft a concise internal underwriter note from the case context shown on
+    the Case Detail workbench (customer, policy, risk scores, decision, reasons)."""
+    if not request.context or not request.context.strip():
+        raise HTTPException(status_code=400, detail="Context must not be empty.")
+
+    prompt = _build_underwriter_note_prompt(request)
+
+    try:
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
+        )
+
+        if not response or not response.text:
+            raise ValueError("Empty response from Gemini model")
+
+        usage = response.usage_metadata
+        if not usage:
+            raise ValueError("No token usage metadata in response")
+
+        asyncio.create_task(_record_token_usage({
+            "input": usage.prompt_token_count,
+            "output": usage.candidates_token_count,
+            "total": usage.total_token_count,
+        }))
+
+        return SummarizeResponse(
+            summary=response.text.strip(),
+            token_usage=TokenUsage(
+                input=usage.prompt_token_count,
+                output=usage.candidates_token_count,
+                total=usage.total_token_count,
+            ),
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=500, detail=f"Invalid response from Gemini: {str(e)}")
+    except Exception as e:
+        error_msg = str(e) if str(e) else "Unknown error during note generation"
+        raise HTTPException(status_code=500, detail=f"Note generation error: {error_msg}")
 
 
 @app.post("/summarize/stream")

@@ -94,7 +94,7 @@ export function DecisionBanner({ decision }: { decision: AIDecision }) {
   };
 
   const SUB: Record<AIDecision, string> = {
-    "Auto Approve": "No manual intervention required. Policy may be issued.",
+    "Auto Approve": "AI risk assessment completed successfully. Ready for fast-track policy issuance.",
     "Approve with Loading": "Policy approved subject to premium adjustment.",
     "Human Review": "Composite risk falls in the 51–75 range. Senior underwriter review required.",
     Decline: "Risk profile exceeds acceptable thresholds. Application cannot proceed.",
