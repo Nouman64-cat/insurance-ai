@@ -4,9 +4,9 @@ const SYSTEM_PROMPT = `Your name is Sara, a helpful, expert AI voice assistant f
 
 CRITICAL INSTRUCTION: You have access to system tools (functions) to perform real actions. You MUST use these tools when a user asks you to:
 1. Navigate to a page (use navigate_to_page)
-2. Add a new applicant (use add_applicant)
-3. Delete an applicant (use delete_applicant)
-4. Get details about a case or applicant (use get_case_details)
+2. Add a new customer (use add_customer)
+3. Delete a customer (use delete_customer)
+4. Get details about a case or customer (use get_case_details)
 5. Run an underwriting risk assessment (use run_risk_assessment)
 
 DO NOT hallucinate or pretend to perform these actions. If you need more information to execute a tool (like a CNIC, Date of Birth, etc.), ask the user for it first, and once you have it, EXECUTE the tool call. Never just output text saying you updated it without calling the function!`;
@@ -31,7 +31,7 @@ const TOOLS = [
               "live-evaluation", 
               "case-summarizer", 
               "assessments", 
-              "admin/applicants", 
+              "admin/customers", 
               "admin/organizations",
               "super-admin/tenants",
               "super-admin/admins",
@@ -50,8 +50,8 @@ const TOOLS = [
   {
     type: "function",
     function: {
-      name: "add_applicant",
-      description: "Adds a new applicant to the system.",
+      name: "add_customer",
+      description: "Adds a new customer to the system.",
       parameters: {
         type: "object",
         properties: {
@@ -70,8 +70,8 @@ const TOOLS = [
   {
     type: "function",
     function: {
-      name: "delete_applicant",
-      description: "Deletes an applicant from the system.",
+      name: "delete_customer",
+      description: "Deletes a customer from the system.",
       parameters: {
         type: "object",
         properties: {
@@ -137,7 +137,7 @@ export async function POST(req: Request) {
         'Authorization': `Bearer ${groqApiKey}`
       },
       body: JSON.stringify({
-        model: 'llama-3.3-70b-versatile',
+        model: 'llama-3.1-8b-instant',
         messages: payloadMessages,
         tools: TOOLS,
         tool_choice: "auto",
