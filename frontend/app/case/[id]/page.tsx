@@ -72,6 +72,7 @@ interface CustomerData {
   is_smoker: boolean;
   height_cm: number;
   weight_kg: number;
+  details?: Record<string, any>;
 }
 
 interface PolicyData {
@@ -186,24 +187,108 @@ function InitialsAvatar({ name }: { name: string }) {
   );
 }
 
-function ReasonGroup({ label, score, scoreLabel, reasons, accentColor }: {
-  label: string; score: number; scoreLabel: string; reasons: string[]; accentColor: string;
+// A reason is a "risk" signal (⚠) or a "clear" signal (✓). The same heuristic
+// drives both the list and table views so their symbols stay in sync.
+function classifyReason(reason: string): "risk" | "clear" {
+  const lower = reason.toLowerCase();
+  const isBad = /(high|elevated|suspicious|unverified|irregular|missing|abnormal|poor|inadequate|insufficient|concern|discrepancy|fraud|decline|reject|warning|smoker|hypertension|diabetic|disease|increased|major risk|unstable|severe|critical)/i.test(lower);
+  const isGoodExemption = /(low risk|low mortality|no history|no evidence|non-smoker|absence of|no significant|within normal|normal|clear|healthy|verified|stable|acceptable|good|excellent)/i.test(lower);
+  return isBad && !isGoodExemption ? "risk" : "clear";
+}
+
+// Tidy a raw reason string into something more concise/readable: collapse
+// whitespace, strip noise verdicts like "…: no signal", and drop trailing
+// punctuation. Keeps the meaningful fact, drops the filler.
+function tidyReason(reason: string): string {
+  return reason
+    .replace(/\s+/g, " ")
+    .replace(/\s*[:\-–—]\s*(no signals?|no concerns?|normal|nil|none|n\/a|clear)\.?$/i, "")
+    .replace(/[.;,]+$/, "")
+    .trim();
+}
+
+function ReasonIcon({ kind, className = "w-3.5 h-3.5" }: { kind: "risk" | "clear"; className?: string }) {
+  if (kind === "risk") {
+    return (
+      <svg className={`text-amber-500 flex-shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+      </svg>
+    );
+  }
+  return (
+    <svg className={`text-emerald-500 flex-shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
+interface ReasonSection {
+  label: string;       // full heading, e.g. "Medical Risk Factors"
+  short: string;       // compact label for the table, e.g. "Medical"
+  score: number;
+  scoreLabel: string;
+  reasons: string[];
+  accentColor: string;
+}
+
+function ReasonGroup({ label, scoreLabel, reasons, accentColor }: {
+  label: string; scoreLabel: string; reasons: string[]; accentColor: string;
 }) {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <span className={`text-xs font-bold uppercase tracking-widest ${accentColor}`}>{label}</span>
-        <span className="text-xs text-slate-400 font-mono">({scoreLabel})</span>
+        <span className="text-[10px] font-mono text-slate-500 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">{scoreLabel}</span>
       </div>
-      <ul className="space-y-1.5">
-        {reasons.length === 0 && <li className="text-xs text-slate-400">No factors recorded.</li>}
+      <ul className="space-y-0.5">
+        {reasons.length === 0 && <li className="text-xs text-slate-400 italic px-2.5 py-1">No factors recorded.</li>}
         {reasons.map((reason, i) => (
-          <li key={i} className="flex items-start gap-2">
-            <span className="text-slate-300 mt-0.5 flex-shrink-0">•</span>
-            <span className="text-xs text-slate-600 leading-relaxed">{reason}</span>
+          <li key={i} className="flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-slate-50/70 transition-colors">
+            <ReasonIcon kind={classifyReason(reason)} className="w-3.5 h-3.5 mt-0.5" />
+            <span className="text-xs text-slate-600 leading-snug">{tidyReason(reason)}</span>
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// Compact tabular alternative to the list view — one concise row per factor,
+// with the same ⚠ / ✓ signal symbols and a short category chip.
+function ReasonTable({ sections }: { sections: ReasonSection[] }) {
+  const rows = sections.flatMap(s =>
+    s.reasons.map(reason => ({ short: s.short, accentColor: s.accentColor, reason }))
+  );
+
+  if (rows.length === 0) {
+    return <p className="text-xs text-slate-400">No factors recorded.</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto -mx-1">
+      <table className="w-full text-xs border-collapse">
+        <thead>
+          <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100">
+            <th className="py-2 pl-1 pr-2 font-bold w-6"></th>
+            <th className="py-2 px-2 font-bold w-24">Category</th>
+            <th className="py-2 px-2 font-bold">Factor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, i) => {
+            const kind = classifyReason(row.reason);
+            return (
+              <tr key={i} className="border-b border-slate-50 last:border-0 align-top">
+                <td className="py-2 pl-1 pr-2"><ReasonIcon kind={kind} className="w-3.5 h-3.5 mt-0.5" /></td>
+                <td className="py-2 px-2">
+                  <span className={`font-bold uppercase tracking-wide text-[10px] ${row.accentColor}`}>{row.short}</span>
+                </td>
+                <td className="py-2 px-2 text-slate-600 leading-snug">{tidyReason(row.reason)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -336,6 +421,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [note, setNote] = useState("");
   const [postingNote, setPostingNote] = useState(false);
   const [noteSent, setNoteSent] = useState(false);
+  const [generatingNote, setGeneratingNote] = useState(false);
+  const [noteGenError, setNoteGenError] = useState<string | null>(null);
+
+  // AI Analysis view mode — "table" (compact rows, default) or "list" (grouped bullets).
+  const [analysisView, setAnalysisView] = useState<"list" | "table">("table");
 
   const [artifacts, setArtifacts] = useState<ArtifactData[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -425,7 +515,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // runner below handles every plan, so the single-case path stays out of it.
   useEffect(() => {
     if (isGroup) return;
-    if (detail && !loading && status === "idle" && !live.compositeScore && !detail.latest_assessment) {
+    const missingDocs = detail?.document_checklist?.missing ?? [];
+    if (detail && !loading && status === "idle" && !live.compositeScore && !detail.latest_assessment && missingDocs.length === 0) {
       if (autoRun === "true") {
         // Remove autoRun from URL so we don't re-trigger on refresh
         router.replace(`/case/${caseId}`);
@@ -455,6 +546,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const runUnderwriting = async () => {
     if (!detail?.customer || !detail?.policy || !tenantId) return;
 
+    // Required documents must be uploaded before underwriting can proceed.
+    const missingDocs = detail.document_checklist?.missing ?? [];
+    if (missingDocs.length > 0) {
+      setStatus("idle");
+      setStreamError(`Required document(s) missing: ${missingDocs.join(", ")}. Upload them before running underwriting.`);
+      return;
+    }
+
     abortRef.current?.abort();
     const abort = new AbortController();
     abortRef.current = abort;
@@ -470,8 +569,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
         name: customer.name,
         dob: customer.dob,
         gender: customer.gender,
+        marital_status: customer.marital_status,
         occupation: customer.occupation,
         declared_income: customer.declared_income,
+        is_smoker: customer.is_smoker,
+        height_cm: customer.height_cm,
+        weight_kg: customer.weight_kg,
+        details: customer.details,
       },
       policy: {
         product_name: policy.product_name,
@@ -578,6 +682,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
         return;
       }
 
+      // Required documents must be uploaded before this plan can be underwritten
+      // — mirror the single-case guard so parallel runs don't slip through.
+      const missingDocs = d.document_checklist?.missing ?? [];
+      if (missingDocs.length > 0) {
+        setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
+        setGroupErrors(s => ({ ...s, [targetId]: `Required document(s) missing: ${missingDocs.join(", ")}. Upload them before running underwriting.` }));
+        if (targetId === currentCaseIdRef.current) setDetail(d);
+        return;
+      }
+
       const { customer, policy } = d;
       const payload = {
         customer: {
@@ -585,8 +699,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
           name: customer.name,
           dob: customer.dob,
           gender: customer.gender,
+          marital_status: customer.marital_status,
           occupation: customer.occupation,
           declared_income: customer.declared_income,
+          is_smoker: customer.is_smoker,
+          height_cm: customer.height_cm,
+          weight_kg: customer.weight_kg,
+          details: customer.details,
         },
         policy: {
           product_name: policy.product_name,
@@ -688,6 +807,43 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  // Ask the summarizer to draft a concise underwriter note from the case
+  // context assembled at the call site (customer, policy, scores, decision,
+  // reasons). The draft lands in the textarea for review/edit before posting.
+  const generateNote = async (context: string) => {
+    setGeneratingNote(true);
+    setNoteGenError(null);
+    try {
+      const res = await summarizerApi.post<{ summary: string }>("/summarize/underwriter-note", { context });
+      setNote(res.data.summary.trim());
+    } catch (err: any) {
+      setNoteGenError(err.message ?? "Failed to generate note.");
+    } finally {
+      setGeneratingNote(false);
+    }
+  };
+
+  const downloadPDF = async () => {
+    if (!customer || !assessment) return;
+    const { generateAssessmentPDF } = await import("@/lib/pdf-export");
+
+    await generateAssessmentPDF({
+      customer_name: customer.name,
+      customer_cnic: customer.cnic,
+      case_id: caseId,
+      created_at: assessment.created_at,
+      medical_score: assessment.medical_score,
+      financial_score: assessment.financial_score,
+      fraud_probability: assessment.fraud_probability,
+      composite_risk_score: assessment.composite_risk_score,
+      ai_decision: assessment.ai_decision,
+      suggested_loading: assessment.suggested_loading,
+      reasons: assessment.reasons ?? [],
+      ai_summary: docSummary ?? null,
+      product_name: policy?.product_name ?? null,
+    });
+  };
+
   const submitNote = async () => {
     if (!tenantId || !note.trim()) return;
     setPostingNote(true);
@@ -734,6 +890,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const { case: c, customer, policy, document_checklist: docs } = detail;
 
+  // Underwriting requires every mandatory document to be uploaded first — the
+  // Run / Re-run buttons stay disabled until the checklist has nothing missing.
+  const missingRequiredDocs = docs?.missing ?? [];
+  const requiredDocsMissing = missingRequiredDocs.length > 0;
+
   // In a multi-plan group each plan streams in parallel into its own slice of the
   // maps; otherwise fall back to the single-case state. Everything below renders
   // whichever plan is currently on screen.
@@ -770,6 +931,39 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const hasCategorizedReasons =
     hasLive || medicalReasons.length + financialReasons.length + fraudReasons.length > 0;
 
+  // Single source of truth for the AI Analysis — both the list and table views
+  // render from this so the two stay perfectly in sync.
+  const reasonSections: ReasonSection[] = [
+    { label: "Medical Risk Factors", short: "Medical", score: medicalScore, scoreLabel: `${medicalScore}%`, reasons: medicalReasons, accentColor: "text-orange-700" },
+    { label: "Financial Risk Factors", short: "Financial", score: financialScore, scoreLabel: `${financialScore}%`, reasons: financialReasons, accentColor: "text-blue-700" },
+    { label: "Fraud Risk Factors", short: "Fraud", score: fraudPct, scoreLabel: `${fraudPct}%`, reasons: fraudReasons, accentColor: "text-violet-700" },
+  ];
+
+  // Compact case context handed to the AI note generator — mirrors what the
+  // underwriter sees on screen so the drafted note is grounded in real data.
+  const buildNoteContext = (): string => {
+    const lines: string[] = [];
+    if (customer) {
+      const age = customer.dob ? Math.floor((Date.now() - new Date(customer.dob).getTime()) / 31557600000) : null;
+      lines.push(`Applicant: ${customer.name}${age ? `, age ${age}` : ""}, ${customer.gender}${customer.occupation ? `, ${customer.occupation}` : ""}.`);
+      lines.push(`Smoker: ${customer.is_smoker ? "Yes" : "No"}. Declared income: ${customer.declared_income ? fmtIncome(customer.declared_income) : "unknown"}.`);
+    }
+    if (policy) {
+      lines.push(`Policy: ${INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name}, coverage ${fmtCoverage(policy.coverage_amount)}, term ${policy.term_years} years.`);
+    }
+    if (hasAny) {
+      lines.push(`Risk scores — Medical ${medicalScore}%, Financial ${financialScore}%, Fraud ${fraudPct}%, Composite ${compositeScore}%.`);
+      if (aiDecision) lines.push(`AI recommended decision: ${aiDecision}${suggestedLoading ? ` with suggested loading ${suggestedLoading}%` : ""}.`);
+      const factorLines = reasonSections
+        .filter(s => s.reasons.length > 0)
+        .map(s => `${s.short} factors: ${s.reasons.join("; ")}.`);
+      if (factorLines.length) lines.push(...factorLines);
+      else if (assessment?.reasons?.length) lines.push(`Key factors: ${assessment.reasons.join("; ")}.`);
+    }
+    if (docSummary) lines.push(`Document summary: ${docSummary.replace(/[#*]/g, "").replace(/\s+/g, " ").trim().slice(0, 600)}`);
+    return lines.join("\n");
+  };
+
   return (
     <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
 
@@ -797,7 +991,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        {/* <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
           <button
             onClick={() => overrideStatus("Pending Documents")}
             disabled={overriding !== null}
@@ -819,7 +1013,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
           >
             {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* ── Plan switcher (multi-plan underwriting group) ─────────────────── */}
@@ -891,12 +1085,37 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 </div>
               </div>
               <p className="section-label mb-3">Customer Details</p>
-              <DataRow label="CNIC" value={<span className="font-mono text-sm">{customer.cnic}</span>} />
               <DataRow label="Date of Birth" value={fmtDob(customer.dob)} />
               <DataRow label="Gender" value={customer.gender} />
-              <DataRow label="Occupation" value={customer.occupation} />
-              <DataRow label="Declared Annual Income" value={fmtIncome(customer.declared_income)} />
-              <DataRow label="Smoker" value={customer.is_smoker ? "Yes" : "No"} />
+              <DataRow label="Marital Status" value={customer.marital_status || <span className="text-slate-400 italic">Missing</span>} />
+              <DataRow label="Occupation" value={customer.occupation || <span className="text-slate-400 italic">Missing</span>} />
+              <DataRow label="Declared Annual Income" value={customer.declared_income ? fmtIncome(customer.declared_income) : <span className="text-slate-400 italic">Missing</span>} />
+
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="section-label mb-3">Contact Information</p>
+                <DataRow
+                  label="Address"
+                  value={
+                    (() => {
+                      const addr = customer.details?.address;
+                      if (!addr) return <span className="text-slate-400 italic">Missing</span>;
+                      if (typeof addr === "string") return addr;
+                      const str = [addr.street_address, addr.area, addr.city, addr.province].filter(Boolean).join(", ");
+                      return str || <span className="text-slate-400 italic">Missing</span>;
+                    })()
+                  }
+                />
+                <DataRow label="City" value={customer.details?.address?.city || customer.details?.city || <span className="text-slate-400 italic">Missing</span>} />
+                <DataRow label="Phone" value={customer.details?.phone || <span className="text-slate-400 italic">Missing</span>} />
+                <DataRow label="Email" value={customer.details?.email || <span className="text-slate-400 italic">Missing</span>} />
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="section-label mb-3">Medical & Lifestyle</p>
+                <DataRow label="Smoker" value={customer.is_smoker ? "Yes" : "No"} />
+                <DataRow label="Height" value={customer.height_cm ? `${customer.height_cm} cm` : <span className="text-slate-400 italic">Missing</span>} />
+                <DataRow label="Weight" value={customer.weight_kg ? `${customer.weight_kg} kg` : <span className="text-slate-400 italic">Missing</span>} />
+              </div>
             </div>
           )}
 
@@ -1005,7 +1224,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               </button>
             </div>
             {artifacts.filter(a => a.ocr_result).length === 0 && !docSummary && (
-              <p className="text-xs text-slate-400">Upload and OCR at least one document to generate a medical / financial / occupational summary.</p>
+              <p className="text-xs text-slate-400">Upload and OCR document(s) to generate a medical / financial / occupational summary.</p>
             )}
             {summarizeError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{summarizeError}</p>}
             {docSummary && <ReactMarkdown components={MD_COMPONENTS}>{docSummary}</ReactMarkdown>}
@@ -1022,13 +1241,19 @@ export default function CasePage({ params }: { params: { id: string } }) {
               </p>
               <button
                 onClick={handleRun}
-                disabled={effStatus === "streaming" || !policy || !customer}
-                className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 transition-colors shadow-sm"
+                disabled={effStatus === "streaming" || !policy || !customer || requiredDocsMissing}
+                title={requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined}
+                className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 {effStatus === "streaming" ? <Spinner /> : null}
                 {effStatus === "streaming" ? "Running…" : "Run AI Underwriting"}
               </button>
-              {effStreamError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{effStreamError}</p>}
+              {requiredDocsMissing && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 max-w-sm">
+                  Required document{missingRequiredDocs.length > 1 ? "s" : ""} missing: <span className="font-semibold">{missingRequiredDocs.join(", ")}</span>. Upload {missingRequiredDocs.length > 1 ? "them" : "it"} to enable underwriting.
+                </p>
+              )}
+              {effStreamError && !requiredDocsMissing && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{effStreamError}</p>}
             </div>
           ) : (
             <>
@@ -1050,41 +1275,57 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <p className="section-label">AI Recommendation</p>
                   <button
                     onClick={handleRun}
-                    disabled={effStatus === "streaming"}
-                    className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
+                    disabled={effStatus === "streaming" || requiredDocsMissing}
+                    title={requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {effStatus === "streaming" ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
-                    {effStatus === "streaming" ? "Re-running…" : "Re-run Underwriting"}
+                    {/* {effStatus === "streaming" ? "Re-running…" : "Re-run Underwriting"} */}
                   </button>
                 </div>
 
                 {aiDecision && <DecisionBanner decision={aiDecision} />}
                 {effStreamError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{effStreamError}</p>}
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                    <p className="text-xs text-slate-400 font-medium">Suggested Premium Loading</p>
-                    <p className="text-lg font-extrabold text-slate-900 mt-1">
-                      {suggestedLoading != null && suggestedLoading > 0 ? `+${suggestedLoading}%` : "N / A"}
-                    </p>
-                  </div>
-                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                    <p className="text-xs text-slate-400 font-medium">Assessment</p>
-                    <p className="text-lg font-extrabold text-blue-700 mt-1">
-                      {detail.assessments_count > 0 ? `#${detail.assessments_count}` : "First run"}
-                    </p>
-                  </div>
-                </div>
 
-                {/* Explainability report */}
+
+                {/* Explainability report — list (grouped) or table (compact) view */}
                 <div className="pt-2 border-t border-slate-100">
-                  <p className="section-label mb-4">Explainability Report</p>
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm font-bold uppercase tracking-widest text-slate-700">AI Analysis</p>
+                    {hasCategorizedReasons && (
+                      <div className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-50 p-0.5">
+                        <button
+                          onClick={() => setAnalysisView("list")}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "list" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+                          </svg>
+                          List
+                        </button>
+                        <button
+                          onClick={() => setAnalysisView("table")}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${analysisView === "table" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18M12 4v16M4 4h16v16H4z" />
+                          </svg>
+                          Table
+                        </button>
+                      </div>
+                    )}
+                  </div>
                   {hasCategorizedReasons ? (
-                    <div className="space-y-5">
-                      <ReasonGroup label="Medical Risk Factors" score={medicalScore} scoreLabel={`${medicalScore}%`} reasons={live.medicalReasons} accentColor="text-orange-700" />
-                      <ReasonGroup label="Financial Risk Factors" score={financialScore} scoreLabel={`${financialScore}%`} reasons={live.financialReasons} accentColor="text-blue-700" />
-                      <ReasonGroup label="Fraud Risk Factors" score={fraudPct} scoreLabel={`${fraudPct}%`} reasons={live.fraudReasons} accentColor="text-violet-700" />
-                    </div>
+                    analysisView === "list" ? (
+                      <div className="space-y-5">
+                        {reasonSections.map(s => (
+                          <ReasonGroup key={s.label} label={s.label} scoreLabel={s.scoreLabel} reasons={s.reasons} accentColor={s.accentColor} />
+                        ))}
+                      </div>
+                    ) : (
+                      <ReasonTable sections={reasonSections} />
+                    )
                   ) : (
                     <ul className="space-y-1.5">
                       {(assessment?.reasons ?? []).map((reason, i) => (
@@ -1095,6 +1336,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       ))}
                     </ul>
                   )}
+
+                  {/* Download PDF for this specific plan */}
+                  {assessment && (
+                    <div className="mt-5 flex justify-end">
+                      <button
+                        onClick={downloadPDF}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition-colors shadow-sm"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+                        </svg>
+                        Download PDF Report
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </>
@@ -1102,12 +1358,26 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
           {/* Underwriter notes */}
           <div className="card p-5">
-            <p className="section-label mb-3">Underwriter Notes</p>
+            <div className="flex items-center justify-between mb-3">
+              <p className="section-label">Underwriter Notes</p>
+              <button
+                onClick={() => generateNote(buildNoteContext())}
+                disabled={generatingNote || !hasAny}
+                title={hasAny ? "Draft a note from the case details with AI" : "Run underwriting first to generate a note"}
+                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {generatingNote
+                  ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" />
+                  : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" /></svg>}
+                {generatingNote ? "Generating…" : "Generate with AI"}
+              </button>
+            </div>
+            {noteGenError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{noteGenError}</p>}
             <textarea
               value={note}
               onChange={e => setNote(e.target.value)}
               className="w-full h-24 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 resize-none placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              placeholder="Add case notes, override justification, or referral comments here…"
+              placeholder="Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…"
             />
             <div className="flex items-center justify-end gap-2 mt-3">
               {noteSent && <span className="text-xs text-emerald-600 font-semibold mr-auto">✓ Posted</span>}

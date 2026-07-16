@@ -102,7 +102,7 @@ export default function CustomersPage() {
     watch,
     setValue,
   } = useForm<z.infer<typeof customerCoreSchema>>({
-    resolver: zodResolver(customerCoreSchema),
+    resolver: zodResolver(customerCoreSchema) as any,
     mode: "onChange",
     defaultValues: {
       gender: "Male",
@@ -874,7 +874,7 @@ export default function CustomersPage() {
             </div>
 
             {/* Scrollable Form Body */}
-            <form onSubmit={hookFormSubmit(showCreateModal ? handleCreateCustomer : handleEditCustomer)} className="flex-1 overflow-y-auto p-6 space-y-6">
+            <form onSubmit={hookFormSubmit((data: any) => showCreateModal ? handleCreateCustomer(data) : handleEditCustomer(data))} className="flex-1 overflow-y-auto p-6 space-y-6">
 
               {/* TAB 1: Demographics & Contact */}
               {formTab === "demographics" && (

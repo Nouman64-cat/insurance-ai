@@ -6,6 +6,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { fmtCoverage } from "@/lib/mock-data";
 import { listCases, CaseQueueItem } from "@/app/services/cases";
+import api from "@/app/services/api";
 
 const CASE_STATUS_STYLE: Record<string, string> = {
   New: "bg-slate-100 text-slate-600 border-slate-200",
@@ -17,12 +18,20 @@ const CASE_STATUS_STYLE: Record<string, string> = {
   Closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
 
+interface CustomerFolder {
+  customer_id: string;
+  customer_name: string;
+  customer_cnic: string;
+  cases: CaseQueueItem[];
+}
+
 export default function UnderwritingPage() {
   const router = useRouter();
   const [cases, setCases] = useState<CaseQueueItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
     const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
@@ -33,22 +42,77 @@ export default function UnderwritingPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
+  const toggleFolder = (customerId: string) => {
+    setExpandedCustomerId((prev) => (prev === customerId ? null : customerId));
+  };
+
+  const handleDownloadReport = async (c: CaseQueueItem, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const tenantId = localStorage.getItem("tenant_id") ?? "";
+      if (!tenantId) return;
+      const res = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`, { headers: { "X-Tenant-Id": tenantId } });
+      const { customer, latest_assessment, policy } = res.data;
+      if (!latest_assessment) {
+        alert("No AI assessment available to download for this case.");
+        return;
+      }
+
+      const { generateAssessmentPDF } = await import("@/lib/pdf-export");
+      await generateAssessmentPDF({
+        customer_name: customer?.name ?? "Unknown",
+        customer_cnic: customer?.cnic ?? "Unknown",
+        case_id: c.caseld,
+        created_at: latest_assessment.created_at,
+        medical_score: latest_assessment.medical_score,
+        financial_score: latest_assessment.financial_score,
+        fraud_probability: latest_assessment.fraud_probability,
+        composite_risk_score: latest_assessment.composite_risk_score,
+        ai_decision: latest_assessment.ai_decision,
+        suggested_loading: latest_assessment.suggested_loading,
+        reasons: latest_assessment.reasons ?? [],
+        ai_summary: null,
+        product_name: policy?.product_name ?? null,
+      });
+    } catch (err) {
+      console.error("Failed to download report:", err);
+      alert("Failed to download report.");
+    }
+  };
+
+  // Group cases into one folder per customer — same pattern as the Quotations page.
+  const folders = useMemo<CustomerFolder[]>(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return cases;
-    return cases.filter(c =>
-      (c.customer_name ?? "").toLowerCase().includes(q) ||
-      (c.customer_cnic ?? "").toLowerCase().includes(q) ||
-      c.caseNumber.toLowerCase().includes(q),
-    );
+    const filteredList = q
+      ? cases.filter(c =>
+          (c.customer_name ?? "").toLowerCase().includes(q) ||
+          (c.customer_cnic ?? "").toLowerCase().includes(q) ||
+          c.caseNumber.toLowerCase().includes(q),
+        )
+      : cases;
+
+    const grouped = new Map<string, CustomerFolder>();
+    for (const c of filteredList) {
+      if (!grouped.has(c.customer_id)) {
+        grouped.set(c.customer_id, {
+          customer_id: c.customer_id,
+          customer_name: c.customer_name ?? "Unknown Customer",
+          customer_cnic: c.customer_cnic ?? "—",
+          cases: [],
+        });
+      }
+      grouped.get(c.customer_id)!.cases.push(c);
+    }
+    return Array.from(grouped.values());
   }, [cases, search]);
 
   const kpis = useMemo(() => {
     const pendingDocs = cases.filter(c => c.caseStatus === "Pending Documents").length;
     const underReview = cases.filter(c => c.caseStatus === "Under Review" || c.caseStatus === "New" || c.caseStatus === "InProgress").length;
     const approved = cases.filter(c => c.caseStatus === "Approved").length;
+    const customerCount = new Set(cases.map(c => c.customer_id)).size;
     return [
-      { title: "Underwriting Cases", value: cases.length, subtitle: "open folders", accent: "blue" as const },
+      { title: "Customers", value: customerCount, subtitle: "open folders", accent: "blue" as const },
       { title: "Awaiting Documents", value: pendingDocs, subtitle: "checklist incomplete", accent: "amber" as const },
       { title: "In Underwriting", value: underReview, subtitle: "not yet decided", accent: "slate" as const },
       { title: "Approved", value: approved, subtitle: "ready to issue", accent: "emerald" as const },
@@ -60,7 +124,7 @@ export default function UnderwritingPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900 tracking-tight">Underwriting</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Every case opened once a quotation is proceeded — documents, AI risk scoring, and decision, all in one folder.
+          Every case opened once a quotation is proceeded — grouped by customer, with documents, AI risk scoring, and decision all in one folder.
         </p>
       </div>
 
@@ -85,61 +149,120 @@ export default function UnderwritingPage() {
       )}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-slate-100">
-          <p className="text-sm font-semibold text-slate-700">Underwriting Queue</p>
-        </div>
         {loading ? (
           <div className="py-16 flex justify-center"><div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-500" /></div>
-        ) : filtered.length === 0 ? (
+        ) : folders.length === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center text-center px-6">
+            <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+              <span className="text-2xl">📁</span>
+            </div>
             <p className="text-sm font-semibold text-slate-600">
               {cases.length === 0 ? "No underwriting cases yet" : "No cases match your search"}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {cases.length === 0
-                ? "A folder opens automatically the moment an customer proceeds with a quotation."
+                ? "A folder opens automatically the moment a customer proceeds with a quotation."
                 : "Try a different customer name, CNIC, or case number."}
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3 text-left">Case</th>
-                  <th className="px-5 py-3 text-left">Customer</th>
-                  <th className="px-5 py-3 text-left">Product</th>
-                  <th className="px-5 py-3 text-right">Sum Assured</th>
-                  <th className="px-5 py-3 text-left">Case Status</th>
-                  <th className="px-5 py-3 text-left">AI Decision</th>
-                  <th className="px-5 py-3 text-left" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {filtered.map(c => (
-                  <tr key={c.caseld} onClick={() => router.push(`/case/${c.caseld}`)} className="hover:bg-slate-50 cursor-pointer transition-colors">
-                    <td className="px-5 py-3 font-mono text-xs text-slate-500">{c.caseNumber}</td>
-                    <td className="px-5 py-3">
-                      <p className="font-medium text-slate-800">{c.customer_name ?? "Unknown"}</p>
-                      <p className="text-xs text-slate-400">{c.customer_cnic ?? "—"}</p>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600 text-xs">{c.product_name ?? "—"}</td>
-                    <td className="px-5 py-3 text-right font-semibold text-slate-700">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</td>
-                    <td className="px-5 py-3">
-                      <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
-                        {c.caseStatus}
+          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {folders.map((folder) => {
+              const isExpanded = expandedCustomerId === folder.customer_id;
+              const decidedCount = folder.cases.filter(c => c.latest_ai_decision).length;
+              return (
+                <div
+                  key={folder.customer_id}
+                  className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "col-span-full border-blue-200 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"}`}
+                >
+                  {/* Folder Header */}
+                  <div
+                    onClick={() => toggleFolder(folder.customer_id)}
+                    className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          {isExpanded ? (
+                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                          ) : (
+                            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+                          )}
+                        </svg>
+                      </div>
+                      <div>
+                        <h3 className="text-base font-bold text-slate-900">{folder.customer_name}</h3>
+                        <p className="text-xs text-slate-500 font-mono mt-0.5">{folder.customer_cnic}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {!isExpanded && decidedCount > 0 && (
+                        <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700">
+                          {decidedCount} evaluated
+                        </span>
+                      )}
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+                        {folder.cases.length} {folder.cases.length === 1 ? "Case" : "Cases"}
                       </span>
-                    </td>
-                    <td className="px-5 py-3">
-                      {c.latest_ai_decision ? <StatusBadge decision={c.latest_ai_decision} /> : <span className="text-xs text-slate-300">Not yet evaluated</span>}
-                    </td>
-                    <td className="px-5 py-3 text-right">
-                      <span className="text-xs font-semibold text-blue-600">Open folder →</span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
+                        <polyline points="6 9 12 15 18 9"></polyline>
+                      </svg>
+                    </div>
+                  </div>
+
+                  {/* Expanded Content */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 bg-white overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                            <th className="px-5 py-3 text-left">Case</th>
+                            <th className="px-5 py-3 text-left">Product</th>
+                            <th className="px-5 py-3 text-right">Sum Assured</th>
+                            <th className="px-5 py-3 text-left">Case Status</th>
+                            <th className="px-5 py-3 text-left">AI Decision</th>
+                            <th className="px-5 py-3 text-left" />
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {folder.cases.map(c => (
+                            <tr key={c.caseld} onClick={() => router.push(`/case/${c.caseld}`)} className="hover:bg-slate-50 cursor-pointer transition-colors">
+                              <td className="px-5 py-3 font-mono text-xs text-slate-500">{c.caseNumber}</td>
+                              <td className="px-5 py-3 text-slate-600 text-xs">{c.product_name ?? "—"}</td>
+                              <td className="px-5 py-3 text-right font-semibold text-slate-700">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</td>
+                              <td className="px-5 py-3">
+                                <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                                  {c.caseStatus}
+                                </span>
+                              </td>
+                              <td className="px-5 py-3">
+                                {c.latest_ai_decision ? <StatusBadge decision={c.latest_ai_decision} /> : <span className="text-xs text-slate-300">Not yet evaluated</span>}
+                              </td>
+                              <td className="px-5 py-3 text-right">
+                                <div className="flex items-center justify-end gap-3">
+                                  {c.latest_ai_decision && (
+                                    <button
+                                      onClick={(e) => handleDownloadReport(c, e)}
+                                      className="flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors"
+                                    >
+                                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5">
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+                                      </svg>
+                                      Report
+                                    </button>
+                                  )}
+                                  <span className="text-xs font-semibold text-blue-600">Open case →</span>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

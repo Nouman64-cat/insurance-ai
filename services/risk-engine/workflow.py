@@ -117,7 +117,8 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
          6. Travel & Location Risks (Frequent travel to politically unstable or high-risk regions).
          7. Driving & Legal History (Driving violations, DUI history).
 
-         Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons."""),
+         Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons. 
+         Keep each reason extremely concise (maximum 10 words). Do not include explanatory filler or justifications."""),
         ("user", "Customer Data: {customer}")
     ])
     result = (prompt | structured_llm).invoke({"customer": customer})
@@ -135,7 +136,8 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
          2. Policy term (longer term = higher exposure).
          3. Occupation stability and income reliability.
 
-         Output a financial risk score from 0 (low risk) to 100 (very high risk) and specific reasons."""),
+         Output a financial risk score from 0 (low risk) to 100 (very high risk) and specific reasons.
+         Keep each reason extremely concise (maximum 10 words). Do not include explanatory filler or justifications."""),
         ("user", "Customer: {customer}\nPolicy: {policy}")
     ])
     result = (prompt | structured_llm).invoke({"customer": customer, "policy": policy})
@@ -280,7 +282,8 @@ GRAPH UNAVAILABLE: If graph_available is false, assess from data signals only
 and cap probability at 0.5 — absence of graph evidence is not proof of fraud.
 
 Output a fraud_probability from 0.0 (clean) to 1.0 (certain fraud) and a list
-of specific, evidence-backed reasons referencing the actual graph findings."""),
+of specific, evidence-backed reasons referencing the actual graph findings.
+Keep each reason extremely concise (maximum 10 words). Do not include explanatory filler."""),
         ("user",
          "=== CUSTOMER DATA ===\n{customer}\n\n"
          "=== POLICY DATA ===\n{policy}\n\n"

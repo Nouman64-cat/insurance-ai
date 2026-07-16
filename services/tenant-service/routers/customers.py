@@ -86,6 +86,7 @@ async def create_customer(
         name            = f"{body.first_name} {body.last_name}".strip(),
         dob             = body.date_of_birth,
         gender          = body.gender,
+        marital_status  = body.marital_status,
         occupation      = body.occupation,
         declared_income = body.declared_income,
         is_smoker       = body.is_smoker,
@@ -230,6 +231,8 @@ async def update_customer(
         customer.dob = body.date_of_birth
     if body.gender is not None:
         customer.gender = body.gender
+    if body.marital_status is not None:
+        customer.marital_status = body.marital_status
     if body.occupation is not None:
         customer.occupation = body.occupation
     if body.declared_income is not None:

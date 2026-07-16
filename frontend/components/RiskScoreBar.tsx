@@ -7,17 +7,37 @@ interface RiskScoreBarProps {
 }
 
 function scoreColor(score: number) {
-  if (score <= 25) return "bg-emerald-500";
+  if (score <= 10) return "bg-emerald-500";
+  if (score <= 20) return "bg-emerald-400";
+  if (score <= 30) return "bg-lime-400";
+  if (score <= 40) return "bg-yellow-400";
   if (score <= 50) return "bg-amber-400";
-  if (score <= 75) return "bg-orange-500";
+  if (score <= 60) return "bg-amber-500";
+  if (score <= 70) return "bg-orange-500";
+  if (score <= 80) return "bg-red-400";
+  if (score <= 90) return "bg-red-500";
   return "bg-red-600";
 }
 
+function scoreTierColor(score: number) {
+  if (score <= 10) return "text-emerald-700";
+  if (score <= 20) return "text-emerald-600";
+  if (score <= 30) return "text-lime-700";
+  if (score <= 40) return "text-yellow-700";
+  if (score <= 50) return "text-amber-700";
+  if (score <= 60) return "text-amber-700";
+  if (score <= 70) return "text-orange-700";
+  if (score <= 80) return "text-red-600";
+  if (score <= 90) return "text-red-700";
+  return "text-red-800";
+}
+
 function scoreTier(score: number) {
-  if (score <= 25) return { label: "Low Risk",      color: "text-emerald-700" };
-  if (score <= 50) return { label: "Moderate Risk", color: "text-amber-700"   };
-  if (score <= 75) return { label: "Elevated Risk", color: "text-orange-700"  };
-  return              { label: "High Risk",      color: "text-red-700"     };
+  const color = scoreTierColor(score);
+  if (score <= 25) return { label: "Low Risk",      color };
+  if (score <= 50) return { label: "Moderate Risk", color };
+  if (score <= 75) return { label: "Elevated Risk", color };
+  return                  { label: "High Risk",     color };
 }
 
 export function RiskScoreBar({
@@ -63,9 +83,15 @@ export function RiskScoreBar({
 export function CompositeScoreRing({ score }: { score: number }) {
   const tier = scoreTier(score);
   const ringColor =
-    score <= 25 ? "border-emerald-500" :
+    score <= 10 ? "border-emerald-500" :
+    score <= 20 ? "border-emerald-400" :
+    score <= 30 ? "border-lime-400"    :
+    score <= 40 ? "border-yellow-400"  :
     score <= 50 ? "border-amber-400"   :
-    score <= 75 ? "border-orange-500"  :
+    score <= 60 ? "border-amber-500"   :
+    score <= 70 ? "border-orange-500"  :
+    score <= 80 ? "border-red-400"     :
+    score <= 90 ? "border-red-500"     :
                   "border-red-600";
 
   return (
