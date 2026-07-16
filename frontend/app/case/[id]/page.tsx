@@ -65,6 +65,7 @@ interface ApplicantData {
   name: string;
   dob: string;
   gender: string;
+  marital_status?: string;
   occupation: string;
   declared_income: number;
   is_smoker: boolean;
@@ -635,7 +636,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 <div>
                   <p className="font-bold text-slate-900 leading-tight">{applicant.name}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{applicant.gender}</p>
-                  <p className="text-xs text-blue-600 font-mono mt-0.5">{applicant.cnic}</p>
                 </div>
               </div>
               <p className="section-label mb-3">Applicant Details</p>
@@ -644,7 +644,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <DataRow label="Gender" value={applicant.gender} />
               <DataRow label="Occupation" value={applicant.occupation} />
               <DataRow label="Declared Annual Income" value={fmtIncome(applicant.declared_income)} />
-              <DataRow label="Smoker" value={applicant.is_smoker ? "Yes" : "No"} />
+              <DataRow label="Marital Status" value={applicant.marital_status ?? "Single"} />
             </div>
           )}
 
@@ -715,20 +715,20 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-500">Medical Risk</span>
-                  <span className="font-bold text-slate-900">{medicalScore} / 100</span>
+                  <span className="font-bold text-slate-900">{medicalScore}%</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-500">Financial Risk</span>
-                  <span className="font-bold text-slate-900">{financialScore} / 100</span>
+                  <span className="font-bold text-slate-900">{financialScore}%</span>
                 </div>
                 <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Fraud Probability</span>
+                  <span className="text-slate-500">Fraud Risk</span>
                   <span className="font-bold text-slate-900">{fraudPct}%</span>
                 </div>
                 <div className="h-px bg-slate-100 my-1" />
                 <div className="flex justify-between items-center text-sm">
                   <span className="font-semibold text-slate-700">Composite Score</span>
-                  <span className="font-extrabold text-slate-900">{compositeScore} / 100</span>
+                  <span className="font-extrabold text-slate-900">{compositeScore}%</span>
                 </div>
               </div>
             </div>
@@ -783,9 +783,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
               {/* Risk Assessment Scores */}
               <SectionCard title="AI Risk Assessment">
                 <div className="space-y-5">
-                  <RiskScoreBar label="Medical Risk Score" score={medicalScore} />
-                  <RiskScoreBar label="Financial Risk Score" score={financialScore} />
-                  <RiskScoreBar label="Fraud Probability" score={fraudPct} valueLabel={`${fraudPct}%`} />
+                  <RiskScoreBar label="Medical Risk Score" score={medicalScore} valueLabel={`${medicalScore}%`} />
+                  <RiskScoreBar label="Financial Risk Score" score={financialScore} valueLabel={`${financialScore}%`} />
+                  <RiskScoreBar label="Fraud Risk Score" score={fraudPct} valueLabel={`${fraudPct}%`} />
                   <div className="pt-2 border-t border-slate-100">
                     <CompositeScoreRing score={compositeScore} />
                   </div>
@@ -829,9 +829,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <p className="section-label mb-4">Explainability Report</p>
                   {hasLive ? (
                     <div className="space-y-5">
-                      <ReasonGroup label="Medical Risk Factors" score={medicalScore} scoreLabel={`${medicalScore}/100`} reasons={live.medicalReasons} accentColor="text-orange-700" />
-                      <ReasonGroup label="Financial Risk Factors" score={financialScore} scoreLabel={`${financialScore}/100`} reasons={live.financialReasons} accentColor="text-blue-700" />
-                      <ReasonGroup label="Fraud Assessment" score={fraudPct} scoreLabel={`${fraudPct}% probability`} reasons={live.fraudReasons} accentColor="text-violet-700" />
+                      <ReasonGroup label="Medical Risk Factors" score={medicalScore} scoreLabel={`${medicalScore}%`} reasons={live.medicalReasons} accentColor="text-orange-700" />
+                      <ReasonGroup label="Financial Risk Factors" score={financialScore} scoreLabel={`${financialScore}%`} reasons={live.financialReasons} accentColor="text-blue-700" />
+                      <ReasonGroup label="Fraud Risk Factors" score={fraudPct} scoreLabel={`${fraudPct}%`} reasons={live.fraudReasons} accentColor="text-violet-700" />
                     </div>
                   ) : (
                     <ul className="space-y-1.5">

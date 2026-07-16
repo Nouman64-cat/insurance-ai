@@ -75,9 +75,8 @@ export function CompositeScoreRing({ score }: { score: number }) {
       >
         <div className="text-center">
           <span className="block text-2xl font-extrabold text-slate-900 leading-none">
-            {score}
+            {score}<span className="text-lg ml-0.5">%</span>
           </span>
-          <span className="block text-xs text-slate-400 mt-0.5">/ 100</span>
         </div>
       </div>
       <div>
@@ -85,9 +84,7 @@ export function CompositeScoreRing({ score }: { score: number }) {
           Composite Risk Score
         </p>
         <p className={`text-lg font-bold mt-0.5 ${tier.color}`}>{tier.label}</p>
-        <p className="text-xs text-slate-500 mt-1 leading-relaxed max-w-xs">
-          Weighted aggregate: medical × 0.40 + financial × 0.35 + fraud × 0.25
-        </p>
+
       </div>
     </div>
   );

@@ -455,6 +455,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v15a — add branch_id to users",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
     ),
+    (
+        "v16a-enum — add MaritalStatus",
+        "DO $$ BEGIN CREATE TYPE maritalstatus AS ENUM ('Single', 'Married', 'Divorced', 'Widowed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    ),
+    (
+        "v16b — add marital_status to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS marital_status maritalstatus",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
