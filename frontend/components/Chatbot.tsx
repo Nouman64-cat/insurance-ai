@@ -102,8 +102,8 @@ export function Chatbot() {
         router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
         result = { success: true, message: `Navigating to ${args.page_name}` };
       } 
-      else if (name === "add_applicant") {
-        const res = await api.post(`/tenants/${tenantId}/applicants`, {
+      else if (name === "add_customer") {
+        const res = await api.post(`/tenants/${tenantId}/customers`, {
            first_name: args.first_name,
            last_name: args.last_name,
            cnic: args.cnic,
@@ -116,17 +116,17 @@ export function Chatbot() {
            weight_kg: 70,
            details: {}
         });
-        result = { success: true, applicant_id: res.data.id, message: "Applicant added successfully." };
+        result = { success: true, customer_id: res.data.id, message: "Customer added successfully." };
       }
-      else if (name === "delete_applicant") {
-        const list = await api.get(`/tenants/${tenantId}/applicants`);
+      else if (name === "delete_customer") {
+        const list = await api.get(`/tenants/${tenantId}/customers`);
         const app = list.data.find((a: any) => 
           (args.cnic && a.cnic === args.cnic) || 
           (args.name && a.name.toLowerCase().includes(args.name.toLowerCase()))
         );
-        if (!app) throw new Error("Applicant not found");
-        await api.delete(`/tenants/${tenantId}/applicants/${app.id}`);
-        result = { success: true, message: `Applicant ${app.name} deleted.` };
+        if (!app) throw new Error("Customer not found");
+        await api.delete(`/tenants/${tenantId}/customers/${app.id}`);
+        result = { success: true, message: `Customer ${app.name} deleted.` };
       }
       else if (name === "get_case_details") {
         const list = await api.get(`/tenants/${tenantId}/cases`);
