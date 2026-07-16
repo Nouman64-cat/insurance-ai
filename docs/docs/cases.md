@@ -14,7 +14,7 @@ The case management module provides a full lifecycle for tracking insurance work
 
 ```mermaid
 flowchart LR
-    A[Applicant] --> B[Case created\nPOST /cases]
+    A[Customer] --> B[Case created\nPOST /cases]
     B --> C{Case Type}
     C -->|Underwriting| D[Underwriting workflow]
     C -->|Claim| E[Claim investigation]
@@ -53,7 +53,7 @@ stateDiagram-v2
 |---|---|
 | `New` | Just created, unassigned |
 | `InProgress` | Actively being worked on |
-| `Pending Documents` | Waiting on applicant to supply documents |
+| `Pending Documents` | Waiting on customer to supply documents |
 | `Under Review` | Submitted for final review / decision |
 | `Approved` | Decision made — approved |
 | `Rejected` | Decision made — rejected |
@@ -68,20 +68,20 @@ All endpoints are proxied through the API Gateway (`:8010`) to the Tenant Servic
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/tenants/{tenant_id}/cases` | Create a case — auto-generates case number, writes audit entry |
-| `GET` | `/tenants/{tenant_id}/cases` | List cases — filterable by `applicant_id`, `status`, `assigned_user` |
+| `GET` | `/tenants/{tenant_id}/cases` | List cases — filterable by `customer_id`, `status`, `assigned_user` |
 | `GET` | `/tenants/{tenant_id}/cases/{case_id}` | Get a single case |
 | `PUT` | `/tenants/{tenant_id}/cases/{case_id}` | Update case fields |
 | `DELETE` | `/tenants/{tenant_id}/cases/{case_id}` | Delete case and all child records (cascade) |
 | `PATCH` | `/tenants/{tenant_id}/cases/{case_id}/status` | Change status — creates a `CaseHistory` entry |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add a comment |
-| `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Required/received/missing documents, derived from the case's applicant's most recent `Policy.insurance_type` — see [Document Checklist](#document-checklist) below |
+| `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Required/received/missing documents, derived from the case's customer's most recent `Policy.insurance_type` — see [Document Checklist](#document-checklist) below |
 
 ### Create case — request body
 
 ```json
 {
-  "applicant_id": "uuid",
+  "customer_id": "uuid",
   "caseType": "Underwriting",
   "priorityLevel": "Normal",
   "sourceChannel": "Agent",
@@ -115,7 +115,7 @@ Creates a `CaseAssignment` record with `assignmentType = Primary` and `assignmen
 
 ```json
 {
-  "commentText": "Requested additional salary slips from applicant.",
+  "commentText": "Requested additional salary slips from customer.",
   "commentType": "Internal",
   "visibilityLevel": "Team"
 }
@@ -123,7 +123,7 @@ Creates a `CaseAssignment` record with `assignmentType = Primary` and `assignmen
 
 ### Document checklist
 
-`GET /tenants/{tenant_id}/cases/{case_id}/document-checklist` returns which documents are required for the case, based on the applicant's most recent `Policy.insurance_type`, and diffs that against artifacts already uploaded for the case:
+`GET /tenants/{tenant_id}/cases/{case_id}/document-checklist` returns which documents are required for the case, based on the customer's most recent `Policy.insurance_type`, and diffs that against artifacts already uploaded for the case:
 
 ```json
 {
@@ -154,7 +154,7 @@ erDiagram
     cases ||--o{ case_comments : "has"
     cases ||--o{ case_attachments : "has"
     cases ||--o{ case_audit_trails : "has"
-    applicants ||--o{ cases : "opens"
+    customers ||--o{ cases : "opens"
     users ||--o{ case_assignments : "assigned to"
     users ||--o{ case_histories : "changed by"
     users ||--o{ case_comments : "authored by"
@@ -169,7 +169,7 @@ erDiagram
 |---|---|---|
 | `caseld` | UUID PK | Auto-generated |
 | `tenant_id` | UUID FK → `tenants.id` | Indexed |
-| `applicant_id` | UUID FK → `applicants.id` | Indexed |
+| `customer_id` | UUID FK → `customers.id` | Indexed |
 | `caseNumber` | VARCHAR(50) | Unique; auto-generated `CASE-YYYY-XXXXXX` |
 | `caseType` | ENUM | `Underwriting`, `Claim`, `Inquiry` |
 | `caseStatus` | ENUM | Default `New`; see lifecycle above |

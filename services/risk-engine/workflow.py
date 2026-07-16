@@ -30,7 +30,7 @@ MEMGRAPH_PASS = os.getenv("MEMGRAPH_PASSWORD", "")
 # ─────────────────────────────────────────────────────────────────────────────
 
 class RiskState(TypedDict):
-    applicant: Dict[str, Any]
+    customer: Dict[str, Any]
     policy: Dict[str, Any]
     tenant_id: str
     is_valid: bool
@@ -95,20 +95,20 @@ class FraudScoreOutput(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def validate_input(state: RiskState) -> Dict[str, Any]:
-    applicant = state["applicant"]
+    customer = state["customer"]
     policy = state["policy"]
 
-    is_valid, errors = check_plan_rules(policy.get("insurance_type"), applicant, policy)
+    is_valid, errors = check_plan_rules(policy.get("insurance_type"), customer, policy)
 
     return {"is_valid": is_valid, "validation_errors": errors}
 
 
 def medical_scoring(state: RiskState) -> Dict[str, Any]:
-    applicant = state["applicant"]
+    customer = state["customer"]
     structured_llm = _llm().with_structured_output(MedicalScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert life insurance medical underwriter.
-         Evaluate the following applicant's baseline medical and lifestyle risk based on:
+         Evaluate the following customer's baseline medical and lifestyle risk based on:
          1. Age (Calculate from DOB. Older = higher risk).
          2. Gender (Standard actuarial mortality differentials).
          3. Occupation Hazard (High hazard like mining/military/deep sea diver = high points).
@@ -118,27 +118,27 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
          7. Driving & Legal History (Driving violations, DUI history).
 
          Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons."""),
-        ("user", "Applicant Data: {applicant}")
+        ("user", "Customer Data: {customer}")
     ])
-    result = (prompt | structured_llm).invoke({"applicant": applicant})
+    result = (prompt | structured_llm).invoke({"customer": customer})
     return {"medical_score": result.medical_score, "medical_reasons": result.medical_reasons}
 
 
 def financial_scoring(state: RiskState) -> Dict[str, Any]:
-    applicant = state["applicant"]
+    customer = state["customer"]
     policy = state["policy"]
     structured_llm = _llm().with_structured_output(FinancialScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert insurance financial underwriter.
-         Assess the financial risk of this applicant based on:
+         Assess the financial risk of this customer based on:
          1. Income-to-coverage ratio (high coverage vs low income = higher risk).
          2. Policy term (longer term = higher exposure).
          3. Occupation stability and income reliability.
 
          Output a financial risk score from 0 (low risk) to 100 (very high risk) and specific reasons."""),
-        ("user", "Applicant: {applicant}\nPolicy: {policy}")
+        ("user", "Customer: {customer}\nPolicy: {policy}")
     ])
-    result = (prompt | structured_llm).invoke({"applicant": applicant, "policy": policy})
+    result = (prompt | structured_llm).invoke({"customer": customer, "policy": policy})
     return {"financial_score": result.financial_score, "financial_reasons": result.financial_reasons}
 
 
@@ -149,7 +149,7 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
 # Detects two classes of fraud signal from the relationships built up by
 # graph_writer.py after each evaluation (SAME_AREA and SAME_OCCUPATION_CLUSTER):
 #
-#   1. Income-outlier ring — an applicant whose declared income wildly exceeds
+#   1. Income-outlier ring — an customer whose declared income wildly exceeds
 #      the average of neighbours in the same area *and* occupation cluster,
 #      suggesting a fabricated salary figure within a coordinated group.
 #
@@ -162,8 +162,8 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
 
 # Income-outlier detection within the same area + occupation cluster.
 _INCOME_OUTLIER_QUERY = """
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-OPTIONAL MATCH (a)-[:SAME_AREA]->(neighbour:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(a)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_AREA]->(neighbour:Customer)-[:SAME_OCCUPATION_CLUSTER]->(a)
 WITH a, collect(neighbour) AS neighbours, avg(neighbour.declared_income) AS avg_income
 RETURN
   size(neighbours)                                        AS cluster_size,
@@ -177,8 +177,8 @@ RETURN
 
 # Coverage-cluster detection (suspicious near-identical coverage amounts).
 _COVERAGE_CLUSTER_QUERY = """
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-OPTIONAL MATCH (a)-[:SAME_OCCUPATION_CLUSTER]->(peer:Applicant)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_OCCUPATION_CLUSTER]->(peer:Customer)
 WHERE abs(peer.coverage_amount - a.coverage_amount) < 50000
 WITH collect(peer) AS cluster
 RETURN size(cluster) AS coverage_cluster_size
@@ -235,9 +235,9 @@ def _query_fraud_graph(cnic: str, tenant_id: str) -> Dict[str, Any]:
 
 
 def fraud_check(state: RiskState) -> Dict[str, Any]:
-    applicant = state["applicant"]
+    customer = state["customer"]
     policy    = state["policy"]
-    cnic      = applicant["cnic"]
+    cnic      = customer["cnic"]
     tenant_id = state.get("tenant_id", "")
 
     # ── 1. Graph intelligence from Memgraph ───────────────────────────────────
@@ -260,7 +260,7 @@ def fraud_check(state: RiskState) -> Dict[str, Any]:
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are a senior insurance fraud investigator specialising in network-based fraud rings.
-You have access to both raw applicant data AND live Memgraph graph intelligence.
+You have access to both raw customer data AND live Memgraph graph intelligence.
 
 Evaluate fraud probability using a two-tier signal hierarchy:
 
@@ -282,13 +282,13 @@ and cap probability at 0.5 — absence of graph evidence is not proof of fraud.
 Output a fraud_probability from 0.0 (clean) to 1.0 (certain fraud) and a list
 of specific, evidence-backed reasons referencing the actual graph findings."""),
         ("user",
-         "=== APPLICANT DATA ===\n{applicant}\n\n"
+         "=== CUSTOMER DATA ===\n{customer}\n\n"
          "=== POLICY DATA ===\n{policy}\n\n"
          "=== MEMGRAPH RING INTELLIGENCE ===\n{graph_summary}"),
     ])
 
     result = (prompt | structured_llm).invoke({
-        "applicant":     applicant,
+        "customer":     customer,
         "policy":        policy,
         "graph_summary": graph_summary,
     })
@@ -399,12 +399,12 @@ _workflow = _graph.compile()
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _initial_state(
-    applicant_data: Dict[str, Any],
+    customer_data: Dict[str, Any],
     policy_data: Dict[str, Any],
     tenant_id: str = "",
 ) -> RiskState:
     return {
-        "applicant":           applicant_data,
+        "customer":           customer_data,
         "policy":              policy_data,
         "tenant_id":           tenant_id,
         "is_valid":            False,
@@ -423,22 +423,22 @@ def _initial_state(
 
 
 def run_evaluation(
-    applicant_data: Dict[str, Any],
+    customer_data: Dict[str, Any],
     policy_data: Dict[str, Any],
     tenant_id: str = "",
 ) -> Dict[str, Any]:
-    return dict(_workflow.invoke(_initial_state(applicant_data, policy_data, tenant_id)))
+    return dict(_workflow.invoke(_initial_state(customer_data, policy_data, tenant_id)))
 
 
 def stream_evaluation(
-    applicant_data: Dict[str, Any],
+    customer_data: Dict[str, Any],
     policy_data: Dict[str, Any],
     tenant_id: str = "",
 ):
     """Yields (node_name, node_data) for each completed node, then ('__done__', full_state)."""
-    accumulated = dict(_initial_state(applicant_data, policy_data, tenant_id))
+    accumulated = dict(_initial_state(customer_data, policy_data, tenant_id))
     for update in _workflow.stream(
-        _initial_state(applicant_data, policy_data, tenant_id), stream_mode="updates"
+        _initial_state(customer_data, policy_data, tenant_id), stream_mode="updates"
     ):
         node_name = list(update.keys())[0]
         node_data = update[node_name]

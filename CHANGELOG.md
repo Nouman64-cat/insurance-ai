@@ -2,7 +2,7 @@
 
 ### Added
 
-- **Memgraph Integration:** Introduced `graph_writer.py` with `write_applicant_to_graph()` to persist `:Applicant` nodes and create bidirectional `SAME_AREA` (5-digit CNIC prefix) and `SAME_OCCUPATION_CLUSTER` edges.
+- **Memgraph Integration:** Introduced `graph_writer.py` with `write_customer_to_graph()` to persist `:Customer` nodes and create bidirectional `SAME_AREA` (5-digit CNIC prefix) and `SAME_OCCUPATION_CLUSTER` edges.
 - **Fraud-Ring Detection Queries:** Added new tenant-scoped graph queries for income-outlier and coverage-cluster detection to replace the placeholder ring query.
 
 ### Changed

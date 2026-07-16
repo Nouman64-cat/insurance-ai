@@ -6,7 +6,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Any, Dict, Optional
 
-from graph_writer import write_applicant_to_graph
+from graph_writer import write_customer_to_graph
 from workflow import run_evaluation, stream_evaluation
 from consumer import start_consumer_task
 from suggestion import suggest_plan
@@ -28,7 +28,7 @@ app = FastAPI(title="Risk Engine", version="0.1.0", lifespan=lifespan)
 
 # ─── Request / response shapes (Pydantic, not SQLModel — no DB writes here) ──
 
-class ApplicantInput(BaseModel):
+class CustomerInput(BaseModel):
     cnic: str
     name: str
     dob: str                  # ISO date string: YYYY-MM-DD
@@ -50,12 +50,12 @@ class PolicyInput(BaseModel):
 
 
 class EvaluationRequest(BaseModel):
-    applicant: ApplicantInput
+    customer: CustomerInput
     policy: PolicyInput
 
 
 class SuggestPlanRequest(BaseModel):
-    applicant: Dict[str, Any]
+    customer: Dict[str, Any]
     plans: list[Dict[str, Any]]
 
 
@@ -85,18 +85,18 @@ def _persist_to_graph(
     request: "EvaluationRequest",
     tenant_id: str,
 ) -> None:
-    """Fire-and-forget write of an evaluated applicant into Memgraph.
+    """Fire-and-forget write of an evaluated customer into Memgraph.
 
     Only writes valid evaluations. Any failure is swallowed inside
-    write_applicant_to_graph so the evaluation response is never affected.
+    write_customer_to_graph so the evaluation response is never affected.
     """
     if not result.get("is_valid", False):
         return
-    write_applicant_to_graph(
-        cnic              = request.applicant.cnic,
+    write_customer_to_graph(
+        cnic              = request.customer.cnic,
         tenant_id         = tenant_id,
-        occupation        = request.applicant.occupation,
-        declared_income   = float(request.applicant.declared_income),
+        occupation        = request.customer.occupation,
+        declared_income   = float(request.customer.declared_income),
         coverage_amount   = float(request.policy.coverage_amount),
         medical_score     = int(result.get("medical_score", 0)),
         financial_score   = int(result.get("financial_score", 0)),
@@ -116,9 +116,9 @@ async def evaluate(
     request: EvaluationRequest,
     x_tenant_id: str = Header(default=""),
 ):
-    """Run the LangGraph risk workflow for a single applicant + policy pair."""
+    """Run the LangGraph risk workflow for a single customer + policy pair."""
     result: Dict[str, Any] = run_evaluation(
-        applicant_data=request.applicant.model_dump(),
+        customer_data=request.customer.model_dump(),
         policy_data=request.policy.model_dump(),
         tenant_id=x_tenant_id,
     )
@@ -126,7 +126,7 @@ async def evaluate(
     if not result["is_valid"]:
         raise HTTPException(status_code=422, detail=result["validation_errors"])
 
-    # Fire-and-forget: persist the evaluated applicant into Memgraph so the
+    # Fire-and-forget: persist the evaluated customer into Memgraph so the
     # fraud-ring graph builds up over time. Never blocks the response.
     _persist_to_graph(result, request, x_tenant_id)
 
@@ -155,12 +155,12 @@ async def evaluate_stream(
     def run_graph():
         try:
             for node_name, node_data in stream_evaluation(
-                applicant_data=request.applicant.model_dump(),
+                customer_data=request.customer.model_dump(),
                 policy_data=request.policy.model_dump(),
                 tenant_id=x_tenant_id,
             ):
                 if node_name == "__done__":
-                    # Persist the fully-scored applicant into Memgraph before
+                    # Persist the fully-scored customer into Memgraph before
                     # emitting the final event. Fire-and-forget — never blocks.
                     _persist_to_graph(node_data, request, x_tenant_id)
                     evt = {"type": "done", "data": node_data}
@@ -195,9 +195,9 @@ async def suggest_plan_endpoint(
     request: SuggestPlanRequest,
     x_tenant_id: str = Header(default=""),
 ):
-    """Uses LLM to recommend the best plan for the applicant."""
+    """Uses LLM to recommend the best plan for the customer."""
     try:
-        result = suggest_plan(request.applicant, request.plans)
+        result = suggest_plan(request.customer, request.plans)
         return SuggestPlanResponse(**result)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

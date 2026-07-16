@@ -2,10 +2,10 @@ import api from "./api";
 
 export interface AssessmentListItem {
   id: string;
-  applicant_id: string;
-  applicant_name: string;
-  applicant_cnic: string;
-  applicant_occupation: string | null;
+  customer_id: string;
+  customer_name: string;
+  customer_cnic: string;
+  customer_occupation: string | null;
   case_id: string | null;
   product_name: string | null;
   insurance_type: string | null;

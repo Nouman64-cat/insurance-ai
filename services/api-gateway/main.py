@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
     app.state.kafka_producer = await create_producer()
 
     # Quote worker — background asyncio task, generates quotations for newly
-    # created applicants (see quote_worker.py).
+    # created customers (see quote_worker.py).
     stop_event = asyncio.Event()
     worker_task = start_quote_worker(stop_event)
 
@@ -241,31 +241,31 @@ async def delete_user(tenant_id: UUID, user_id: UUID, request: Request, token: s
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/{user_id}")
 
 
-# ── Applicants ─────────────────────────────────────────────────────────────────
+# ── Customers ─────────────────────────────────────────────────────────────────
 
-@app.post("/tenants/{tenant_id}/applicants", tags=["Applicants"], status_code=201, summary="Create an applicant (admin only)")
-async def create_applicant(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants")
-
-
-@app.get("/tenants/{tenant_id}/applicants", tags=["Applicants"], summary="List all applicants (admin only)")
-async def list_applicants(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants")
+@app.post("/tenants/{tenant_id}/customers", tags=["Customers"], status_code=201, summary="Create an customer (admin only)")
+async def create_customer(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers")
 
 
-@app.get("/tenants/{tenant_id}/applicants/{applicant_id}", tags=["Applicants"], summary="Get an applicant by ID")
-async def get_applicant(tenant_id: UUID, applicant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants/{applicant_id}")
+@app.get("/tenants/{tenant_id}/customers", tags=["Customers"], summary="List all customers (admin only)")
+async def list_customers(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers")
 
 
-@app.delete("/tenants/{tenant_id}/applicants/{applicant_id}", tags=["Applicants"], status_code=204, summary="Delete an applicant")
-async def delete_applicant(tenant_id: UUID, applicant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants/{applicant_id}")
+@app.get("/tenants/{tenant_id}/customers/{customer_id}", tags=["Customers"], summary="Get an customer by ID")
+async def get_customer(tenant_id: UUID, customer_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers/{customer_id}")
 
 
-@app.put("/tenants/{tenant_id}/applicants/{applicant_id}", tags=["Applicants"], summary="Update an applicant")
-async def update_applicant(tenant_id: UUID, applicant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants/{applicant_id}")
+@app.delete("/tenants/{tenant_id}/customers/{customer_id}", tags=["Customers"], status_code=204, summary="Delete an customer")
+async def delete_customer(tenant_id: UUID, customer_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers/{customer_id}")
+
+
+@app.put("/tenants/{tenant_id}/customers/{customer_id}", tags=["Customers"], summary="Update an customer")
+async def update_customer(tenant_id: UUID, customer_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers/{customer_id}")
 
 
 # ── Cases ──────────────────────────────────────────────────────────────────────
@@ -283,7 +283,7 @@ async def list_cases(tenant_id: UUID, request: Request, token: str = Depends(oau
 @app.get(
     "/tenants/{tenant_id}/cases/{case_id}/detail",
     tags=["Cases"],
-    summary="Get bundled case + applicant + policy + document checklist + latest risk assessment",
+    summary="Get bundled case + customer + policy + document checklist + latest risk assessment",
 )
 async def get_case_detail(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/detail")
@@ -426,9 +426,9 @@ async def proxy_tenant_users(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users{path}")
 
 
-@app.api_route("/tenants/{tenant_id}/applicants{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
-async def proxy_tenant_applicants(tenant_id: UUID, path: str, request: Request):
-    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants{path}")
+@app.api_route("/tenants/{tenant_id}/customers{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_customers(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers{path}")
 
 
 @app.api_route("/tenants/{tenant_id}/organizations{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)

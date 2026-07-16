@@ -25,7 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from dependencies import get_tenant_id
 from schemas import QuoteDetail, QuoteListItem, QuoteRequest, QuoteResponse
-from shared.models.core import Applicant, InsurancePlan, InsuranceTypeEnum, Policy, PremiumQuote, Tenant
+from shared.models.core import Customer, InsurancePlan, InsuranceTypeEnum, Policy, PremiumQuote, Tenant
 from shared.pricing.calculator import calculate_premium
 
 router = APIRouter(tags=["Quotation"])
@@ -41,9 +41,9 @@ async def list_quotes(
     session: AsyncSession = Depends(get_session),
 ) -> list[QuoteListItem]:
     stmt = (
-        select(PremiumQuote, Policy, Applicant)
+        select(PremiumQuote, Policy, Customer)
         .join(Policy, PremiumQuote.policy_id == Policy.id)
-        .join(Applicant, Policy.applicant_id == Applicant.id)
+        .join(Customer, Policy.customer_id == Customer.id)
         .where(PremiumQuote.tenant_id == tenant_id)
         .order_by(PremiumQuote.created_at.desc())
     )
@@ -52,9 +52,9 @@ async def list_quotes(
     return [
         QuoteListItem(
             quote_id=quote.id,
-            applicant_id=applicant.id,
-            applicant_name=applicant.name,
-            applicant_cnic=applicant.cnic,
+            customer_id=customer.id,
+            customer_name=customer.name,
+            customer_cnic=customer.cnic,
             policy_id=policy.id,
             plan_label=policy.product_name,
             insurance_type=policy.insurance_type,
@@ -66,14 +66,14 @@ async def list_quotes(
             rate_version=quote.rate_version,
             created_at=quote.created_at,
         )
-        for quote, policy, applicant in rows
+        for quote, policy, customer in rows
     ]
 
 
 @router.get(
     "/quotes/{quote_id}",
     response_model=QuoteDetail,
-    summary="Get full detail (applicant + policy + premium breakdown) for a single quotation",
+    summary="Get full detail (customer + policy + premium breakdown) for a single quotation",
 )
 async def get_quote_detail(
     quote_id: UUID,
@@ -81,9 +81,9 @@ async def get_quote_detail(
     session: AsyncSession = Depends(get_session),
 ) -> QuoteDetail:
     stmt = (
-        select(PremiumQuote, Policy, Applicant)
+        select(PremiumQuote, Policy, Customer)
         .join(Policy, PremiumQuote.policy_id == Policy.id)
-        .join(Applicant, Policy.applicant_id == Applicant.id)
+        .join(Customer, Policy.customer_id == Customer.id)
         .where(PremiumQuote.id == quote_id, PremiumQuote.tenant_id == tenant_id)
     )
     row = (await session.exec(stmt)).first()
@@ -92,18 +92,18 @@ async def get_quote_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Quote '{quote_id}' not found for this tenant.",
         )
-    quote, policy, applicant = row
+    quote, policy, customer = row
 
     bmi: float | None = None
-    if applicant.height_cm > 0:
-        height_m = applicant.height_cm / 100
-        bmi = round(applicant.weight_kg / (height_m * height_m), 1)
+    if customer.height_cm > 0:
+        height_m = customer.height_cm / 100
+        bmi = round(customer.weight_kg / (height_m * height_m), 1)
 
     return QuoteDetail(
         quote_id=quote.id,
-        applicant_id=applicant.id,
-        applicant_name=applicant.name,
-        applicant_cnic=applicant.cnic,
+        customer_id=customer.id,
+        customer_name=customer.name,
+        customer_cnic=customer.cnic,
         policy_id=policy.id,
         plan_label=policy.product_name,
         insurance_type=policy.insurance_type,
@@ -114,15 +114,15 @@ async def get_quote_detail(
         total_premium=quote.total_premium,
         rate_version=quote.rate_version,
         created_at=quote.created_at,
-        applicant_dob=applicant.dob,
-        applicant_age=_age_from_dob(applicant.dob),
-        applicant_gender=applicant.gender,
-        applicant_occupation=applicant.occupation,
-        applicant_declared_income=applicant.declared_income,
-        applicant_is_smoker=applicant.is_smoker,
-        applicant_height_cm=applicant.height_cm,
-        applicant_weight_kg=applicant.weight_kg,
-        applicant_bmi=bmi,
+        customer_dob=customer.dob,
+        customer_age=_age_from_dob(customer.dob),
+        customer_gender=customer.gender,
+        customer_occupation=customer.occupation,
+        customer_declared_income=customer.declared_income,
+        customer_is_smoker=customer.is_smoker,
+        customer_height_cm=customer.height_cm,
+        customer_weight_kg=customer.weight_kg,
+        customer_bmi=bmi,
         nominee_name=policy.nominee_name,
         nominee_relationship=policy.nominee_relationship,
         dependent_name=policy.dependent_name,
@@ -169,15 +169,15 @@ async def get_quote(
         )
 
     # ── 2. Eligibility — against the plan's own DB-stored bands ───────────────
-    applicant_in = request.applicant
+    customer_in = request.customer
     policy_in = request.policy
-    age = _age_from_dob(applicant_in.dob)
-    annual_income = applicant_in.monthly_income * 12
+    age = _age_from_dob(customer_in.dob)
+    annual_income = customer_in.monthly_income * 12
 
     errors: list[str] = []
     if age < plan.entry_age_min or age > plan.entry_age_max:
         errors.append(
-            f"[{plan.label}] Applicant age {age} is outside the eligible entry band "
+            f"[{plan.label}] Customer age {age} is outside the eligible entry band "
             f"({plan.entry_age_min}-{plan.entry_age_max})."
         )
     if policy_in.term_years < plan.term_min_years or policy_in.term_years > plan.term_max_years:
@@ -206,36 +206,36 @@ async def get_quote(
         base_premium_rate=plan.base_premium_rate,
         smoker_factor=plan.smoker_factor,
         age=age,
-        is_smoker=applicant_in.is_smoker,
-        height_cm=applicant_in.height_cm,
-        weight_kg=applicant_in.weight_kg,
+        is_smoker=customer_in.is_smoker,
+        height_cm=customer_in.height_cm,
+        weight_kg=customer_in.weight_kg,
     )
 
-    # ── 4. Persist — find-or-create Applicant, create Policy + PremiumQuote ──
-    applicant_stmt = select(Applicant).where(
-        Applicant.tenant_id == tenant_id,
-        Applicant.cnic == applicant_in.cnic,
+    # ── 4. Persist — find-or-create Customer, create Policy + PremiumQuote ──
+    customer_stmt = select(Customer).where(
+        Customer.tenant_id == tenant_id,
+        Customer.cnic == customer_in.cnic,
     )
-    applicant = (await session.exec(applicant_stmt)).first()
-    if applicant is None:
-        applicant = Applicant(
+    customer = (await session.exec(customer_stmt)).first()
+    if customer is None:
+        customer = Customer(
             tenant_id=tenant_id,
-            cnic=applicant_in.cnic,
-            name=applicant_in.name,
-            dob=applicant_in.dob,
-            gender=applicant_in.gender,
-            occupation=applicant_in.occupation,
+            cnic=customer_in.cnic,
+            name=customer_in.name,
+            dob=customer_in.dob,
+            gender=customer_in.gender,
+            occupation=customer_in.occupation,
             declared_income=annual_income,
-            is_smoker=applicant_in.is_smoker,
-            height_cm=applicant_in.height_cm,
-            weight_kg=applicant_in.weight_kg,
+            is_smoker=customer_in.is_smoker,
+            height_cm=customer_in.height_cm,
+            weight_kg=customer_in.weight_kg,
         )
-        session.add(applicant)
+        session.add(customer)
         await session.flush()
 
     policy = Policy(
         tenant_id=tenant_id,
-        applicant_id=applicant.id,
+        customer_id=customer.id,
         product_name=plan.label,
         insurance_type=plan.insurance_type,
         coverage_amount=policy_in.coverage_amount,
@@ -261,7 +261,7 @@ async def get_quote(
     return QuoteResponse(
         eligible=True,
         quote_id=quote.id,
-        applicant_id=applicant.id,
+        customer_id=customer.id,
         policy_id=policy.id,
         annual_income=annual_income,
         plan_code=plan.code,

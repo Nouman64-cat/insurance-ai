@@ -10,7 +10,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 
-const applicantCoreSchema = z.object({
+const customerCoreSchema = z.object({
   cnic: z.string().trim().regex(/^\d{5}-\d{7}-\d{1}$/, "Format: XXXXX-XXXXXXX-X"),
   firstName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
   lastName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
@@ -27,7 +27,7 @@ const applicantCoreSchema = z.object({
   policyDependentDob: z.string().optional(),
 });
 
-interface Applicant {
+interface Customer {
   id: string;
   tenant_id: string;
   cnic: string;
@@ -43,7 +43,7 @@ interface Applicant {
 interface Policy {
   id: string;
   tenant_id: string;
-  applicant_id: string;
+  customer_id: string;
   product_name: string;
   insurance_type: string;
   coverage_amount: number;
@@ -75,9 +75,9 @@ const formatCNIC = (value: string): string => {
   }
 };
 
-export default function ApplicantsPage() {
+export default function CustomersPage() {
   const router = useRouter();
-  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [latestPlans, setLatestPlans] = useState<Record<string, Policy | null>>({});
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(true);
@@ -88,7 +88,7 @@ export default function ApplicantsPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [selectedApplicant, setSelectedApplicant] = useState<Applicant | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
   // Tab State
   const [formTab, setFormTab] = useState("demographics");
@@ -101,8 +101,8 @@ export default function ApplicantsPage() {
     reset,
     watch,
     setValue,
-  } = useForm<z.infer<typeof applicantCoreSchema>>({
-    resolver: zodResolver(applicantCoreSchema),
+  } = useForm<z.infer<typeof customerCoreSchema>>({
+    resolver: zodResolver(customerCoreSchema),
     mode: "onChange",
     defaultValues: {
       gender: "Male",
@@ -122,8 +122,8 @@ export default function ApplicantsPage() {
   const [isSuggestingPlan, setIsSuggestingPlan] = useState(false);
   const [suggestedReasoning, setSuggestedReasoning] = useState("");
 
-  // Applicant policies (view + edit modals)
-  const [applicantPolicies, setApplicantPolicies] = useState<Policy[]>([]);
+  // Customer policies (view + edit modals)
+  const [customerPolicies, setCustomerPolicies] = useState<Policy[]>([]);
   const [viewPoliciesLoading, setViewPoliciesLoading] = useState(false);
   // Edit modal — adding a new policy
   const [editSelectedPlanId, setEditSelectedPlanId] = useState<string>("");
@@ -291,10 +291,10 @@ export default function ApplicantsPage() {
       setLoading(false);
       return;
     }
-    fetchApplicants();
+    fetchCustomers();
   }, []);
 
-  const fetchApplicants = async () => {
+  const fetchCustomers = async () => {
     setLoading(true);
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
@@ -304,23 +304,23 @@ export default function ApplicantsPage() {
       return;
     }
     try {
-      const resp = await api.get<Applicant[]>(`/tenants/${tenantId}/applicants`);
-      setApplicants(resp.data);
+      const resp = await api.get<Customer[]>(`/tenants/${tenantId}/customers`);
+      setCustomers(resp.data);
       fetchLatestPlans(tenantId, resp.data);
     } catch (err: any) {
-      setError(err.message ?? "Failed to load applicants directory.");
+      setError(err.message ?? "Failed to load customers directory.");
     } finally {
       setLoading(false);
     }
   };
 
-  const fetchLatestPlans = async (tenantId: string, forApplicants: Applicant[]) => {
+  const fetchLatestPlans = async (tenantId: string, forCustomers: Customer[]) => {
     const results = await Promise.allSettled(
-      forApplicants.map((a) => api.get<Policy[]>(`/tenants/${tenantId}/applicants/${a.id}/policies`))
+      forCustomers.map((a) => api.get<Policy[]>(`/tenants/${tenantId}/customers/${a.id}/policies`))
     );
     const plans: Record<string, Policy | null> = {};
     results.forEach((result, i) => {
-      plans[forApplicants[i].id] =
+      plans[forCustomers[i].id] =
         result.status === "fulfilled" && result.value.data.length > 0 ? result.value.data[0] : null;
     });
     setLatestPlans(plans);
@@ -371,7 +371,7 @@ export default function ApplicantsPage() {
     setError("");
 
     try {
-      const applicantData = {
+      const customerData = {
         ...formValues,
         ...details,
         // Calculate age for the LLM based on DOB
@@ -379,7 +379,7 @@ export default function ApplicantsPage() {
       };
 
       const res = await api.post(`/suggest-plan`, {
-        applicant: applicantData,
+        customer: customerData,
         plans: availablePlans
       });
       const data = res.data;
@@ -395,7 +395,7 @@ export default function ApplicantsPage() {
     }
   };
 
-  const handleCreateApplicant = async (data: z.infer<typeof applicantCoreSchema>) => {
+  const handleCreateCustomer = async (data: z.infer<typeof customerCoreSchema>) => {
     setError("");
     setSuccess("");
     setFormLoading(true);
@@ -417,7 +417,7 @@ export default function ApplicantsPage() {
         }
       };
 
-      const applicantResp = await api.post<Applicant>(`/tenants/${tenantId}/applicants`, {
+      const customerResp = await api.post<Customer>(`/tenants/${tenantId}/customers`, {
         cnic: data.cnic,
         first_name: data.firstName,
         last_name: data.lastName,
@@ -433,7 +433,7 @@ export default function ApplicantsPage() {
         details: payloadDetails
       });
 
-      // If a plan was selected, create the policy for this applicant
+      // If a plan was selected, create the policy for this customer
       if (data.selectedPlanId && data.policyCoverage && data.policyTerm) {
         const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
         if (selectedPlan) {
@@ -448,46 +448,46 @@ export default function ApplicantsPage() {
             policyPayload.dependent_dob = data.policyDependentDob || null;
           }
           await api.post(
-            `/tenants/${tenantId}/applicants/${applicantResp.data.id}/policies`,
+            `/tenants/${tenantId}/customers/${customerResp.data.id}/policies`,
             policyPayload
           );
         }
       }
 
-      setSuccess("Applicant registered successfully with full diagnostic profile!");
+      setSuccess("Customer registered successfully with full diagnostic profile!");
       setShowCreateModal(false);
-      registerPendingQuote(applicantResp.data.id, applicantResp.data.name);
-      fetchApplicants();
+      registerPendingQuote(customerResp.data.id, customerResp.data.name);
+      fetchCustomers();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to register applicant.");
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to register customer.");
     } finally {
       setFormLoading(false);
     }
   };
 
-  const handleOpenEditModal = async (applicant: Applicant) => {
-    setSelectedApplicant(applicant);
-    const parts = applicant.name.split(" ");
+  const handleOpenEditModal = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    const parts = customer.name.split(" ");
     reset({
-      cnic: applicant.cnic,
+      cnic: customer.cnic,
       firstName: parts[0] || "",
       lastName: parts.slice(1).join(" ") || "",
-      dob: applicant.dob,
-      gender: applicant.gender as any,
-      occupation: applicant.occupation,
-      declaredIncome: applicant.declared_income,
-      maritalStatus: applicant.details?.marital_status || "Single",
-      nationality: applicant.details?.nationality || "Pakistani",
+      dob: customer.dob,
+      gender: customer.gender as any,
+      occupation: customer.occupation,
+      declaredIncome: customer.declared_income,
+      maritalStatus: customer.details?.marital_status || "Single",
+      nationality: customer.details?.nationality || "Pakistani",
     });
 
     // Import existing details or fill defaults
-    const importedDetails = applicant.details
+    const importedDetails = customer.details
       ? {
         ...JSON.parse(JSON.stringify(defaultDetails)),
-        ...applicant.details,
+        ...customer.details,
         habit_check: {
           ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
-          ...(applicant.details.habit_check || {})
+          ...(customer.details.habit_check || {})
         }
       }
       : JSON.parse(JSON.stringify(defaultDetails));
@@ -511,13 +511,13 @@ export default function ApplicantsPage() {
       setViewPoliciesLoading(true);
       try {
         const [polRes, plansRes] = await Promise.all([
-          api.get(`/tenants/${tenantId}/applicants/${applicant.id}/policies`),
+          api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`),
           listInsurancePlans(tenantId),
         ]);
-        setApplicantPolicies(polRes.data ?? []);
+        setCustomerPolicies(polRes.data ?? []);
         setAvailablePlans((plansRes ?? []).filter((p: InsurancePlan) => p.status === "Active"));
       } catch {
-        setApplicantPolicies([]);
+        setCustomerPolicies([]);
       } finally {
         setViewPoliciesLoading(false);
       }
@@ -526,12 +526,12 @@ export default function ApplicantsPage() {
     setShowEditModal(true);
   };
 
-  const handleEditApplicant = async (data: z.infer<typeof applicantCoreSchema>) => {
+  const handleEditCustomer = async (data: z.infer<typeof customerCoreSchema>) => {
     setError("");
     setSuccess("");
     setFormLoading(true);
     const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId || !selectedApplicant) {
+    if (!tenantId || !selectedCustomer) {
       setError("No active context found.");
       setFormLoading(false);
       return;
@@ -547,7 +547,7 @@ export default function ApplicantsPage() {
         }
       };
 
-      await api.put(`/tenants/${tenantId}/applicants/${selectedApplicant.id}`, {
+      await api.put(`/tenants/${tenantId}/customers/${selectedCustomer.id}`, {
         cnic: data.cnic,
         first_name: data.firstName,
         last_name: data.lastName,
@@ -561,40 +561,40 @@ export default function ApplicantsPage() {
         details: payloadDetails
       });
 
-      setSuccess("Applicant updated successfully!");
+      setSuccess("Customer updated successfully!");
       setShowEditModal(false);
-      fetchApplicants();
+      fetchCustomers();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to update applicant.");
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to update customer.");
     } finally {
       setFormLoading(false);
     }
   };
 
-  const handleDeleteApplicant = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete applicant "${name}"?`)) return;
+  const handleDeleteCustomer = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to delete customer "${name}"?`)) return;
     setError("");
     setSuccess("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     try {
-      await api.delete(`/tenants/${tenantId}/applicants/${id}`);
-      setSuccess(`Applicant "${name}" deleted.`);
-      fetchApplicants();
+      await api.delete(`/tenants/${tenantId}/customers/${id}`);
+      setSuccess(`Customer "${name}" deleted.`);
+      fetchCustomers();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete applicant.");
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete customer.");
     }
   };
 
-  const handleOpenProfileModal = async (applicant: Applicant) => {
-    setSelectedApplicant(applicant);
-    const importedDetails = applicant.details
+  const handleOpenProfileModal = async (customer: Customer) => {
+    setSelectedCustomer(customer);
+    const importedDetails = customer.details
       ? {
         ...JSON.parse(JSON.stringify(defaultDetails)),
-        ...applicant.details,
+        ...customer.details,
         habit_check: {
           ...JSON.parse(JSON.stringify(defaultDetails)).habit_check,
-          ...(applicant.details.habit_check || {})
+          ...(customer.details.habit_check || {})
         }
       }
       : JSON.parse(JSON.stringify(defaultDetails));
@@ -602,15 +602,15 @@ export default function ApplicantsPage() {
     setViewTab("demographics");
     setShowProfileModal(true);
 
-    // Fetch this applicant's policies
+    // Fetch this customer's policies
     const tenantId = localStorage.getItem("tenant_id");
     if (tenantId) {
       setViewPoliciesLoading(true);
       try {
-        const res = await api.get(`/tenants/${tenantId}/applicants/${applicant.id}/policies`);
-        setApplicantPolicies(res.data ?? []);
+        const res = await api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`);
+        setCustomerPolicies(res.data ?? []);
       } catch {
-        setApplicantPolicies([]);
+        setCustomerPolicies([]);
       } finally {
         setViewPoliciesLoading(false);
       }
@@ -720,7 +720,7 @@ export default function ApplicantsPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Customer Profile</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Customers Profile</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Admin console to configure full multi-module diagnostic profile attributes for underwriting evaluation.
           </p>
@@ -757,9 +757,9 @@ export default function ApplicantsPage() {
             <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
             <span className="text-xs text-slate-400">Loading Directory...</span>
           </div>
-        ) : applicants.length === 0 ? (
+        ) : customers.length === 0 ? (
           <div className="py-20 text-center text-slate-400">
-            <p className="text-sm">No applicants registered in this tenant.</p>
+            <p className="text-sm">No customers registered in this tenant.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -776,25 +776,25 @@ export default function ApplicantsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {applicants.map((applicant) => {
-                  const plan = latestPlans[applicant.id];
+                {customers.map((customer) => {
+                  const plan = latestPlans[customer.id];
                   return (
-                    <tr key={applicant.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3.5 font-medium text-slate-700">{applicant.cnic}</td>
-                      <td className="px-5 py-3.5 font-semibold text-slate-800">{applicant.name}</td>
+                    <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-5 py-3.5 font-medium text-slate-700">{customer.cnic}</td>
+                      <td className="px-5 py-3.5 font-semibold text-slate-800">{customer.name}</td>
                       <td className="px-5 py-3.5 text-slate-600">
-                        {new Date().getFullYear() - new Date(applicant.dob).getFullYear()} yrs · {applicant.gender}
+                        {new Date().getFullYear() - new Date(customer.dob).getFullYear()} yrs · {customer.gender}
                       </td>
-                      <td className="px-5 py-3.5 text-slate-600">{applicant.occupation}</td>
+                      <td className="px-5 py-3.5 text-slate-600">{customer.occupation}</td>
                       <td className="px-5 py-3.5 text-right font-semibold text-slate-700">
-                        PKR {applicant.declared_income.toLocaleString()}
+                        PKR {customer.declared_income.toLocaleString()}
                       </td>
                       <td className="px-5 py-3.5">
                         {plan === undefined ? (
                           <span className="text-xs text-slate-300">…</span>
                         ) : plan ? (
                           <Link
-                            href={`/admin/applicants/${applicant.id}/plans`}
+                            href={`/admin/customers/${customer.id}/plans`}
                             className="inline-flex px-2.5 py-0.5 rounded text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 transition-colors"
                           >
                             {INSURANCE_TYPE_LABELS[plan.insurance_type] ?? plan.insurance_type}
@@ -806,19 +806,19 @@ export default function ApplicantsPage() {
                       <td className="px-5 py-3.5 text-center whitespace-nowrap">
                         <div className="inline-flex rounded-lg shadow-sm border border-slate-200 overflow-hidden divide-x divide-slate-200">
                           <button
-                            onClick={() => handleOpenProfileModal(applicant)}
+                            onClick={() => handleOpenProfileModal(customer)}
                             className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
                           >
                             View
                           </button>
                           <button
-                            onClick={() => handleOpenEditModal(applicant)}
+                            onClick={() => handleOpenEditModal(customer)}
                             className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
                           >
                             Edit
                           </button>
                           <button
-                            onClick={() => handleDeleteApplicant(applicant.id, applicant.name)}
+                            onClick={() => handleDeleteCustomer(customer.id, customer.name)}
                             className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-red-50 transition-colors"
                           >
                             Delete
@@ -842,7 +842,7 @@ export default function ApplicantsPage() {
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div>
-                <h3 className="text-base font-bold text-slate-900">{showCreateModal ? "Add New Applicant Profile" : "Edit Applicant Profile"}</h3>
+                <h3 className="text-base font-bold text-slate-900">{showCreateModal ? "Add New Customers Profile" : "Edit Customers Profile"}</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Please populate the structured underwriting variables below.</p>
               </div>
               <button
@@ -874,7 +874,7 @@ export default function ApplicantsPage() {
             </div>
 
             {/* Scrollable Form Body */}
-            <form onSubmit={hookFormSubmit(showCreateModal ? handleCreateApplicant : handleEditApplicant)} className="flex-1 overflow-y-auto p-6 space-y-6">
+            <form onSubmit={hookFormSubmit(showCreateModal ? handleCreateCustomer : handleEditCustomer)} className="flex-1 overflow-y-auto p-6 space-y-6">
 
               {/* TAB 1: Demographics & Contact */}
               {formTab === "demographics" && (
@@ -1419,7 +1419,7 @@ export default function ApplicantsPage() {
                         />
                         <div>
                           <span>Recreational Drug Use History (Past 3-5 Years)</span>
-                          <span className="block text-[10px] text-slate-400 font-normal">Check if the applicant has used illegal or non-prescribed substances.</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Check if the customer has used illegal or non-prescribed substances.</span>
                         </div>
                       </label>
                     </div>
@@ -1642,7 +1642,7 @@ export default function ApplicantsPage() {
                         />
                         <div>
                           <span>Criminal Record</span>
-                          <span className="block text-[10px] text-slate-400 font-normal">Check if the applicant has felony convictions or pending criminal charges.</span>
+                          <span className="block text-[10px] text-slate-400 font-normal">Check if the customer has felony convictions or pending criminal charges.</span>
                         </div>
                       </label>
                     </div>
@@ -1794,7 +1794,7 @@ export default function ApplicantsPage() {
                 <div className="space-y-6">
                   <div>
                     <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-1">Insurance Plans</h4>
-                    <p className="text-xs text-slate-400 mb-5">Existing policies for this applicant. You can assign an additional plan below.</p>
+                    <p className="text-xs text-slate-400 mb-5">Existing policies for this customer. You can assign an additional plan below.</p>
 
                     {/* Existing policies */}
                     {viewPoliciesLoading ? (
@@ -1802,11 +1802,11 @@ export default function ApplicantsPage() {
                         <div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" />
                         <span className="text-xs text-slate-400">Loading policies...</span>
                       </div>
-                    ) : applicantPolicies.length === 0 ? (
+                    ) : customerPolicies.length === 0 ? (
                       <div className="text-center py-8 text-sm text-slate-400 italic">No policies assigned yet.</div>
                     ) : (
                       <div className="space-y-3 mb-6">
-                        {applicantPolicies.map((pol) => {
+                        {customerPolicies.map((pol) => {
                           const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
                           const textClass = PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
                           return (
@@ -1959,7 +1959,7 @@ export default function ApplicantsPage() {
                                 disabled={editPolicyLoading || !editPolicyCoverage || !editPolicyTerm}
                                 onClick={async () => {
                                   const tenantId = localStorage.getItem("tenant_id");
-                                  if (!tenantId || !selectedApplicant) return;
+                                  if (!tenantId || !selectedCustomer) return;
                                   setEditPolicyLoading(true);
                                   try {
                                     const payload: any = {
@@ -1973,10 +1973,10 @@ export default function ApplicantsPage() {
                                       payload.dependent_name = editPolicyDependentName || null;
                                       payload.dependent_dob = editPolicyDependentDob || null;
                                     }
-                                    await api.post(`/tenants/${tenantId}/applicants/${selectedApplicant.id}/policies`, payload);
+                                    await api.post(`/tenants/${tenantId}/customers/${selectedCustomer.id}/policies`, payload);
                                     // Refresh list
-                                    const res = await api.get(`/tenants/${tenantId}/applicants/${selectedApplicant.id}/policies`);
-                                    setApplicantPolicies(res.data ?? []);
+                                    const res = await api.get(`/tenants/${tenantId}/customers/${selectedCustomer.id}/policies`);
+                                    setCustomerPolicies(res.data ?? []);
                                     setEditAddingPolicy(false);
                                     setEditSelectedPlanId("");
                                     setEditPolicyCoverage("");
@@ -2218,7 +2218,7 @@ export default function ApplicantsPage() {
                           disabled={formLoading}
                           className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm"
                         >
-                          {formLoading ? "Saving Profile..." : showCreateModal ? "Register Applicant" : "Update Profile"}
+                          {formLoading ? "Saving Profile..." : showCreateModal ? "Register Customer" : "Update Profile"}
                         </button>
                       )}
                     </>
@@ -2232,7 +2232,7 @@ export default function ApplicantsPage() {
       )}
 
       {/* ── VIEW PROFILE MODAL ── */}
-      {showProfileModal && selectedApplicant && (
+      {showProfileModal && selectedCustomer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col overflow-hidden">
 
@@ -2240,11 +2240,11 @@ export default function ApplicantsPage() {
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center font-bold text-sm">
-                  {selectedApplicant.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
+                  {selectedCustomer.name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2)}
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">{selectedApplicant.name}</h3>
-                  <p className="text-xs text-slate-400">CNIC: {selectedApplicant.cnic}</p>
+                  <h3 className="text-base font-bold text-slate-900">{selectedCustomer.name}</h3>
+                  <p className="text-xs text-slate-400">CNIC: {selectedCustomer.cnic}</p>
                 </div>
               </div>
               <button onClick={() => setShowProfileModal(false)} className="text-slate-400 hover:text-slate-600">✕</button>
@@ -2255,7 +2255,7 @@ export default function ApplicantsPage() {
 
               {/* Sidebar Navigation */}
               <div className="w-64 bg-slate-50 border-r border-slate-100 flex flex-col py-6 px-4 space-y-1.5 overflow-y-auto">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Applicant Profile</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Customers Profile</p>
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
@@ -2277,10 +2277,10 @@ export default function ApplicantsPage() {
                   <div className="space-y-6 max-w-2xl">
                     <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Identity & Contact</h4>
                     <div className="grid grid-cols-2 gap-y-6 gap-x-8">
-                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">First Name</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.name.split(" ")[0]}</span></div>
-                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Last Name</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.name.split(" ").slice(1).join(" ") || "-"}</span></div>
-                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Date of Birth</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.dob}</span></div>
-                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Gender</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.gender}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">First Name</span><span className="text-sm font-medium text-slate-800">{selectedCustomer.name.split(" ")[0]}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Last Name</span><span className="text-sm font-medium text-slate-800">{selectedCustomer.name.split(" ").slice(1).join(" ") || "-"}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Date of Birth</span><span className="text-sm font-medium text-slate-800">{selectedCustomer.dob}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Gender</span><span className="text-sm font-medium text-slate-800">{selectedCustomer.gender}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Marital Status</span><span className="text-sm font-medium text-slate-800">{details.contact.emergency_contact_relation || "Single"}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Mobile Number</span><span className="text-sm font-medium text-slate-800">{details.contact.mobile_number || "-"}</span></div>
                       <div className="col-span-2"><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Email</span><span className="text-sm font-medium text-slate-800">{details.contact.email || "-"}</span></div>
@@ -2293,7 +2293,7 @@ export default function ApplicantsPage() {
                   <div className="space-y-6 max-w-2xl">
                     <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">CNIC & Verification</h4>
                     <div className="grid grid-cols-2 gap-y-6 gap-x-8">
-                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">CNIC Number</span><span className="text-sm font-mono text-slate-800">{selectedApplicant.cnic}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">CNIC Number</span><span className="text-sm font-mono text-slate-800">{selectedCustomer.cnic}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Validation Status</span><span className="text-sm font-bold text-emerald-600">{details.cnic_metadata.validation_status}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Issue Date</span><span className="text-sm font-medium text-slate-800">{details.cnic_metadata.issue_date || "-"}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Expiry Date</span><span className="text-sm font-medium text-slate-800">{details.cnic_metadata.expiry_date || "-"}</span></div>
@@ -2328,10 +2328,10 @@ export default function ApplicantsPage() {
                     <h4 className="text-lg font-bold text-slate-800 border-b border-slate-100 pb-3">Occupation & Income</h4>
                     <div className="grid grid-cols-2 gap-y-6 gap-x-8">
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Employment Type</span><span className="text-sm font-medium text-slate-800">{details.occupation_details.employment_type}</span></div>
-                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Designation</span><span className="text-sm font-medium text-slate-800">{selectedApplicant.occupation}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Designation</span><span className="text-sm font-medium text-slate-800">{selectedCustomer.occupation}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Employer Name</span><span className="text-sm font-medium text-slate-800">{details.occupation_details.employer_name || "-"}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Years of Experience</span><span className="text-sm font-medium text-slate-800">{details.occupation_details.years_of_experience} years</span></div>
-                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Declared Annual Income</span><span className="text-sm font-bold text-emerald-600">PKR {selectedApplicant.declared_income.toLocaleString()}</span></div>
+                      <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Declared Annual Income</span><span className="text-sm font-bold text-emerald-600">PKR {selectedCustomer.declared_income.toLocaleString()}</span></div>
                       <div><span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Hazard Level</span><span className={`text-sm font-bold ${details.occupation_details.occupation_hazard_level === "Low" ? "text-emerald-600" : "text-amber-600"}`}>{details.occupation_details.occupation_hazard_level}</span></div>
                     </div>
                   </div>
@@ -2508,7 +2508,7 @@ export default function ApplicantsPage() {
                       <div className="flex items-center justify-center py-12">
                         <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                       </div>
-                    ) : applicantPolicies.length === 0 ? (
+                    ) : customerPolicies.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-14 text-center gap-3">
                         <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-2xl">📋</div>
                         <p className="text-sm font-semibold text-slate-500">No policies assigned yet.</p>
@@ -2516,7 +2516,7 @@ export default function ApplicantsPage() {
                       </div>
                     ) : (
                       <div className="space-y-3">
-                        {applicantPolicies.map((pol) => {
+                        {customerPolicies.map((pol) => {
                           const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
                           const textClass = PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
                           return (

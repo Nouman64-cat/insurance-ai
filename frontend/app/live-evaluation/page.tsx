@@ -143,7 +143,7 @@ export default function LiveEvaluationPage() {
     }
 
     const payload = {
-      applicant: {
+      customer: {
         cnic:            form.cnic,
         name:            form.name,
         dob:             form.dob,
@@ -294,9 +294,9 @@ export default function LiveEvaluationPage() {
     doc.text(`Generated: ${new Date().toLocaleString()}`, pageW - mg, 20, { align: "right" });
     y = 38;
 
-    // Applicant & Policy
+    // Customer & Policy
     doc.setFont("helvetica", "bold"); doc.setFontSize(7); doc.setTextColor(100, 116, 139);
-    doc.text("APPLICANT DETAILS", mg, y); y += 5;
+    doc.text("CUSTOMER DETAILS", mg, y); y += 5;
     doc.setFont("helvetica", "bold"); doc.setFontSize(11); doc.setTextColor(15, 23, 42);
     doc.text(form.name || "—", mg, y); y += 6;
     doc.setFont("helvetica", "normal"); doc.setFontSize(8.5); doc.setTextColor(71, 85, 105);
@@ -392,9 +392,9 @@ export default function LiveEvaluationPage() {
           <div className="p-5 space-y-5">
 
 
-            {/* Applicant */}
+            {/* Customer */}
             <section>
-              <SectionLabel>Applicant</SectionLabel>
+              <SectionLabel>Customer</SectionLabel>
               <div className="space-y-3">
                 <InputField label="CNIC"            placeholder="35201-1234567-1"   value={form.cnic}           onChange={v => setField("cnic", formatCnic(v))} inputMode="numeric" maxLength={15} pattern={CNIC_PATTERN} title="Format: 35201-1234567-1" />
                 <InputField label="Full Name"        placeholder="Muhammad Ali Khan" value={form.name}           onChange={v => setField("name", v)} />

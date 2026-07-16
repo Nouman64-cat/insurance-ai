@@ -1,5 +1,5 @@
 """
-Memgraph applicant writer — persists evaluated applicants into the graph so the
+Memgraph customer writer — persists evaluated customers into the graph so the
 fraud-ring detection queries in workflow.py have data to reason over.
 
 Called fire-and-forget after every successful risk evaluation (SSE path in
@@ -30,10 +30,10 @@ MEMGRAPH_PASS = os.getenv("MEMGRAPH_PASSWORD", "")
 
 # ── Cypher ────────────────────────────────────────────────────────────────────
 
-# Upsert the applicant node. MERGE (not CREATE) so re-evaluating the same CNIC
+# Upsert the customer node. MERGE (not CREATE) so re-evaluating the same CNIC
 # within a tenant updates the node in place instead of duplicating it.
 _UPSERT_NODE = """
-MERGE (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
+MERGE (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
 SET a.occupation        = $occupation,
     a.declared_income   = $declared_income,
     a.coverage_amount   = $coverage_amount,
@@ -43,11 +43,11 @@ SET a.occupation        = $occupation,
     a.evaluated_at      = $evaluated_at
 """
 
-# Link applicants who share the same 5-digit CNIC prefix (same geographic area).
-# Tenant-scoped on both sides so applicants from different tenants never link.
+# Link customers who share the same 5-digit CNIC prefix (same geographic area).
+# Tenant-scoped on both sides so customers from different tenants never link.
 _LINK_SAME_AREA = """
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-MATCH (b:Applicant)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+MATCH (b:Customer)
 WHERE b.cnic <> a.cnic
   AND b.tenant_id = a.tenant_id
   AND left(b.cnic, 5) = left($cnic, 5)
@@ -56,10 +56,10 @@ MERGE (b)-[:SAME_AREA]->(a)
 RETURN count(b) AS linked
 """
 
-# Link applicants in the same occupation cluster within a tenant.
+# Link customers in the same occupation cluster within a tenant.
 _LINK_SAME_OCCUPATION = """
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-MATCH (b:Applicant)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+MATCH (b:Customer)
 WHERE b.cnic <> a.cnic
   AND b.tenant_id = a.tenant_id
   AND b.occupation = a.occupation
@@ -69,7 +69,7 @@ RETURN count(b) AS linked
 """
 
 
-def write_applicant_to_graph(
+def write_customer_to_graph(
     cnic: str,
     tenant_id: str,
     occupation: str,
@@ -79,7 +79,7 @@ def write_applicant_to_graph(
     financial_score: int,
     fraud_probability: float,
 ) -> None:
-    """Persist an evaluated applicant (node + relationships) into Memgraph.
+    """Persist an evaluated customer (node + relationships) into Memgraph.
 
     Fire-and-forget: any connectivity or query failure is logged and swallowed
     so a Memgraph outage never blocks or crashes the evaluation pipeline.
@@ -105,7 +105,7 @@ def write_applicant_to_graph(
                     fraud_probability=fraud_probability,
                     evaluated_at=evaluated_at,
                 )
-                logger.info("applicant %s written to Memgraph (tenant=%s)", cnic, tenant_id)
+                logger.info("customer %s written to Memgraph (tenant=%s)", cnic, tenant_id)
 
                 # 2. Same-area links (shared 5-digit CNIC prefix).
                 area_rec = session.run(

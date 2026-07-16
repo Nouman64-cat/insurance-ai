@@ -84,7 +84,7 @@ async def update_tenant(
 
 from sqlalchemy import delete
 from shared.models.core import (
-    User, UserProfile, Organization, Applicant, MasterPolicy, Policy,
+    User, UserProfile, Organization, Customer, MasterPolicy, Policy,
     RiskAssessment, Claim, Artifact, Commission, PremiumQuote, InsurancePlan,
     Case, CaseWorkflow, CaseAssignment, CaseHistory, CaseEscalation, CaseComment,
     CaseAttachment, CaseAuditTrail, Branch
@@ -134,7 +134,7 @@ async def delete_tenant(
     await session.exec(delete(RiskAssessment).where(RiskAssessment.tenant_id == tenant_id))
     await session.exec(delete(Policy).where(Policy.tenant_id == tenant_id))
     await session.exec(delete(MasterPolicy).where(MasterPolicy.tenant_id == tenant_id))
-    await session.exec(delete(Applicant).where(Applicant.tenant_id == tenant_id))
+    await session.exec(delete(Customer).where(Customer.tenant_id == tenant_id))
     await session.exec(delete(Organization).where(Organization.tenant_id == tenant_id))
     await session.exec(delete(User).where(User.tenant_id == tenant_id))
     await session.exec(delete(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id))

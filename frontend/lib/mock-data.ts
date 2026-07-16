@@ -10,7 +10,7 @@ export type AIDecision =
 
 export interface QueueCase {
   id: string;
-  applicantName: string;
+  customerName: string;
   cnic: string;
   age: number;
   occupation: string;
@@ -90,7 +90,7 @@ export const DECISION_DISTRIBUTION = [
 export const QUEUE_CASES: QueueCase[] = [
   {
     id: "INS-2026-003",
-    applicantName: "Ahmed Raza",
+    customerName: "Ahmed Raza",
     cnic: "35201-7654321-3",
     age: 55,
     occupation: "Mining Engineer",
@@ -107,7 +107,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   {
     id: "INS-2026-001",
-    applicantName: "Muhammad Ali Khan",
+    customerName: "Muhammad Ali Khan",
     cnic: "35201-1234567-1",
     age: 42,
     occupation: "Software Engineer",
@@ -124,7 +124,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   {
     id: "INS-2026-007",
-    applicantName: "Bilal Ahmed",
+    customerName: "Bilal Ahmed",
     cnic: "35201-3456789-7",
     age: 50,
     occupation: "Construction Manager",
@@ -141,7 +141,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   {
     id: "INS-2026-002",
-    applicantName: "Dr. Fatima Sheikh",
+    customerName: "Dr. Fatima Sheikh",
     cnic: "42101-9876543-2",
     age: 35,
     occupation: "General Physician",
@@ -158,7 +158,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   {
     id: "INS-2026-006",
-    applicantName: "Amna Nawaz",
+    customerName: "Amna Nawaz",
     cnic: "35202-8765432-6",
     age: 33,
     occupation: "Chartered Accountant",
@@ -175,7 +175,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   {
     id: "INS-2026-005",
-    applicantName: "Tariq Hassan",
+    customerName: "Tariq Hassan",
     cnic: "37401-2109876-5",
     age: 62,
     occupation: "Truck Driver",
@@ -192,7 +192,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   {
     id: "INS-2026-004",
-    applicantName: "Sara Malik",
+    customerName: "Sara Malik",
     cnic: "31201-5432167-4",
     age: 28,
     occupation: "High School Teacher",
@@ -209,7 +209,7 @@ export const QUEUE_CASES: QueueCase[] = [
   },
   {
     id: "INS-2026-008",
-    applicantName: "Zainab Khan",
+    customerName: "Zainab Khan",
     cnic: "42201-6543210-8",
     age: 29,
     occupation: "Barrister-at-Law",
@@ -233,7 +233,7 @@ export const QUEUE_CASES: QueueCase[] = [
 export const CASE_DETAILS: Record<string, CaseDetail> = {
   "INS-2026-003": {
     id: "INS-2026-003",
-    applicantName: "Ahmed Raza",
+    customerName: "Ahmed Raza",
     cnic: "35201-7654321-3",
     dob: "1971-03-22",
     age: 55,
@@ -263,14 +263,14 @@ export const CASE_DETAILS: Record<string, CaseDetail> = {
     fraudReasons: [
       "CNIC format valid (35201-7654321-3 → 13 digits confirmed): no fraud signal",
       "Coverage-to-income ratio 8.3× — below the 10× elevated-signal threshold: no signal",
-      "Applicant age 55 within normal underwriting range (18–70): no signal",
+      "Customer age 55 within normal underwriting range (18–70): no signal",
       "No compound fraud signals detected; baseline probability (2%) raised to 5% due to occupation–coverage combination",
     ],
   },
 
   "INS-2026-001": {
     id: "INS-2026-001",
-    applicantName: "Muhammad Ali Khan",
+    customerName: "Muhammad Ali Khan",
     cnic: "35201-1234567-1",
     dob: "1984-09-14",
     age: 42,
@@ -306,7 +306,7 @@ export const CASE_DETAILS: Record<string, CaseDetail> = {
 
   "INS-2026-007": {
     id: "INS-2026-007",
-    applicantName: "Bilal Ahmed",
+    customerName: "Bilal Ahmed",
     cnic: "35201-3456789-7",
     dob: "1976-07-30",
     age: 50,
@@ -342,7 +342,7 @@ export const CASE_DETAILS: Record<string, CaseDetail> = {
 
   "INS-2026-002": {
     id: "INS-2026-002",
-    applicantName: "Dr. Fatima Sheikh",
+    customerName: "Dr. Fatima Sheikh",
     cnic: "42101-9876543-2",
     dob: "1991-04-05",
     age: 35,
@@ -378,7 +378,7 @@ export const CASE_DETAILS: Record<string, CaseDetail> = {
 
   "INS-2026-006": {
     id: "INS-2026-006",
-    applicantName: "Amna Nawaz",
+    customerName: "Amna Nawaz",
     cnic: "35202-8765432-6",
     dob: "1993-11-18",
     age: 33,
@@ -414,7 +414,7 @@ export const CASE_DETAILS: Record<string, CaseDetail> = {
 
   "INS-2026-005": {
     id: "INS-2026-005",
-    applicantName: "Tariq Hassan",
+    customerName: "Tariq Hassan",
     cnic: "37401-2109876-5",
     dob: "1964-01-09",
     age: 62,
@@ -451,7 +451,7 @@ export const CASE_DETAILS: Record<string, CaseDetail> = {
 
   "INS-2026-004": {
     id: "INS-2026-004",
-    applicantName: "Sara Malik",
+    customerName: "Sara Malik",
     cnic: "31201-5432167-4",
     dob: "1998-07-22",
     age: 28,
@@ -487,7 +487,7 @@ export const CASE_DETAILS: Record<string, CaseDetail> = {
 
   "INS-2026-008": {
     id: "INS-2026-008",
-    applicantName: "Zainab Khan",
+    customerName: "Zainab Khan",
     cnic: "42201-6543210-8",
     dob: "1997-03-12",
     age: 29,

@@ -87,8 +87,8 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()",
     ),
     (
-        "v3 — add details to applicants",
-        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS details JSON",
+        "v3 — add details to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS details JSON",
     ),
     (
         "v4a — add case_id to artifacts",
@@ -199,8 +199,8 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'GROUP_LIFE'",
     ),
     (
-        "v8a — add organization_id to applicants",
-        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id)",
+        "v8a — add organization_id to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organizations(id)",
     ),
     (
         "v8b — add master_policy_id to policies",
@@ -247,9 +247,9 @@ MIGRATIONS: list[tuple[str, str]] = [
     (
         # Phase 1 of the Rating/Pricing Engine data contract: promote
         # is_smoker/height_cm/weight_kg out of the freeform `details` JSON
-        # blob into strongly-typed, mandatory columns on applicants.
-        "v10a — add is_smoker to applicants",
-        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS is_smoker BOOLEAN",
+        # blob into strongly-typed, mandatory columns on customers.
+        "v10a — add is_smoker to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS is_smoker BOOLEAN",
     ),
     (
         # Legacy rows stored this in details->medical_history->is_smoker (a
@@ -257,27 +257,27 @@ MIGRATIONS: list[tuple[str, str]] = [
         # string comparison rather than a ::boolean cast, so a malformed or
         # missing value can never abort this migration.
         "v10b — backfill is_smoker from legacy details JSON",
-        "UPDATE applicants SET is_smoker = CASE "
+        "UPDATE customers SET is_smoker = CASE "
         "WHEN details->'medical_history'->>'is_smoker' IN ('true','t','1','yes') THEN TRUE "
         "ELSE FALSE END "
         "WHERE is_smoker IS NULL",
     ),
     (
         "v10c — set is_smoker not null",
-        "ALTER TABLE applicants ALTER COLUMN is_smoker SET NOT NULL",
+        "ALTER TABLE customers ALTER COLUMN is_smoker SET NOT NULL",
     ),
     (
-        "v10d — add height_cm to applicants",
-        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS height_cm DOUBLE PRECISION",
+        "v10d — add height_cm to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS height_cm DOUBLE PRECISION",
     ),
     (
         # Legacy rows stored this in details->lifestyle->height_cm — backfill
         # only when the value is genuinely numeric (regex guard instead of a
         # bare cast) so a malformed value can never abort this migration.
         # 0 means "not recorded" for pre-existing rows; new rows must supply
-        # a real value per the now-mandatory ApplicantCreate schema field.
+        # a real value per the now-mandatory CustomerCreate schema field.
         "v10e — backfill height_cm from legacy details JSON",
-        r"UPDATE applicants SET height_cm = CASE "
+        r"UPDATE customers SET height_cm = CASE "
         r"WHEN details->'lifestyle'->>'height_cm' ~ '^[0-9]+(\.[0-9]+)?$' "
         r"THEN (details->'lifestyle'->>'height_cm')::double precision "
         r"ELSE 0 END "
@@ -285,16 +285,16 @@ MIGRATIONS: list[tuple[str, str]] = [
     ),
     (
         "v10f — set height_cm not null",
-        "ALTER TABLE applicants ALTER COLUMN height_cm SET NOT NULL",
+        "ALTER TABLE customers ALTER COLUMN height_cm SET NOT NULL",
     ),
     (
-        "v10g — add weight_kg to applicants",
-        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS weight_kg DOUBLE PRECISION",
+        "v10g — add weight_kg to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS weight_kg DOUBLE PRECISION",
     ),
     (
         # Same defensive backfill approach as height_cm above.
         "v10h — backfill weight_kg from legacy details JSON",
-        r"UPDATE applicants SET weight_kg = CASE "
+        r"UPDATE customers SET weight_kg = CASE "
         r"WHEN details->'lifestyle'->>'weight_kg' ~ '^[0-9]+(\.[0-9]+)?$' "
         r"THEN (details->'lifestyle'->>'weight_kg')::double precision "
         r"ELSE 0 END "
@@ -302,7 +302,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ),
     (
         "v10i — set weight_kg not null",
-        "ALTER TABLE applicants ALTER COLUMN weight_kg SET NOT NULL",
+        "ALTER TABLE customers ALTER COLUMN weight_kg SET NOT NULL",
     ),
     (
         # Phase 1 pricing framework fields on insurance_plans — neutral
@@ -374,7 +374,7 @@ MIGRATIONS: list[tuple[str, str]] = [
     ),
     # GROUP_LIFE intentionally left at the neutral 0.0/1.0 default — group
     # pricing is negotiated per-MasterPolicy and is not served by the
-    # per-applicant /quote endpoint (see shared/pricing/calculator.py).
+    # per-customer /quote endpoint (see shared/pricing/calculator.py).
 
     # v13: Policy lifecycle status + Case→Policy linkage, so a quote's journey
     # from indicative price through underwriting to issuance is traceable
@@ -392,12 +392,16 @@ MIGRATIONS: list[tuple[str, str]] = [
     # (confirmed against this DB's existing users.status/cases.caseStatus
     # columns, which store 'ACTIVE'/'NEW' etc, not 'Active'/'New') — so every
     # ORM read of a 'Quoted' row raised LookupError. Correct the stored value
-    # and the column default to the name form; the Applicant/User pattern
+    # and the column default to the name form; the Customer/User pattern
     # elsewhere in this file never needed this because those columns were
     # only ever written through the ORM, never seeded via raw SQL.
     (
         "v13c — fix policies.status value to match SQLAlchemy Enum name storage",
-        "UPDATE policies SET status = 'QUOTED' WHERE status = 'Quoted'",
+        # status::text so the 'Quoted' literal is never cast to the enum type
+        # (whose labels are the name-form 'QUOTED' on a fresh DB) — a legacy
+        # value-form column is TEXT and still matches; a fresh enum column is
+        # name-form and this is a safe no-op instead of a hard cast error.
+        "UPDATE policies SET status = 'QUOTED' WHERE status::text = 'Quoted'",
     ),
     (
         "v13d — align policies.status column default with enum name storage",
@@ -455,6 +459,21 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v15a — add branch_id to users",
         "ALTER TABLE users ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
     ),
+    # v16: Persist the per-category XAI reasons alongside the flat `reasons`
+    # array so the underwriting UI can always render the Medical / Financial /
+    # Fraud explainability breakdown for a stored assessment.
+    (
+        "v16a — add medical_reasons to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS medical_reasons JSON",
+    ),
+    (
+        "v16b — add financial_reasons to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS financial_reasons JSON",
+    ),
+    (
+        "v16c — add fraud_reasons to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS fraud_reasons JSON",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -508,10 +527,65 @@ async def _seed_user_types(conn) -> None:
             )
 
 
+async def _rename_applicant_to_customer(conn) -> None:
+    """Rename the legacy `applicants` table + `applicant_id` columns to the
+    `customers` / `customer_id` naming.
+
+    MUST run before create_all: otherwise create_all sees no `customers` table
+    on an existing DB and creates an empty one, orphaning the real data still
+    sitting in `applicants`. Every statement is wrapped in a DO/EXCEPTION
+    block so it is a no-op on a fresh DB (nothing to rename) and on an
+    already-renamed DB (rename already applied) — i.e. fully idempotent.
+    """
+    # Each rename is wrapped in a DO/EXCEPTION block: the exception fires when
+    # the object is already renamed (or never existed), making every statement
+    # a safe no-op on a fresh DB and on an already-migrated DB. (An
+    # information_schema guard is unreliable here — it does not reflect an
+    # earlier RENAME made in the same open transaction.)
+
+    # Table: applicants -> customers
+    await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE applicants RENAME TO customers;
+        EXCEPTION
+            WHEN undefined_table THEN NULL;   -- already renamed / absent
+            WHEN duplicate_table THEN NULL;   -- customers already exists
+        END $$;
+    """))
+
+    # FK columns: applicant_id -> customer_id on every table that carries one.
+    for table_name in ("policies", "risk_assessments", "artifacts", "cases"):
+        await conn.execute(text(f"""
+            DO $$ BEGIN
+                ALTER TABLE {table_name} RENAME COLUMN applicant_id TO customer_id;
+            EXCEPTION
+                WHEN undefined_column THEN NULL;
+                WHEN undefined_table THEN NULL;
+            END $$;
+        """))
+
+    # Unique constraint name on the (now) customers table.
+    await conn.execute(text("""
+        DO $$ BEGIN
+            ALTER TABLE customers
+                RENAME CONSTRAINT uq_applicant_cnic_per_tenant
+                TO uq_customer_cnic_per_tenant;
+        EXCEPTION
+            WHEN undefined_object THEN NULL;
+            WHEN undefined_table THEN NULL;
+        END $$;
+    """))
+    log.info("applicant->customer rename verified")
+
+
 async def run_migrations() -> None:
     import shared.models.core  # noqa: F401 — registers all SQLModel metadata
 
     async with _engine.begin() as conn:
+        # 0. Rename legacy applicants table/columns BEFORE create_all so it does
+        #    not create a fresh empty `customers` table alongside the real data.
+        await _rename_applicant_to_customer(conn)
+
         # 1. Create enum types idempotently before create_all so that restarts
         #    with an existing volume do not raise UniqueViolationError.
         await _create_enums_idempotent(conn)

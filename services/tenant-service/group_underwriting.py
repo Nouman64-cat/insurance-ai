@@ -2,7 +2,7 @@
 
 Deliberately separate from services/risk-engine/underwriting_rules.py — group
 underwriting operates on a batch of employees (a census), not a single
-applicant, and has no per-person medical-exam-tier concept. Real insurers
+customer, and has no per-person medical-exam-tier concept. Real insurers
 evaluate the group as a whole (size, industry, claims history) rather than
 underwriting each employee individually.
 """
@@ -23,7 +23,7 @@ _CNIC_RE = re.compile(r"\d{5}-\d{7}-\d")
 
 
 def normalize_cnic(raw: str) -> Optional[str]:
-    """Same format accepted for individual applicants: 13 digits or
+    """Same format accepted for individual customers: 13 digits or
     XXXXX-XXXXXXX-X. Returns None if the value doesn't match either form."""
     v = raw.strip()
     if re.fullmatch(r"\d{13}", v):

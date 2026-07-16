@@ -15,7 +15,7 @@ All tables are defined as SQLModel classes in `shared/models/core.py` and create
 ```mermaid
 erDiagram
     tenants ||--o{ users : "has"
-    tenants ||--o{ applicants : "has"
+    tenants ||--o{ customers : "has"
     tenants ||--o{ policies : "has"
     tenants ||--o{ risk_assessments : "has"
     tenants ||--o{ claims : "has"
@@ -26,10 +26,10 @@ erDiagram
     user_types ||--o{ users : "categorises"
     users ||--o| user_profiles : "has profile"
 
-    applicants ||--o{ policies : "applies for"
-    applicants ||--o{ risk_assessments : "assessed in"
-    applicants ||--o{ artifacts : "attaches"
-    applicants ||--o{ cases : "opens"
+    customers ||--o{ policies : "applies for"
+    customers ||--o{ risk_assessments : "assessed in"
+    customers ||--o{ artifacts : "attaches"
+    customers ||--o{ cases : "opens"
 
     policies ||--o{ claims : "has"
     policies ||--|| commissions : "earns"
@@ -127,15 +127,15 @@ Detailed profile information for a user — one-to-one with `users`, cascade-del
 | `date_of_joining` | DATE nullable | |
 | `updated_at` | TIMESTAMP | UTC, updated on save |
 
-### `applicants`
+### `customers`
 
-Personal and financial profile of an insurance applicant. `cnic` is unique per tenant.
+Personal and financial profile of an insurance customer. `cnic` is unique per tenant.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
 | `tenant_id` | UUID FK → `tenants.id` | Indexed |
-| `cnic` | VARCHAR(15) | Pakistani NIC; unique per tenant (`uq_applicant_cnic_per_tenant`) |
+| `cnic` | VARCHAR(15) | Pakistani NIC; unique per tenant (`uq_customer_cnic_per_tenant`) |
 | `name` | VARCHAR(255) | |
 | `dob` | DATE | Used to calculate age at evaluation time |
 | `gender` | ENUM | `Male`, `Female`, `Other` |
@@ -146,13 +146,13 @@ Personal and financial profile of an insurance applicant. `cnic` is unique per t
 
 ### `policies`
 
-A requested insurance policy linked to a specific applicant and tenant.
+A requested insurance policy linked to a specific customer and tenant.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
 | `tenant_id` | UUID FK → `tenants.id` | Indexed |
-| `applicant_id` | UUID FK → `applicants.id` | Indexed |
+| `customer_id` | UUID FK → `customers.id` | Indexed |
 | `product_name` | VARCHAR(255) | Display label, e.g. `Term Life 20`, `Health Platinum` |
 | `insurance_type` | ENUM | `TERM_LIFE`, `WHOLE_LIFE`, `ENDOWMENT`, `CHILD_EDUCATION_MARRIAGE` — drives the plan-specific underwriting rule band (see [Data Flow](/data-flow)) |
 | `coverage_amount` | FLOAT | PKR; capped by the plan's max income multiple |
@@ -163,13 +163,13 @@ A requested insurance policy linked to a specific applicant and tenant.
 
 ### `risk_assessments`
 
-Stores the underwriting output for an applicant. One applicant may have multiple assessments over time.
+Stores the underwriting output for an customer. One customer may have multiple assessments over time.
 
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | |
 | `tenant_id` | UUID FK → `tenants.id` | Indexed |
-| `applicant_id` | UUID FK → `applicants.id` | Indexed |
+| `customer_id` | UUID FK → `customers.id` | Indexed |
 | `policy_id` | UUID FK → `policies.id` nullable | Indexed; null on rows predating this column |
 | `case_id` | UUID FK → `cases.caseld` nullable | Optional — Live Evaluation has no case context |
 | `medical_score` | INT | 0–100 (LLM-assigned) |
@@ -208,7 +208,7 @@ A document (CNIC scan, salary slip, medical report, X-ray) uploaded through the 
 |---|---|---|
 | `id` | UUID PK | |
 | `tenant_id` | UUID FK → `tenants.id` | Indexed |
-| `applicant_id` | UUID FK → `applicants.id` nullable | Auto-populated from the case on upload |
+| `customer_id` | UUID FK → `customers.id` nullable | Auto-populated from the case on upload |
 | `claim_id` | UUID FK → `claims.id` nullable | Indexed; set when attached to a claim |
 | `case_id` | UUID FK → `cases.caseld` nullable | Indexed; set on upload via the case artifacts endpoint |
 | `uploaded_by` | UUID FK → `users.id` nullable | Indexed; user who triggered the upload |
@@ -255,7 +255,7 @@ Core case record — one row per work item (underwriting proposal, claim investi
 |---|---|---|
 | `caseld` | UUID PK | Auto-generated |
 | `tenant_id` | UUID FK → `tenants.id` | Indexed |
-| `applicant_id` | UUID FK → `applicants.id` | Indexed |
+| `customer_id` | UUID FK → `customers.id` | Indexed |
 | `caseNumber` | VARCHAR(50) | Unique; auto-generated `CASE-YYYY-XXXXXX` |
 | `caseType` | ENUM | `Underwriting`, `Claim`, `Inquiry` |
 | `caseStatus` | ENUM | `New`, `InProgress`, `Pending Documents`, `Under Review`, `Approved`, `Rejected`, `Closed`; default `New` |
@@ -401,6 +401,6 @@ Field-level compliance log. The `caseld` column is intentionally **not** a FK so
 
 ## Memgraph (Graph DB)
 
-Memgraph is used exclusively by the **Risk Engine** for fraud ring detection. It stores one node type (`Applicant`) with two relationship types (`SAME_AREA`, `SAME_OCCUPATION_CLUSTER`), all scoped per tenant.
+Memgraph is used exclusively by the **Risk Engine** for fraud ring detection. It stores one node type (`Customer`) with two relationship types (`SAME_AREA`, `SAME_OCCUPATION_CLUSTER`), all scoped per tenant.
 
 For the full picture — graph schema, Cypher queries, LLM prompt tiers, fallback behaviour, and Memgraph Lab examples — see the dedicated **[Fraud Detection Layer](/fraud-layer)** page.

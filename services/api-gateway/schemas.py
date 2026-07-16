@@ -98,7 +98,7 @@ class RoleRead(BaseModel):
 # Request bodies
 # ─────────────────────────────────────────────────────────────────────────────
 
-class ApplicantIn(BaseModel):
+class CustomerIn(BaseModel):
     cnic: str = Field(
         ...,
         description="Pakistani National Identity Card number (13 digits, hyphens optional).",
@@ -129,7 +129,7 @@ class PolicyIn(BaseModel):
 
 
 class EvaluateRequest(BaseModel):
-    applicant: ApplicantIn
+    customer: CustomerIn
     policy: PolicyIn
     case_id: Optional[UUID] = None
     ai_summary: Optional[str] = None
@@ -138,7 +138,7 @@ class EvaluateRequest(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "applicant": {
+                    "customer": {
                         "cnic": "3520112345671",
                         "name": "Muhammad Ali Khan",
                         "dob": "1985-06-15",
@@ -165,7 +165,7 @@ class EvaluateRequest(BaseModel):
 class EvaluateResponse(BaseModel):
     # ── Identifiers ───────────────────────────────────────────────────────────
     assessment_id: UUID
-    applicant_id: UUID
+    customer_id: UUID
     policy_id: UUID
     tenant_id: UUID
 
@@ -201,7 +201,7 @@ class EvaluateResponse(BaseModel):
 # POST /quote — instant, deterministic premium quotation (no AI, no Kafka)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class QuoteApplicantIn(BaseModel):
+class QuoteCustomerIn(BaseModel):
     cnic: str = Field(..., description="Pakistani National Identity Card number.", examples=["3520112345671"])
     name: str = Field(..., examples=["Muhammad Ali Khan"])
     dob: date = Field(..., description="Date of birth (YYYY-MM-DD).", examples=["1990-04-01"])
@@ -224,7 +224,7 @@ class QuotePolicyIn(BaseModel):
 
 
 class QuoteRequest(BaseModel):
-    applicant: QuoteApplicantIn
+    customer: QuoteCustomerIn
     policy: QuotePolicyIn
 
 
@@ -234,7 +234,7 @@ class QuoteResponse(BaseModel):
 
     # Populated only when eligible=True
     quote_id: Optional[UUID] = None
-    applicant_id: Optional[UUID] = None
+    customer_id: Optional[UUID] = None
     policy_id: Optional[UUID] = None
     annual_income: Optional[float] = None
     plan_code: Optional[str] = None
@@ -255,9 +255,9 @@ class QuoteResponse(BaseModel):
 
 class QuoteListItem(BaseModel):
     quote_id: UUID
-    applicant_id: UUID
-    applicant_name: str
-    applicant_cnic: str
+    customer_id: UUID
+    customer_name: str
+    customer_cnic: str
     policy_id: UUID
     plan_label: str
     insurance_type: InsuranceTypeEnum
@@ -275,16 +275,16 @@ class QuoteListItem(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class QuoteDetail(QuoteListItem):
-    # Applicant — full risk profile, not just name/CNIC
-    applicant_dob: date
-    applicant_age: int
-    applicant_gender: Gender
-    applicant_occupation: str
-    applicant_declared_income: float
-    applicant_is_smoker: bool
-    applicant_height_cm: float
-    applicant_weight_kg: float
-    applicant_bmi: Optional[float] = None
+    # Customer — full risk profile, not just name/CNIC
+    customer_dob: date
+    customer_age: int
+    customer_gender: Gender
+    customer_occupation: str
+    customer_declared_income: float
+    customer_is_smoker: bool
+    customer_height_cm: float
+    customer_weight_kg: float
+    customer_bmi: Optional[float] = None
 
     # Policy — beneficiary / dependent details, when set
     nominee_name: Optional[str] = None

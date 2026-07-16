@@ -8,12 +8,12 @@ const KPIS = [
 ] as const;
 
 const ROWS = [
-  { ref: "SUB-2026-0114", applicant: "Muhammad Ali Khan", product: "Term Life 20", assured: "PKR 10,000,000", submitted: "18 Jun · 08:14", priority: "Standard", status: "Awaiting Review" },
-  { ref: "SUB-2026-0113", applicant: "Fatima Malik", product: "Whole Life", assured: "PKR 5,000,000", submitted: "18 Jun · 07:52", priority: "High", status: "Medical Required" },
-  { ref: "SUB-2026-0112", applicant: "Acme Corporation Ltd.", product: "Group Life", assured: "PKR 25,000,000", submitted: "17 Jun · 23:11", priority: "Standard", status: "Awaiting Review" },
-  { ref: "SUB-2026-0111", applicant: "Ahmed Raza", product: "Term Life 10", assured: "PKR 3,000,000", submitted: "17 Jun · 21:30", priority: "Standard", status: "Awaiting Review" },
-  { ref: "SUB-2026-0110", applicant: "Sara Javed", product: "Endowment", assured: "PKR 2,000,000", submitted: "17 Jun · 19:45", priority: "Low", status: "Incomplete Docs" },
-  { ref: "SUB-2026-0109", applicant: "Tariq Industries", product: "Group Life", assured: "PKR 12,000,000", submitted: "17 Jun · 17:00", priority: "High", status: "Awaiting Review" },
+  { ref: "SUB-2026-0114", customer: "Muhammad Ali Khan", product: "Term Life 20", assured: "PKR 10,000,000", submitted: "18 Jun · 08:14", priority: "Standard", status: "Awaiting Review" },
+  { ref: "SUB-2026-0113", customer: "Fatima Malik", product: "Whole Life", assured: "PKR 5,000,000", submitted: "18 Jun · 07:52", priority: "High", status: "Medical Required" },
+  { ref: "SUB-2026-0112", customer: "Acme Corporation Ltd.", product: "Group Life", assured: "PKR 25,000,000", submitted: "17 Jun · 23:11", priority: "Standard", status: "Awaiting Review" },
+  { ref: "SUB-2026-0111", customer: "Ahmed Raza", product: "Term Life 10", assured: "PKR 3,000,000", submitted: "17 Jun · 21:30", priority: "Standard", status: "Awaiting Review" },
+  { ref: "SUB-2026-0110", customer: "Sara Javed", product: "Endowment", assured: "PKR 2,000,000", submitted: "17 Jun · 19:45", priority: "Low", status: "Incomplete Docs" },
+  { ref: "SUB-2026-0109", customer: "Tariq Industries", product: "Group Life", assured: "PKR 12,000,000", submitted: "17 Jun · 17:00", priority: "High", status: "Awaiting Review" },
 ];
 
 const STATUS_STYLE: Record<string, string> = {
@@ -55,7 +55,7 @@ export default function SubmissionsPage() {
             <thead>
               <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
                 <th className="px-5 py-3 text-left">Reference</th>
-                <th className="px-5 py-3 text-left">Applicant / Company</th>
+                <th className="px-5 py-3 text-left">Customer / Company</th>
                 <th className="px-5 py-3 text-left">Product</th>
                 <th className="px-5 py-3 text-right">Sum Assured</th>
                 <th className="px-5 py-3 text-left">Submitted</th>
@@ -67,7 +67,7 @@ export default function SubmissionsPage() {
               {ROWS.map(r => (
                 <tr key={r.ref} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.ref}</td>
-                  <td className="px-5 py-3 font-medium text-slate-800">{r.applicant}</td>
+                  <td className="px-5 py-3 font-medium text-slate-800">{r.customer}</td>
                   <td className="px-5 py-3 text-slate-600">{r.product}</td>
                   <td className="px-5 py-3 text-right font-semibold text-slate-700">{r.assured}</td>
                   <td className="px-5 py-3 text-slate-500 text-xs">{r.submitted}</td>

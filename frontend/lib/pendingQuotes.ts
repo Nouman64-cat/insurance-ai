@@ -1,4 +1,4 @@
-// Cross-page hand-off: the Applicants page registers an applicant here right
+// Cross-page hand-off: the Customers page registers an customer here right
 // after creation, and ClientLayout's global poller watches for the
 // background quote worker (Kafka) to generate their PremiumQuote rows, then
 // shows a toast — regardless of which page the user has navigated to since.

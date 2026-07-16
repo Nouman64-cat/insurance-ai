@@ -9,7 +9,7 @@ Topics
 insurance.proposal.submitted.v1      →  ProposalSubmittedEvent
 insurance.risk.evaluated.v1          →  RiskEvaluatedEvent
 insurance.artifact.ocr.requested.v1  →  ArtifactOCRRequestedEvent
-insurance.applicant.created.v1       →  ApplicantCreatedEvent
+insurance.customer.created.v1       →  CustomerCreatedEvent
 """
 
 from datetime import datetime, timezone
@@ -29,7 +29,7 @@ def _utcnow() -> datetime:
 # Topic: insurance.proposal.submitted.v1
 # ─────────────────────────────────────────────────────────────────────────────
 
-class ApplicantPayload(BaseModel):
+class CustomerPayload(BaseModel):
     cnic: str
     dob: str                  # YYYY-MM-DD
     gender: str
@@ -48,7 +48,7 @@ class PolicyPayload(BaseModel):
 
 class ProposalPayload(BaseModel):
     proposal_id: UUID
-    applicant: ApplicantPayload
+    customer: CustomerPayload
     policy: PolicyPayload
 
 
@@ -108,20 +108,20 @@ class ArtifactOCRRequestedEvent(BaseModel):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Topic: insurance.applicant.created.v1
+# Topic: insurance.customer.created.v1
 #
-# Published by the tenant-service right after an Applicant row commits.
+# Published by the tenant-service right after an Customer row commits.
 # Consumed by the API Gateway's quote worker, which auto-generates a
 # PremiumQuote (Policy + PremiumQuote rows) for every InsurancePlan the
-# applicant is eligible for, so a quotation is already sitting in the DB by
+# customer is eligible for, so a quotation is already sitting in the DB by
 # the time an underwriter opens the Quotation page.
 # ─────────────────────────────────────────────────────────────────────────────
 
-APPLICANT_CREATED_TOPIC = "insurance.applicant.created.v1"
+CUSTOMER_CREATED_TOPIC = "insurance.customer.created.v1"
 
 
-class ApplicantCreatedPayload(BaseModel):
-    applicant_id: UUID
+class CustomerCreatedPayload(BaseModel):
+    customer_id: UUID
     cnic: str
     name: str
     dob: str                  # YYYY-MM-DD
@@ -133,9 +133,9 @@ class ApplicantCreatedPayload(BaseModel):
     weight_kg: float
 
 
-class ApplicantCreatedEvent(BaseModel):
+class CustomerCreatedEvent(BaseModel):
     event_id: UUID = Field(default_factory=uuid4)
-    event_type: str = "ApplicantCreated"
+    event_type: str = "CustomerCreated"
     timestamp: datetime = Field(default_factory=_utcnow)
     tenant_id: UUID
-    payload: ApplicantCreatedPayload
+    payload: CustomerCreatedPayload

@@ -104,13 +104,13 @@ def _build_underwriting_prompt(request: SummarizeRequest) -> str:
     underwriting concern (Medical / Financial / Occupational) instead of by
     source document — this is what feeds RiskAssessment.ai_summary from the
     Case Detail workbench, so an underwriter reading it wants "what does this
-    applicant's paperwork say about their medical/financial/occupational
+    customer's paperwork say about their medical/financial/occupational
     risk", not a per-document index.
     """
     prompt = (
         f"You are an expert life insurance underwriter. You have {len(request.documents)} OCR-extracted "
         f"documents (CNIC, medical reports, salary slips, bank statements, employment letters, etc.) for a "
-        f"single applicant's underwriting case.\n\n"
+        f"single customer's underwriting case.\n\n"
         f"Read across ALL documents together and produce EXACTLY three sections, pulling only the facts "
         f"relevant to each — synthesize across documents rather than summarizing them one by one:\n\n"
         f"FORMAT RULES (strictly follow):\n"

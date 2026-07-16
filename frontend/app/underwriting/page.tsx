@@ -37,8 +37,8 @@ export default function UnderwritingPage() {
     const q = search.trim().toLowerCase();
     if (!q) return cases;
     return cases.filter(c =>
-      (c.applicant_name ?? "").toLowerCase().includes(q) ||
-      (c.applicant_cnic ?? "").toLowerCase().includes(q) ||
+      (c.customer_name ?? "").toLowerCase().includes(q) ||
+      (c.customer_cnic ?? "").toLowerCase().includes(q) ||
       c.caseNumber.toLowerCase().includes(q),
     );
   }, [cases, search]);
@@ -71,7 +71,7 @@ export default function UnderwritingPage() {
       <div className="flex items-center justify-between gap-3">
         <input
           type="text"
-          placeholder="Search by applicant, CNIC, or case number…"
+          placeholder="Search by customer, CNIC, or case number…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
@@ -97,8 +97,8 @@ export default function UnderwritingPage() {
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {cases.length === 0
-                ? "A folder opens automatically the moment an applicant proceeds with a quotation."
-                : "Try a different applicant name, CNIC, or case number."}
+                ? "A folder opens automatically the moment an customer proceeds with a quotation."
+                : "Try a different customer name, CNIC, or case number."}
             </p>
           </div>
         ) : (
@@ -107,7 +107,7 @@ export default function UnderwritingPage() {
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
                   <th className="px-5 py-3 text-left">Case</th>
-                  <th className="px-5 py-3 text-left">Applicant</th>
+                  <th className="px-5 py-3 text-left">Customer</th>
                   <th className="px-5 py-3 text-left">Product</th>
                   <th className="px-5 py-3 text-right">Sum Assured</th>
                   <th className="px-5 py-3 text-left">Case Status</th>
@@ -120,8 +120,8 @@ export default function UnderwritingPage() {
                   <tr key={c.caseld} onClick={() => router.push(`/case/${c.caseld}`)} className="hover:bg-slate-50 cursor-pointer transition-colors">
                     <td className="px-5 py-3 font-mono text-xs text-slate-500">{c.caseNumber}</td>
                     <td className="px-5 py-3">
-                      <p className="font-medium text-slate-800">{c.applicant_name ?? "Unknown"}</p>
-                      <p className="text-xs text-slate-400">{c.applicant_cnic ?? "—"}</p>
+                      <p className="font-medium text-slate-800">{c.customer_name ?? "Unknown"}</p>
+                      <p className="text-xs text-slate-400">{c.customer_cnic ?? "—"}</p>
                     </td>
                     <td className="px-5 py-3 text-slate-600 text-xs">{c.product_name ?? "—"}</td>
                     <td className="px-5 py-3 text-right font-semibold text-slate-700">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</td>

@@ -11,8 +11,8 @@ sidebar_position: 1
 
 ## What it does
 
-1. An agent (or the frontend) submits an insurance proposal (applicant + policy) to the API Gateway.
-2. The **Risk Engine** runs a LangGraph workflow powered by **Google Gemini 2.5 Flash** that scores the applicant across three dimensions:
+1. An agent (or the frontend) submits an insurance proposal (customer + policy) to the API Gateway.
+2. The **Risk Engine** runs a LangGraph workflow powered by **Google Gemini 2.5 Flash** that scores the customer across three dimensions:
    - **Medical risk** — age, gender, occupation hazard
    - **Financial risk** — income-to-coverage ratio, policy term, occupation stability
    - **Fraud probability** — graph ring detection via Memgraph + LLM evaluation
@@ -65,7 +65,7 @@ curl -X POST http://localhost:8010/evaluate \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: <tenant_id from step 4>" \
   -d '{
-    "applicant": {
+    "customer": {
       "cnic": "3520112345671",
       "name": "Muhammad Ali Khan",
       "dob": "1985-06-15",

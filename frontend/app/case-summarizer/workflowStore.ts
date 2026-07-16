@@ -1,6 +1,6 @@
 import api from "@/app/services/api";
 
-export interface Applicant {
+export interface Customer {
   id: string;
   cnic: string;
   name: string;
@@ -88,11 +88,11 @@ export const INITIAL_FORM: EvalForm = {
 type Listener = () => void;
 
 export interface WorkflowStoreType {
-  selectedApplicant: Applicant | null;
+  selectedCustomer: Customer | null;
   selectedCase: CaseItem | null;
   checkedDocs: Set<string>;
   autoStartSummarize: boolean;
-  applicantSearch: string;
+  customerSearch: string;
   sumStatus: SumStatus;
   summary: string;
   tokenUsage: TokenUsage | null;
@@ -116,11 +116,11 @@ const listeners = new Set<Listener>();
 
 export const workflowStore: WorkflowStoreType = {
   // Selection
-  selectedApplicant: null,
+  selectedCustomer: null,
   selectedCase: null,
   checkedDocs: new Set<string>(),
   autoStartSummarize: false,
-  applicantSearch: "",
+  customerSearch: "",
   
   // Summary
   sumStatus: "idle",
@@ -161,11 +161,11 @@ export const workflowStore: WorkflowStoreType = {
   reset() {
     this.sumAbort?.abort();
     this.evalAbort?.abort();
-    this.selectedApplicant = null;
+    this.selectedCustomer = null;
     this.selectedCase = null;
     this.checkedDocs = new Set<string>();
     this.autoStartSummarize = false;
-    this.applicantSearch = "";
+    this.customerSearch = "";
     this.sumStatus = "idle";
     this.summary = "";
     this.tokenUsage = null;
@@ -259,7 +259,7 @@ export const workflowStore: WorkflowStoreType = {
     });
 
     const payload = {
-      applicant: {
+      customer: {
         cnic: this.evalForm.cnic, name: this.evalForm.name, dob: this.evalForm.dob,
         gender: this.evalForm.gender, occupation: this.evalForm.occupation,
         declared_income: parseFloat(this.evalForm.declaredIncome) || 0,

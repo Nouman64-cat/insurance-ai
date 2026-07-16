@@ -25,7 +25,7 @@ from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
 from pydantic import ValidationError
 
-from graph_writer import write_applicant_to_graph
+from graph_writer import write_customer_to_graph
 from workflow import run_evaluation
 
 from shared.events.kafka_events import (
@@ -55,27 +55,27 @@ async def _process(
 ) -> None:
     """Run the workflow for one event and publish the result."""
 
-    applicant = event.payload.applicant.model_dump()
+    customer = event.payload.customer.model_dump()
     policy    = event.payload.policy.model_dump()
     tenant_id = str(event.tenant_id)
 
     # Run the synchronous LangGraph workflow off the event loop.
     loop = asyncio.get_running_loop()
     result: Dict[str, Any] = await loop.run_in_executor(
-        None, run_evaluation, applicant, policy, tenant_id
+        None, run_evaluation, customer, policy, tenant_id
     )
 
-    # Fire-and-forget: persist the evaluated applicant into Memgraph before
+    # Fire-and-forget: persist the evaluated customer into Memgraph before
     # publishing. Runs in an executor and swallows its own errors so a Memgraph
     # outage never blocks the Kafka publish.
     if result.get("is_valid", False):
         await loop.run_in_executor(
             None,
-            lambda: write_applicant_to_graph(
-                cnic              = applicant.get("cnic", ""),
+            lambda: write_customer_to_graph(
+                cnic              = customer.get("cnic", ""),
                 tenant_id         = tenant_id,
-                occupation        = applicant.get("occupation", ""),
-                declared_income   = float(applicant.get("declared_income", 0)),
+                occupation        = customer.get("occupation", ""),
+                declared_income   = float(customer.get("declared_income", 0)),
                 coverage_amount   = float(policy.get("coverage_amount", 0)),
                 medical_score     = int(result.get("medical_score", 0)),
                 financial_score   = int(result.get("financial_score", 0)),
