@@ -116,6 +116,7 @@ class Tenant(SQLModel, table=True):
     # Relationships
     customers: List["Customer"] = Relationship(back_populates="tenant")
     organizations: List["Organization"] = Relationship(back_populates="tenant")
+    acquisition_sources: List["AcquisitionSource"] = Relationship(back_populates="tenant")
     policies: List["Policy"] = Relationship(back_populates="tenant")
     master_policies: List["MasterPolicy"] = Relationship(back_populates="tenant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="tenant")
@@ -296,6 +297,55 @@ class Organization(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# AcquisitionSource  —  who brought the customer to the insurer
+# ─────────────────────────────────────────────────────────────────────────────
+
+class AcquisitionSourceType(str, Enum):
+    AGENT = "AGENT"                    # individual tied/independent agent
+    BROKER = "BROKER"                  # brokerage firm
+    BANCASSURANCE = "BANCASSURANCE"    # a partner bank's insurance desk
+    CORPORATE_AGENT = "CORPORATE_AGENT"  # corporate tie-up / referral partner
+    DIRECT = "DIRECT"                  # insurer's own direct-sales team / walk-in
+    DIGITAL = "DIGITAL"                # online / aggregator / app funnel
+
+
+class AcquisitionSource(SQLModel, table=True):
+    """The distribution channel or intermediary credited with bringing a
+    customer to the insurer — an individual agent, a brokerage firm, a partner
+    bank's bancassurance desk, a corporate tie-up, the insurer's own direct
+    sales team, or a digital funnel.
+
+    Tenant-scoped: every insurer maintains its own producer roster, so `code`
+    is unique per tenant (same convention as Branch.branch_code)."""
+    __tablename__ = "acquisition_sources"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_acquisition_source_code_per_tenant"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    source_type: AcquisitionSourceType = Field(max_length=50, nullable=False)
+    name: str = Field(max_length=255)                 # agent's name or firm/bank name
+    code: str = Field(index=True, max_length=50)      # tenant-scoped producer code, e.g. AGT-0421
+
+    # Only meaningful for BANCASSURANCE (which bank) / CORPORATE_AGENT (which firm).
+    partner_name: Optional[str] = Field(default=None, max_length=255)
+
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+    city: Optional[str] = Field(default=None, max_length=100)
+
+    is_active: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="acquisition_sources")
+    customers: List["Customer"] = Relationship(back_populates="acquisition_source")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Customer  —  the person applying for a policy
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -319,6 +369,10 @@ class Customer(SQLModel, table=True):
     # Set only for employees enrolled under an Organization's group policy;
     # NULL for individual customers (unchanged, existing behavior).
     organization_id: Optional[UUID] = Field(default=None, foreign_key="organizations.id", index=True, nullable=True)
+
+    # Who brought this customer in — the crediting agent/broker/bank/etc.
+    # NULL for legacy rows and any customer created before this was tracked.
+    acquisition_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", index=True, nullable=True)
 
     # Identity
     cnic: str = Field(index=True, max_length=15)        # Pakistani National Identity Card
@@ -345,6 +399,7 @@ class Customer(SQLModel, table=True):
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="customers")
     organization: Optional[Organization] = Relationship(back_populates="employees")
+    acquisition_source: Optional["AcquisitionSource"] = Relationship(back_populates="customers")
     policies: List["Policy"] = Relationship(back_populates="customer")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="customer")
     artifacts: List["Artifact"] = Relationship(back_populates="customer")

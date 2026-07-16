@@ -482,6 +482,16 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v16b — add marital_status to customers",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS marital_status maritalstatus",
     ),
+    # v17: track who brought the customer (agent/broker/bank/etc). The new
+    # `acquisition_sources` table itself needs no migration entry — it's a
+    # brand-new table, so create_all() (which runs before this list) creates
+    # it automatically from the AcquisitionSource SQLModel, and its enum type
+    # is created by _create_enums_idempotent(). Only the FK column added to the
+    # pre-existing `customers` table needs an ALTER here.
+    (
+        "v17a — add acquisition_source_id to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS acquisition_source_id UUID REFERENCES acquisition_sources(id)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

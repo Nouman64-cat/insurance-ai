@@ -33,6 +33,15 @@ const INSURANCE_TYPE_LABELS: Record<string, string> = {
   HEALTH_CASH: "Hospital Cash / Health Plan",
 };
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  AGENT: "Agent",
+  BROKER: "Broker",
+  BANCASSURANCE: "Bancassurance",
+  CORPORATE_AGENT: "Corporate Agent",
+  DIRECT: "Direct",
+  DIGITAL: "Digital",
+};
+
 const CASE_STATUS_STYLE: Record<string, string> = {
   New: "bg-slate-100 text-slate-600 border-slate-200",
   InProgress: "bg-blue-50 text-blue-700 border-blue-200",
@@ -60,6 +69,15 @@ interface CaseData {
   updatedAt: string;
 }
 
+interface AcquisitionSourceData {
+  id: string;
+  source_type: string;
+  name: string;
+  code: string;
+  partner_name?: string | null;
+  city?: string | null;
+}
+
 interface CustomerData {
   id: string;
   cnic: string;
@@ -73,6 +91,8 @@ interface CustomerData {
   height_cm: number;
   weight_kg: number;
   details?: Record<string, any>;
+  acquisition_source_id?: string | null;
+  acquisition_source?: AcquisitionSourceData | null;
 }
 
 interface PolicyData {
@@ -1115,6 +1135,29 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 <DataRow label="Smoker" value={customer.is_smoker ? "Yes" : "No"} />
                 <DataRow label="Height" value={customer.height_cm ? `${customer.height_cm} cm` : <span className="text-slate-400 italic">Missing</span>} />
                 <DataRow label="Weight" value={customer.weight_kg ? `${customer.weight_kg} kg` : <span className="text-slate-400 italic">Missing</span>} />
+              </div>
+
+              <div className="mt-4 pt-4 border-t border-slate-100">
+                <p className="section-label mb-3">Brought By</p>
+                {customer.acquisition_source ? (
+                  <>
+                    <DataRow label="Source" value={customer.acquisition_source.name} />
+                    <DataRow
+                      label="Channel"
+                      value={
+                        <span className="inline-flex px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                          {SOURCE_TYPE_LABELS[customer.acquisition_source.source_type] ?? customer.acquisition_source.source_type}
+                        </span>
+                      }
+                    />
+                    {customer.acquisition_source.partner_name && (
+                      <DataRow label="Partner" value={customer.acquisition_source.partner_name} />
+                    )}
+                    <DataRow label="Producer Code" value={<span className="font-mono text-xs">{customer.acquisition_source.code}</span>} />
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">Not recorded</p>
+                )}
               </div>
             </div>
           )}

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, delete
 from typing import List, Optional
@@ -206,7 +207,12 @@ async def get_case_detail(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    customer = await session.get(Customer, case.customer_id)
+    customer_res = await session.execute(
+        select(Customer)
+        .where(Customer.id == case.customer_id)
+        .options(selectinload(Customer.acquisition_source))
+    )
+    customer = customer_res.scalar_one_or_none()
 
     # Prefer the case's explicitly linked policy; fall back to the
     # customer's most recent policy for cases created before policy_id

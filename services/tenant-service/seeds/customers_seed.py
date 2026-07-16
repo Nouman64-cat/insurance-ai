@@ -21,6 +21,7 @@ import argparse
 import asyncio
 import logging
 import os
+import random
 from datetime import date
 from typing import Optional
 from uuid import UUID
@@ -31,6 +32,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent, CustomerCreatedPayload
 from shared.models.core import Customer, Policy, Tenant
+from seeds.acquisition_sources_seed import get_or_seed_sources
 
 logger = logging.getLogger("tenant-service.seeds.customers")
 
@@ -1130,6 +1132,26 @@ async def seed_customers(
     )
     existing_cnics: set[str] = set(existing_result.all())
 
+    # Ensure this tenant has its producer roster, then credit each newly-created
+    # customer to a randomly-picked source so the seed data looks organic (a
+    # spread of agents / brokers / banks) rather than everyone coming from one.
+    sources = await get_or_seed_sources(session, tenant_id)
+
+    # Backfill: credit any pre-existing customer that has no source yet (rows
+    # seeded before this feature existed) to a random source, so "who brought
+    # the customer" is populated across the board — not only newly-added rows.
+    # Idempotent: once a customer has a source, it's never reassigned.
+    if sources:
+        unassigned = await session.exec(
+            select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.acquisition_source_id.is_(None),
+            )
+        )
+        for existing in unassigned.all():
+            existing.acquisition_source_id = random.choice(sources).id
+            session.add(existing)
+
     created: list[Customer] = []
 
     for spec in CUSTOMER_SEED_DATA:
@@ -1155,6 +1177,7 @@ async def seed_customers(
             height_cm=lifestyle.get("height_cm", 170),
             weight_kg=lifestyle.get("weight_kg", 70),
             details=details,
+            acquisition_source_id=random.choice(sources).id if sources else None,
         )
         session.add(customer)
         await session.flush()  # obtain customer.id before linking the policy

@@ -27,6 +27,15 @@ const customerCoreSchema = z.object({
   policyDependentDob: z.string().optional(),
 });
 
+interface AcquisitionSource {
+  id: string;
+  source_type: string;
+  name: string;
+  code: string;
+  partner_name?: string | null;
+  city?: string | null;
+}
+
 interface Customer {
   id: string;
   tenant_id: string;
@@ -38,6 +47,8 @@ interface Customer {
   declared_income: number;
   created_at: string;
   details?: any;
+  acquisition_source_id?: string | null;
+  acquisition_source?: AcquisitionSource | null;
 }
 
 interface Policy {
@@ -61,6 +72,15 @@ const INSURANCE_TYPE_LABELS: Record<string, string> = {
   SAVINGS: "Savings / Investment Plan",
   SINGLE_PREMIUM: "Single Premium Investment",
   HEALTH_CASH: "Hospital Cash / Health Plan",
+};
+
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  AGENT: "Agent",
+  BROKER: "Broker",
+  BANCASSURANCE: "Bancassurance",
+  CORPORATE_AGENT: "Corporate Agent",
+  DIRECT: "Direct",
+  DIGITAL: "Digital",
 };
 
 const formatCNIC = (value: string): string => {
@@ -771,6 +791,7 @@ export default function CustomersPage() {
                   <th className="px-5 py-3 text-left">Age / Gender</th>
                   <th className="px-5 py-3 text-left">Occupation</th>
                   <th className="px-5 py-3 text-right">Income</th>
+                  <th className="px-5 py-3 text-left">Brought By</th>
                   <th className="px-5 py-3 text-left">Plan</th>
                   <th className="px-5 py-3 text-center">Actions</th>
                 </tr>
@@ -788,6 +809,19 @@ export default function CustomersPage() {
                       <td className="px-5 py-3.5 text-slate-600">{customer.occupation}</td>
                       <td className="px-5 py-3.5 text-right font-semibold text-slate-700">
                         PKR {customer.declared_income.toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {customer.acquisition_source ? (
+                          <div className="flex flex-col">
+                            <span className="text-slate-700 font-medium">{customer.acquisition_source.name}</span>
+                            <span className="inline-flex mt-0.5 w-fit px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                              {SOURCE_TYPE_LABELS[customer.acquisition_source.source_type] ?? customer.acquisition_source.source_type}
+                              {customer.acquisition_source.partner_name ? ` · ${customer.acquisition_source.partner_name}` : ""}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         {plan === undefined ? (

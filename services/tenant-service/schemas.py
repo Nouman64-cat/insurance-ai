@@ -13,6 +13,7 @@ from shared.models.core import (
     PolicyStatusEnum,
     BranchTypeEnum,
     MaritalStatus,
+    AcquisitionSourceType,
 )
 
 
@@ -338,6 +339,58 @@ class CustomerCreate(BaseModel):
             raise ValueError("weight_kg must be greater than 0")
         return v
 
+class AcquisitionSourceRead(BaseModel):
+    """Who brought the customer in — the crediting agent / broker / bank / etc.
+    Compact shape embedded inside CustomerRead."""
+    id:               UUID
+    source_type:      AcquisitionSourceType
+    name:             str
+    code:             str
+    partner_name:     Optional[str] = None
+    city:             Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+class AcquisitionSourceCreate(BaseModel):
+    source_type:      AcquisitionSourceType
+    name:             str
+    code:             str
+    partner_name:     Optional[str] = None
+    contact_person:   Optional[str] = None
+    contact_phone:    Optional[str] = None
+    contact_email:    Optional[str] = None
+    city:             Optional[str] = None
+    is_active:        bool = True
+
+class AcquisitionSourceUpdate(BaseModel):
+    source_type:      Optional[AcquisitionSourceType] = None
+    name:             Optional[str] = None
+    code:             Optional[str] = None
+    partner_name:     Optional[str] = None
+    contact_person:   Optional[str] = None
+    contact_phone:    Optional[str] = None
+    contact_email:    Optional[str] = None
+    city:             Optional[str] = None
+    is_active:        Optional[bool] = None
+
+class AcquisitionSourceFull(BaseModel):
+    """Full shape returned by the management endpoints."""
+    id:               UUID
+    tenant_id:        UUID
+    source_type:      AcquisitionSourceType
+    name:             str
+    code:             str
+    partner_name:     Optional[str] = None
+    contact_person:   Optional[str] = None
+    contact_phone:    Optional[str] = None
+    contact_email:    Optional[str] = None
+    city:             Optional[str] = None
+    is_active:        bool
+    created_at:       datetime
+    customer_count:   int = 0    # how many customers this source has brought in
+
+    model_config = {"from_attributes": True}
+
 class CustomerRead(BaseModel):
     id:               UUID
     tenant_id:        UUID
@@ -353,6 +406,10 @@ class CustomerRead(BaseModel):
     weight_kg:        float
     created_at:       datetime
     details:          Optional[dict] = None
+
+    # Who brought this customer in (nullable — legacy/API-created rows may have none)
+    acquisition_source_id: Optional[UUID] = None
+    acquisition_source:    Optional[AcquisitionSourceRead] = None
 
     model_config = {"from_attributes": True}
 

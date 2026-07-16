@@ -1,6 +1,7 @@
 import logging
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -97,6 +98,9 @@ async def create_customer(
     session.add(customer)
     await session.commit()
     await session.refresh(customer)
+    # Load the (currently empty) acquisition_source relationship in-session so
+    # CustomerRead serialization never triggers an async lazy-load.
+    await session.refresh(customer, ["acquisition_source"])
 
     # Kick off background quotation generation (Kafka) — see quote_worker.py
     # in api-gateway. Runs after commit so the worker never races the read.
@@ -114,7 +118,9 @@ async def list_customers(
     session: AsyncSession = Depends(get_session),
 ):
     result = await session.exec(
-        select(Customer).where(Customer.tenant_id == tenant_id)
+        select(Customer)
+        .where(Customer.tenant_id == tenant_id)
+        .options(selectinload(Customer.acquisition_source))
     )
     return list(result.all())
 
@@ -128,7 +134,12 @@ async def get_customer(
     customer_id: UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    customer = await session.get(Customer, customer_id)
+    result = await session.exec(
+        select(Customer)
+        .where(Customer.id == customer_id)
+        .options(selectinload(Customer.acquisition_source))
+    )
+    customer = result.first()
     if not customer or customer.tenant_id != tenant_id:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -249,4 +260,5 @@ async def update_customer(
     session.add(customer)
     await session.commit()
     await session.refresh(customer)
+    await session.refresh(customer, ["acquisition_source"])
     return customer
