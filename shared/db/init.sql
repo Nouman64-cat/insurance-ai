@@ -1,16 +1,13 @@
 -- ─────────────────────────────────────────────────────────────────────────────
--- Manual bootstrap for the external Postgres instance (no longer auto-run by
--- Docker — Postgres is not containerized in this project).
+-- Bootstrap script executed once when the PostgreSQL container first starts.
 -- Table schema is managed by SQLModel (create_all) / Alembic — not here.
--- Run against your local/external Postgres server, e.g.:
---   psql -h host.docker.internal -U postgres -d postgres -f shared/db/init.sql
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- Create the database if it doesn't exist
-CREATE DATABASE "insurance-ai";
+-- Create the insurance database if it doesn't exist
+CREATE DATABASE insurance;
 
--- Connect to the database and create extensions
-\c "insurance-ai"
+-- Connect to the insurance database and create extensions
+\c insurance
 
 -- Required for gen_random_uuid() used by SQLModel default columns
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";

@@ -1,11 +1,11 @@
-FROM node:20-slim AS base
+FROM node:20-alpine AS base
 
 WORKDIR /app
 
-# ── Dependency layer (copy host node_modules to bypass Snap Docker npm crash)
+# ── Dependency layer (cached unless package.json changes) ──────────────────
 FROM base AS deps
 COPY package.json package-lock.json* ./
-COPY node_modules ./node_modules
+RUN npm install
 
 # ── Development server (used by docker-compose) ────────────────────────────
 FROM base AS dev

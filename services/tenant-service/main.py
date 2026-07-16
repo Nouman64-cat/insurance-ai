@@ -1,31 +1,22 @@
 import asyncio
 import os
-import logging
 from contextlib import asynccontextmanager
 
 from aiokafka import AIOKafkaProducer
-from aiokafka.errors import KafkaConnectionError
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-logger = logging.getLogger("tenant-service.main")
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-
 from database import _session_factory
 from migrate import run_migrations
 from ocr_worker import start_ocr_worker
 from routers.tenants import router as tenants_router
-from routers.branches import router as branches_router
 from routers.users import router as users_router
 from routers.auth import router as auth_router
 from routers.applicants import router as applicants_router
 from routers.cases import router as cases_router
 from routers.artifacts import router as artifacts_router
-from routers.organizations import router as organizations_router
-from routers.insurance_plans import router as insurance_plans_router
-from routers.tokens import router as tokens_router
 from shared.models.core import Role
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
@@ -33,8 +24,7 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 # ── Standard RBAC roles seeded once at startup ────────────────────────────────
 
 _SEED_ROLES = [
-    ("SuperAdmin",  "Platform-level access — create tenants and bootstrap their first Admin."),
-    ("Admin",       "Full tenant access — manage that tenant's users and all resources."),
+    ("Admin",       "Full platform access — manage tenants, users, and all resources."),
     ("Underwriter", "Evaluate proposals, review risk assessments, and make decisions."),
     ("Agent",       "Submit proposals and track their status."),
     ("Viewer",      "Read-only access to dashboards and reports."),
@@ -63,22 +53,7 @@ async def lifespan(app: FastAPI):
         acks="all",
         enable_idempotence=True,
     )
-    
-    retries = 30
-    delay = 2
-    for attempt in range(1, retries + 1):
-        try:
-            logger.info(f"Connecting to Kafka at {KAFKA_BOOTSTRAP} (attempt {attempt}/{retries})...")
-            await producer.start()
-            logger.info("Successfully connected to Kafka.")
-            break
-        except (KafkaConnectionError, Exception) as e:
-            if attempt == retries:
-                logger.error(f"Failed to connect to Kafka after {retries} attempts: {e}")
-                raise e
-            logger.warning(f"Kafka connection attempt {attempt} failed, retrying in {delay}s...")
-            await asyncio.sleep(delay)
-
+    await producer.start()
     app.state.kafka_producer = producer
 
     # OCR worker — background asyncio task
@@ -114,15 +89,11 @@ app.add_middleware(
 )
 
 app.include_router(tenants_router)
-app.include_router(branches_router)
 app.include_router(users_router)
 app.include_router(auth_router)
 app.include_router(applicants_router)
 app.include_router(cases_router)
 app.include_router(artifacts_router)
-app.include_router(organizations_router)
-app.include_router(insurance_plans_router)
-app.include_router(tokens_router)
 
 
 @app.get("/health", tags=["Ops"])

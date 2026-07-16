@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 
 from langchain_core.prompts import ChatPromptTemplate
@@ -11,8 +12,6 @@ from neo4j import GraphDatabase
 from neo4j import exceptions as neo4j_exc
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
-
-from underwriting_rules import check_plan_rules
 
 logger = logging.getLogger(__name__)
 
@@ -95,12 +94,38 @@ class FraudScoreOutput(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def validate_input(state: RiskState) -> Dict[str, Any]:
+    errors: List[str] = []
     applicant = state["applicant"]
     policy = state["policy"]
 
-    is_valid, errors = check_plan_rules(policy.get("insurance_type"), applicant, policy)
+    try:
+        dob = datetime.strptime(applicant["dob"], "%Y-%m-%d").date()
+        age = (date.today() - dob).days // 365
+        if age < 18:
+            errors.append(f"Applicant is under 18 (age: {age}).")
+        if age > 70:
+            errors.append(f"Applicant exceeds maximum entry age of 70 (age: {age}).")
+    except (KeyError, ValueError):
+        errors.append("Invalid or missing date of birth.")
 
-    return {"is_valid": is_valid, "validation_errors": errors}
+    income = applicant.get("declared_income", 0)
+    if income <= 0:
+        errors.append("Declared income must be greater than zero.")
+
+    coverage = policy.get("coverage_amount", 0)
+    if coverage <= 0:
+        errors.append("Coverage amount must be greater than zero.")
+
+    if income > 0 and coverage > income * 20:
+        errors.append(
+            f"Coverage amount ({coverage:,.0f}) exceeds 20× annual income ({income * 20:,.0f})."
+        )
+
+    term = policy.get("term_years", 0)
+    if term < 1 or term > 40:
+        errors.append(f"Policy term must be between 1 and 40 years (got {term}).")
+
+    return {"is_valid": len(errors) == 0, "validation_errors": errors}
 
 
 def medical_scoring(state: RiskState) -> Dict[str, Any]:
@@ -108,14 +133,10 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
     structured_llm = _llm().with_structured_output(MedicalScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert life insurance medical underwriter.
-         Evaluate the following applicant's baseline medical and lifestyle risk based on:
+         Evaluate the following applicant's baseline medical risk based on:
          1. Age (Calculate from DOB. Older = higher risk).
          2. Gender (Standard actuarial mortality differentials).
-         3. Occupation Hazard (High hazard like mining/military/deep sea diver = high points).
-         4. Substance Consumption (Smoking status/vaper, alcohol consumption frequency, recreational drug use history).
-         5. High-Risk Hobbies / Avocations (Participates in extreme sports, private aviation).
-         6. Travel & Location Risks (Frequent travel to politically unstable or high-risk regions).
-         7. Driving & Legal History (Driving violations, DUI history).
+         3. Occupation Hazard (High hazard like mining/military = high points, office work = 0 points).
 
          Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons."""),
         ("user", "Applicant Data: {applicant}")

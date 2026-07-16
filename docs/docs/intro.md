@@ -33,37 +33,25 @@ sidebar_position: 1
 | OCR Engine | 8014 | Document extraction |
 | Text Summarizer | 8015 | OCR summary generation |
 | Kafka UI | 8090 | Topic browser |
-| PostgreSQL | *(external)* | Not run via docker-compose — point `DATABASE_URL` at your own instance |
+| PostgreSQL | 5434 | Relational store |
 | Memgraph (Bolt) | 7688 | Graph store |
 
 ## Quick start
 
 ```bash
-# 1. Copy env template, fill in GEMINI_API_KEY and DATABASE_URL
-#    (PostgreSQL is external — see "PostgreSQL is external" note below)
+# 1. Copy env template and fill in GEMINI_API_KEY
 cp .env.example .env
 
 # 2. Start all services
 docker compose up --build
 
-# 3. Bootstrap a SuperAdmin (creates the "Platform" tenant + SuperAdmin user,
-#    emails the generated credentials)
-docker compose exec tenant-service python create_superadmin.py --email you@yourdomain.com
+# 3. Create a tenant (required before calling /evaluate)
+curl -X POST "http://localhost:8010/tenants?name=acme-insurance"
 
-# 4. Log in as SuperAdmin, then create a tenant (name + a short unique code)
-TOKEN=$(curl -s -X POST http://localhost:8010/auth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "username=you@yourdomain.com" \
-  --data-urlencode "password=<password from step 3>" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
-
-curl -X POST http://localhost:8010/tenants \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"name": "Acme Insurance", "code": "ACME"}'
-
-# 5. Submit a proposal (sync evaluate) — insurance_type is required
+# 4. Submit a proposal (sync evaluate)
 curl -X POST http://localhost:8010/evaluate \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: <tenant_id from step 4>" \
+  -H "X-Tenant-Id: <tenant_id>" \
   -d '{
     "applicant": {
       "cnic": "3520112345671",
@@ -75,13 +63,10 @@ curl -X POST http://localhost:8010/evaluate \
     },
     "policy": {
       "product_name": "Term Life 20",
-      "insurance_type": "TERM_LIFE",
       "coverage_amount": 5000000,
       "term_years": 20
     }
   }'
 ```
-
-**PostgreSQL is external.** It is not a docker-compose service — run your own instance (local install, managed cloud DB, etc.), create an empty database, and point `DATABASE_URL` at it. On macOS/Windows Docker Desktop, containers reach a host-installed Postgres via `host.docker.internal`.
 
 Swagger UI is available at `http://localhost:8010/docs`.

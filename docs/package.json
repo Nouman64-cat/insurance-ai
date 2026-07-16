@@ -7,8 +7,7 @@
     "start": "docusaurus start --port 4991 --host 0.0.0.0",
     "build": "docusaurus build",
     "serve": "docusaurus serve --port 4991",
-    "clear": "docusaurus clear",
-    "deploy": "docusaurus deploy"
+    "clear": "docusaurus clear"
   },
   "dependencies": {
     "@docusaurus/core": "^3.4.0",

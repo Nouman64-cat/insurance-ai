@@ -5,26 +5,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-import httpx
-import google.generativeai as genai
-
-TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
-
-async def _record_token_usage(usage_dict: dict):
-    try:
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{TENANT_SERVICE_URL}/tokens/usage",
-                json={
-                    "service_name": "Text Summarizer",
-                    "input_tokens": usage_dict["input"],
-                    "output_tokens": usage_dict["output"],
-                    "total_tokens": usage_dict["total"]
-                },
-                timeout=5.0
-            )
-    except Exception as e:
-        print(f"Failed to record token usage: {e}")
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
@@ -99,40 +79,6 @@ def _build_prompt(request: SummarizeRequest) -> str:
     return prompt
 
 
-def _build_underwriting_prompt(request: SummarizeRequest) -> str:
-    """Same input shape as _build_prompt, but organizes the output by
-    underwriting concern (Medical / Financial / Occupational) instead of by
-    source document — this is what feeds RiskAssessment.ai_summary from the
-    Case Detail workbench, so an underwriter reading it wants "what does this
-    applicant's paperwork say about their medical/financial/occupational
-    risk", not a per-document index.
-    """
-    prompt = (
-        f"You are an expert life insurance underwriter. You have {len(request.documents)} OCR-extracted "
-        f"documents (CNIC, medical reports, salary slips, bank statements, employment letters, etc.) for a "
-        f"single applicant's underwriting case.\n\n"
-        f"Read across ALL documents together and produce EXACTLY three sections, pulling only the facts "
-        f"relevant to each — synthesize across documents rather than summarizing them one by one:\n\n"
-        f"FORMAT RULES (strictly follow):\n"
-        f"- Use markdown formatting\n"
-        f"- Exactly three ## headings, in this order: '## Medical Factors', '## Financial Factors', "
-        f"'## Occupational Factors'\n"
-        f"- Under each heading, use bullet points (- ) for concrete facts found in the documents "
-        f"(diagnoses, medications, income figures, employer/job title, years of experience, hazard "
-        f"indicators, account balances, etc.)\n"
-        f"- Use **bold** for key values (amounts, diagnoses, job titles)\n"
-        f"- If a section has no supporting evidence in the documents, write a single bullet: "
-        f"'- No relevant information found in the uploaded documents.'\n"
-        f"- Do not invent facts not present in the documents\n"
-    )
-    if request.max_words:
-        prompt += f"- Keep the entire response under {request.max_words} words\n"
-    prompt += "\nHere are the documents:\n"
-    for i, doc_text in enumerate(request.documents):
-        prompt += f"\n<document_{i+1}>\n{doc_text}\n</document_{i+1}>\n"
-    return prompt
-
-
 async def _stream_summarize_sse(prompt: str):
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -159,11 +105,6 @@ async def _stream_summarize_sse(prompt: str):
                     },
                 },
             )
-            loop.create_task(_record_token_usage({
-                "input": usage.prompt_token_count,
-                "output": usage.candidates_token_count,
-                "total": usage.total_token_count,
-            }))
         except Exception as exc:
             loop.call_soon_threadsafe(
                 queue.put_nowait, {"type": "error", "message": str(exc)}
@@ -207,56 +148,6 @@ async def summarize_text(request: SummarizeRequest):
         usage = response.usage_metadata
         if not usage:
             raise ValueError("No token usage metadata in response")
-
-        asyncio.create_task(_record_token_usage({
-            "input": usage.prompt_token_count,
-            "output": usage.candidates_token_count,
-            "total": usage.total_token_count,
-        }))
-
-        return SummarizeResponse(
-            summary=response.text,
-            token_usage=TokenUsage(
-                input=usage.prompt_token_count,
-                output=usage.candidates_token_count,
-                total=usage.total_token_count,
-            ),
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid response from Gemini: {str(e)}")
-    except Exception as e:
-        error_msg = str(e) if str(e) else "Unknown error during summarization"
-        raise HTTPException(status_code=500, detail=f"Summarization error: {error_msg}")
-
-
-@app.post("/summarize/underwriting", response_model=SummarizeResponse)
-async def summarize_underwriting(request: SummarizeRequest):
-    """Category-organized variant of /summarize for the Case Detail workbench
-    — Medical / Financial / Occupational sections instead of per-document."""
-    if not request.documents:
-        raise HTTPException(status_code=400, detail="Documents list must not be empty.")
-
-    prompt = _build_underwriting_prompt(request)
-
-    try:
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
-        )
-
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini model")
-
-        usage = response.usage_metadata
-        if not usage:
-            raise ValueError("No token usage metadata in response")
-
-        asyncio.create_task(_record_token_usage({
-            "input": usage.prompt_token_count,
-            "output": usage.candidates_token_count,
-            "total": usage.total_token_count,
-        }))
 
         return SummarizeResponse(
             summary=response.text,

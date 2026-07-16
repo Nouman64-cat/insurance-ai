@@ -6,7 +6,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 DATABASE_URL: str = os.environ.get(
     "DATABASE_URL",
-    "postgresql+asyncpg://postgres:asdf456nouM$@host.docker.internal:5432/insurance-ai",
+    "postgresql+asyncpg://insurance:insurance_secret@postgres:5432/insurance_db",
 )
 
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)

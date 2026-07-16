@@ -32,41 +32,37 @@ LangGraph Workflow (inside Risk Engine)
                           Auto Approve / Human Review / Decline
 
 Data Stores
-  PostgreSQL         → tenants, applicants, policies, risk_assessments, claims, artifacts
-                       (external service — NOT a docker-compose container; see below)
+  PostgreSQL :5434   → tenants, applicants, policies, risk_assessments, claims, artifacts
   Memgraph   :7688   → fraud ring detection graph (applicant network analysis)
 ```
-
-**PostgreSQL is external.** It is no longer part of `docker-compose.yml` — every service connects to a Postgres instance you run yourself (a local install, a managed cloud database, etc.) via the `DATABASE_URL` in `.env`. Containers reach a host-installed Postgres through `host.docker.internal` (macOS/Windows Docker Desktop); on Linux you may need `--add-host=host.docker.internal:host-gateway` or the host's LAN IP instead.
 
 ---
 
 ## Port Reference
 
-| Service          | Host Port      | Purpose                                                                  |
-| ---------------- | -------------- | ------------------------------------------------------------------------ |
-| Frontend         | 3000           | Next.js underwriting dashboard                                           |
-| Memgraph Lab Web | 3001           | Graph database UI                                                        |
-| **Docs**   | **4991** | **Docusaurus documentation site**                                  |
-| PostgreSQL       | *(external)* | Not run via docker-compose — point`DATABASE_URL` at your own instance |
-| Memgraph Bolt    | 7688           | Bolt protocol for graph queries                                          |
-| Memgraph Lab     | 7445           | Memgraph Lab UI                                                          |
-| API Gateway      | 8010           | Main public entry point                                                  |
-| Tenant Service   | 8011           | Tenant management                                                        |
-| Risk Engine      | 8012           | LangGraph risk evaluation                                                |
-| Decision Engine  | 8013           | (Scaffolded — future)                                                   |
-| OCR Engine       | 8014           | Document text extraction via Gemini                                      |
-| Text Summarizer  | 8015           | OCR text summarization via Gemini                                        |
-| Kafka UI         | 8090           | Inspect Kafka topics and messages                                        |
-| Kafka            | 9092           | Internal broker (service → service)                                     |
-| Kafka            | 9094           | External listener (host tools, Postman)                                  |
+| Service | Host Port | Purpose |
+|---|---|---|
+| Frontend | 3000 | Next.js underwriting dashboard |
+| Memgraph Lab Web | 3001 | Graph database UI |
+| **Docs** | **4991** | **Docusaurus documentation site** |
+| PostgreSQL | 5434 | Relational database (internal: 5432) |
+| Memgraph Bolt | 7688 | Bolt protocol for graph queries |
+| Memgraph Lab | 7445 | Memgraph Lab UI |
+| API Gateway | 8010 | Main public entry point |
+| Tenant Service | 8011 | Tenant management |
+| Risk Engine | 8012 | LangGraph risk evaluation |
+| Decision Engine | 8013 | (Scaffolded — future) |
+| OCR Engine | 8014 | Document text extraction via Gemini |
+| Text Summarizer | 8015 | OCR text summarization via Gemini |
+| Kafka UI | 8090 | Inspect Kafka topics and messages |
+| Kafka | 9092 | Internal broker (service → service) |
+| Kafka | 9094 | External listener (host tools, Postman) |
 
 ---
 
 ## Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) ≥ 4.x (includes Docker Compose v2)
-- A **running PostgreSQL instance** reachable from your machine (local install, Postgres.app, a managed cloud DB, etc.) — **not** provided by docker-compose. Create an empty database for the app to migrate into.
 - A **Gemini API key** from [Google AI Studio](https://aistudio.google.com/)
 
 ---
@@ -79,10 +75,7 @@ Data Stores
 cp .env.example .env
 ```
 
-Open `.env` and fill in:
-
-- `DATABASE_URL` — pointing at your external PostgreSQL instance and the empty database you created (e.g. `postgresql+asyncpg://postgres:yourpassword@host.docker.internal:5432/insurance-ai` on macOS/Windows Docker Desktop)
-- Your Gemini API key and any other credentials
+Open `.env` and fill in your Gemini API key and any other credentials before running anything.
 
 **2. Build images and start all services**
 
@@ -91,8 +84,6 @@ docker compose up --build -d
 ```
 
 This pulls base images, installs dependencies, and starts all containers. Takes **3–5 minutes** on a cold machine. Run `docker compose ps` to confirm all services are healthy before proceeding.
-
-On first boot, `tenant-service` connects to your external PostgreSQL via `DATABASE_URL` and runs its migrations automatically (`migrate.py`, via the FastAPI lifespan) — check `docker compose logs tenant-service` for `all migrations complete` if a service fails to come up healthy.
 
 **3. Create your first tenant**
 
@@ -113,7 +104,6 @@ docker compose exec risk-engine python consumer.py
 ```
 
 You should see:
-
 ```
 INFO  consumer started — polling insurance.proposal.submitted.v1
 ```
@@ -122,20 +112,20 @@ Leave this running. It polls continuously and publishes results to `insurance.ri
 
 **5. Verify everything is up**
 
-| URL                          | Expected response                                    |
-| ---------------------------- | ---------------------------------------------------- |
-| http://localhost:3000        | Underwriting dashboard (Next.js)                     |
-| http://localhost:4991        | Docusaurus documentation site                        |
-| http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}`     |
-| http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}`     |
+| URL | Expected response |
+|---|---|
+| http://localhost:3000 | Underwriting dashboard (Next.js) |
+| http://localhost:4991 | Docusaurus documentation site |
+| http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}` |
+| http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}` |
 | http://localhost:8014/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
 | http://localhost:8015/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
-| http://localhost:8010/docs   | API Gateway — Swagger UI                            |
-| http://localhost:8012/docs   | Risk Engine — Swagger UI                            |
-| http://localhost:8014/docs   | OCR Engine — Swagger UI                             |
-| http://localhost:8015/docs   | Text Summarizer — Swagger UI                        |
-| http://localhost:8090        | Kafka UI — topic browser                            |
-| http://localhost:3001        | Memgraph Lab — graph database UI                    |
+| http://localhost:8010/docs | API Gateway — Swagger UI |
+| http://localhost:8012/docs | Risk Engine — Swagger UI |
+| http://localhost:8014/docs | OCR Engine — Swagger UI |
+| http://localhost:8015/docs | Text Summarizer — Swagger UI |
+| http://localhost:8090 | Kafka UI — topic browser |
+| http://localhost:3001 | Memgraph Lab — graph database UI |
 
 ---
 
@@ -193,7 +183,6 @@ curl -s -X POST http://localhost:8010/evaluate \
 ```
 
 Response — **202 Accepted**:
-
 ```json
 {
   "event_id": "3f2e1a...",
@@ -222,12 +211,12 @@ curl -s -X POST http://localhost:8010/evaluate/stream \
 
 SSE event types:
 
-| Type         | When                          | Payload                |
-| ------------ | ----------------------------- | ---------------------- |
-| `progress` | each LangGraph node completes | `{node, data}`       |
-| `invalid`  | validation failed             | `{errors: [...]}`    |
-| `saved`    | DB write complete             | full assessment object |
-| `error`    | something failed              | `{message}`          |
+| Type | When | Payload |
+|---|---|---|
+| `progress` | each LangGraph node completes | `{node, data}` |
+| `invalid` | validation failed | `{errors: [...]}` |
+| `saved` | DB write complete | full assessment object |
+| `error` | something failed | `{message}` |
 
 ---
 
@@ -239,11 +228,11 @@ The `decision_aggregation` node is fully deterministic:
 composite_score = (40% × medical_score) + (40% × financial_score) + (20% × fraud_probability × 100)
 ```
 
-| Decision               | Condition                                   |
-| ---------------------- | ------------------------------------------- |
+| Decision | Condition |
+|---|---|
 | **Auto Approve** | composite < 30 AND fraud_probability < 0.10 |
-| **Decline**      | composite > 75 OR fraud_probability > 0.60  |
-| **Human Review** | everything else                             |
+| **Decline** | composite > 75 OR fraud_probability > 0.60 |
+| **Human Review** | everything else |
 
 The final `reasons` list includes XAI outputs from all three scoring nodes plus a plain-English math breakdown of the composite calculation.
 
@@ -298,10 +287,10 @@ curl -s -X POST http://localhost:8012/evaluate \
 
 ## Kafka Topics
 
-| Topic                               | Producer        | Consumer                        | Payload                                               |
-| ----------------------------------- | --------------- | ------------------------------- | ----------------------------------------------------- |
-| `insurance.proposal.submitted.v1` | API Gateway     | `consumer.py`                 | `ProposalSubmittedEvent` — applicant + policy data |
-| `insurance.risk.evaluated.v1`     | `consumer.py` | *(result consumer — future)* | `RiskEvaluatedEvent` — scores + decision           |
+| Topic | Producer | Consumer | Payload |
+|---|---|---|---|
+| `insurance.proposal.submitted.v1` | API Gateway | `consumer.py` | `ProposalSubmittedEvent` — applicant + policy data |
+| `insurance.risk.evaluated.v1` | `consumer.py` | *(result consumer — future)* | `RiskEvaluatedEvent` — scores + decision |
 
 Browse both topics live at **http://localhost:8090** (Kafka UI).
 
@@ -339,9 +328,12 @@ docker compose up --build frontend
 
 ### Shared models changed (`shared/models/core.py` or `shared/events/kafka_events.py`)
 
-The `shared/` directory is bind-mounted into the gateway and risk-engine. Uvicorn reloads automatically.
+The `shared/` directory is bind-mounted into the gateway and risk-engine. Uvicorn reloads automatically. Schema changes to the DB models require a full reset:
 
-PostgreSQL is external, so `docker compose down -v` no longer touches it (that only wipes Kafka's volume now). Schema changes to the DB models go through an additive migration instead of a full reset — add a new entry to `MIGRATIONS` in `services/tenant-service/migrate.py` following the existing add-column → backfill → set-not-null pattern, then restart `tenant-service` (or let `--reload` pick it up) to apply it against your existing database.
+```bash
+docker compose down -v          # drops all volumes (wipes PostgreSQL and Kafka data)
+docker compose up --build       # recreates everything from scratch
+```
 
 ### `docker-compose.yml` or `.env` changed
 
@@ -378,8 +370,10 @@ docker compose down -v
 docker compose exec api-gateway sh
 docker compose exec risk-engine sh
 
-# Connect to PostgreSQL (external — connect directly from the host, matching your DATABASE_URL)
-psql -h localhost -p 5432 -U <user> -d <database>
+# Connect to PostgreSQL
+docker compose exec postgres psql -U insurance insurance
+# or from host:
+psql -h localhost -p 5434 -U insurance insurance
 
 # List Kafka topics
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
@@ -426,14 +420,13 @@ If the error is `ModuleNotFoundError`, a new dependency was added to `requiremen
 docker compose build --no-cache risk-engine && docker compose up risk-engine -d
 ```
 
-### Database doesn't exist / tenant-service can't connect
+### Database doesn't exist
 
-PostgreSQL is external, so there's no docker volume to reset here. Instead:
-
-1. Confirm the database in `DATABASE_URL` actually exists on your Postgres instance (`CREATE DATABASE insurance-ai;` if not).
-2. Confirm the host is reachable from inside a container — on macOS/Windows Docker Desktop this is normally `host.docker.internal`; on Linux you may need `--add-host` or the host's LAN IP.
-3. Test the connection directly from your host first: `psql -h localhost -p 5432 -U <user> -d <database>`.
-4. Restart `tenant-service` to re-run migrations once the connection is confirmed: `docker compose restart tenant-service`.
+```bash
+docker compose down
+docker volume rm insurance-ai_postgres-data
+docker compose up --build -d
+```
 
 ### Service won't start — missing `.env`
 

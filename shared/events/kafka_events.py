@@ -9,11 +9,10 @@ Topics
 insurance.proposal.submitted.v1      →  ProposalSubmittedEvent
 insurance.risk.evaluated.v1          →  RiskEvaluatedEvent
 insurance.artifact.ocr.requested.v1  →  ArtifactOCRRequestedEvent
-insurance.applicant.created.v1       →  ApplicantCreatedEvent
 """
 
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
@@ -33,18 +32,14 @@ class ApplicantPayload(BaseModel):
     cnic: str
     dob: str                  # YYYY-MM-DD
     gender: str
-    marital_status: Optional[str] = None
     occupation: str
     declared_income: int      # annual PKR
 
 
 class PolicyPayload(BaseModel):
     product_name: str
-    insurance_type: str
     coverage_amount: int      # PKR
     term_years: int
-    dependent_name: Optional[str] = None
-    dependent_dob: Optional[str] = None      # YYYY-MM-DD
 
 
 class ProposalPayload(BaseModel):
@@ -106,38 +101,3 @@ class ArtifactOCRRequestedEvent(BaseModel):
     timestamp: datetime = Field(default_factory=_utcnow)
     tenant_id: UUID
     payload: ArtifactOCRPayload
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Topic: insurance.applicant.created.v1
-#
-# Published by the tenant-service right after an Applicant row commits.
-# Consumed by the API Gateway's quote worker, which auto-generates a
-# PremiumQuote (Policy + PremiumQuote rows) for every InsurancePlan the
-# applicant is eligible for, so a quotation is already sitting in the DB by
-# the time an underwriter opens the Quotation page.
-# ─────────────────────────────────────────────────────────────────────────────
-
-APPLICANT_CREATED_TOPIC = "insurance.applicant.created.v1"
-
-
-class ApplicantCreatedPayload(BaseModel):
-    applicant_id: UUID
-    cnic: str
-    name: str
-    dob: str                  # YYYY-MM-DD
-    gender: str
-    marital_status: Optional[str] = None
-    occupation: str
-    declared_income: float    # annual PKR
-    is_smoker: bool
-    height_cm: float
-    weight_kg: float
-
-
-class ApplicantCreatedEvent(BaseModel):
-    event_id: UUID = Field(default_factory=uuid4)
-    event_type: str = "ApplicantCreated"
-    timestamp: datetime = Field(default_factory=_utcnow)
-    tenant_id: UUID
-    payload: ApplicantCreatedPayload

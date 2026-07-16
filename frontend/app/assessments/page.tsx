@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
-import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import api from "@/app/services/api";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
@@ -399,14 +398,7 @@ function DetailPanel({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-[540px] max-h-[90vh] bg-white rounded-xl border border-slate-200 flex flex-col shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="fixed inset-y-0 right-0 w-[480px] bg-white border-l border-slate-200 flex flex-col z-50 shadow-2xl">
       {/* Header */}
       <div className="flex items-start justify-between p-5 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
         <div>
@@ -448,12 +440,9 @@ function DetailPanel({
                   </p>
                 )}
                 {detail.case_id && (
-                  <Link
-                    href={`/case/${detail.case_id}`}
-                    className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600 hover:text-blue-700"
-                  >
-                    Open underwriting folder <span className="font-mono text-blue-400">{detail.case_id.slice(0, 8)}…</span> →
-                  </Link>
+                  <p className="text-[10px] text-slate-400">
+                    Linked to case <span className="font-mono text-slate-500">{detail.case_id.slice(0, 8)}…</span>
+                  </p>
                 )}
               </div>
             </div>
@@ -518,7 +507,6 @@ function DetailPanel({
           </button>
         </div>
       )}
-      </div>
     </div>
   );
 }
@@ -784,9 +772,12 @@ export default function AssessmentHistoryPage() {
         )}
       </div>
 
-      {/* Modal */}
+      {/* Slide-out */}
       {selected && (
-        <DetailPanel item={selected} tenantId={tenantId} onClose={() => setSelected(null)} />
+        <>
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-40" onClick={() => setSelected(null)} />
+          <DetailPanel item={selected} tenantId={tenantId} onClose={() => setSelected(null)} />
+        </>
       )}
     </div>
   );

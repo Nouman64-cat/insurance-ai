@@ -22,7 +22,6 @@ import signal
 from typing import Any, Dict
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
-from aiokafka.errors import KafkaConnectionError
 from pydantic import ValidationError
 
 from graph_writer import write_applicant_to_graph
@@ -143,67 +142,45 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
         enable_idempotence=True,
     )
 
-    retries = 30
-    delay = 2
-    for attempt in range(1, retries + 1):
-        try:
-            logger.info(f"Starting Kafka consumer & producer at {KAFKA_BOOTSTRAP} (attempt {attempt}/{retries})...")
-            await consumer.start()
-            try:
-                await producer.start()
-                logger.info("Successfully connected consumer and producer to Kafka.")
-                break
-            except Exception as prod_err:
-                await consumer.stop()
-                raise prod_err
-        except (KafkaConnectionError, Exception) as e:
-            if attempt == retries:
-                logger.error(f"Failed to start consumer/producer after {retries} attempts: {e}")
-                raise e
-            logger.warning(f"Kafka connection attempt {attempt} failed, retrying in {delay}s...")
-            await asyncio.sleep(delay)
-
+    await consumer.start()
+    await producer.start()
     logger.info("consumer started — polling %s", INBOUND_TOPIC)
 
     try:
-        # getmany(timeout_ms=...) returns (possibly empty) on a bounded wait,
-        # unlike `async for msg in consumer` which blocks indefinitely for the
-        # next message. That's what lets this loop notice stop_event promptly
-        # even when the topic is idle — required for --reload (or any embedder
-        # calling start_consumer_task) to ever be able to tear this down.
-        while not (stop_event and stop_event.is_set()):
-            batches = await consumer.getmany(timeout_ms=1000)
-            for msgs in batches.values():
-                for msg in msgs:
-                    logger.info(
-                        "received message | partition=%s offset=%s",
-                        msg.partition,
-                        msg.offset,
-                    )
+        async for msg in consumer:
+            # Honour external stop signal without abandoning the current message.
+            if stop_event and stop_event.is_set():
+                break
 
-                    # ── Deserialise ───────────────────────────────────────────
-                    try:
-                        event = ProposalSubmittedEvent.model_validate_json(msg.value)
-                    except ValidationError as exc:
-                        # Poison-pill: log and skip — never block the partition.
-                        logger.error("invalid event schema, skipping | error=%s", exc)
-                        await consumer.commit()
-                        continue
+            logger.info(
+                "received message | partition=%s offset=%s",
+                msg.partition,
+                msg.offset,
+            )
 
-                    # ── Process + publish ─────────────────────────────────────
-                    try:
-                        await _process(event, producer)
-                    except Exception as exc:
-                        # Do NOT commit — retry on next consumer restart.
-                        logger.exception(
-                            "processing failed, offset will be retried | event_id=%s error=%s",
-                            event.event_id,
-                            exc,
-                        )
-                        continue
+            # ── Deserialise ───────────────────────────────────────────────────
+            try:
+                event = ProposalSubmittedEvent.model_validate_json(msg.value)
+            except ValidationError as exc:
+                # Poison-pill: log and skip — never block the partition.
+                logger.error("invalid event schema, skipping | error=%s", exc)
+                await consumer.commit()
+                continue
 
-                    # ── Commit only after successful publish ──────────────────
-                    await consumer.commit()
+            # ── Process + publish ─────────────────────────────────────────────
+            try:
+                await _process(event, producer)
+            except Exception as exc:
+                # Do NOT commit — retry on next consumer restart.
+                logger.exception(
+                    "processing failed, offset will be retried | event_id=%s error=%s",
+                    event.event_id,
+                    exc,
+                )
+                continue
+
+            # ── Commit only after successful publish ──────────────────────────
+            await consumer.commit()
 
     finally:
         await consumer.stop()

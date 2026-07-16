@@ -20,13 +20,10 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 |---|---|---|
 | `POST` | `/evaluate` | Synchronous risk evaluation — calls Risk Engine and persists results |
 | `POST` | `/auth/token` | Login → JWT (proxied to Tenant Service) |
-| `GET` | `/auth/me` | Current user's full profile (proxied) |
-| `PATCH` | `/auth/me` | Update own profile — first/last name, phone, department, etc. (Bearer required) |
-| `POST` | `/auth/change-password` | Change own password — requires current password (Bearer required) |
-| `POST` | `/tenants` | Create a tenant — **SuperAdmin only**; requires `name` + unique `code` |
-| `GET` | `/tenants` | List all tenants (Bearer required) |
-| `GET` | `/tenants/{tenant_id}` | Get a tenant |
-| `POST` | `/tenants/{tenant_id}/setup` | Bootstrap the first `Admin` for a tenant — **SuperAdmin only**; auto-generates username/password, emails credentials |
+| `GET` | `/auth/me` | Current user info (proxied) |
+| `POST` | `/tenants` | Bootstrap: create a tenant |
+| `GET` | `/tenants` | Bootstrap: list all tenants |
+| `GET` | `/tenants/{tenant_id}` | Bootstrap: get a tenant |
 | `POST` | `/tenants/{tenant_id}/users` | Create a user (Bearer required) |
 | `GET` | `/tenants/{tenant_id}/users/` | List users (admin only, Bearer required) |
 | `GET` | `/tenants/{tenant_id}/users/{user_id}` | Get a user (Bearer required) |
@@ -40,7 +37,6 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 | `PATCH` | `/tenants/{tenant_id}/cases/{case_id}/status` | Update case status — writes audit history (Bearer required) |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user (Bearer required) |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add a comment (Bearer required) |
-| `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Required/received/missing documents for the case's policy plan type (Bearer required) |
 | `POST` | `/tenants/{tenant_id}/applicants` | Create an applicant (admin only, Bearer required) |
 | `GET` | `/tenants/{tenant_id}/applicants` | List applicants (admin only, Bearer required) |
 | `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get an applicant (Bearer required) |
@@ -75,14 +71,8 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/auth/token` | Login → `{ access_token, token_type }` |
-| `GET` | `/auth/me` | Decode JWT → current user + role + full profile fields |
-| `PATCH` | `/auth/me` | Self-service profile update (first/last name, phone, department, employee_id, designation, date_of_joining) |
-| `POST` | `/auth/change-password` | Self-service password change — verifies `current_password` before accepting `new_password` |
-| `POST` | `/tenants` | Create a tenant — **SuperAdmin only**; requires `name` + unique `code` |
-| `GET` | `/tenants` | List all tenants |
-| `GET` | `/tenants/{tenant_id}` | Get a tenant |
-| `POST` | `/tenants/{tenant_id}/setup` | Bootstrap the first `Admin` for a tenant — **SuperAdmin only**. 409 if the tenant already has users. Username/password auto-generated and emailed. |
-| `POST` | `/tenants/{tenant_id}/users` | Create user within a tenant — username/password auto-generated and emailed; **Admin is tenant-scoped to their own `tenant_id`, SuperAdmin can act on any tenant** |
+| `GET` | `/auth/me` | Decode JWT → current user + role |
+| `POST` | `/tenants/{tenant_id}/users` | Create user within a tenant |
 | `GET` | `/tenants/{tenant_id}/users/` | List users (Admin role required) |
 | `GET` | `/tenants/{tenant_id}/users/{user_id}` | Get user |
 | `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update user |
@@ -95,7 +85,6 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 | `PATCH` | `/tenants/{tenant_id}/cases/{case_id}/status` | Change status — creates `CaseHistory` entry |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add internal or external comment |
-| `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Resolves the case's applicant → most recent `Policy` → plan-specific required documents (`document_requirements.py`), diffs against uploaded `Artifact.document_type` values |
 | `POST` | `/tenants/{tenant_id}/applicants` | Create applicant (Admin only; enforces per-tenant CNIC uniqueness) |
 | `GET` | `/tenants/{tenant_id}/applicants` | List all applicants for a tenant (Admin only) |
 | `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get applicant by ID (Admin only) |
@@ -111,8 +100,7 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 
 | Role | Access level |
 |---|---|
-| `SuperAdmin` | Platform-level — create tenants (`POST /tenants`) and bootstrap each tenant's first `Admin` (`POST /tenants/{tenant_id}/setup`). Belongs to a reserved `Platform` tenant, created via `create_superadmin.py`. Can also manage users across any tenant. |
-| `Admin` | Tenant-scoped full access — manage users, applicants, cases, and all resources **within their own tenant only** |
+| `Admin` | Full platform access — manage tenants, users, and all resources |
 | `Underwriter` | Evaluate proposals, review risk assessments, make decisions |
 | `Agent` | Submit proposals, track status |
 | `Viewer` | Read-only access to dashboards and reports |
@@ -162,14 +150,11 @@ Both endpoints accept an `X-Tenant-Id` header which is forwarded through the Lan
   },
   "policy": {
     "product_name": "Term Life 20",
-    "insurance_type": "TERM_LIFE",
     "coverage_amount": 5000000,
     "term_years": 20
   }
 }
 ```
-
-`insurance_type` is one of `TERM_LIFE`, `WHOLE_LIFE`, `ENDOWMENT`, `CHILD_EDUCATION_MARRIAGE` — it selects the plan-specific rule band in `validate_input` (see [Data Flow](/data-flow)). `CHILD_EDUCATION_MARRIAGE` additionally requires `dependent_dob` (and accepts `dependent_name`) in the `policy` object.
 
 ### Response body
 

@@ -20,10 +20,7 @@ from shared.models.core import Artifact, Case, Tenant, User
 router = APIRouter(prefix="/tenants", tags=["Artifacts"])
 
 _S3_BUCKET  = os.environ.get("S3_BUCKET_NAME", "insurance-ai-dev")
-# S3 has its own region var, separate from AWS_REGION (used by SES, which
-# doesn't support every S3 region — e.g. the insurance-ai-dev bucket lives in
-# ap-south-1, a region SES isn't available in).
-_AWS_REGION = os.environ.get("AWS_S3_REGION") or os.environ.get("AWS_REGION", "us-east-1")
+_AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 OCR_TOPIC   = "insurance.artifact.ocr.requested.v1"
 
 SUPPORTED_MIME = {

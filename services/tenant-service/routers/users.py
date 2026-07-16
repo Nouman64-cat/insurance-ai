@@ -10,11 +10,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from jose import JWTError
 
 from database import get_session
-from email_utils import send_credentials_email
-from provisioning import generate_password, generate_unique_username, split_full_name
 from schemas import SeedAdminCreate, UserCreate, UserRead, UserUpdate
-from shared.models.core import Branch, Role, Tenant, User, UserProfile, UserStatus
-from routers.auth import _get_current_user, decode_access_token, oauth2_scheme, verify_superadmin
+from shared.models.core import Role, Tenant, User, UserProfile, UserStatus
+from routers.auth import decode_access_token, oauth2_scheme
 
 router = APIRouter(prefix="/tenants", tags=["Users"])
 
@@ -26,7 +24,6 @@ def to_user_read(user: User, profile: Optional[UserProfile]) -> UserRead:
         id=user.id,
         tenant_id=user.tenant_id,
         role_id=user.role_id,
-        branch_id=user.branch_id,
         email=user.email,
         username=user.username,
         full_name=user.full_name,
@@ -58,17 +55,7 @@ def _verify_tenant(tenant: Tenant | None, tenant_id: UUID) -> Tenant:
     return tenant
 
 
-def _verify_branch(branch: Branch | None, tenant_id: UUID, branch_id: UUID) -> Branch:
-    if branch is None or branch.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Branch '{branch_id}' not found for this tenant.",
-        )
-    return branch
-
-
 async def verify_admin(
-    tenant_id: UUID,
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -85,25 +72,19 @@ async def verify_admin(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Could not validate credentials",
         )
-
+    
     user = await session.get(User, user_id)
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found",
         )
-
+    
     role = await session.get(Role, user.role_id)
-    if not role or role.name not in ("Admin", "SuperAdmin"):
+    if not role or role.name != "Admin":
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administrative privileges required",
-        )
-
-    if role.name == "Admin" and user.tenant_id != tenant_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Cannot manage users outside your own tenant",
         )
 
 
@@ -113,12 +94,10 @@ async def verify_admin(
     status_code=status.HTTP_201_CREATED,
     summary="Bootstrap first Admin",
     description=(
-        "Creates the first Admin user for a tenant. **Requires a SuperAdmin JWT.** "
+        "Creates the first Admin user for a tenant. **No authentication required.** "
         "Returns 409 if any user already exists for this tenant — use the normal "
-        "user management endpoints after initial setup. Emails the new Admin's "
-        "login credentials on success."
+        "user management endpoints after initial setup."
     ),
-    dependencies=[Depends(verify_superadmin)],
 )
 async def seed_admin(
     tenant_id: UUID,
@@ -127,9 +106,6 @@ async def seed_admin(
 ) -> UserRead:
     tenant = await session.get(Tenant, tenant_id)
     _verify_tenant(tenant, tenant_id)
-
-    branch = await session.get(Branch, body.branch_id)
-    _verify_branch(branch, tenant_id, body.branch_id)
 
     existing_users = (
         await session.exec(select(User).where(User.tenant_id == tenant_id))
@@ -154,19 +130,20 @@ async def seed_admin(
             detail=f"Email '{body.email}' is already registered.",
         )
 
-    first_name, last_name = split_full_name(body.full_name)
-    local_part = body.email.split("@", 1)[0]
-    username = await generate_unique_username(session, local_part)
-    plaintext_password = generate_password()
+    existing_username = (await session.exec(select(User).where(User.username == body.username))).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Username '{body.username}' is already registered.",
+        )
 
     user = User(
         tenant_id=tenant_id,
         role_id=admin_role.id,
-        branch_id=body.branch_id,
         email=body.email,
-        username=username,
-        hashed_password=_pwd.hash(plaintext_password),
-        full_name=body.full_name,
+        username=body.username,
+        hashed_password=_pwd.hash(body.password),
+        full_name=f"{body.first_name} {body.last_name}".strip(),
         status=UserStatus.ACTIVE,
         is_active=True,
     )
@@ -175,23 +152,13 @@ async def seed_admin(
 
     profile = UserProfile(
         user_id=user.id,
-        first_name=first_name,
-        last_name=last_name,
+        first_name=body.first_name,
+        last_name=body.last_name,
     )
     session.add(profile)
     await session.commit()
     await session.refresh(user)
     await session.refresh(profile)
-
-    await send_credentials_email(
-        to_email=user.email,
-        full_name=user.full_name,
-        username=username,
-        password=plaintext_password,
-        role_label="Admin",
-        tenant_name=tenant.name,
-    )
-
     return to_user_read(user, profile)
 
 
@@ -204,7 +171,6 @@ async def seed_admin(
 async def create_user(
     tenant_id: UUID,
     body: UserCreate,
-    token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> UserRead:
     tenant = await session.get(Tenant, tenant_id)
@@ -217,24 +183,6 @@ async def create_user(
             detail=f"Role '{body.role_id}' not found.",
         )
 
-    # branch_id is required when a SuperAdmin creates an Admin (they pick the
-    # office); when an Admin creates a User, any branch_id in the body is
-    # ignored — the new User always inherits the creating Admin's own branch,
-    # so staff can never end up in a different office than their Admin.
-    acting_user = await _get_current_user(token, session)
-    acting_role = await session.get(Role, acting_user.role_id)
-    if acting_role and acting_role.name == "SuperAdmin":
-        if body.branch_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="branch_id is required when creating a user as SuperAdmin.",
-            )
-        branch = await session.get(Branch, body.branch_id)
-        _verify_branch(branch, tenant_id, body.branch_id)
-        branch_id = body.branch_id
-    else:
-        branch_id = acting_user.branch_id
-
     existing_email = (await session.exec(select(User).where(User.email == body.email))).first()
     if existing_email:
         raise HTTPException(
@@ -242,19 +190,20 @@ async def create_user(
             detail=f"Email '{body.email}' is already registered.",
         )
 
-    first_name, last_name = split_full_name(body.full_name)
-    local_part = body.email.split("@", 1)[0]
-    username = await generate_unique_username(session, local_part)
-    plaintext_password = generate_password()
+    existing_username = (await session.exec(select(User).where(User.username == body.username))).first()
+    if existing_username:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Username '{body.username}' is already registered.",
+        )
 
     user = User(
         tenant_id=tenant_id,
         role_id=body.role_id,
-        branch_id=branch_id,
         email=body.email,
-        username=username,
-        hashed_password=_pwd.hash(plaintext_password),
-        full_name=body.full_name,
+        username=body.username,
+        hashed_password=_pwd.hash(body.password),
+        full_name=f"{body.first_name} {body.last_name}".strip(),
         status=UserStatus.ACTIVE,
         is_active=True,
     )
@@ -263,23 +212,18 @@ async def create_user(
 
     profile = UserProfile(
         user_id=user.id,
-        first_name=first_name,
-        last_name=last_name,
+        first_name=body.first_name,
+        last_name=body.last_name,
+        phone=body.phone,
+        department=body.department,
+        employee_id=body.employee_id,
+        designation=body.designation,
+        date_of_joining=body.date_of_joining,
     )
     session.add(profile)
     await session.commit()
     await session.refresh(user)
     await session.refresh(profile)
-
-    await send_credentials_email(
-        to_email=user.email,
-        full_name=user.full_name,
-        username=username,
-        password=plaintext_password,
-        role_label=role.name,
-        tenant_name=tenant.name,
-    )
-
     return to_user_read(user, profile)
 
 
@@ -347,15 +291,9 @@ async def update_user(
         if role is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Role '{body.role_id}' not found.")
 
-    if body.branch_id is not None:
-        branch = await session.get(Branch, body.branch_id)
-        _verify_branch(branch, tenant_id, body.branch_id)
-
     # Update base fields on User
     if body.role_id is not None:
         user.role_id = body.role_id
-    if body.branch_id is not None:
-        user.branch_id = body.branch_id
     if body.status is not None:
         user.status = body.status
         user.is_active = (body.status == UserStatus.ACTIVE)
