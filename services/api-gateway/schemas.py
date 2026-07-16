@@ -271,6 +271,13 @@ class QuoteListItem(BaseModel):
     rate_version: str
     created_at: datetime
 
+    # Who brought the customer in — flattened for easy display on the quotation
+    # folder header. Null when the customer has no recorded source.
+    acquisition_source_id: Optional[UUID] = None
+    acquisition_source_name: Optional[str] = None
+    acquisition_source_type: Optional[str] = None
+    acquisition_source_partner: Optional[str] = None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /quotes/{quote_id} — full detail behind a single quotation row

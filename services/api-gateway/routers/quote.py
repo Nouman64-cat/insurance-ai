@@ -25,7 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from dependencies import get_tenant_id
 from schemas import QuoteDetail, QuoteListItem, QuoteRequest, QuoteResponse
-from shared.models.core import Customer, InsurancePlan, InsuranceTypeEnum, Policy, PremiumQuote, Tenant
+from shared.models.core import AcquisitionSource, Customer, InsurancePlan, InsuranceTypeEnum, Policy, PremiumQuote, Tenant
 from shared.pricing.calculator import calculate_premium
 
 router = APIRouter(tags=["Quotation"])
@@ -41,9 +41,10 @@ async def list_quotes(
     session: AsyncSession = Depends(get_session),
 ) -> list[QuoteListItem]:
     stmt = (
-        select(PremiumQuote, Policy, Customer)
+        select(PremiumQuote, Policy, Customer, AcquisitionSource)
         .join(Policy, PremiumQuote.policy_id == Policy.id)
         .join(Customer, Policy.customer_id == Customer.id)
+        .outerjoin(AcquisitionSource, Customer.acquisition_source_id == AcquisitionSource.id)
         .where(PremiumQuote.tenant_id == tenant_id)
         .order_by(PremiumQuote.created_at.desc())
     )
@@ -65,8 +66,12 @@ async def list_quotes(
             total_premium=quote.total_premium,
             rate_version=quote.rate_version,
             created_at=quote.created_at,
+            acquisition_source_id=source.id if source else None,
+            acquisition_source_name=source.name if source else None,
+            acquisition_source_type=source.source_type.value if source else None,
+            acquisition_source_partner=source.partner_name if source else None,
         )
-        for quote, policy, customer in rows
+        for quote, policy, customer, source in rows
     ]
 
 
@@ -81,9 +86,10 @@ async def get_quote_detail(
     session: AsyncSession = Depends(get_session),
 ) -> QuoteDetail:
     stmt = (
-        select(PremiumQuote, Policy, Customer)
+        select(PremiumQuote, Policy, Customer, AcquisitionSource)
         .join(Policy, PremiumQuote.policy_id == Policy.id)
         .join(Customer, Policy.customer_id == Customer.id)
+        .outerjoin(AcquisitionSource, Customer.acquisition_source_id == AcquisitionSource.id)
         .where(PremiumQuote.id == quote_id, PremiumQuote.tenant_id == tenant_id)
     )
     row = (await session.exec(stmt)).first()
@@ -92,7 +98,7 @@ async def get_quote_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Quote '{quote_id}' not found for this tenant.",
         )
-    quote, policy, customer = row
+    quote, policy, customer, source = row
 
     bmi: float | None = None
     if customer.height_cm > 0:
@@ -114,6 +120,10 @@ async def get_quote_detail(
         total_premium=quote.total_premium,
         rate_version=quote.rate_version,
         created_at=quote.created_at,
+        acquisition_source_id=source.id if source else None,
+        acquisition_source_name=source.name if source else None,
+        acquisition_source_type=source.source_type.value if source else None,
+        acquisition_source_partner=source.partner_name if source else None,
         customer_dob=customer.dob,
         customer_age=_age_from_dob(customer.dob),
         customer_gender=customer.gender,

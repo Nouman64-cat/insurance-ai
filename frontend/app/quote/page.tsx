@@ -20,6 +20,15 @@ const INSURANCE_TYPE_LABELS: Record<string, string> = {
   HEALTH_CASH: "Hospital Cash / Health Plan",
 };
 
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  AGENT: "Agent",
+  BROKER: "Broker",
+  BANCASSURANCE: "Bancassurance",
+  CORPORATE_AGENT: "Corporate Agent",
+  DIRECT: "Direct",
+  DIGITAL: "Digital",
+};
+
 function formatPKR(n: number): string {
   return `Rs. ${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
@@ -287,6 +296,18 @@ export default function QuotePage() {
                       <div>
                         <h3 className="text-base font-bold text-slate-900">{group.customer_name}</h3>
                         <p className="text-xs text-slate-500 font-mono mt-0.5">{group.customer_cnic}</p>
+                        {group.quotes[0]?.acquisition_source_name && (
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            Brought by{" "}
+                            <span className="font-semibold text-slate-600">{group.quotes[0].acquisition_source_name}</span>
+                            <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                              {SOURCE_TYPE_LABELS[group.quotes[0].acquisition_source_type ?? ""] ?? group.quotes[0].acquisition_source_type}
+                            </span>
+                            {group.quotes[0].acquisition_source_partner && (
+                              <span className="ml-1 text-slate-400">· {group.quotes[0].acquisition_source_partner}</span>
+                            )}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-3">
@@ -543,6 +564,12 @@ function QuoteDetailModal({
                   label="Height / Weight"
                   value={`${detail.customer_height_cm} cm / ${detail.customer_weight_kg} kg${detail.customer_bmi ? ` (BMI ${detail.customer_bmi})` : ""}`}
                 />
+                {detail.acquisition_source_name && (
+                  <DetailField
+                    label="Brought By"
+                    value={`${detail.acquisition_source_name} (${SOURCE_TYPE_LABELS[detail.acquisition_source_type ?? ""] ?? detail.acquisition_source_type ?? ""})${detail.acquisition_source_partner ? ` — ${detail.acquisition_source_partner}` : ""}`}
+                  />
+                )}
               </div>
             </section>
 

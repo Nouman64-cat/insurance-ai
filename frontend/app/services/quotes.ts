@@ -15,6 +15,10 @@ export interface QuoteListItem {
   total_premium: number;
   rate_version: string;
   created_at: string;
+  acquisition_source_id?: string | null;
+  acquisition_source_name?: string | null;
+  acquisition_source_type?: string | null;
+  acquisition_source_partner?: string | null;
 }
 
 export interface QuoteDetail extends QuoteListItem {
