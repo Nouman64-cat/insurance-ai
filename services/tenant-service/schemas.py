@@ -12,6 +12,7 @@ from shared.models.core import (
     PlanStatusEnum,
     PolicyStatusEnum,
     BranchTypeEnum,
+    MaritalStatus,
 )
 
 
@@ -298,6 +299,7 @@ class MaritalStatus(str, Enum):
     WIDOWED  = "Widowed"
 
 class CustomerCreate(BaseModel):
+class ApplicantCreate(BaseModel):
     cnic:             str          # e.g. "35201-1234567-1"
     first_name:       str
     last_name:        str
@@ -344,6 +346,7 @@ class CustomerRead(BaseModel):
     name:             str
     dob:              date
     gender:           Gender
+    marital_status:   Optional[MaritalStatus] = None
     occupation:       str
     declared_income:  float
     is_smoker:        bool

@@ -473,6 +473,13 @@ MIGRATIONS: list[tuple[str, str]] = [
     (
         "v16c — add fraud_reasons to risk_assessments",
         "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS fraud_reasons JSON",
+    (
+        "v16a-enum — add MaritalStatus",
+        "DO $$ BEGIN CREATE TYPE maritalstatus AS ENUM ('Single', 'Married', 'Divorced', 'Widowed'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    ),
+    (
+        "v16b — add marital_status to applicants",
+        "ALTER TABLE applicants ADD COLUMN IF NOT EXISTS marital_status maritalstatus",
     ),
 ]
 

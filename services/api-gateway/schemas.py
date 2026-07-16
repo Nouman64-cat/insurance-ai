@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from shared.models.core import Gender, InsuranceTypeEnum, UserStatus
+from shared.models.core import Gender, InsuranceTypeEnum, UserStatus, MaritalStatus
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -107,6 +107,7 @@ class CustomerIn(BaseModel):
     name: str = Field(..., examples=["Muhammad Ali Khan"])
     dob: date = Field(..., description="Date of birth (YYYY-MM-DD).", examples=["1985-06-15"])
     gender: Gender = Field(..., examples=["Male"])
+    marital_status: Optional[MaritalStatus] = Field(default=None, examples=["Married"])
     occupation: str = Field(..., examples=["Software Engineer"])
     declared_income: float = Field(
         ..., ge=0, description="Annual declared income in PKR.", examples=[1200000]
@@ -206,6 +207,7 @@ class QuoteCustomerIn(BaseModel):
     name: str = Field(..., examples=["Muhammad Ali Khan"])
     dob: date = Field(..., description="Date of birth (YYYY-MM-DD).", examples=["1990-04-01"])
     gender: Gender = Field(..., examples=["Male"])
+    marital_status: Optional[MaritalStatus] = Field(default=None, examples=["Married"])
     occupation: str = Field(..., examples=["Software Engineer"])
     monthly_income: float = Field(
         ..., gt=0, description="Gross monthly salary in PKR — annualized (x12) server-side.", examples=[250000]
