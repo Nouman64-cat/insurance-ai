@@ -991,7 +991,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
         </div>
 
         {/* Action buttons */}
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        {/* <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
           <button
             onClick={() => overrideStatus("Pending Documents")}
             disabled={overriding !== null}
@@ -1013,7 +1013,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
           >
             {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
           </button>
-        </div>
+        </div> */}
       </div>
 
       {/* ── Plan switcher (multi-plan underwriting group) ─────────────────── */}
@@ -1280,7 +1280,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {effStatus === "streaming" ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
-                    {effStatus === "streaming" ? "Re-running…" : "Re-run Underwriting"}
+                    {/* {effStatus === "streaming" ? "Re-running…" : "Re-run Underwriting"} */}
                   </button>
                 </div>
 
