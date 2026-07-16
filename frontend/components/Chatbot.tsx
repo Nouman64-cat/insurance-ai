@@ -2,12 +2,17 @@
 
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
-import { VoiceOverlay } from "./VoiceOverlay";
+import VoiceOverlay from "./VoiceOverlay";
+import { useRouter } from "next/navigation";
+import api from "../app/services/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Message {
-  role: "user" | "assistant";
-  content: string;
+  role: "user" | "assistant" | "tool";
+  content: string | null;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: any[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -70,6 +75,7 @@ function TypingIndicator() {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function Chatbot() {
+  const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
@@ -81,6 +87,84 @@ export function Chatbot() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  // ── Tool Execution Helper ──────────────────────────────────────────────────
+  const executeLocalTool = async (name: string, argsString: string) => {
+    let args: any = {};
+    try { args = typeof argsString === "string" ? JSON.parse(argsString) : argsString; } catch {}
+    
+    let result: any = { success: false, message: "Unknown function" };
+    const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+    console.log(`[Chatbot] Executing tool: ${name}`, args);
+
+    try {
+      if (name === "navigate_to_page") {
+        router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
+        result = { success: true, message: `Navigating to ${args.page_name}` };
+      } 
+      else if (name === "add_applicant") {
+        const res = await api.post(`/tenants/${tenantId}/applicants`, {
+           first_name: args.first_name,
+           last_name: args.last_name,
+           cnic: args.cnic,
+           date_of_birth: args.date_of_birth,
+           gender: args.gender,
+           occupation: args.occupation,
+           declared_income: args.declared_income,
+           is_smoker: false,
+           height_cm: 170,
+           weight_kg: 70,
+           details: {}
+        });
+        result = { success: true, applicant_id: res.data.id, message: "Applicant added successfully." };
+      }
+      else if (name === "delete_applicant") {
+        const list = await api.get(`/tenants/${tenantId}/applicants`);
+        const app = list.data.find((a: any) => 
+          (args.cnic && a.cnic === args.cnic) || 
+          (args.name && a.name.toLowerCase().includes(args.name.toLowerCase()))
+        );
+        if (!app) throw new Error("Applicant not found");
+        await api.delete(`/tenants/${tenantId}/applicants/${app.id}`);
+        result = { success: true, message: `Applicant ${app.name} deleted.` };
+      }
+      else if (name === "get_case_details") {
+        const list = await api.get(`/tenants/${tenantId}/cases`);
+        const c = list.data.find((c: any) => 
+          (args.case_number && c.caseNumber === args.case_number) || 
+          (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
+        );
+        if (!c) throw new Error("Case not found");
+        result = { 
+          success: true, 
+          case_number: c.caseNumber, 
+          status: c.caseStatus, 
+          applicant: c.applicant_name,
+          ai_decision: c.latest_ai_decision || "Pending",
+          product: c.product_name
+        };
+      }
+      else if (name === "run_risk_assessment") {
+        const list = await api.get(`/tenants/${tenantId}/cases`);
+        const c = list.data.find((c: any) => 
+          (args.case_number && c.caseNumber === args.case_number) || 
+          (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
+        );
+        if (!c) throw new Error("Case not found");
+        
+        const detailRes = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`);
+        const { applicant, policy } = detailRes.data;
+        if (!applicant || !policy) throw new Error("Missing applicant or policy details to run assessment.");
+        
+        await api.post(`/evaluate`, { applicant, policy, case_id: c.caseld });
+        result = { success: true, message: "Underwriting evaluation triggered in the background. It will be ready in a few moments." };
+      }
+    } catch (e: any) {
+      console.error(`[Chatbot] Tool execution error [${name}]:`, e);
+      result = { success: false, error: e.response?.data?.detail || e.message || "Failed to execute function." };
+    }
+    return JSON.stringify(result);
+  };
 
   // Auto-scroll
   useEffect(() => {
@@ -95,22 +179,52 @@ export function Chatbot() {
     }
   }, [input]);
 
-  // ── Scenario 1: Text → Groq → Text ─────────────────────────────────────────
+  // ── Scenario 1 & 2 Core Chat Loop ──────────────────────────────────────────
   const sendText = useCallback(async (text: string) => {
     if (!text.trim() || isLoading) return;
     const userMsg: Message = { role: "user", content: text.trim() };
     setMessages(prev => [...prev, userMsg]);
     setInput("");
     setIsLoading(true);
+
+    let currentMessages = [...messages, userMsg];
+
     try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: [...messages, userMsg] }),
-      });
-      if (!res.ok) throw new Error("Chat API failed");
-      const data = await res.json();
-      setMessages(prev => [...prev, { role: "assistant", content: data.message }]);
+      while (true) {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: currentMessages }),
+        });
+        if (!res.ok) throw new Error("Chat API failed");
+        const data = await res.json();
+        
+        const assistantMsg: Message = { 
+          role: "assistant", 
+          content: data.message, 
+          tool_calls: data.tool_calls 
+        };
+        currentMessages = [...currentMessages, assistantMsg];
+        setMessages(currentMessages);
+
+        // If no tools were called, the loop is finished.
+        if (!data.tool_calls || data.tool_calls.length === 0) {
+          break;
+        }
+
+        // Execute tools
+        for (const tc of data.tool_calls) {
+          const resultStr = await executeLocalTool(tc.function.name, tc.function.arguments);
+          const toolMsg: Message = {
+            role: "tool",
+            tool_call_id: tc.id,
+            name: tc.function.name,
+            content: resultStr
+          };
+          currentMessages = [...currentMessages, toolMsg];
+        }
+        setMessages(currentMessages);
+      }
     } catch {
       setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Error connecting to the server. Please try again." }]);
     } finally {
@@ -219,21 +333,24 @@ export function Chatbot() {
 
           {/* ── Messages ────────────────────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50/60 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
-            {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                {m.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-full overflow-hidden mr-2 mt-1 flex-shrink-0">
-                    <img src="https://raw.githubusercontent.com/Zynaly/City-surveillance-Agent-Twilio-Deepgram-/main/static/roboi.jpg" alt="Sara" className="w-full h-full object-cover" />
+            {messages.map((m, i) => {
+              if (m.role === "tool" || (m.role === "assistant" && !m.content)) return null;
+              return (
+                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  {m.role === "assistant" && (
+                    <div className="w-7 h-7 rounded-full overflow-hidden mr-2 mt-1 flex-shrink-0">
+                      <img src="https://raw.githubusercontent.com/Zynaly/City-surveillance-Agent-Twilio-Deepgram-/main/static/roboi.jpg" alt="Sara" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  <div className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed rounded-2xl ${m.role === "user" ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-sm" : "bg-white text-slate-800 rounded-bl-sm shadow-sm ring-1 ring-slate-100"}`}>
+                    {m.role === "user"
+                      ? <p className="whitespace-pre-wrap">{m.content}</p>
+                      : <div className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0"><ReactMarkdown>{m.content || ""}</ReactMarkdown></div>
+                    }
                   </div>
-                )}
-                <div className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed rounded-2xl ${m.role === "user" ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-sm" : "bg-white text-slate-800 rounded-bl-sm shadow-sm ring-1 ring-slate-100"}`}>
-                  {m.role === "user"
-                    ? <p className="whitespace-pre-wrap">{m.content}</p>
-                    : <div className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0"><ReactMarkdown>{m.content}</ReactMarkdown></div>
-                  }
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {isLoading && <TypingIndicator />}
             <div ref={bottomRef} />
           </div>

@@ -1,8 +1,19 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import api from "../app/services/api";
 
-const SYSTEM_PROMPT = `Your name is Sara, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational since this is a voice interface. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.`;
+const SYSTEM_PROMPT = `Your name is Sara, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational since this is a voice interface. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
+
+CRITICAL INSTRUCTION: You have access to system tools (functions) to perform real actions. You MUST use these tools when a user asks you to:
+1. Navigate to a page (use navigate_to_page)
+2. Add a new applicant (use add_applicant)
+3. Delete an applicant (use delete_applicant)
+4. Get details about a case or applicant (use get_case_details)
+5. Run an underwriting risk assessment (use run_risk_assessment)
+
+DO NOT hallucinate or pretend to perform these actions. If you need more information to execute a tool (like a CNIC, Date of Birth, etc.), ask the user for it first, and once you have it, EXECUTE the tool call. Never just output text saying you updated it without calling the function!`;
 
 type Status = "connecting" | "listening" | "speaking" | "error";
 
@@ -10,7 +21,8 @@ interface Caption { role: "user" | "agent"; text: string; }
 
 interface Props { onClose: () => void; }
 
-export function VoiceOverlay({ onClose }: Props) {
+export default function VoiceOverlay({ onClose }: Props) {
+  const router = useRouter();
   const [status, setStatus] = useState<Status>("connecting");
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
@@ -128,6 +140,90 @@ export function VoiceOverlay({ onClose }: Props) {
                       headers: { Authorization: `Bearer ${groqApiKey}` }
                     },
                     prompt: SYSTEM_PROMPT,
+                    functions: [
+                      {
+                        name: "navigate_to_page",
+                        description: "Navigates the user to a specific section of the application.",
+                        parameters: {
+                          type: "object",
+                          properties: {
+                            page_name: { 
+                              type: "string", 
+                              enum: [
+                                "dashboard", 
+                                "underwriting", 
+                                "cases", 
+                                "artifacts", 
+                                "quote", 
+                                "live-evaluation", 
+                                "case-summarizer", 
+                                "assessments", 
+                                "admin/applicants", 
+                                "admin/organizations",
+                                "super-admin/tenants",
+                                "super-admin/admins",
+                                "super-admin/branches",
+                                "super-admin/tokens",
+                                "admin/users",
+                                "profile"
+                              ],
+                              description: "The path of the page to navigate to (e.g. 'underwriting' for the Underwriting page, 'cases' for Cases, etc.)"
+                            }
+                          },
+                          required: ["page_name"]
+                        }
+                      },
+                      {
+                        name: "add_applicant",
+                        description: "Adds a new applicant to the system.",
+                        parameters: {
+                          type: "object",
+                          properties: {
+                            first_name: { type: "string" },
+                            last_name: { type: "string" },
+                            cnic: { type: "string", description: "Format: XXXXX-XXXXXXX-X" },
+                            date_of_birth: { type: "string", description: "YYYY-MM-DD" },
+                            gender: { type: "string", enum: ["Male", "Female", "Other"] },
+                            occupation: { type: "string" },
+                            declared_income: { type: "number" }
+                          },
+                          required: ["first_name", "last_name", "cnic", "date_of_birth", "gender", "occupation", "declared_income"]
+                        }
+                      },
+                      {
+                        name: "delete_applicant",
+                        description: "Deletes an applicant from the system.",
+                        parameters: {
+                          type: "object",
+                          properties: {
+                            cnic: { type: "string" },
+                            name: { type: "string" }
+                          }
+                        }
+                      },
+                      {
+                        name: "run_risk_assessment",
+                        description: "Runs the AI underwriting risk assessment for a specific case.",
+                        parameters: {
+                          type: "object",
+                          properties: {
+                            applicant_name: { type: "string" },
+                            case_number: { type: "string" }
+                          }
+                        }
+                      },
+                      {
+                        name: "get_case_details",
+                        description: "Fetches the status and details of a specific case or applicant.",
+                        parameters: {
+                          type: "object",
+                          properties: {
+                            applicant_name: { type: "string" },
+                            case_number: { type: "string" }
+                          }
+                        }
+                      }
+                    ]
                   },
                   speak: { provider: { type: "deepgram", model: "aura-asteria-en" } },
                 },
@@ -186,6 +282,11 @@ export function VoiceOverlay({ onClose }: Props) {
                 setCaptions(p => [...p, { role: "agent", text: msg.content }]);
               }
               break;
+              
+            case "FunctionCallRequest":
+              console.log("Deepgram FunctionCallRequest:", msg);
+              handleFunctionCall(msg, ws, router);
+              break;
 
             case "Error":
               setErrorMsg(msg.message || "Agent error");
@@ -218,6 +319,97 @@ export function VoiceOverlay({ onClose }: Props) {
     init();
     return () => teardown();
   }, []);
+
+  const handleFunctionCall = async (msg: any, ws: WebSocket, router: any) => {
+    if (!msg.functions || !Array.isArray(msg.functions)) return;
+
+    for (const fn of msg.functions) {
+      const { id, name, arguments: argsString } = fn;
+      let args: any = {};
+      try { args = typeof argsString === "string" ? JSON.parse(argsString) : argsString; } catch {}
+      
+      let result: any = { success: false, message: "Unknown function" };
+      const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+
+      console.log(`Executing tool: ${name}`, args);
+
+      try {
+        if (name === "navigate_to_page") {
+          router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
+          result = { success: true, message: `Navigating to ${args.page_name}` };
+        } 
+        else if (name === "add_applicant") {
+          const res = await api.post(`/tenants/${tenantId}/applicants`, {
+             first_name: args.first_name,
+             last_name: args.last_name,
+             cnic: args.cnic,
+             date_of_birth: args.date_of_birth,
+             gender: args.gender,
+             occupation: args.occupation,
+             declared_income: args.declared_income,
+             is_smoker: false,
+             height_cm: 170,
+             weight_kg: 70,
+             details: {}
+          });
+          result = { success: true, applicant_id: res.data.id, message: "Applicant added successfully." };
+        }
+        else if (name === "delete_applicant") {
+          const list = await api.get(`/tenants/${tenantId}/applicants`);
+          const app = list.data.find((a: any) => 
+            (args.cnic && a.cnic === args.cnic) || 
+            (args.name && a.name.toLowerCase().includes(args.name.toLowerCase()))
+          );
+          if (!app) throw new Error("Applicant not found");
+          await api.delete(`/tenants/${tenantId}/applicants/${app.id}`);
+          result = { success: true, message: `Applicant ${app.name} deleted.` };
+        }
+        else if (name === "get_case_details") {
+          const list = await api.get(`/tenants/${tenantId}/cases`);
+          const c = list.data.find((c: any) => 
+            (args.case_number && c.caseNumber === args.case_number) || 
+            (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
+          );
+          if (!c) throw new Error("Case not found");
+          result = { 
+            success: true, 
+            case_number: c.caseNumber, 
+            status: c.caseStatus, 
+            applicant: c.applicant_name,
+            ai_decision: c.latest_ai_decision || "Pending",
+            product: c.product_name
+          };
+        }
+        else if (name === "run_risk_assessment") {
+          const list = await api.get(`/tenants/${tenantId}/cases`);
+          const c = list.data.find((c: any) => 
+            (args.case_number && c.caseNumber === args.case_number) || 
+            (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
+          );
+          if (!c) throw new Error("Case not found");
+          
+          const detailRes = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`);
+          const { applicant, policy } = detailRes.data;
+          if (!applicant || !policy) throw new Error("Missing applicant or policy details to run assessment.");
+          
+          await api.post(`/evaluate`, { applicant, policy, case_id: c.caseld });
+          result = { success: true, message: "Underwriting evaluation triggered in the background. It will be ready in a few moments." };
+        }
+      } catch (e: any) {
+        console.error(`Tool execution error [${name}]:`, e);
+        result = { success: false, error: e.response?.data?.detail || e.message || "Failed to execute function." };
+      }
+
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "FunctionCallResponse",
+          id: id,
+          name: name,
+          content: JSON.stringify(result)
+        }));
+      }
+    }
+  };
 
   // ── Plasma Orb ─────────────────────────────────────────────────────────────
   const colors = {
