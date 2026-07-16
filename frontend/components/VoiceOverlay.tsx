@@ -50,7 +50,7 @@ export default function VoiceOverlay({ onClose }: Props) {
   const fmt = (s: number) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 
   const clearAudio = (ctx?: AudioContext | null) => {
-    sourcesRef.current.forEach(s => { try { s.stop(); } catch (_) {} });
+    sourcesRef.current.forEach(s => { try { s.stop(); } catch (_) { } });
     sourcesRef.current = [];
     if (ctx) nextTimeRef.current = ctx.currentTime;
   };
@@ -61,8 +61,8 @@ export default function VoiceOverlay({ onClose }: Props) {
     procRef.current?.disconnect();
     if (wsRef.current?.readyState === WebSocket.OPEN) wsRef.current.close(1000);
     wsRef.current = null;
-    if (inCtxRef.current) { inCtxRef.current.close().catch(() => {}); inCtxRef.current = null; }
-    if (outCtxRef.current) { outCtxRef.current.close().catch(() => {}); outCtxRef.current = null; }
+    if (inCtxRef.current) { inCtxRef.current.close().catch(() => { }); inCtxRef.current = null; }
+    if (outCtxRef.current) { outCtxRef.current.close().catch(() => { }); outCtxRef.current = null; }
     if (micRef.current) { micRef.current.getTracks().forEach(t => t.stop()); micRef.current = null; }
   };
 
@@ -132,12 +132,8 @@ export default function VoiceOverlay({ onClose }: Props) {
                   listen: { provider: { type: "deepgram", model: "nova-2" } },
                   think: {
                     provider: {
-                      type: "groq",
-                      model: "llama-3.3-70b-versatile"
-                    },
-                    endpoint: {
-                      url: "https://api.groq.com/openai/v1/chat/completions",
-                      headers: { Authorization: `Bearer ${groqApiKey}` }
+                      type: "open_ai",
+                      model: "gpt-4o-mini"
                     },
                     prompt: SYSTEM_PROMPT,
                     functions: [
@@ -147,18 +143,18 @@ export default function VoiceOverlay({ onClose }: Props) {
                         parameters: {
                           type: "object",
                           properties: {
-                            page_name: { 
-                              type: "string", 
+                            page_name: {
+                              type: "string",
                               enum: [
-                                "dashboard", 
-                                "underwriting", 
-                                "cases", 
-                                "artifacts", 
-                                "quote", 
-                                "live-evaluation", 
-                                "case-summarizer", 
-                                "assessments", 
-                                "admin/applicants", 
+                                "dashboard",
+                                "underwriting",
+                                "cases",
+                                "artifacts",
+                                "quote",
+                                "live-evaluation",
+                                "case-summarizer",
+                                "assessments",
+                                "admin/customers",
                                 "admin/organizations",
                                 "super-admin/tenants",
                                 "super-admin/admins",
@@ -174,8 +170,8 @@ export default function VoiceOverlay({ onClose }: Props) {
                         }
                       },
                       {
-                        name: "add_applicant",
-                        description: "Adds a new applicant to the system.",
+                        name: "add_customer",
+                        description: "Adds a new customer to the system.",
                         parameters: {
                           type: "object",
                           properties: {
@@ -191,8 +187,8 @@ export default function VoiceOverlay({ onClose }: Props) {
                         }
                       },
                       {
-                        name: "delete_applicant",
-                        description: "Deletes an applicant from the system.",
+                        name: "delete_customer",
+                        description: "Deletes a customer from the system.",
                         parameters: {
                           type: "object",
                           properties: {
@@ -282,7 +278,7 @@ export default function VoiceOverlay({ onClose }: Props) {
                 setCaptions(p => [...p, { role: "agent", text: msg.content }]);
               }
               break;
-              
+
             case "FunctionCallRequest":
               console.log("Deepgram FunctionCallRequest:", msg);
               handleFunctionCall(msg, ws, router);
@@ -326,8 +322,8 @@ export default function VoiceOverlay({ onClose }: Props) {
     for (const fn of msg.functions) {
       const { id, name, arguments: argsString } = fn;
       let args: any = {};
-      try { args = typeof argsString === "string" ? JSON.parse(argsString) : argsString; } catch {}
-      
+      try { args = typeof argsString === "string" ? JSON.parse(argsString) : argsString; } catch { }
+
       let result: any = { success: false, message: "Unknown function" };
       const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
 
@@ -337,44 +333,44 @@ export default function VoiceOverlay({ onClose }: Props) {
         if (name === "navigate_to_page") {
           router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
           result = { success: true, message: `Navigating to ${args.page_name}` };
-        } 
-        else if (name === "add_applicant") {
-          const res = await api.post(`/tenants/${tenantId}/applicants`, {
-             first_name: args.first_name,
-             last_name: args.last_name,
-             cnic: args.cnic,
-             date_of_birth: args.date_of_birth,
-             gender: args.gender,
-             occupation: args.occupation,
-             declared_income: args.declared_income,
-             is_smoker: false,
-             height_cm: 170,
-             weight_kg: 70,
-             details: {}
-          });
-          result = { success: true, applicant_id: res.data.id, message: "Applicant added successfully." };
         }
-        else if (name === "delete_applicant") {
-          const list = await api.get(`/tenants/${tenantId}/applicants`);
-          const app = list.data.find((a: any) => 
-            (args.cnic && a.cnic === args.cnic) || 
+        else if (name === "add_customer") {
+          const res = await api.post(`/tenants/${tenantId}/customers`, {
+            first_name: args.first_name,
+            last_name: args.last_name,
+            cnic: args.cnic,
+            date_of_birth: args.date_of_birth,
+            gender: args.gender,
+            occupation: args.occupation,
+            declared_income: args.declared_income,
+            is_smoker: false,
+            height_cm: 170,
+            weight_kg: 70,
+            details: {}
+          });
+          result = { success: true, customer_id: res.data.id, message: "Customer added successfully." };
+        }
+        else if (name === "delete_customer") {
+          const list = await api.get(`/tenants/${tenantId}/customers`);
+          const c = list.data.find((a: any) =>
+            (args.cnic && a.cnic === args.cnic) ||
             (args.name && a.name.toLowerCase().includes(args.name.toLowerCase()))
           );
-          if (!app) throw new Error("Applicant not found");
-          await api.delete(`/tenants/${tenantId}/applicants/${app.id}`);
-          result = { success: true, message: `Applicant ${app.name} deleted.` };
+          if (!c) throw new Error("Customer not found");
+          await api.delete(`/tenants/${tenantId}/customers/${c.id}`);
+          result = { success: true, message: `Customer ${c.name} deleted.` };
         }
         else if (name === "get_case_details") {
           const list = await api.get(`/tenants/${tenantId}/cases`);
-          const c = list.data.find((c: any) => 
-            (args.case_number && c.caseNumber === args.case_number) || 
+          const c = list.data.find((c: any) =>
+            (args.case_number && c.caseNumber === args.case_number) ||
             (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
           );
           if (!c) throw new Error("Case not found");
-          result = { 
-            success: true, 
-            case_number: c.caseNumber, 
-            status: c.caseStatus, 
+          result = {
+            success: true,
+            case_number: c.caseNumber,
+            status: c.caseStatus,
             applicant: c.applicant_name,
             ai_decision: c.latest_ai_decision || "Pending",
             product: c.product_name
@@ -382,16 +378,16 @@ export default function VoiceOverlay({ onClose }: Props) {
         }
         else if (name === "run_risk_assessment") {
           const list = await api.get(`/tenants/${tenantId}/cases`);
-          const c = list.data.find((c: any) => 
-            (args.case_number && c.caseNumber === args.case_number) || 
+          const c = list.data.find((c: any) =>
+            (args.case_number && c.caseNumber === args.case_number) ||
             (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
           );
           if (!c) throw new Error("Case not found");
-          
+
           const detailRes = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`);
           const { applicant, policy } = detailRes.data;
           if (!applicant || !policy) throw new Error("Missing applicant or policy details to run assessment.");
-          
+
           await api.post(`/evaluate`, { applicant, policy, case_id: c.caseld });
           result = { success: true, message: "Underwriting evaluation triggered in the background. It will be ready in a few moments." };
         }
@@ -494,12 +490,12 @@ export default function VoiceOverlay({ onClose }: Props) {
                   boxShadow: `0 0 100px ${c.glow}, inset 0 0 50px rgba(0,0,0,0.5)`,
                   transform: status === "speaking" ? "scale(1.1)" : "scale(1)",
                 }}>
-                
+
                 {/* Sara Avatar Image (Massive and bright) */}
                 <div className="absolute inset-0 rounded-full overflow-hidden z-0">
                   <img src="https://raw.githubusercontent.com/Zynaly/City-surveillance-Agent-Twilio-Deepgram-/main/static/roboi.jpg" alt="Sara" className={`w-full h-full object-cover transition-opacity duration-500 opacity-100 ${status === "speaking" ? "scale-105" : "scale-100"}`} />
                 </div>
-                
+
                 {/* Subtle gradient overlay to blend image with plasma */}
                 <div className={`absolute inset-0 bg-gradient-to-br ${c.core} mix-blend-overlay opacity-30 z-0`} />
 
@@ -532,8 +528,8 @@ export default function VoiceOverlay({ onClose }: Props) {
           {/* Error state - Muted glass instead of harsh red */}
           {status === "error" && (
             <div className="w-36 h-36 rounded-full bg-black/40 backdrop-blur-xl border border-rose-500/30 flex items-center justify-center shadow-[0_0_50px_rgba(225,29,72,0.15)] relative overflow-hidden">
-               <div className="absolute inset-0 bg-gradient-to-br from-rose-500/10 to-transparent" />
-               <div className="absolute top-2 left-6 w-16 h-8 bg-white/10 rounded-[100%] blur-[2px] transform -rotate-12" />
+              <div className="absolute inset-0 bg-gradient-to-br from-rose-500/10 to-transparent" />
+              <div className="absolute top-2 left-6 w-16 h-8 bg-white/10 rounded-[100%] blur-[2px] transform -rotate-12" />
               <svg className="w-12 h-12 text-rose-400/80 relative z-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
@@ -543,11 +539,10 @@ export default function VoiceOverlay({ onClose }: Props) {
 
         {/* Status label */}
         <div className="text-center min-h-[40px] flex flex-col items-center justify-center gap-1">
-          <p className={`text-[13px] font-medium tracking-wide transition-all duration-500 ${
-            status === "speaking" ? "text-fuchsia-200 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]" :
-            status === "listening" ? "text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" :
-            status === "connecting" ? "text-indigo-200/80 animate-pulse" : "text-rose-300/80"
-          }`}>
+          <p className={`text-[13px] font-medium tracking-wide transition-all duration-500 ${status === "speaking" ? "text-fuchsia-200 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]" :
+              status === "listening" ? "text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" :
+                status === "connecting" ? "text-indigo-200/80 animate-pulse" : "text-rose-300/80"
+            }`}>
             {status === "connecting" && "Connecting to AI Agent…"}
             {status === "listening" && "Listening — go ahead and speak"}
             {status === "speaking" && "Speaking…"}
@@ -570,11 +565,10 @@ export default function VoiceOverlay({ onClose }: Props) {
           ) : (
             captions.map((c, i) => (
               <div key={i} className={`flex ${c.role === "user" ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
-                <div className={`max-w-[90%] px-3 py-2 rounded-xl text-[12px] leading-relaxed ${
-                  c.role === "user"
+                <div className={`max-w-[90%] px-3 py-2 rounded-xl text-[12px] leading-relaxed ${c.role === "user"
                     ? "text-cyan-50 rounded-br-sm"
                     : "text-fuchsia-50 rounded-bl-sm"
-                }`}
+                  }`}
                   style={c.role === "user"
                     ? { background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.25)" }
                     : { background: "rgba(168,85,247,0.2)", border: "1px solid rgba(168,85,247,0.25)" }
@@ -607,7 +601,7 @@ export default function VoiceOverlay({ onClose }: Props) {
           {/* Subtle red hover glow instead of solid red button */}
           <div className="absolute inset-0 bg-rose-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300 blur-xl" />
           <div className="absolute inset-0 bg-gradient-to-b from-white/10 to-transparent" />
-          
+
           <svg className="w-7 h-7 text-white/80 group-hover:text-rose-400 transition-colors relative z-10" fill="currentColor" viewBox="0 0 24 24">
             <path d="M6.62 10.79a15.53 15.53 0 006.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1C10.61 21 3 13.39 3 4c0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.24 1.02l-2.21 2.2z" />
           </svg>
