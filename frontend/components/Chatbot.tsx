@@ -18,7 +18,7 @@ interface Message {
 // ─── Constants ────────────────────────────────────────────────────────────────
 const WELCOME: Message = {
   role: "assistant",
-  content: "Hello! I'm **Sara**, your AI Insurance Assistant. I can help you navigate the platform or answer any insurance questions.\n\nChoose how you'd like to interact:",
+  content: "Hello! I'm the **Insurance AI Agent**. I can help you navigate the platform or answer any insurance questions.\n\nChoose how you'd like to interact:",
 };
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
@@ -56,6 +56,16 @@ function IconChat() {
   return (
     <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+    </svg>
+  );
+}
+function IconBot({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+      <rect x="4" y="8" width="16" height="12" rx="2" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8V4M8 4h.01" />
+      <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none" />
+      <circle cx="15" cy="14" r="1" fill="currentColor" stroke="none" />
     </svg>
   );
 }
@@ -315,11 +325,11 @@ export function Chatbot() {
           {/* ── Header ──────────────────────────────────────────────────── */}
           <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 px-5 py-4 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl overflow-hidden border border-white/30 flex-shrink-0">
-                <img src="https://raw.githubusercontent.com/Zynaly/City-surveillance-Agent-Twilio-Deepgram-/main/static/roboi.jpg" alt="Sara" className="w-full h-full object-cover" />
+              <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/30 flex items-center justify-center flex-shrink-0 text-white">
+                <IconBot className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-white font-semibold text-sm leading-none">Sara</p>
+                <p className="text-white font-semibold text-sm leading-none">Insurance AI Agent</p>
                 <p className="text-indigo-200 text-[10px] uppercase tracking-widest mt-0.5 font-medium">Insurance Expert</p>
               </div>
             </div>
@@ -338,8 +348,8 @@ export function Chatbot() {
               return (
                 <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                   {m.role === "assistant" && (
-                    <div className="w-7 h-7 rounded-full overflow-hidden mr-2 mt-1 flex-shrink-0">
-                      <img src="https://raw.githubusercontent.com/Zynaly/City-surveillance-Agent-Twilio-Deepgram-/main/static/roboi.jpg" alt="Sara" className="w-full h-full object-cover" />
+                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mr-2 mt-1 flex-shrink-0 text-white">
+                      <IconBot className="w-4 h-4" />
                     </div>
                   )}
                   <div className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed rounded-2xl ${m.role === "user" ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-sm" : "bg-white text-slate-800 rounded-bl-sm shadow-sm ring-1 ring-slate-100"}`}>
@@ -410,7 +420,7 @@ export function Chatbot() {
             {/* Legend */}
             <div className="flex justify-center gap-4 mt-2 pb-0.5">
               <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                <span className="text-indigo-400">⌨</span> Text → Groq
+                <span className="text-indigo-400">⌨</span> Text → Gemini
               </span>
               <span className="text-[10px] text-slate-400 flex items-center gap-1">
                 <span className="text-rose-400">🎙</span> Voice → Text

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const SYSTEM_PROMPT = `Your name is Sara, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
+const SYSTEM_PROMPT = `Your name is Insurance AI Agent, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
 
 CRITICAL INSTRUCTION: You have access to system tools (functions) to perform real actions. You MUST use these tools when a user asks you to:
 1. Navigate to a page (use navigate_to_page)
@@ -111,6 +111,27 @@ const TOOLS = [
   }
 ];
 
+// Gemini function declarations are the OpenAI tool schema minus the `type`/
+// `function` wrapper — reuse the same TOOLS definitions above so there's one
+// source of truth for the assistant's capabilities.
+const GEMINI_FUNCTION_DECLARATIONS = TOOLS.map((t) => ({
+  name: t.function.name,
+  description: t.function.description,
+  parameters: t.function.parameters,
+}));
+
+// Map our OpenAI-style chat history to Gemini's `contents` shape. Gemini only
+// knows the "user" and "model" roles; anything that isn't an assistant turn is
+// treated as user input.
+function toGeminiContents(messages: Array<{ role: string; content: string }>) {
+  return messages
+    .filter((m) => m.role !== 'system' && typeof m.content === 'string' && m.content.length > 0)
+    .map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: m.content }],
+    }));
+}
+
 export async function POST(req: Request) {
   try {
     const { messages } = await req.json();
@@ -119,45 +140,57 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
     }
 
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey) {
-      return NextResponse.json({ error: 'GROQ_API_KEY is not configured' }, { status: 500 });
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      return NextResponse.json({ error: 'GEMINI_API_KEY is not configured' }, { status: 500 });
     }
+    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-    // Prepend the system prompt to the message history
-    const payloadMessages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...messages
-    ];
-
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${groqApiKey}`
-      },
-      body: JSON.stringify({
-        model: 'llama-3.1-8b-instant',
-        messages: payloadMessages,
-        tools: TOOLS,
-        tool_choice: "auto",
-        temperature: 0.7,
-        max_tokens: 1024,
-      })
-    });
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          contents: toGeminiContents(messages),
+          tools: [{ function_declarations: GEMINI_FUNCTION_DECLARATIONS }],
+          tool_config: { function_calling_config: { mode: 'AUTO' } },
+          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+        }),
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.text();
-      console.error('Groq API Error:', errorData);
-      return NextResponse.json({ error: 'Failed to communicate with Groq AI' }, { status: response.status });
+      console.error('Gemini API Error:', errorData);
+      return NextResponse.json({ error: 'Failed to communicate with Gemini AI' }, { status: response.status });
     }
 
     const data = await response.json();
-    const assistantMessage = data.choices[0].message;
-    
+    const parts = data.candidates?.[0]?.content?.parts ?? [];
+
+    // Flatten Gemini parts back into the OpenAI-compatible response the client
+    // already expects: a text `message` plus optional `tool_calls`.
+    let message = '';
+    const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
+    for (const part of parts) {
+      if (part.text) message += part.text;
+      if (part.functionCall) {
+        toolCalls.push({
+          id: `call_${toolCalls.length}_${part.functionCall.name}`,
+          type: 'function',
+          function: {
+            name: part.functionCall.name,
+            arguments: JSON.stringify(part.functionCall.args ?? {}),
+          },
+        });
+      }
+    }
+
     return NextResponse.json({
-      message: assistantMessage.content,
-      tool_calls: assistantMessage.tool_calls
+      message: message || null,
+      tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
     });
 
   } catch (error: any) {

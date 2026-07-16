@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "../app/services/api";
 
-const SYSTEM_PROMPT = `Your name is Sara, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational since this is a voice interface. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
+const SYSTEM_PROMPT = `Your name is Insurance AI Agent, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational since this is a voice interface. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
 
 CRITICAL INSTRUCTION: You have access to system tools (functions) to perform real actions. You MUST use these tools when a user asks you to:
 1. Navigate to a page (use navigate_to_page)
@@ -466,8 +466,13 @@ export default function VoiceOverlay({ onClose }: Props) {
               <div className="absolute inset-[20px] rounded-full border border-purple-400/10 border-l-cyan-300/50 animate-[spin_1.5s_linear_infinite]" />
               {/* Core glow */}
               <div className="absolute inset-[30px] rounded-full bg-indigo-500/20 blur-2xl animate-pulse" />
-              <div className="w-48 h-48 rounded-full shadow-[0_0_40px_rgba(255,255,255,0.1)] overflow-hidden border-2 border-indigo-500/30">
-                <img src="https://raw.githubusercontent.com/Zynaly/City-surveillance-Agent-Twilio-Deepgram-/main/static/roboi.jpg" alt="Sara" className="w-full h-full object-cover" />
+              <div className="w-48 h-48 rounded-full shadow-[0_0_40px_rgba(255,255,255,0.1)] overflow-hidden border-2 border-indigo-500/30 bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+                <svg className="w-24 h-24 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                  <rect x="4" y="8" width="16" height="12" rx="2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8V4M8 4h.01" />
+                  <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none" />
+                  <circle cx="15" cy="14" r="1" fill="currentColor" stroke="none" />
+                </svg>
               </div>
             </div>
           )}
@@ -491,9 +496,14 @@ export default function VoiceOverlay({ onClose }: Props) {
                   transform: status === "speaking" ? "scale(1.1)" : "scale(1)",
                 }}>
 
-                {/* Sara Avatar Image (Massive and bright) */}
-                <div className="absolute inset-0 rounded-full overflow-hidden z-0">
-                  <img src="https://raw.githubusercontent.com/Zynaly/City-surveillance-Agent-Twilio-Deepgram-/main/static/roboi.jpg" alt="Sara" className={`w-full h-full object-cover transition-opacity duration-500 opacity-100 ${status === "speaking" ? "scale-105" : "scale-100"}`} />
+                {/* Agent Avatar (icon-based, no photo) */}
+                <div className="absolute inset-0 rounded-full overflow-hidden z-0 bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600 flex items-center justify-center">
+                  <svg className={`w-32 h-32 text-white/90 transition-transform duration-500 ${status === "speaking" ? "scale-110" : "scale-100"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
+                    <rect x="4" y="8" width="16" height="12" rx="2" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8V4M8 4h.01" />
+                    <circle cx="9" cy="14" r="1" fill="currentColor" stroke="none" />
+                    <circle cx="15" cy="14" r="1" fill="currentColor" stroke="none" />
+                  </svg>
                 </div>
 
                 {/* Subtle gradient overlay to blend image with plasma */}
@@ -574,7 +584,7 @@ export default function VoiceOverlay({ onClose }: Props) {
                     : { background: "rgba(168,85,247,0.2)", border: "1px solid rgba(168,85,247,0.25)" }
                   }>
                   <span className={`block text-[9px] uppercase font-bold tracking-widest mb-1 ${c.role === "user" ? "text-cyan-400/70" : "text-fuchsia-400/70"}`}>
-                    {c.role === "user" ? "You" : "Sara"}
+                    {c.role === "user" ? "You" : "Insurance AI Agent"}
                   </span>
                   {c.text}
                 </div>
