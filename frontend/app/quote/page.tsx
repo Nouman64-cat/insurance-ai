@@ -273,26 +273,6 @@ export default function QuotePage() {
                   <div 
                     onClick={() => toggleFolder(group.customer_id)}
                     className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? 'bg-blue-50/50' : 'bg-white'}`}
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3 text-left">Applicant</th>
-                  <th className="px-5 py-3 text-left">Plan</th>
-                  <th className="px-5 py-3 text-right">Coverage</th>
-                  <th className="px-5 py-3 text-center">Term</th>
-                  <th className="px-5 py-3 text-right">Premium</th>
-                  {/* <th className="px-5 py-3 text-right">Risk</th> */}
-                  <th className="px-5 py-3 text-right">Total payable</th>
-                  <th className="px-5 py-3 text-left">Generated</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filtered.map((row) => (
-                  <tr
-                    key={row.quote_id}
-                    onClick={() => openQuote(row.quote_id)}
-                    className="hover:bg-slate-50 transition-colors cursor-pointer"
                   >
                     <div className="flex items-center gap-4">
                       <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${isExpanded ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'} transition-colors`}>
@@ -412,19 +392,6 @@ export default function QuotePage() {
                 </div>
               );
             })}
-                    </td>
-                    <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
-                    <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
-                    <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
-                    {/* <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td> */}
-                    <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
-                    <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
-                      {new Date(row.created_at).toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
         )}
       </div>
@@ -553,13 +520,10 @@ function QuoteDetailModal({
             </p>
 
             {/* Headline */}
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">{detail.customer_name}</h2>
-              <p className="text-xs text-slate-400">{detail.customer_cnic}</p>
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-lg font-bold text-slate-900">{detail.applicant_name}</h2>
-                <p className="text-xs text-slate-400">{detail.applicant_cnic}</p>
+                <h2 className="text-lg font-bold text-slate-900">{detail.customer_name}</h2>
+                <p className="text-xs text-slate-400">{detail.customer_cnic}</p>
               </div>
               <p className="text-[11px] text-slate-400 text-right mt-1.5">
                 Rate version {detail.rate_version} · Generated {new Date(detail.created_at).toLocaleString()}

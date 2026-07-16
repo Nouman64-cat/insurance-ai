@@ -299,7 +299,6 @@ class MaritalStatus(str, Enum):
     WIDOWED  = "Widowed"
 
 class CustomerCreate(BaseModel):
-class ApplicantCreate(BaseModel):
     cnic:             str          # e.g. "35201-1234567-1"
     first_name:       str
     last_name:        str
