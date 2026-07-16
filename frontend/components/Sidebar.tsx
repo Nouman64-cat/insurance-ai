@@ -330,9 +330,9 @@ const NAV_ITEMS = [
 
       {
 
-        href: "/quote",
+        href: "/proposal",
 
-        label: "Quotation",
+        label: "Proposal",
 
         icon: (
 

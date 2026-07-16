@@ -150,7 +150,7 @@ export default function VoiceOverlay({ onClose }: Props) {
                                 "underwriting",
                                 "cases",
                                 "artifacts",
-                                "quote",
+                                "proposal",
                                 "live-evaluation",
                                 "case-summarizer",
                                 "assessments",
