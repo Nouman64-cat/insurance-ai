@@ -17,6 +17,13 @@ class Gender(str, Enum):
     OTHER = "Other"
 
 
+class MaritalStatus(str, Enum):
+    SINGLE = "Single"
+    MARRIED = "Married"
+    DIVORCED = "Divorced"
+    WIDOWED = "Widowed"
+
+
 class AIDecision(str, Enum):
     AUTO_APPROVE = "Auto Approve"
     APPROVE_WITH_LOADING = "Approve with Loading"
@@ -318,6 +325,7 @@ class Applicant(SQLModel, table=True):
     name: str = Field(max_length=255)
     dob: date
     gender: Gender
+    marital_status: Optional[MaritalStatus] = Field(default=None, max_length=50)
 
     # Socio-economic profile used by the risk engine
     occupation: str = Field(max_length=255)

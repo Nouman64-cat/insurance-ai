@@ -46,8 +46,8 @@ export function fmtCoverage(n: number): string {
 }
 
 export function fmtIncome(n: number): string {
-  if (n >= 1_000_000) return `PKR ${(n / 1_000_000).toFixed(2)}M / yr`;
-  return `PKR ${(n / 1_000).toFixed(0)}K / yr`;
+  if (n >= 1_000_000) return `PKR ${(n / 1_000_000).toFixed(0)}M / year`;
+  return `PKR ${(n / 1_000).toFixed(0)}K / year`;
 }
 
 export function fmtDob(dob: string): string {

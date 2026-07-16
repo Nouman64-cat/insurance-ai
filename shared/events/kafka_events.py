@@ -33,6 +33,7 @@ class ApplicantPayload(BaseModel):
     cnic: str
     dob: str                  # YYYY-MM-DD
     gender: str
+    marital_status: Optional[str] = None
     occupation: str
     declared_income: int      # annual PKR
 
@@ -126,6 +127,7 @@ class ApplicantCreatedPayload(BaseModel):
     name: str
     dob: str                  # YYYY-MM-DD
     gender: str
+    marital_status: Optional[str] = None
     occupation: str
     declared_income: float    # annual PKR
     is_smoker: bool

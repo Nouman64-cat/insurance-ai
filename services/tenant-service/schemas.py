@@ -12,6 +12,7 @@ from shared.models.core import (
     PlanStatusEnum,
     PolicyStatusEnum,
     BranchTypeEnum,
+    MaritalStatus,
 )
 
 
@@ -289,14 +290,6 @@ class ChangePasswordRequest(BaseModel):
 
 # ── Applicant ─────────────────────────────────────────────────────────────────
 
-from enum import Enum
-
-class MaritalStatus(str, Enum):
-    SINGLE   = "Single"
-    MARRIED  = "Married"
-    DIVORCED = "Divorced"
-    WIDOWED  = "Widowed"
-
 class ApplicantCreate(BaseModel):
     cnic:             str          # e.g. "35201-1234567-1"
     first_name:       str
@@ -344,6 +337,7 @@ class ApplicantRead(BaseModel):
     name:             str
     dob:              date
     gender:           Gender
+    marital_status:   Optional[MaritalStatus] = None
     occupation:       str
     declared_income:  float
     is_smoker:        bool

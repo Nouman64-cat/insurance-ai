@@ -65,6 +65,7 @@ interface ApplicantData {
   name: string;
   dob: string;
   gender: string;
+  marital_status?: string;
   occupation: string;
   declared_income: number;
   is_smoker: boolean;
@@ -635,7 +636,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 <div>
                   <p className="font-bold text-slate-900 leading-tight">{applicant.name}</p>
                   <p className="text-xs text-slate-500 mt-0.5">{applicant.gender}</p>
-                  <p className="text-xs text-blue-600 font-mono mt-0.5">{applicant.cnic}</p>
                 </div>
               </div>
               <p className="section-label mb-3">Applicant Details</p>
@@ -644,7 +644,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <DataRow label="Gender" value={applicant.gender} />
               <DataRow label="Occupation" value={applicant.occupation} />
               <DataRow label="Declared Annual Income" value={fmtIncome(applicant.declared_income)} />
-              <DataRow label="Smoker" value={applicant.is_smoker ? "Yes" : "No"} />
+              <DataRow label="Marital Status" value={applicant.marital_status ?? "Single"} />
             </div>
           )}
 
