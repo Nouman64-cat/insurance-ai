@@ -160,8 +160,8 @@ export default function QuotePage() {
                   <th className="px-5 py-3 text-left">Plan</th>
                   <th className="px-5 py-3 text-right">Coverage</th>
                   <th className="px-5 py-3 text-center">Term</th>
-                  <th className="px-5 py-3 text-right">Expected Premium</th>
-                  <th className="px-5 py-3 text-right">Risk</th>
+                  <th className="px-5 py-3 text-right">Premium</th>
+                  {/* <th className="px-5 py-3 text-right">Risk</th> */}
                   <th className="px-5 py-3 text-right">Total payable</th>
                   <th className="px-5 py-3 text-left">Generated</th>
                 </tr>
@@ -186,7 +186,7 @@ export default function QuotePage() {
                     <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
                     <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
                     <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
-                    <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td>
+                    {/* <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td> */}
                     <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
                     <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
                       {new Date(row.created_at).toLocaleString()}
@@ -322,9 +322,14 @@ function QuoteDetailModal({
             </p>
 
             {/* Headline */}
-            <div>
-              <h2 className="text-lg font-bold text-slate-900">{detail.applicant_name}</h2>
-              <p className="text-xs text-slate-400">{detail.applicant_cnic}</p>
+            <div className="flex items-start justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">{detail.applicant_name}</h2>
+                <p className="text-xs text-slate-400">{detail.applicant_cnic}</p>
+              </div>
+              <p className="text-[11px] text-slate-400 text-right mt-1.5">
+                Rate version {detail.rate_version} · Generated {new Date(detail.created_at).toLocaleString()}
+              </p>
             </div>
 
             {/* Applicant */}
@@ -360,22 +365,19 @@ function QuoteDetailModal({
             <section>
               <SectionLabel>Premium Breakdown</SectionLabel>
               <div className="grid grid-cols-3 gap-3">
-                <StatTile label="Expected Premium" value={formatPKR(detail.base_premium)} />
-                <StatTile label="Risk" value={formatPKR(detail.loading_applied)} />
-                <StatTile 
-                  label="Total Payable" 
+                <StatTile label="Premium" value={formatPKR(detail.base_premium)} />
+                {/* <StatTile label="Risk" value={formatPKR(detail.loading_applied)} /> */}
+                <StatTile
+                  label="Total Payable"
                   value={
                     <span>
                       {formatPKR(detail.total_premium)}{" "}
-                      <span className="text-[10px] font-medium text-slate-300">(Premium + Risk)</span>
+                      <span className="text-[10px] font-medium text-slate-300"></span>
                     </span>
-                  } 
-                  highlight 
+                  }
+                  highlight
                 />
               </div>
-              <p className="text-[11px] text-slate-400 mt-2">
-                Rate version {detail.rate_version} · Generated {new Date(detail.created_at).toLocaleString()}
-              </p>
             </section>
 
             {/* Proceed to underwriting */}
