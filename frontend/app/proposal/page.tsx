@@ -46,19 +46,19 @@ export default function QuotePage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  const [selectedQuoteId, setSelectedQuoteId] = useState<string | null>(null);
+  const [selectedQuoteId, setSelectedProposalId] = useState<string | null>(null);
   const [detail, setDetail] = useState<QuoteDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
 
-  const [selectedQuoteIds, setSelectedQuoteIds] = useState<Set<string>>(new Set());
+  const [selectedQuoteIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
   const [isBulkProceeding, setIsBulkProceeding] = useState(false);
   const [bulkProceedError, setBulkProceedError] = useState<string | null>(null);
   const [bulkProceedSuccess, setBulkProceedSuccess] = useState<string | null>(null);
   const [bulkModalQuotes, setBulkModalQuotes] = useState<QuoteListItem[] | null>(null);
 
   const toggleSelection = (quoteId: string) => {
-    setSelectedQuoteIds((prev) => {
+    setSelectedProposalIds((prev) => {
       const next = new Set(prev);
       if (next.has(quoteId)) next.delete(quoteId);
       else next.add(quoteId);
@@ -67,7 +67,7 @@ export default function QuotePage() {
   };
 
   const toggleAllInFolder = (quoteIds: string[]) => {
-    setSelectedQuoteIds((prev) => {
+    setSelectedProposalIds((prev) => {
       const next = new Set(prev);
       const allSelected = quoteIds.every((id) => next.has(id));
       if (allSelected) {
@@ -99,7 +99,7 @@ export default function QuotePage() {
           sourceChannel: "Online",
         });
         router.push(`/case/${caseRes.data.caseld}?autoRun=true`);
-        setSelectedQuoteIds(new Set());
+        setSelectedProposalIds(new Set());
         setIsBulkProceeding(false);
         return;
       }
@@ -130,7 +130,7 @@ export default function QuotePage() {
       // 3. Navigate to the first plan's case and auto-run underwriting there.
       router.push(`/case/${group[0].caseId}?autoRun=true`);
 
-      setSelectedQuoteIds(new Set());
+      setSelectedProposalIds(new Set());
     } catch (err: any) {
       setBulkProceedError(err.message ?? "Failed to initialize bulk processing.");
     } finally {
@@ -139,7 +139,7 @@ export default function QuotePage() {
   };
 
   const openQuote = useCallback(async (quoteId: string) => {
-    setSelectedQuoteId(quoteId);
+    setSelectedProposalId(quoteId);
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
@@ -154,7 +154,7 @@ export default function QuotePage() {
   }, []);
 
   const closeQuote = useCallback(() => {
-    setSelectedQuoteId(null);
+    setSelectedProposalId(null);
     setDetail(null);
     setDetailError(null);
   }, []);
@@ -213,7 +213,7 @@ export default function QuotePage() {
     <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full space-y-5">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Quotations</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Proposals</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Generated automatically in the background the moment an customer is registered — no form to fill in.
           </p>
@@ -256,7 +256,7 @@ export default function QuotePage() {
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-2">
             <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
-            <span className="text-xs text-slate-400">Loading quotations…</span>
+            <span className="text-xs text-slate-400">Loading proposals…</span>
           </div>
         ) : groupedQuotes.length === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center text-center px-6">
@@ -264,11 +264,11 @@ export default function QuotePage() {
               <span className="text-2xl">📁</span>
             </div>
             <p className="text-sm font-semibold text-slate-600">
-              {quotes.length === 0 ? "No quotations yet" : "No quotations match your search"}
+              {quotes.length === 0 ? "No proposals yet" : "No proposals match your search"}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
-                ? "Register a customer and a quotation will be generated automatically in the background."
+                ? "Register a customer and a proposal will be generated automatically in the background."
                 : "Try a different customer name, CNIC, or plan."}
             </p>
           </div>
@@ -477,7 +477,7 @@ function QuoteDetailModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">Quotation Details</p>
+          <p className="text-sm font-semibold text-slate-700">Proposal Details</p>
           <button
             onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
@@ -506,14 +506,14 @@ function QuoteDetailModal({
 
         {detail && !loading && (
           <div className="p-5 space-y-5">
-            {/* Quotation Statement */}
+            {/* Proposal Statement */}
             <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-5 py-4 space-y-1.5">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Quotation Statement</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Proposal Statement</p>
                 <span className="text-[10px] font-mono text-slate-400">Ref: {detail.quote_id.slice(0, 8).toUpperCase()}</span>
               </div>
               <p className="text-sm text-slate-700 leading-relaxed">
-                We are pleased to present the following insurance quotation for{" "}
+                We are pleased to present the following insurance proposal for{" "}
                 <span className="font-semibold text-slate-900">{detail.customer_name}</span>. Based on the
                 information provided, we propose a{" "}
                 <span className="font-semibold text-slate-900">
@@ -530,14 +530,14 @@ function QuoteDetailModal({
                 The total annual premium for this coverage is{" "}
                 <span className="font-bold text-slate-900">{formatPKR(detail.total_premium)}</span>{" "}
                 (expected premium of {formatPKR(detail.base_premium)} plus a risk of{" "}
-                {formatPKR(detail.loading_applied)}). This quotation is valid subject to
+                {formatPKR(detail.loading_applied)}). This proposal is valid subject to
                 satisfactory underwriting assessment and is generated as of{" "}
                 <span className="font-medium text-slate-800">{formatDate(detail.created_at)}</span>.
               </p>
             </div>
 
             <p className="text-[11px] text-slate-500 mt-1 mb-2 text-center italic">
-              Opens an Underwriting case for this customer on this exact quote — documents, AI risk scoring, and the final decision all happen there.
+              Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.
             </p>
 
             {/* Headline */}

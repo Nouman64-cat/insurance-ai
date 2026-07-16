@@ -27,7 +27,7 @@ const TOOLS = [
               "underwriting", 
               "cases", 
               "artifacts", 
-              "quote", 
+              "proposal", 
               "live-evaluation", 
               "case-summarizer", 
               "assessments", 
