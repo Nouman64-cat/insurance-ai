@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import { Chatbot } from "@/components/Chatbot";
 import { useEffect, useState, useCallback, useRef } from "react";
 import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
@@ -109,11 +110,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         try {
           const res = await api.get(`/tenants/${tenantId}/artifacts/${item.id}`);
           const artifact = res.data;
-          
+
           if (artifact.status !== "Processing") {
             const isAccepted = artifact.status === "Accepted";
             showToast(`${item.name} has been ${artifact.status.toLowerCase()}!`, isAccepted);
-            
+
             const idx = updatedList.findIndex(x => x.id === item.id);
             if (idx > -1) {
               updatedList.splice(idx, 1);
@@ -263,6 +264,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           </div>
         </>
       )}
+      <Chatbot />
       <ToastBanner toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
     </body>
   );
