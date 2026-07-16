@@ -8,7 +8,7 @@ import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
 import { PENDING_QUOTES_STORAGE_KEY, PENDING_QUOTES_EVENT, PendingQuoteWatch } from "@/lib/pendingQuotes";
 
-// Give up watching an applicant after this many polls (~2 min at 4s/poll) —
+// Give up watching an customer after this many polls (~2 min at 4s/poll) —
 // they simply didn't qualify for any active plan, so no quote will ever land.
 const MAX_QUOTE_POLL_ATTEMPTS = 30;
 
@@ -179,10 +179,10 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      let quotedApplicantIds = new Set<string>();
+      let quotedCustomerIds = new Set<string>();
       try {
         const quotes = await listQuotes();
-        quotedApplicantIds = new Set(quotes.map((q) => q.applicant_id));
+        quotedCustomerIds = new Set(quotes.map((q) => q.customer_id));
       } catch {
         timerId = setTimeout(poll, 4000);
         return;
@@ -190,7 +190,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
       const remaining: (PendingQuoteWatch & { attempts?: number })[] = [];
       for (const watch of pending) {
-        if (quotedApplicantIds.has(watch.id)) {
+        if (quotedCustomerIds.has(watch.id)) {
           showToast(`Quotation generated for ${watch.name}!`, true);
           continue;
         }

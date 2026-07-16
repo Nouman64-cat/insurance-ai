@@ -23,18 +23,18 @@ interface TokenUsage { input: number; output: number; total: number; }
 interface CaseItem {
   caseld: string;
   caseNumber: string;
-  applicant_id: string;
+  customer_id: string;
   caseType: string;
   caseStatus: string;
   priorityLevel: string;
 }
 
-interface Applicant { id: string; name: string; cnic: string; }
+interface Customer { id: string; name: string; cnic: string; }
 
 interface ArtifactResponse {
   id: string;
   case_id: string;
-  applicant_id: string;
+  customer_id: string;
   uploaded_by: string;
   document_type: string;
   file_name: string;
@@ -217,7 +217,7 @@ function ArtifactRow({ artifact, isExpanded, onToggle }: {
 
 function CaseUploadTab() {
   const [cases, setCases] = useState<CaseItem[]>([]);
-  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCases, setLoadingCases] = useState(true);
   const [casesError, setCasesError] = useState("");
 
@@ -242,10 +242,10 @@ function CaseUploadTab() {
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) { setCasesError("No active tenant."); setLoadingCases(false); return; }
     Promise.all([
-      api.get(`/tenants/${tenantId}/applicants`),
+      api.get(`/tenants/${tenantId}/customers`),
       api.get(`/tenants/${tenantId}/cases`),
     ]).then(([aRes, cRes]) => {
-      setApplicants(aRes.data);
+      setCustomers(aRes.data);
       setCases(cRes.data);
     }).catch((err) => {
       setCasesError(err.message ?? "Failed to load cases.");
@@ -357,8 +357,8 @@ function CaseUploadTab() {
   );
 
   const selectedCase = cases.find(c => c.caseld === selectedCaseId);
-  const applicantName = selectedCase
-    ? applicants.find(a => a.id === selectedCase.applicant_id)?.name ?? "Unknown"
+  const customerName = selectedCase
+    ? customers.find(a => a.id === selectedCase.customer_id)?.name ?? "Unknown"
     : null;
 
   return (
@@ -421,7 +421,7 @@ function CaseUploadTab() {
         {selectedCase && (
           <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs">
             <p className="font-bold text-blue-800">{selectedCase.caseNumber}</p>
-            <p className="text-blue-600 mt-0.5">{applicantName} · {selectedCase.caseType} · {selectedCase.caseStatus}</p>
+            <p className="text-blue-600 mt-0.5">{customerName} · {selectedCase.caseType} · {selectedCase.caseStatus}</p>
           </div>
         )}
 

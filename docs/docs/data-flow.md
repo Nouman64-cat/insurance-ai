@@ -19,7 +19,7 @@ sequenceDiagram
     participant LLM as Gemini 2.5 Flash
     participant PG as PostgreSQL
 
-    C->>GW: POST /evaluate { applicant, policy }
+    C->>GW: POST /evaluate { customer, policy }
     GW->>GW: Validate X-Tenant-Id header
 
     GW->>RE: POST /evaluate (httpx)
@@ -42,11 +42,11 @@ sequenceDiagram
 
     RE-->>GW: EvaluationResponse
 
-    GW->>PG: UPSERT applicant (by cnic + tenant_id)
+    GW->>PG: UPSERT customer (by cnic + tenant_id)
     GW->>PG: INSERT policy
     GW->>PG: INSERT risk_assessment
-    PG-->>GW: assessment_id, applicant_id, policy_id
-    RE->>MG: graph_writer.py — MERGE Applicant node + SAME_AREA / SAME_OCCUPATION_CLUSTER edges
+    PG-->>GW: assessment_id, customer_id, policy_id
+    RE->>MG: graph_writer.py — MERGE Customer node + SAME_AREA / SAME_OCCUPATION_CLUSTER edges
 
     GW-->>C: EvaluateResponse { scores, ai_decision, reasons, ... }
 ```
@@ -64,7 +64,7 @@ sequenceDiagram
     participant MG as Memgraph
     participant LLM as Gemini 2.5 Flash
 
-    C->>GW: POST /evaluate/async { applicant, policy }
+    C->>GW: POST /evaluate/async { customer, policy }
     GW->>KF: ProposalSubmittedEvent → insurance.proposal.submitted.v1
     GW-->>C: 202 { event_id, proposal_id, status: "accepted" }
 
@@ -75,7 +75,7 @@ sequenceDiagram
     RE->>LLM: scoring prompts (medical, financial, fraud)
     LLM-->>RE: scores + reasons
     RE->>RE: decision_aggregation
-    RE->>MG: graph_writer.py — MERGE Applicant node + edges (fire-and-forget)
+    RE->>MG: graph_writer.py — MERGE Customer node + edges (fire-and-forget)
     RE->>KF: RiskEvaluatedEvent → insurance.risk.evaluated.v1
 ```
 
@@ -90,7 +90,7 @@ class ProposalSubmittedEvent(BaseModel):
     event_type: str         # "ProposalSubmitted"
     timestamp: datetime
     tenant_id: UUID
-    payload: ProposalPayload  # { proposal_id, applicant, policy }
+    payload: ProposalPayload  # { proposal_id, customer, policy }
 
 # Producer: Risk Engine  →  Topic: insurance.risk.evaluated.v1
 class RiskEvaluatedEvent(BaseModel):
@@ -124,10 +124,10 @@ flowchart TD
 
 | Node | Type | Inputs | Outputs |
 |---|---|---|---|
-| `validate_input` | Deterministic | `applicant`, `policy` | `is_valid`, `validation_errors` |
-| `medical_scoring` | LLM (structured output) | `applicant` | `medical_score` (0–100), `medical_reasons` |
-| `financial_scoring` | LLM (structured output) | `applicant`, `policy` | `financial_score` (0–100), `financial_reasons` |
-| `fraud_detection` | Memgraph + LLM | `applicant`, `policy`, `tenant_id` + graph context | `fraud_probability` (0.0–1.0), `fraud_reasons` |
+| `validate_input` | Deterministic | `customer`, `policy` | `is_valid`, `validation_errors` |
+| `medical_scoring` | LLM (structured output) | `customer` | `medical_score` (0–100), `medical_reasons` |
+| `financial_scoring` | LLM (structured output) | `customer`, `policy` | `financial_score` (0–100), `financial_reasons` |
+| `fraud_detection` | Memgraph + LLM | `customer`, `policy`, `tenant_id` + graph context | `fraud_probability` (0.0–1.0), `fraud_reasons` |
 | `decision_aggregation` | Deterministic | all scores + reasons | `composite_risk_score`, `ai_decision`, `reasons` |
 
 ### Validation rules (validate_input)

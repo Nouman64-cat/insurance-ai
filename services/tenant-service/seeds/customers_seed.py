@@ -1,6 +1,6 @@
-"""Seed 10 realistic applicant profiles (+ one policy each) for a tenant.
+"""Seed 10 realistic customer profiles (+ one policy each) for a tenant.
 
-Every applicant is a distinct, original fictional person covering a wide
+Every customer is a distinct, original fictional person covering a wide
 spread of Pakistani cities, occupations, incomes, medical histories, and
 insurance needs. The seed is idempotent: any CNIC already present for the
 given tenant is silently skipped — safe to run multiple times.
@@ -8,11 +8,11 @@ given tenant is silently skipped — safe to run multiple times.
 Run inside the tenant-service container:
 
     # Seed one tenant
-    docker compose exec tenant-service python -m seeds.applicants_seed \
+    docker compose exec tenant-service python -m seeds.customers_seed \
         --tenant-id 05788cf6-5bf0-4895-b73d-28bbe334518d
 
     # Seed every tenant in the database
-    docker compose exec tenant-service python -m seeds.applicants_seed --all-tenants
+    docker compose exec tenant-service python -m seeds.customers_seed --all-tenants
 """
 
 from __future__ import annotations
@@ -29,19 +29,19 @@ from aiokafka import AIOKafkaProducer
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-from shared.events.kafka_events import APPLICANT_CREATED_TOPIC, ApplicantCreatedEvent, ApplicantCreatedPayload
-from shared.models.core import Applicant, Policy, Tenant
+from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent, CustomerCreatedPayload
+from shared.models.core import Customer, Policy, Tenant
 
-logger = logging.getLogger("tenant-service.seeds.applicants")
+logger = logging.getLogger("tenant-service.seeds.customers")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Seed data — 10 original applicants
-# Each dict mirrors the ApplicantCreate schema fields.
+# Seed data — 10 original customers
+# Each dict mirrors the CustomerCreate schema fields.
 # The special "_policy" key (popped before DB insert) carries the linked policy.
 # ─────────────────────────────────────────────────────────────────────────────
 
-APPLICANT_SEED_DATA: list[dict] = [
+CUSTOMER_SEED_DATA: list[dict] = [
 
     # ── 1. Tariq Mehmood — Civil Engineer, Lahore, smoker/hypertensive ─────────
     {
@@ -1082,57 +1082,57 @@ APPLICANT_SEED_DATA: list[dict] = [
 # Core seed function
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def _publish_applicant_created(producer: AIOKafkaProducer, tenant_id: UUID, applicant: Applicant) -> None:
-    """Mirrors routers/applicants.py::create_applicant so seeded applicants
+async def _publish_customer_created(producer: AIOKafkaProducer, tenant_id: UUID, customer: Customer) -> None:
+    """Mirrors routers/customers.py::create_customer so seeded customers
     trigger the same background quote-generation job (see quote_worker.py in
-    api-gateway) that a real POST /applicants call does."""
-    event = ApplicantCreatedEvent(
+    api-gateway) that a real POST /customers call does."""
+    event = CustomerCreatedEvent(
         tenant_id=tenant_id,
-        payload=ApplicantCreatedPayload(
-            applicant_id=applicant.id,
-            cnic=applicant.cnic,
-            name=applicant.name,
-            dob=str(applicant.dob),
-            gender=applicant.gender.value,
-            occupation=applicant.occupation,
-            declared_income=applicant.declared_income,
-            is_smoker=applicant.is_smoker,
-            height_cm=applicant.height_cm,
-            weight_kg=applicant.weight_kg,
+        payload=CustomerCreatedPayload(
+            customer_id=customer.id,
+            cnic=customer.cnic,
+            name=customer.name,
+            dob=str(customer.dob),
+            gender=customer.gender.value,
+            occupation=customer.occupation,
+            declared_income=customer.declared_income,
+            is_smoker=customer.is_smoker,
+            height_cm=customer.height_cm,
+            weight_kg=customer.weight_kg,
         ),
     )
     try:
         await producer.send_and_wait(
-            APPLICANT_CREATED_TOPIC,
+            CUSTOMER_CREATED_TOPIC,
             value=event.model_dump_json(),
             key=str(tenant_id),
         )
     except Exception:
-        logger.exception("Failed to publish ApplicantCreated event | applicant_id=%s", applicant.id)
+        logger.exception("Failed to publish CustomerCreated event | customer_id=%s", customer.id)
 
 
-async def seed_applicants(
+async def seed_customers(
     session: AsyncSession,
     tenant_id: UUID,
     producer: Optional[AIOKafkaProducer] = None,
-) -> list[Applicant]:
-    """Insert 10 applicants (+ one policy each) for a single tenant.
+) -> list[Customer]:
+    """Insert 10 customers (+ one policy each) for a single tenant.
 
     Idempotent — skips any CNIC already registered for this tenant.
-    Commits once at the end; returns the Applicant rows actually created.
+    Commits once at the end; returns the Customer rows actually created.
 
-    When `producer` is given, publishes ApplicantCreated to Kafka for each
-    newly created applicant — same background quote-generation trigger a real
-    POST /tenants/{id}/applicants call fires.
+    When `producer` is given, publishes CustomerCreated to Kafka for each
+    newly created customer — same background quote-generation trigger a real
+    POST /tenants/{id}/customers call fires.
     """
     existing_result = await session.exec(
-        select(Applicant.cnic).where(Applicant.tenant_id == tenant_id)
+        select(Customer.cnic).where(Customer.tenant_id == tenant_id)
     )
     existing_cnics: set[str] = set(existing_result.all())
 
-    created: list[Applicant] = []
+    created: list[Customer] = []
 
-    for spec in APPLICANT_SEED_DATA:
+    for spec in CUSTOMER_SEED_DATA:
         policy_spec: dict = spec.pop("_policy")
         cnic: str = spec["cnic"]
 
@@ -1143,7 +1143,7 @@ async def seed_applicants(
         details = spec.get("details") or {}
         medical_history = details.get("medical_history") or {}
         lifestyle = details.get("lifestyle") or {}
-        applicant = Applicant(
+        customer = Customer(
             tenant_id=tenant_id,
             cnic=cnic,
             name=f"{spec['first_name']} {spec['last_name']}".strip(),
@@ -1156,12 +1156,12 @@ async def seed_applicants(
             weight_kg=lifestyle.get("weight_kg", 70),
             details=details,
         )
-        session.add(applicant)
-        await session.flush()  # obtain applicant.id before linking the policy
+        session.add(customer)
+        await session.flush()  # obtain customer.id before linking the policy
 
         policy = Policy(
             tenant_id=tenant_id,
-            applicant_id=applicant.id,
+            customer_id=customer.id,
             product_name=policy_spec["product_name"],
             insurance_type=policy_spec["insurance_type"],
             coverage_amount=policy_spec["coverage_amount"],
@@ -1170,7 +1170,7 @@ async def seed_applicants(
             dependent_dob=policy_spec.get("dependent_dob"),
         )
         session.add(policy)
-        created.append(applicant)
+        created.append(customer)
 
         spec["_policy"] = policy_spec  # restore so list remains reusable
 
@@ -1180,7 +1180,7 @@ async def seed_applicants(
 
     if producer is not None:
         for a in created:
-            await _publish_applicant_created(producer, tenant_id, a)
+            await _publish_customer_created(producer, tenant_id, a)
 
     return created
 
@@ -1216,11 +1216,11 @@ async def _run(tenant_id: UUID | None, all_tenants: bool) -> None:
                 tenants = [tenant]
 
             for tenant in tenants:
-                created = await seed_applicants(session, tenant.id, producer)
-                skipped = len(APPLICANT_SEED_DATA) - len(created)
+                created = await seed_customers(session, tenant.id, producer)
+                skipped = len(CUSTOMER_SEED_DATA) - len(created)
                 print(
                     f"[{tenant.name}] {tenant.id}: "
-                    f"created {len(created)} applicant(s) ({skipped} already present) "
+                    f"created {len(created)} customer(s) ({skipped} already present) "
                     f"— quote worker notified in the background"
                 )
                 for a in created:
@@ -1231,7 +1231,7 @@ async def _run(tenant_id: UUID | None, all_tenants: bool) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Seed 10 realistic applicant profiles (+ one policy each) for a tenant."
+        description="Seed 10 realistic customer profiles (+ one policy each) for a tenant."
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--tenant-id",   type=UUID, help="UUID of the tenant to seed.")

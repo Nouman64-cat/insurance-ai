@@ -8,7 +8,7 @@ from datetime import datetime
 from database import get_session
 from document_requirements import get_required_documents
 from shared.models.core import (
-    Applicant,
+    Customer,
     Artifact,
     Case,
     CaseHistory,
@@ -27,7 +27,7 @@ from shared.models.core import (
     InsurancePlan,
 )
 from schemas import (
-    ApplicantRead,
+    CustomerRead,
     CaseCreate,
     CaseRead,
     CaseUpdate,
@@ -56,17 +56,17 @@ async def create_case(
     if not user:
         raise HTTPException(status_code=400, detail="Tenant has no users to perform this action.")
 
-    # If a policy is named, it must belong to this tenant + applicant — a case
+    # If a policy is named, it must belong to this tenant + customer — a case
     # opens formal underwriting on one specific quote, not just any policy.
     policy: Optional[Policy] = None
     if body.policy_id is not None:
         policy = await session.get(Policy, body.policy_id)
-        if not policy or policy.tenant_id != tenant_id or policy.applicant_id != body.applicant_id:
-            raise HTTPException(status_code=404, detail="Policy not found for this applicant.")
+        if not policy or policy.tenant_id != tenant_id or policy.customer_id != body.customer_id:
+            raise HTTPException(status_code=404, detail="Policy not found for this customer.")
 
     case = Case(
         tenant_id=tenant_id,
-        applicant_id=body.applicant_id,
+        customer_id=body.customer_id,
         policy_id=body.policy_id,
         caseNumber=generate_case_number(),
         caseType=body.caseType,
@@ -81,7 +81,7 @@ async def create_case(
     session.add(case)
 
     # Opening an Underwriting case on a quote moves it from indicative
-    # ("Quoted") to formally in-flight ("Proposed") — the applicant has
+    # ("Quoted") to formally in-flight ("Proposed") — the customer has
     # committed to this specific offer.
     if policy is not None and policy.status == PolicyStatusEnum.QUOTED:
         policy.status = PolicyStatusEnum.PROPOSED
@@ -108,7 +108,7 @@ async def create_case(
 @router.get("", response_model=List[CaseRead])
 async def list_cases(
     tenant_id: UUID,
-    applicant_id: UUID = Query(None, description="Filter by applicant"),
+    customer_id: UUID = Query(None, description="Filter by customer"),
     status: CaseStatusEnum = Query(None, description="Filter by status"),
     assigned_user: UUID = Query(None, description="Filter by assignee"),
     case_type: CaseTypeEnum = Query(None, description="Filter by case type"),
@@ -124,8 +124,8 @@ async def list_cases(
     triage.
     """
     stmt = select(Case).where(Case.tenant_id == tenant_id)
-    if applicant_id:
-        stmt = stmt.where(Case.applicant_id == applicant_id)
+    if customer_id:
+        stmt = stmt.where(Case.customer_id == customer_id)
     if status:
         stmt = stmt.where(Case.caseStatus == status)
     if assigned_user:
@@ -138,10 +138,10 @@ async def list_cases(
     if not cases:
         return []
 
-    applicant_ids = list({c.applicant_id for c in cases})
-    applicants = {
+    customer_ids = list({c.customer_id for c in cases})
+    customers = {
         a.id: a for a in (await session.execute(
-            select(Applicant).where(Applicant.id.in_(applicant_ids))
+            select(Customer).where(Customer.id.in_(customer_ids))
         )).scalars().all()
     }
 
@@ -168,12 +168,12 @@ async def list_cases(
 
     out = []
     for c in cases:
-        applicant = applicants.get(c.applicant_id)
+        customer = customers.get(c.customer_id)
         policy = policies.get(c.policy_id) if c.policy_id else None
         latest = latest_by_case.get(c.caseld)
         row = CaseRead.model_validate(c).model_dump()
-        row["applicant_name"] = applicant.name if applicant else None
-        row["applicant_cnic"] = applicant.cnic if applicant else None
+        row["customer_name"] = customer.name if customer else None
+        row["customer_cnic"] = customer.cnic if customer else None
         row["product_name"] = policy.product_name if policy else None
         row["coverage_amount"] = policy.coverage_amount if policy else None
         row["latest_ai_decision"] = latest.ai_decision.value if latest else None
@@ -198,7 +198,7 @@ async def get_case_detail(
     case_id: UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    """Bundled Case 360 view: case + applicant + policy + document checklist +
+    """Bundled Case 360 view: case + customer + policy + document checklist +
     latest risk assessment, in one round trip — the data source for the
     frontend's single-page underwriting workbench (case/[id])."""
     stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
@@ -206,10 +206,10 @@ async def get_case_detail(
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
 
-    applicant = await session.get(Applicant, case.applicant_id)
+    customer = await session.get(Customer, case.customer_id)
 
     # Prefer the case's explicitly linked policy; fall back to the
-    # applicant's most recent policy for cases created before policy_id
+    # customer's most recent policy for cases created before policy_id
     # existed (same fallback document-checklist already uses).
     policy: Optional[Policy] = None
     if case.policy_id is not None:
@@ -217,7 +217,7 @@ async def get_case_detail(
     if policy is None:
         policy_stmt = (
             select(Policy)
-            .where(Policy.tenant_id == tenant_id, Policy.applicant_id == case.applicant_id)
+            .where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id)
             .order_by(Policy.created_at.desc())
         )
         policy = (await session.execute(policy_stmt)).scalars().first()
@@ -252,7 +252,7 @@ async def get_case_detail(
 
     return {
         "case": CaseRead.model_validate(case),
-        "applicant": ApplicantRead.model_validate(applicant) if applicant else None,
+        "customer": CustomerRead.model_validate(customer) if customer else None,
         "policy": PolicyRead.model_validate(policy) if policy else None,
         "document_checklist": {
             "insurance_type": insurance_type,
@@ -270,6 +270,9 @@ async def get_case_detail(
                 "ai_decision": latest.ai_decision.value,
                 "suggested_loading": latest.suggested_loading,
                 "reasons": latest.reasons or [],
+                "medical_reasons": latest.medical_reasons or [],
+                "financial_reasons": latest.financial_reasons or [],
+                "fraud_reasons": latest.fraud_reasons or [],
                 "ai_summary": latest.ai_summary,
                 "created_at": latest.created_at.isoformat(),
             }
@@ -412,7 +415,7 @@ async def get_document_checklist(
     if policy is None:
         policy_stmt = (
             select(Policy)
-            .where(Policy.tenant_id == tenant_id, Policy.applicant_id == case.applicant_id)
+            .where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id)
             .order_by(Policy.created_at.desc())
         )
         policy = (await session.execute(policy_stmt)).scalars().first()

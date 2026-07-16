@@ -1,6 +1,6 @@
 from .core import (
     AIDecision,
-    Applicant,
+    Customer,
     Artifact,
     Claim,
     Commission,
@@ -12,7 +12,7 @@ from .core import (
 
 __all__ = [
     "Tenant",
-    "Applicant",
+    "Customer",
     "Policy",
     "RiskAssessment",
     "Claim",

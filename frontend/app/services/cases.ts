@@ -3,7 +3,7 @@ import api from "./api";
 export interface CaseQueueItem {
   caseld: string;
   caseNumber: string;
-  applicant_id: string;
+  customer_id: string;
   policy_id: string | null;
   caseType: string;
   caseStatus: string;
@@ -11,8 +11,8 @@ export interface CaseQueueItem {
   sourceChannel: string;
   createdAt: string;
   updatedAt: string;
-  applicant_name: string | null;
-  applicant_cnic: string | null;
+  customer_name: string | null;
+  customer_cnic: string | null;
   product_name: string | null;
   coverage_amount: number | null;
   latest_ai_decision: "Auto Approve" | "Approve with Loading" | "Human Review" | "Decline" | null;

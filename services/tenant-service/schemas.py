@@ -288,8 +288,17 @@ class ChangePasswordRequest(BaseModel):
         return v
 
 
-# ── Applicant ─────────────────────────────────────────────────────────────────
+# ── Customer ─────────────────────────────────────────────────────────────────
 
+from enum import Enum
+
+class MaritalStatus(str, Enum):
+    SINGLE   = "Single"
+    MARRIED  = "Married"
+    DIVORCED = "Divorced"
+    WIDOWED  = "Widowed"
+
+class CustomerCreate(BaseModel):
 class ApplicantCreate(BaseModel):
     cnic:             str          # e.g. "35201-1234567-1"
     first_name:       str
@@ -330,7 +339,7 @@ class ApplicantCreate(BaseModel):
             raise ValueError("weight_kg must be greater than 0")
         return v
 
-class ApplicantRead(BaseModel):
+class CustomerRead(BaseModel):
     id:               UUID
     tenant_id:        UUID
     cnic:             str
@@ -348,7 +357,7 @@ class ApplicantRead(BaseModel):
 
     model_config = {"from_attributes": True}
 
-class ApplicantUpdate(BaseModel):
+class CustomerUpdate(BaseModel):
     cnic:             Optional[str] = None
     first_name:       Optional[str] = None
     last_name:        Optional[str] = None
@@ -383,7 +392,7 @@ class ApplicantUpdate(BaseModel):
 class PolicyRead(BaseModel):
     id:               UUID
     tenant_id:        UUID
-    applicant_id:     UUID
+    customer_id:     UUID
     product_name:     str
     insurance_type:   InsuranceTypeEnum
     coverage_amount:  float
@@ -467,7 +476,7 @@ class CensusValidationResponse(BaseModel):
 
 class CensusConfirmResponse(BaseModel):
     created_count: int
-    applicant_ids: List[UUID]
+    customer_ids: List[UUID]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -484,7 +493,7 @@ from shared.models.core import (
 )
 
 class CaseCreate(BaseModel):
-    applicant_id:     UUID
+    customer_id:     UUID
     policy_id:        Optional[UUID] = None
     caseType:         CaseTypeEnum
     priorityLevel:    CasePriorityEnum = CasePriorityEnum.NORMAL
@@ -502,7 +511,7 @@ class CaseRead(BaseModel):
     caseld:           UUID
     caseNumber:       str
     tenant_id:        UUID
-    applicant_id:     UUID
+    customer_id:     UUID
     policy_id:        Optional[UUID] = None
     caseType:         CaseTypeEnum
     caseStatus:       CaseStatusEnum
@@ -518,8 +527,8 @@ class CaseRead(BaseModel):
 
     # Enrichment — only populated by GET /cases (the Underwriting queue);
     # None on create/update/get-single responses, which return the bare Case row.
-    applicant_name:        Optional[str] = None
-    applicant_cnic:        Optional[str] = None
+    customer_name:        Optional[str] = None
+    customer_cnic:        Optional[str] = None
     product_name:           Optional[str] = None
     coverage_amount:         Optional[float] = None
     latest_ai_decision:      Optional[str] = None

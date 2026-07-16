@@ -32,9 +32,9 @@ LangGraph Workflow (inside Risk Engine)
                           Auto Approve / Human Review / Decline
 
 Data Stores
-  PostgreSQL         → tenants, applicants, policies, risk_assessments, claims, artifacts
+  PostgreSQL         → tenants, customers, policies, risk_assessments, claims, artifacts
                        (external service — NOT a docker-compose container; see below)
-  Memgraph   :7688   → fraud ring detection graph (applicant network analysis)
+  Memgraph   :7688   → fraud ring detection graph (customer network analysis)
 ```
 
 **PostgreSQL is external.** It is no longer part of `docker-compose.yml` — every service connects to a Postgres instance you run yourself (a local install, a managed cloud database, etc.) via the `DATABASE_URL` in `.env`. Containers reach a host-installed Postgres through `host.docker.internal` (macOS/Windows Docker Desktop); on Linux you may need `--add-host=host.docker.internal:host-gateway` or the host's LAN IP instead.
@@ -176,7 +176,7 @@ curl -s -X POST http://localhost:8010/evaluate \
   -H "Content-Type: application/json" \
   -H "X-Tenant-Id: <tenant-id>" \
   -d '{
-    "applicant": {
+    "customer": {
       "cnic": "35201-1234567-1",
       "name": "Sara Ahmed",
       "dob": "1998-04-10",
@@ -289,7 +289,7 @@ Useful for testing the LangGraph workflow in isolation without Kafka or tenant a
 curl -s -X POST http://localhost:8012/evaluate \
   -H "Content-Type: application/json" \
   -d '{
-    "applicant": { "cnic": "35201-1234567-1", "name": "Sara Ahmed", "dob": "1998-04-10", "gender": "female", "occupation": "software engineer", "declared_income": 500000 },
+    "customer": { "cnic": "35201-1234567-1", "name": "Sara Ahmed", "dob": "1998-04-10", "gender": "female", "occupation": "software engineer", "declared_income": 500000 },
     "policy": { "product_name": "Term Life Insurance", "coverage_amount": 3000000, "term_years": 10 }
   }' | python3 -m json.tool
 ```
@@ -300,7 +300,7 @@ curl -s -X POST http://localhost:8012/evaluate \
 
 | Topic                               | Producer        | Consumer                        | Payload                                               |
 | ----------------------------------- | --------------- | ------------------------------- | ----------------------------------------------------- |
-| `insurance.proposal.submitted.v1` | API Gateway     | `consumer.py`                 | `ProposalSubmittedEvent` — applicant + policy data |
+| `insurance.proposal.submitted.v1` | API Gateway     | `consumer.py`                 | `ProposalSubmittedEvent` — customer + policy data |
 | `insurance.risk.evaluated.v1`     | `consumer.py` | *(result consumer — future)* | `RiskEvaluatedEvent` — scores + decision           |
 
 Browse both topics live at **http://localhost:8090** (Kafka UI).
@@ -445,4 +445,4 @@ docker compose up -d
 
 ### Memgraph graph query returns no results
 
-Memgraph starts empty. Fraud ring detection only returns connections for applicants who were previously evaluated and written to the graph. On a fresh instance, the `fraud_detection` node falls back gracefully (fraud_probability defaults to LLM-only assessment).
+Memgraph starts empty. Fraud ring detection only returns connections for customers who were previously evaluated and written to the graph. On a fresh instance, the `fraud_detection` node falls back gracefully (fraud_probability defaults to LLM-only assessment).

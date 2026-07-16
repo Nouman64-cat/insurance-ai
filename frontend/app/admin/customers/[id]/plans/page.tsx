@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/app/services/api";
 
-interface Applicant {
+interface Customer {
   id: string;
   cnic: string;
   name: string;
@@ -17,7 +17,7 @@ interface Applicant {
 interface Policy {
   id: string;
   tenant_id: string;
-  applicant_id: string;
+  customer_id: string;
   product_name: string;
   insurance_type: string;
   coverage_amount: number;
@@ -47,12 +47,12 @@ const INSURANCE_TYPE_COLORS: Record<string, string> = {
   HEALTH_CASH: "bg-rose-50 text-rose-700 border-rose-200",
 };
 
-export default function ApplicantPlansPage() {
+export default function CustomerPlansPage() {
   const params = useParams();
   const router = useRouter();
-  const applicantId = params.id as string;
+  const customerId = params.id as string;
 
-  const [applicant, setApplicant] = useState<Applicant | null>(null);
+  const [customer, setCustomer] = useState<Customer | null>(null);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(true);
@@ -67,7 +67,7 @@ export default function ApplicantPlansPage() {
     }
     fetchData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [applicantId]);
+  }, [customerId]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -79,11 +79,11 @@ export default function ApplicantPlansPage() {
       return;
     }
     try {
-      const [applicantResp, policiesResp] = await Promise.all([
-        api.get<Applicant>(`/tenants/${tenantId}/applicants/${applicantId}`),
-        api.get<Policy[]>(`/tenants/${tenantId}/applicants/${applicantId}/policies`),
+      const [customerResp, policiesResp] = await Promise.all([
+        api.get<Customer>(`/tenants/${tenantId}/customers/${customerId}`),
+        api.get<Policy[]>(`/tenants/${tenantId}/customers/${customerId}/policies`),
       ]);
-      setApplicant(applicantResp.data);
+      setCustomer(customerResp.data);
       setPolicies(policiesResp.data);
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to load plan details.");
@@ -109,7 +109,7 @@ export default function ApplicantPlansPage() {
       {/* Header */}
       <div className="flex items-center gap-3">
         <button
-          onClick={() => router.push("/admin/applicants")}
+          onClick={() => router.push("/admin/customers")}
           className="flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors flex-shrink-0"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-600">
@@ -118,10 +118,10 @@ export default function ApplicantPlansPage() {
         </button>
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">
-            Plan Details {applicant ? `— ${applicant.name}` : ""}
+            Plan Details {customer ? `— ${customer.name}` : ""}
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            {applicant ? `CNIC ${applicant.cnic}` : "Loading applicant..."}
+            {customer ? `CNIC ${customer.cnic}` : "Loading customer..."}
           </p>
         </div>
       </div>
@@ -137,7 +137,7 @@ export default function ApplicantPlansPage() {
         </div>
       ) : policies.length === 0 ? (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-20 text-center text-slate-400">
-          <p className="text-sm">No plans have been evaluated for this applicant yet.</p>
+          <p className="text-sm">No plans have been evaluated for this customer yet.</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

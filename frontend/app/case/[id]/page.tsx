@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
 import { DecisionBanner, StatusBadge } from "@/components/StatusBadge";
@@ -49,7 +50,7 @@ const CASE_STATUS_STYLE: Record<string, string> = {
 interface CaseData {
   caseld: string;
   caseNumber: string;
-  applicant_id: string;
+  customer_id: string;
   policy_id: string | null;
   caseType: string;
   caseStatus: string;
@@ -59,7 +60,7 @@ interface CaseData {
   updatedAt: string;
 }
 
-interface ApplicantData {
+interface CustomerData {
   id: string;
   cnic: string;
   name: string;
@@ -100,12 +101,15 @@ interface AssessmentData {
   ai_decision: AIDecision;
   suggested_loading: number | null;
   reasons: string[];
+  medical_reasons?: string[];
+  financial_reasons?: string[];
+  fraud_reasons?: string[];
   created_at: string;
 }
 
 interface CaseDetailResponse {
   case: CaseData;
-  applicant: ApplicantData | null;
+  customer: CustomerData | null;
   policy: PolicyData | null;
   document_checklist: DocumentChecklist;
   latest_assessment: AssessmentData | null;
@@ -340,6 +344,43 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [summarizing, setSummarizing] = useState(false);
   const [summarizeError, setSummarizeError] = useState<string | null>(null);
 
+  // When multiple plans are sent to underwriting together (from the Quotations
+  // page), each plan gets its own case. We store the group in sessionStorage so
+  // this page can render a dropdown to switch between the plans for a customer.
+  const [planGroup, setPlanGroup] = useState<{ caseId: string; planLabel: string; insuranceType: string }[]>([]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("underwriting_group");
+      if (!raw) return setPlanGroup([]);
+      const parsed = JSON.parse(raw);
+      // Only treat as a group if the current case belongs to it.
+      if (Array.isArray(parsed) && parsed.some((p) => p?.caseId === caseId)) {
+        setPlanGroup(parsed);
+      } else {
+        setPlanGroup([]);
+      }
+    } catch {
+      setPlanGroup([]);
+    }
+  }, [caseId]);
+
+  // Per-plan underwriting state for the multi-plan group. Every selected plan is
+  // streamed in parallel, so we key the live progress / status / errors by caseId
+  // and render whichever plan is currently being viewed.
+  const [groupStatuses, setGroupStatuses] = useState<Record<string, StreamStatus>>({});
+  const [groupLive, setGroupLive] = useState<Record<string, LiveResult>>({});
+  const [groupErrors, setGroupErrors] = useState<Record<string, string | null>>({});
+  const groupAbortsRef = useRef<Record<string, AbortController>>({});
+  const groupStartedRef = useRef<string | null>(null);
+
+  // Track the currently-viewed case for long-lived background streams whose
+  // closures would otherwise capture a stale caseId after the user switches plan.
+  const currentCaseIdRef = useRef(caseId);
+  useEffect(() => { currentCaseIdRef.current = caseId; }, [caseId]);
+
+  const isGroup = planGroup.length > 1;
+
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
   const fetchDetail = useCallback(async () => {
@@ -376,6 +417,24 @@ export default function CasePage({ params }: { params: { id: string } }) {
     return () => clearTimeout(t);
   }, [artifacts, fetchArtifacts]);
 
+  const searchParams = useSearchParams();
+  const autoRun = searchParams.get("autoRun");
+  const router = useRouter();
+
+  // Auto-run underwriting if requested via URL. In group mode the parallel
+  // runner below handles every plan, so the single-case path stays out of it.
+  useEffect(() => {
+    if (isGroup) return;
+    if (detail && !loading && status === "idle" && !live.compositeScore && !detail.latest_assessment) {
+      if (autoRun === "true") {
+        // Remove autoRun from URL so we don't re-trigger on refresh
+        router.replace(`/case/${caseId}`);
+        // Small delay to ensure UI renders first before stream starts
+        setTimeout(() => runUnderwriting(), 100);
+      }
+    }
+  }, [detail, loading, status, live.compositeScore, autoRun, caseId, router, isGroup]);
+
   const summarizeDocuments = async () => {
     const texts = artifacts.filter(a => a.ocr_result).map(a => a.ocr_result as string);
     if (texts.length === 0) return;
@@ -394,7 +453,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // ── Run AI Underwriting (SSE) ────────────────────────────────────────────────
 
   const runUnderwriting = async () => {
-    if (!detail?.applicant || !detail?.policy || !tenantId) return;
+    if (!detail?.customer || !detail?.policy || !tenantId) return;
 
     abortRef.current?.abort();
     const abort = new AbortController();
@@ -404,15 +463,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
     setLive(EMPTY_LIVE);
     setStreamError(null);
 
-    const { applicant, policy } = detail;
+    const { customer, policy } = detail;
     const payload = {
-      applicant: {
-        cnic: applicant.cnic,
-        name: applicant.name,
-        dob: applicant.dob,
-        gender: applicant.gender,
-        occupation: applicant.occupation,
-        declared_income: applicant.declared_income,
+      customer: {
+        cnic: customer.cnic,
+        name: customer.name,
+        dob: customer.dob,
+        gender: customer.gender,
+        occupation: customer.occupation,
+        declared_income: customer.declared_income,
       },
       policy: {
         product_name: policy.product_name,
@@ -488,6 +547,132 @@ export default function CasePage({ params }: { params: { id: string } }) {
     }
   };
 
+  // ── Run AI Underwriting for one plan in a multi-plan group (SSE) ────────────
+  // Same stream as runUnderwriting, but results are written into the per-plan
+  // maps so several plans can be underwritten in parallel and viewed on switch.
+
+  const runGroupCase = useCallback(async (targetId: string, force = false) => {
+    if (!tenantId) return;
+
+    groupAbortsRef.current[targetId]?.abort();
+    const abort = new AbortController();
+    groupAbortsRef.current[targetId] = abort;
+
+    setGroupStatuses(s => ({ ...s, [targetId]: "streaming" }));
+    setGroupLive(s => ({ ...s, [targetId]: EMPTY_LIVE }));
+    setGroupErrors(s => ({ ...s, [targetId]: null }));
+
+    try {
+      const dres = await api.get<CaseDetailResponse>(`/tenants/${tenantId}/cases/${targetId}/detail`);
+      const d = dres.data;
+
+      // Already underwritten — surface the persisted result instead of re-running.
+      if (!force && d.latest_assessment) {
+        setGroupStatuses(s => ({ ...s, [targetId]: "done" }));
+        if (targetId === currentCaseIdRef.current) setDetail(d);
+        return;
+      }
+      if (!d.customer || !d.policy) {
+        setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
+        setGroupErrors(s => ({ ...s, [targetId]: "This case has no customer or policy to underwrite." }));
+        return;
+      }
+
+      const { customer, policy } = d;
+      const payload = {
+        customer: {
+          cnic: customer.cnic,
+          name: customer.name,
+          dob: customer.dob,
+          gender: customer.gender,
+          occupation: customer.occupation,
+          declared_income: customer.declared_income,
+        },
+        policy: {
+          product_name: policy.product_name,
+          insurance_type: policy.insurance_type,
+          coverage_amount: policy.coverage_amount,
+          term_years: policy.term_years,
+          ...(policy.dependent_name ? { dependent_name: policy.dependent_name, dependent_dob: policy.dependent_dob } : {}),
+        },
+        case_id: targetId,
+      };
+
+      const res = await fetch(`${API_BASE}/evaluate/stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
+        body: JSON.stringify(payload),
+        signal: abort.signal,
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg = Array.isArray(body.detail) ? body.detail.map((x: any) => x.msg ?? x).join(", ") : body.detail ?? `Gateway returned ${res.status}`;
+        setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
+        setGroupErrors(s => ({ ...s, [targetId]: msg }));
+        return;
+      }
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      outer: while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data: ")) continue;
+          let evt: Record<string, any>;
+          try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+          if (evt.type === "progress") {
+            const node = evt.node as string;
+            const data = evt.data as Record<string, any>;
+            setGroupLive(s => {
+              const prev = s[targetId] ?? EMPTY_LIVE;
+              const next: LiveResult = { ...prev, completedNodes: prev.completedNodes.includes(node) ? prev.completedNodes : [...prev.completedNodes, node] };
+              if (node === "medical_scoring") { next.medicalScore = data.medical_score ?? null; next.medicalReasons = data.medical_reasons ?? []; }
+              else if (node === "financial_scoring") { next.financialScore = data.financial_score ?? null; next.financialReasons = data.financial_reasons ?? []; }
+              else if (node === "fraud_detection") { next.fraudProbability = data.fraud_probability ?? null; next.fraudReasons = data.fraud_reasons ?? []; }
+              else if (node === "decision_aggregation") { next.compositeScore = data.composite_risk_score ?? null; next.aiDecision = data.ai_decision ?? null; next.reasons = data.reasons ?? []; }
+              return { ...s, [targetId]: next };
+            });
+            if (node === "decision_aggregation") setGroupStatuses(s => ({ ...s, [targetId]: "done" }));
+          } else if (evt.type === "invalid") {
+            setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
+            setGroupErrors(s => ({ ...s, [targetId]: `Validation failed: ${(evt.errors as string[]).join("; ")}` }));
+            break outer;
+          } else if (evt.type === "error") {
+            setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
+            setGroupErrors(s => ({ ...s, [targetId]: evt.message ?? "An unexpected error occurred." }));
+            break outer;
+          } else if (evt.type === "saved") {
+            // Refresh the case shell only if this plan is the one on screen.
+            if (targetId === currentCaseIdRef.current) fetchDetail();
+          }
+        }
+      }
+    } catch (err: any) {
+      if (err?.name === "AbortError") return;
+      setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
+      setGroupErrors(s => ({ ...s, [targetId]: err.message ?? "Connection failed." }));
+    }
+  }, [tenantId, fetchDetail]);
+
+  // Kick off underwriting for every plan in the group in parallel, exactly once.
+  useEffect(() => {
+    if (!isGroup || !tenantId) return;
+    const sig = planGroup.map(p => p.caseId).join(",");
+    if (groupStartedRef.current === sig) return;
+    groupStartedRef.current = sig;
+    planGroup.forEach(p => runGroupCase(p.caseId));
+  }, [isGroup, planGroup, tenantId, runGroupCase]);
+
   // ── Manual override (writes to the real CaseHistory audit trail) ────────────
 
   const overrideStatus = async (newStatus: string) => {
@@ -547,23 +732,43 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   if (!detail) return null;
 
-  const { case: c, applicant, policy, document_checklist: docs } = detail;
+  const { case: c, customer, policy, document_checklist: docs } = detail;
+
+  // In a multi-plan group each plan streams in parallel into its own slice of the
+  // maps; otherwise fall back to the single-case state. Everything below renders
+  // whichever plan is currently on screen.
+  const effLive = isGroup ? (groupLive[caseId] ?? EMPTY_LIVE) : live;
+  const effStatus = isGroup ? (groupStatuses[caseId] ?? "idle") : status;
+  const effStreamError = isGroup ? (groupErrors[caseId] ?? null) : streamError;
+  const handleRun = () => (isGroup ? runGroupCase(caseId, true) : runUnderwriting());
 
   // Prefer the live (just-streamed) result for this session; fall back to the
   // last persisted assessment. Live gives per-category reasons; persisted only
   // has the flat merged `reasons` array (decision_aggregation merges them
   // before writing to the DB), so the two render slightly differently below.
-  const hasLive = live.compositeScore !== null;
+  const hasLive = effLive.compositeScore !== null;
   const assessment = detail.latest_assessment;
   const hasAny = hasLive || assessment !== null;
 
-  const medicalScore = hasLive ? live.medicalScore! : assessment?.medical_score ?? 0;
-  const financialScore = hasLive ? live.financialScore! : assessment?.financial_score ?? 0;
-  const fraudProbability = hasLive ? live.fraudProbability! : assessment?.fraud_probability ?? 0;
-  const compositeScore = hasLive ? live.compositeScore! : assessment?.composite_risk_score ?? 0;
-  const aiDecision = (hasLive ? live.aiDecision : assessment?.ai_decision) ?? null;
+  const medicalScore = hasLive ? effLive.medicalScore! : assessment?.medical_score ?? 0;
+  const financialScore = hasLive ? effLive.financialScore! : assessment?.financial_score ?? 0;
+  const fraudProbability = hasLive ? effLive.fraudProbability! : assessment?.fraud_probability ?? 0;
+  const compositeScore = hasLive ? effLive.compositeScore! : assessment?.composite_risk_score ?? 0;
+  const aiDecision = (hasLive ? effLive.aiDecision : assessment?.ai_decision) ?? null;
   const suggestedLoading = hasLive ? null : assessment?.suggested_loading ?? null;
   const fraudPct = +((fraudProbability ?? 0) * 100).toFixed(1);
+
+  // Per-category explainability reasons — from the live stream when available,
+  // otherwise from the persisted assessment. Rendering the same Medical /
+  // Financial / Fraud breakdown for every plan (single or multi, live or saved)
+  // keeps the Explainability Report format identical across the board.
+  const medicalReasons = hasLive ? effLive.medicalReasons : (assessment?.medical_reasons ?? []);
+  const financialReasons = hasLive ? effLive.financialReasons : (assessment?.financial_reasons ?? []);
+  const fraudReasons = hasLive ? effLive.fraudReasons : (assessment?.fraud_reasons ?? []);
+  // Legacy assessments predate the per-category columns; fall back to the flat
+  // merged list only when no categorized reasons exist at all.
+  const hasCategorizedReasons =
+    hasLive || medicalReasons.length + financialReasons.length + fraudReasons.length > 0;
 
   return (
     <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
@@ -579,7 +784,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
             <span className="text-xs text-slate-700 font-semibold">{c.caseNumber}</span>
           </div>
           <div className="flex items-center gap-3 flex-wrap">
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{applicant?.name ?? "Unknown Applicant"}</h1>
+            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">{customer?.name ?? "Unknown Customer"}</h1>
             {aiDecision && <StatusBadge decision={aiDecision} size="lg" />}
             <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${CASE_STATUS_STYLE[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
               {c.caseStatus}
@@ -617,6 +822,52 @@ export default function CasePage({ params }: { params: { id: string } }) {
         </div>
       </div>
 
+      {/* ── Plan switcher (multi-plan underwriting group) ─────────────────── */}
+      {isGroup && (() => {
+        const doneCount = planGroup.filter((p) => groupStatuses[p.caseId] === "done").length;
+        const runningCount = planGroup.filter((p) => groupStatuses[p.caseId] === "streaming").length;
+        const glyph = (st?: StreamStatus) => (st === "done" ? "✓" : st === "streaming" ? "⏳" : st === "error" ? "⚠" : "•");
+        return (
+          <div className="card px-4 sm:px-5 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3 border-blue-200 bg-blue-50/40">
+            <div className="flex items-center gap-2.5 min-w-0 sm:flex-1">
+              <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex-shrink-0">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                  <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" />
+                  <rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" />
+                </svg>
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-slate-700 truncate">
+                  Underwriting {planGroup.length} plans for {customer?.name ?? "this customer"}
+                </p>
+                <p className="text-[11px] text-slate-500 truncate">
+                  {runningCount > 0
+                    ? `${doneCount} of ${planGroup.length} done · ${runningCount} running in parallel`
+                    : `${doneCount} of ${planGroup.length} plans underwritten`}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 min-w-0 sm:flex-shrink-0">
+              <span className="text-[11px] font-medium text-slate-400 flex-shrink-0 hidden sm:inline">Viewing</span>
+              <select
+                value={caseId}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (next !== caseId) router.push(`/case/${next}`);
+                }}
+                className="w-full sm:w-72 min-w-0 truncate bg-white border border-slate-200 rounded-lg pl-3 pr-8 py-2 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer"
+              >
+                {planGroup.map((p, i) => (
+                  <option key={p.caseId} value={p.caseId}>
+                    {glyph(groupStatuses[p.caseId])}  {i + 1}. {p.planLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        );
+      })()}
+
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
           <p className="text-xs text-red-600">{error}</p>
@@ -626,25 +877,26 @@ export default function CasePage({ params }: { params: { id: string } }) {
       {/* ── Main grid: 3 cols ─────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
-        {/* ── LEFT COLUMN: Applicant + Policy ─────────────────────────────── */}
+        {/* ── LEFT COLUMN: Customer + Policy ─────────────────────────────── */}
         <div className="lg:col-span-1 space-y-4">
 
-          {applicant && (
+          {customer && (
             <div className="card p-5">
               <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
-                <InitialsAvatar name={applicant.name} />
+                <InitialsAvatar name={customer.name} />
                 <div>
-                  <p className="font-bold text-slate-900 leading-tight">{applicant.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{applicant.gender}</p>
+                  <p className="font-bold text-slate-900 leading-tight">{customer.name}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{customer.gender}</p>
+                  <p className="text-xs text-blue-600 font-mono mt-0.5">{customer.cnic}</p>
                 </div>
               </div>
-              <p className="section-label mb-3">Applicant Details</p>
-              <DataRow label="CNIC" value={<span className="font-mono text-sm">{applicant.cnic}</span>} />
-              <DataRow label="Date of Birth" value={fmtDob(applicant.dob)} />
-              <DataRow label="Gender" value={applicant.gender} />
-              <DataRow label="Occupation" value={applicant.occupation} />
-              <DataRow label="Declared Annual Income" value={fmtIncome(applicant.declared_income)} />
-              <DataRow label="Marital Status" value={applicant.marital_status ?? "Single"} />
+              <p className="section-label mb-3">Customer Details</p>
+              <DataRow label="CNIC" value={<span className="font-mono text-sm">{customer.cnic}</span>} />
+              <DataRow label="Date of Birth" value={fmtDob(customer.dob)} />
+              <DataRow label="Gender" value={customer.gender} />
+              <DataRow label="Occupation" value={customer.occupation} />
+              <DataRow label="Declared Annual Income" value={fmtIncome(customer.declared_income)} />
+              <DataRow label="Smoker" value={customer.is_smoker ? "Yes" : "No"} />
             </div>
           )}
 
@@ -654,8 +906,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <DataRow label="Product" value={INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name} />
               <DataRow label="Coverage Amount" value={fmtCoverage(policy.coverage_amount)} />
               <DataRow label="Policy Term" value={`${policy.term_years} years`} />
-              {applicant && (
-                <DataRow label="Coverage-to-Income Ratio" value={`${(policy.coverage_amount / applicant.declared_income).toFixed(1)}×`} />
+              {customer && (
+                <DataRow label="Coverage-to-Income Ratio" value={`${(policy.coverage_amount / customer.declared_income).toFixed(1)}×`} />
               )}
               <DataRow label="Policy Status" value={policy.status} />
 
@@ -769,14 +1021,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 Run the AI underwriting pipeline to score medical, financial, and fraud risk and get a decision recommendation.
               </p>
               <button
-                onClick={runUnderwriting}
-                disabled={status === "streaming" || !policy || !applicant}
+                onClick={handleRun}
+                disabled={effStatus === "streaming" || !policy || !customer}
                 className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 transition-colors shadow-sm"
               >
-                {status === "streaming" ? <Spinner /> : null}
-                {status === "streaming" ? "Running…" : "Run AI Underwriting"}
+                {effStatus === "streaming" ? <Spinner /> : null}
+                {effStatus === "streaming" ? "Running…" : "Run AI Underwriting"}
               </button>
-              {streamError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{streamError}</p>}
+              {effStreamError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{effStreamError}</p>}
             </div>
           ) : (
             <>
@@ -797,17 +1049,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 <div className="flex items-center justify-between">
                   <p className="section-label">AI Recommendation</p>
                   <button
-                    onClick={runUnderwriting}
-                    disabled={status === "streaming"}
+                    onClick={handleRun}
+                    disabled={effStatus === "streaming"}
                     className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50"
                   >
-                    {status === "streaming" ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
-                    {status === "streaming" ? "Re-running…" : "Re-run Underwriting"}
+                    {effStatus === "streaming" ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
+                    {effStatus === "streaming" ? "Re-running…" : "Re-run Underwriting"}
                   </button>
                 </div>
 
                 {aiDecision && <DecisionBanner decision={aiDecision} />}
-                {streamError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{streamError}</p>}
+                {effStreamError && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{effStreamError}</p>}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
@@ -827,7 +1079,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 {/* Explainability report */}
                 <div className="pt-2 border-t border-slate-100">
                   <p className="section-label mb-4">Explainability Report</p>
-                  {hasLive ? (
+                  {hasCategorizedReasons ? (
                     <div className="space-y-5">
                       <ReasonGroup label="Medical Risk Factors" score={medicalScore} scoreLabel={`${medicalScore}%`} reasons={live.medicalReasons} accentColor="text-orange-700" />
                       <ReasonGroup label="Financial Risk Factors" score={financialScore} scoreLabel={`${financialScore}%`} reasons={live.financialReasons} accentColor="text-blue-700" />

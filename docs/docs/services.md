@@ -33,7 +33,7 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 | `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update a user (admin only, Bearer required) |
 | `DELETE` | `/tenants/{tenant_id}/users/{user_id}` | Delete a user (admin only, Bearer required) |
 | `POST` | `/tenants/{tenant_id}/cases` | Create a case (Bearer required) |
-| `GET` | `/tenants/{tenant_id}/cases` | List cases — filter by `applicant_id`, `status`, `assigned_user` (Bearer required) |
+| `GET` | `/tenants/{tenant_id}/cases` | List cases — filter by `customer_id`, `status`, `assigned_user` (Bearer required) |
 | `GET` | `/tenants/{tenant_id}/cases/{case_id}` | Get a case (Bearer required) |
 | `PUT` | `/tenants/{tenant_id}/cases/{case_id}` | Update a case (Bearer required) |
 | `DELETE` | `/tenants/{tenant_id}/cases/{case_id}` | Delete a case + all child records (Bearer required) |
@@ -41,11 +41,11 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user (Bearer required) |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add a comment (Bearer required) |
 | `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Required/received/missing documents for the case's policy plan type (Bearer required) |
-| `POST` | `/tenants/{tenant_id}/applicants` | Create an applicant (admin only, Bearer required) |
-| `GET` | `/tenants/{tenant_id}/applicants` | List applicants (admin only, Bearer required) |
-| `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get an applicant (Bearer required) |
-| `PUT` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Update an applicant (Bearer required) |
-| `DELETE` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Delete an applicant (Bearer required) |
+| `POST` | `/tenants/{tenant_id}/customers` | Create an customer (admin only, Bearer required) |
+| `GET` | `/tenants/{tenant_id}/customers` | List customers (admin only, Bearer required) |
+| `GET` | `/tenants/{tenant_id}/customers/{customer_id}` | Get an customer (Bearer required) |
+| `PUT` | `/tenants/{tenant_id}/customers/{customer_id}` | Update an customer (Bearer required) |
+| `DELETE` | `/tenants/{tenant_id}/customers/{customer_id}` | Delete an customer (Bearer required) |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | Upload document → S3 + OCR (Bearer required) |
 | `GET` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | List artifacts for a case (Bearer required) |
 | `GET` | `/tenants/{tenant_id}/artifacts/{artifact_id}` | Get artifact + fresh presigned URL (Bearer required) |
@@ -68,7 +68,7 @@ Single public entrypoint for all clients. Owns the PostgreSQL writes for the eva
 **Source:** `services/tenant-service/`  
 **Swagger:** `http://localhost:8011/docs`
 
-Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens (HS256). Seeds RBAC roles at startup.
+Manages `tenants`, `users`, `user_profiles`, and `customers`. Issues JWT tokens (HS256). Seeds RBAC roles at startup.
 
 ### Endpoints
 
@@ -88,20 +88,20 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 | `PATCH` | `/tenants/{tenant_id}/users/{user_id}` | Update user |
 | `DELETE` | `/tenants/{tenant_id}/users/{user_id}` | Delete user |
 | `POST` | `/tenants/{tenant_id}/cases` | Create case — auto-generates `CASE-YYYY-XXXXXX` number, writes audit trail |
-| `GET` | `/tenants/{tenant_id}/cases` | List cases — filterable by `applicant_id`, `status`, `assigned_user` |
+| `GET` | `/tenants/{tenant_id}/cases` | List cases — filterable by `customer_id`, `status`, `assigned_user` |
 | `GET` | `/tenants/{tenant_id}/cases/{case_id}` | Get case |
 | `PUT` | `/tenants/{tenant_id}/cases/{case_id}` | Update case fields |
 | `DELETE` | `/tenants/{tenant_id}/cases/{case_id}` | Delete case and all children (history, audit, comments, assignments) |
 | `PATCH` | `/tenants/{tenant_id}/cases/{case_id}/status` | Change status — creates `CaseHistory` entry |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add internal or external comment |
-| `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Resolves the case's applicant → most recent `Policy` → plan-specific required documents (`document_requirements.py`), diffs against uploaded `Artifact.document_type` values |
-| `POST` | `/tenants/{tenant_id}/applicants` | Create applicant (Admin only; enforces per-tenant CNIC uniqueness) |
-| `GET` | `/tenants/{tenant_id}/applicants` | List all applicants for a tenant (Admin only) |
-| `GET` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Get applicant by ID (Admin only) |
-| `PUT` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Full update of an applicant (Admin only) |
-| `DELETE` | `/tenants/{tenant_id}/applicants/{applicant_id}` | Delete applicant (Admin only) |
-| `POST` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | Upload document → S3 upload + OCR extraction; auto-links `applicant_id` from case |
+| `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Resolves the case's customer → most recent `Policy` → plan-specific required documents (`document_requirements.py`), diffs against uploaded `Artifact.document_type` values |
+| `POST` | `/tenants/{tenant_id}/customers` | Create customer (Admin only; enforces per-tenant CNIC uniqueness) |
+| `GET` | `/tenants/{tenant_id}/customers` | List all customers for a tenant (Admin only) |
+| `GET` | `/tenants/{tenant_id}/customers/{customer_id}` | Get customer by ID (Admin only) |
+| `PUT` | `/tenants/{tenant_id}/customers/{customer_id}` | Full update of an customer (Admin only) |
+| `DELETE` | `/tenants/{tenant_id}/customers/{customer_id}` | Delete customer (Admin only) |
+| `POST` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | Upload document → S3 upload + OCR extraction; auto-links `customer_id` from case |
 | `GET` | `/tenants/{tenant_id}/cases/{case_id}/artifacts` | List all artifacts for a case |
 | `GET` | `/tenants/{tenant_id}/artifacts/{artifact_id}` | Get single artifact with fresh presigned download URL (1 hr expiry) |
 | `GET` | `/roles` | List all roles |
@@ -112,7 +112,7 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 | Role | Access level |
 |---|---|
 | `SuperAdmin` | Platform-level — create tenants (`POST /tenants`) and bootstrap each tenant's first `Admin` (`POST /tenants/{tenant_id}/setup`). Belongs to a reserved `Platform` tenant, created via `create_superadmin.py`. Can also manage users across any tenant. |
-| `Admin` | Tenant-scoped full access — manage users, applicants, cases, and all resources **within their own tenant only** |
+| `Admin` | Tenant-scoped full access — manage users, customers, cases, and all resources **within their own tenant only** |
 | `Underwriter` | Evaluate proposals, review risk assessments, make decisions |
 | `Agent` | Submit proposals, track status |
 | `Viewer` | Read-only access to dashboards and reports |
@@ -136,7 +136,7 @@ Manages `tenants`, `users`, `user_profiles`, and `applicants`. Issues JWT tokens
 **Source:** `services/risk-engine/`  
 **Swagger:** `http://localhost:8012/docs`
 
-Runs the LangGraph underwriting workflow. Does **not** write to PostgreSQL — all DB writes are done by the API Gateway after calling this service. **Does** write evaluated applicants to Memgraph (fire-and-forget via `graph_writer.py`) after every successful evaluation on both the sync HTTP and async Kafka paths.
+Runs the LangGraph underwriting workflow. Does **not** write to PostgreSQL — all DB writes are done by the API Gateway after calling this service. **Does** write evaluated customers to Memgraph (fire-and-forget via `graph_writer.py`) after every successful evaluation on both the sync HTTP and async Kafka paths.
 
 ### Endpoints
 
@@ -152,7 +152,7 @@ Both endpoints accept an `X-Tenant-Id` header which is forwarded through the Lan
 
 ```json
 {
-  "applicant": {
+  "customer": {
     "cnic": "3520112345671",
     "name": "Muhammad Ali Khan",
     "dob": "1985-06-15",

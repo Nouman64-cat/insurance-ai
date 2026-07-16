@@ -804,7 +804,7 @@ export default function TenantManagementPage() {
             <form onSubmit={handleDeleteTenant} className="space-y-4">
               <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-700 leading-relaxed space-y-2">
                 <p className="font-bold">⚠️ Warning: This is a permanent action!</p>
-                <p>Deleting tenant <strong>"{deletingTenant.name}"</strong> ({deletingTenant.code}) will perform a cascade deletion of all associated users, cases, policies, plans, and applicant data.</p>
+                <p>Deleting tenant <strong>"{deletingTenant.name}"</strong> ({deletingTenant.code}) will perform a cascade deletion of all associated users, cases, policies, plans, and customer data.</p>
               </div>
 
               <div className="space-y-1.5">

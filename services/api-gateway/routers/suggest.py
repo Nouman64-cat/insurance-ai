@@ -8,7 +8,7 @@ router = APIRouter(tags=["Underwriting"])
 @router.post(
     "/suggest-plan",
     summary="Suggest an insurance plan using AI",
-    description="Proxies the applicant data and available plans to the Risk Engine to determine the best plan recommendation."
+    description="Proxies the customer data and available plans to the Risk Engine to determine the best plan recommendation."
 )
 async def suggest_plan(
     request: Request,

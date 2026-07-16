@@ -26,7 +26,7 @@ flowchart LR
     I --> D
 ```
 
-Every evaluation both **reads from** and **writes to** Memgraph. Each new applicant enriches the graph, so fraud ring signals get stronger over time as the platform sees more applications.
+Every evaluation both **reads from** and **writes to** Memgraph. Each new customer enriches the graph, so fraud ring signals get stronger over time as the platform sees more applications.
 
 ---
 
@@ -36,7 +36,7 @@ Every evaluation both **reads from** and **writes to** Memgraph. Each new applic
 
 Only one node type exists in the fraud graph:
 
-**`Applicant`**
+**`Customer`**
 
 | Property | Type | Description |
 |---|---|---|
@@ -56,14 +56,14 @@ All relationships are **bidirectional** and **tenant-scoped** — both sides mus
 
 | Relationship | Between | Created when |
 |---|---|---|
-| `SAME_AREA` | `Applicant ↔ Applicant` | Both share the same **5-digit CNIC prefix** (same geographic registration area) |
-| `SAME_OCCUPATION_CLUSTER` | `Applicant ↔ Applicant` | Both have the same `occupation` value |
+| `SAME_AREA` | `Customer ↔ Customer` | Both share the same **5-digit CNIC prefix** (same geographic registration area) |
+| `SAME_OCCUPATION_CLUSTER` | `Customer ↔ Customer` | Both have the same `occupation` value |
 
 ```mermaid
 graph LR
-    A1["Applicant\ncnic: 35201-xxx\noccupation: Driver"] 
-    A2["Applicant\ncnic: 35201-yyy\noccupation: Driver"]
-    A3["Applicant\ncnic: 35201-zzz\noccupation: Driver"]
+    A1["Customer\ncnic: 35201-xxx\noccupation: Driver"] 
+    A2["Customer\ncnic: 35201-yyy\noccupation: Driver"]
+    A3["Customer\ncnic: 35201-zzz\noccupation: Driver"]
 
     A1 <-->|SAME_AREA| A2
     A1 <-->|SAME_AREA| A3
@@ -83,7 +83,7 @@ graph LR
 
 ```mermaid
 flowchart TD
-    A[write_applicant_to_graph called] --> B[MERGE Applicant node\nby cnic + tenant_id]
+    A[write_customer_to_graph called] --> B[MERGE Customer node\nby cnic + tenant_id]
     B --> C[SET all score properties]
     C --> D[LINK SAME_AREA\nshared 5-digit CNIC prefix]
     D --> E[LINK SAME_OCCUPATION_CLUSTER\nshared occupation]
@@ -96,7 +96,7 @@ It uses `MERGE` (not `CREATE`) so re-evaluating the same CNIC within a tenant up
 ### Cypher — node upsert
 
 ```cypher
-MERGE (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
+MERGE (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
 SET a.occupation        = $occupation,
     a.declared_income   = $declared_income,
     a.coverage_amount   = $coverage_amount,
@@ -109,8 +109,8 @@ SET a.occupation        = $occupation,
 ### Cypher — SAME_AREA links
 
 ```cypher
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-MATCH (b:Applicant)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+MATCH (b:Customer)
 WHERE b.cnic <> a.cnic
   AND b.tenant_id = a.tenant_id
   AND left(b.cnic, 5) = left($cnic, 5)
@@ -121,8 +121,8 @@ MERGE (b)-[:SAME_AREA]->(a)
 ### Cypher — SAME_OCCUPATION_CLUSTER links
 
 ```cypher
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-MATCH (b:Applicant)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+MATCH (b:Customer)
 WHERE b.cnic <> a.cnic
   AND b.tenant_id = a.tenant_id
   AND b.occupation = a.occupation
@@ -138,11 +138,11 @@ When the LangGraph workflow reaches `fraud_check`, it runs two read queries agai
 
 ### Query 1 — Income outlier detection
 
-Finds applicants whose declared income is more than **3× the average** of their neighbours who share both area and occupation — a classic sign of a coordinator supplying a fabricated salary figure.
+Finds customers whose declared income is more than **3× the average** of their neighbours who share both area and occupation — a classic sign of a coordinator supplying a fabricated salary figure.
 
 ```cypher
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-OPTIONAL MATCH (a)-[:SAME_AREA]->(neighbour:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(a)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_AREA]->(neighbour:Customer)-[:SAME_OCCUPATION_CLUSTER]->(a)
 WITH a, collect(neighbour) AS neighbours, avg(neighbour.declared_income) AS avg_income
 RETURN
   size(neighbours)                                        AS cluster_size,
@@ -161,8 +161,8 @@ RETURN
 Finds occupation-cluster peers applying for coverage amounts within **±50,000 PKR** of the current request — a sign of coordinated high-value applications through a shared fraud network.
 
 ```cypher
-MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})
-OPTIONAL MATCH (a)-[:SAME_OCCUPATION_CLUSTER]->(peer:Applicant)
+MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})
+OPTIONAL MATCH (a)-[:SAME_OCCUPATION_CLUSTER]->(peer:Customer)
 WHERE abs(peer.coverage_amount - a.coverage_amount) < 50000
 WITH collect(peer) AS cluster
 RETURN size(cluster) AS coverage_cluster_size
@@ -189,7 +189,7 @@ The graph results are formatted into a text block and passed to Gemini 2.5 Flash
 | Signal | Meaning |
 |---|---|
 | Coverage-to-income ratio > 15× | Moral hazard / over-insurance |
-| Age–occupation–income inconsistency | e.g. a 25-year-old "retired" applicant |
+| Age–occupation–income inconsistency | e.g. a 25-year-old "retired" customer |
 | Unusually round income figures | Common in fabricated salary documents |
 
 If the graph is unavailable (`graph_available = false`), the LLM is instructed to assess from Tier 2 signals only and cap `fraud_probability` at **0.5** — absence of graph evidence is not proof of fraud.
@@ -208,11 +208,11 @@ class FraudScoreOutput(BaseModel):
 
 Every Memgraph query is scoped to a single tenant via `tenant_id`:
 
-- **Node creation:** `MERGE (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})`
+- **Node creation:** `MERGE (a:Customer {cnic: $cnic, tenant_id: $tenant_id})`
 - **Relationship creation:** both `MATCH` sides include `tenant_id = a.tenant_id`
-- **Read queries:** `MATCH (a:Applicant {cnic: $cnic, tenant_id: $tenant_id})`
+- **Read queries:** `MATCH (a:Customer {cnic: $cnic, tenant_id: $tenant_id})`
 
-Applicants from different insurance companies (tenants) are **never linked** and their graph signals never influence each other's fraud scores.
+Customers from different insurance companies (tenants) are **never linked** and their graph signals never influence each other's fraud scores.
 
 ---
 
@@ -237,13 +237,13 @@ The LLM is informed that `graph_available = false` and caps fraud probability at
 ## Exploring the graph — Memgraph Lab (`http://localhost:3001`)
 
 ```cypher
--- All applicants ordered by fraud probability
-MATCH (a:Applicant)
+-- All customers ordered by fraud probability
+MATCH (a:Customer)
 RETURN a.cnic, a.tenant_id, a.fraud_probability, a.occupation, a.declared_income
 ORDER BY a.fraud_probability DESC;
 
 -- Income outliers in their clusters
-MATCH (a:Applicant)-[:SAME_AREA]->(n:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(a)
+MATCH (a:Customer)-[:SAME_AREA]->(n:Customer)-[:SAME_OCCUPATION_CLUSTER]->(a)
 WITH a, avg(n.declared_income) AS cluster_avg
 WHERE cluster_avg > 0 AND a.declared_income > cluster_avg * 3
 RETURN a.cnic, a.declared_income, cluster_avg,
@@ -251,13 +251,13 @@ RETURN a.cnic, a.declared_income, cluster_avg,
 ORDER BY income_ratio DESC;
 
 -- Coverage clusters — same-occupation peers with near-identical coverage
-MATCH (a:Applicant)-[:SAME_OCCUPATION_CLUSTER]->(peer:Applicant)
+MATCH (a:Customer)-[:SAME_OCCUPATION_CLUSTER]->(peer:Customer)
 WHERE abs(peer.coverage_amount - a.coverage_amount) < 50000
 RETURN a.cnic, a.coverage_amount, collect(peer.cnic) AS cluster_peers
 ORDER BY size(cluster_peers) DESC;
 
--- Full neighbourhood of a specific applicant
-MATCH (a:Applicant {cnic: "3520112345671"})
-OPTIONAL MATCH (a)-[r]-(b:Applicant)
+-- Full neighbourhood of a specific customer
+MATCH (a:Customer {cnic: "3520112345671"})
+OPTIONAL MATCH (a)-[r]-(b:Customer)
 RETURN a, r, b;
 ```

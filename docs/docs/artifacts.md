@@ -72,7 +72,7 @@ curl -X POST "http://localhost:8010/tenants/{tenant_id}/cases/{case_id}/artifact
   "id": "f08a7fd0-6dd7-40e2-900e-0bdad6875c06",
   "tenant_id": "502e8a32-b3fa-4fce-abdf-19c37c3dd90c",
   "case_id": "3c1a9b77-...",
-  "applicant_id": "9d4f2b11-...",
+  "customer_id": "9d4f2b11-...",
   "uploaded_by": "1a2b3c4d-...",
   "document_type": "Salary Slip",
   "file_name": "salary_slip.pdf",

@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 # ─────────────────────────────────────────────────────────────────────────────
 # Age factor — banded multiplier approximating increasing mortality risk with
 # age. (lower_bound_age, factor) — the highest band whose lower bound the
-# applicant's age meets or exceeds applies.
+# customer's age meets or exceeds applies.
 # ─────────────────────────────────────────────────────────────────────────────
 
 _AGE_BANDS: List[Tuple[int, float]] = [

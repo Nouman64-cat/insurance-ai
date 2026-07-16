@@ -7,7 +7,7 @@ import api from "@/app/services/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface Applicant {
+interface Customer {
   id: string;
   cnic: string;
   name: string;
@@ -20,7 +20,7 @@ interface Applicant {
 interface CaseItem {
   caseld: string;
   caseNumber: string;
-  applicant_id: string;
+  customer_id: string;
   caseType: string;
   caseStatus: string;
   priorityLevel: string;
@@ -32,7 +32,7 @@ interface CaseItem {
 interface Artifact {
   id: string;
   case_id: string;
-  applicant_id: string;
+  customer_id: string;
   document_type: string;
   file_name: string;
   file_size: number;
@@ -48,7 +48,7 @@ interface Artifact {
   created_at: string;
 }
 
-type View = "applicants" | "cases" | "documents";
+type View = "customers" | "cases" | "documents";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -202,25 +202,25 @@ function ExplorerItem({ id, icon, name, line2, badge, isSelected, onSingleClick,
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
 
-function Breadcrumb({ view, applicant, caseItem, onGoApplicants, onGoCases }: {
+function Breadcrumb({ view, customer, caseItem, onGoCustomers, onGoCases }: {
   view: View;
-  applicant: Applicant | null;
+  customer: Customer | null;
   caseItem: CaseItem | null;
-  onGoApplicants: () => void;
+  onGoCustomers: () => void;
   onGoCases: () => void;
 }) {
   return (
     <nav className="flex items-center gap-1 text-sm min-w-0 overflow-x-auto">
-      <button onClick={onGoApplicants} className={`font-semibold whitespace-nowrap transition-colors ${view === "applicants" ? "text-slate-800" : "text-blue-600 hover:text-blue-700"}`}>
-        Applicants
+      <button onClick={onGoCustomers} className={`font-semibold whitespace-nowrap transition-colors ${view === "customers" ? "text-slate-800" : "text-blue-600 hover:text-blue-700"}`}>
+        Customers
       </button>
-      {applicant && (
+      {customer && (
         <>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 text-slate-400 flex-shrink-0">
             <polyline points="9 18 15 12 9 6" />
           </svg>
           <button onClick={onGoCases} className={`font-semibold truncate max-w-[180px] transition-colors ${view === "cases" ? "text-slate-800" : "text-blue-600 hover:text-blue-700"}`}>
-            {applicant.name}
+            {customer.name}
           </button>
         </>
       )}
@@ -309,7 +309,7 @@ function ModalShell({ title, subtitle, onClose, children }: { title: string; sub
   );
 }
 
-function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applicant; onClose: () => void; onCreated: () => void }) {
+function CreateCaseModal({ customer, onClose, onCreated }: { customer: Customer; onClose: () => void; onCreated: () => void }) {
   const [caseType, setCaseType] = useState("Underwriting");
   const [priority, setPriority] = useState("Normal");
   const [channel, setChannel] = useState("Online");
@@ -324,7 +324,7 @@ function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applica
     setErr("");
     try {
       await api.post(`/tenants/${tenantId}/cases`, {
-        applicant_id: applicant.id,
+        customer_id: customer.id,
         caseType,
         priorityLevel: priority,
         sourceChannel: channel,
@@ -338,7 +338,7 @@ function CreateCaseModal({ applicant, onClose, onCreated }: { applicant: Applica
   };
 
   return (
-    <ModalShell title="New Case" subtitle={`Applicant: ${applicant.name}`} onClose={onClose}>
+    <ModalShell title="New Case" subtitle={`Customer: ${customer.name}`} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <Field label="Case Type">
           <select value={caseType} onChange={e => setCaseType(e.target.value)} className={SELECT}>
@@ -920,11 +920,11 @@ function ToastBanner({ toasts, onDismiss }: { toasts: ToastMsg[]; onDismiss: (id
 
 export default function CasesPage() {
   const router = useRouter();
-  const [view, setView] = useState<View>("applicants");
-  const [activeApplicant, setActiveApplicant] = useState<Applicant | null>(null);
+  const [view, setView] = useState<View>("customers");
+  const [activeCustomer, setActiveCustomer] = useState<Customer | null>(null);
   const [activeCase, setActiveCase] = useState<CaseItem | null>(null);
 
-  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [checklistRequired, setChecklistRequired] = useState<string[] | null>(null);
@@ -983,14 +983,14 @@ export default function CasesPage() {
     return () => clearTimeout(t);
   }, [artifacts, view, tenantId]);
 
-  // Load applicants + all cases once
+  // Load customers + all cases once
   useEffect(() => {
     setLoadingMain(true);
     Promise.all([
-      api.get(`/tenants/${tenantId}/applicants`),
+      api.get(`/tenants/${tenantId}/customers`),
       api.get(`/tenants/${tenantId}/cases`),
     ]).then(([aRes, cRes]) => {
-      setApplicants(aRes.data);
+      setCustomers(aRes.data);
       setCases(cRes.data);
     }).catch(err => setError(err.message ?? "Failed to load."))
       .finally(() => setLoadingMain(false));
@@ -1017,8 +1017,8 @@ export default function CasesPage() {
   }, [tenantId]);
 
   // Navigation helpers
-  const openApplicant = (applicant: Applicant) => {
-    setActiveApplicant(applicant);
+  const openCustomer = (customer: Customer) => {
+    setActiveCustomer(customer);
     setActiveCase(null);
     setArtifacts([]);
     setSelectedId(null);
@@ -1033,9 +1033,9 @@ export default function CasesPage() {
     fetchChecklist(c.caseld);
   };
 
-  const goToApplicants = () => {
-    setView("applicants");
-    setActiveApplicant(null);
+  const goToCustomers = () => {
+    setView("customers");
+    setActiveCustomer(null);
     setActiveCase(null);
     setSelectedId(null);
     setArtifacts([]);
@@ -1082,16 +1082,16 @@ export default function CasesPage() {
     }
   };
 
-  const casesForApplicant = activeApplicant
-    ? cases.filter(c => c.applicant_id === activeApplicant.id)
+  const casesForCustomer = activeCustomer
+    ? cases.filter(c => c.customer_id === activeCustomer.id)
     : [];
 
   const selectedArtifact = artifacts.find(a => a.id === selectedId) ?? null;
 
   // Status bar text
   const statusText = (() => {
-    if (view === "applicants") return `${applicants.length} applicant${applicants.length !== 1 ? "s" : ""}`;
-    if (view === "cases") return `${casesForApplicant.length} case${casesForApplicant.length !== 1 ? "s" : ""}`;
+    if (view === "customers") return `${customers.length} customer${customers.length !== 1 ? "s" : ""}`;
+    if (view === "cases") return `${casesForCustomer.length} case${casesForCustomer.length !== 1 ? "s" : ""}`;
     if (view === "documents") {
       const base = `${artifacts.length} document${artifacts.length !== 1 ? "s" : ""}`;
       if (selectedArtifact) return `${base}  ·  ${selectedArtifact.file_name}  ·  ${fmtSize(selectedArtifact.file_size)}  ·  ${selectedArtifact.document_type}  ·  ${selectedArtifact.status}`;
@@ -1109,9 +1109,9 @@ export default function CasesPage() {
       <div className="flex items-center justify-between gap-4 px-5 py-3 bg-white border-b border-slate-200 flex-shrink-0">
         {/* Back + breadcrumb */}
         <div className="flex items-center gap-3 min-w-0">
-          {view !== "applicants" && (
+          {view !== "customers" && (
             <button
-              onClick={view === "documents" ? goToCases : goToApplicants}
+              onClick={view === "documents" ? goToCases : goToCustomers}
               className="flex items-center justify-center w-8 h-8 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 transition-colors flex-shrink-0"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-600">
@@ -1121,16 +1121,16 @@ export default function CasesPage() {
           )}
           <Breadcrumb
             view={view}
-            applicant={activeApplicant}
+            customer={activeCustomer}
             caseItem={activeCase}
-            onGoApplicants={goToApplicants}
+            onGoCustomers={goToCustomers}
             onGoCases={goToCases}
           />
         </div>
 
         {/* Action buttons */}
         <div className="flex items-center gap-2 flex-shrink-0">
-          {view === "cases" && activeApplicant && (
+          {view === "cases" && activeCustomer && (
             <button onClick={() => setShowCreateCase(true)} className={BTN_PRIMARY}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
                 <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -1143,10 +1143,10 @@ export default function CasesPage() {
               <button 
                 onClick={() => {
                   workflowStore.update({
-                    selectedApplicant: activeApplicant,
+                    selectedCustomer: activeCustomer,
                     selectedCase: activeCase,
                     autoStartSummarize: true,
-                    applicantSearch: activeApplicant ? `${activeApplicant.name} (${activeApplicant.cnic})` : "",
+                    customerSearch: activeCustomer ? `${activeCustomer.name} (${activeCustomer.cnic})` : "",
                   });
                   router.push("/case-summarizer");
                 }} 
@@ -1191,18 +1191,18 @@ export default function CasesPage() {
         ) : (
           <div className="p-5">
 
-            {/* ── Applicants grid ───────────────────────────────────────────── */}
-            {view === "applicants" && (
-              applicants.length === 0 ? (
+            {/* ── Customers grid ───────────────────────────────────────────── */}
+            {view === "customers" && (
+              customers.length === 0 ? (
                 <EmptyState
                   icon={<FolderSvg size={72} />}
-                  title="No applicants yet"
-                  subtitle="Create an applicant first to start managing cases."
+                  title="No customers yet"
+                  subtitle="Create an customer first to start managing cases."
                 />
               ) : (
                 <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
-                  {applicants.map(app => {
-                    const count = cases.filter(c => c.applicant_id === app.id).length;
+                  {customers.map(app => {
+                    const count = cases.filter(c => c.customer_id === app.id).length;
                     return (
                       <ExplorerItem
                         key={app.id}
@@ -1212,7 +1212,7 @@ export default function CasesPage() {
                         line2={<>{app.cnic}<br />{count} case{count !== 1 ? "s" : ""}</>}
                         isSelected={selectedId === app.id}
                         onSingleClick={() => setSelectedId(app.id)}
-                        onDoubleClick={() => openApplicant(app)}
+                        onDoubleClick={() => openCustomer(app)}
                         actions={null}
                       />
                     );
@@ -1223,11 +1223,11 @@ export default function CasesPage() {
 
             {/* ── Cases grid ───────────────────────────────────────────────── */}
             {view === "cases" && (
-              casesForApplicant.length === 0 ? (
+              casesForCustomer.length === 0 ? (
                 <EmptyState
                   icon={<FolderSvg color="#93C5FD" accent="#3B82F6" size={72} />}
                   title="No cases yet"
-                  subtitle={`${activeApplicant?.name} has no cases. Create the first one.`}
+                  subtitle={`${activeCustomer?.name} has no cases. Create the first one.`}
                   action={
                     <button onClick={() => setShowCreateCase(true)} className={BTN_PRIMARY}>
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -1239,7 +1239,7 @@ export default function CasesPage() {
                 />
               ) : (
                 <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }}>
-                  {casesForApplicant.map(c => {
+                  {casesForCustomer.map(c => {
                     const fc = caseFolderColor(c.caseStatus);
                     const statusCls = STATUS_CHIP[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200";
                     const priCls = PRIORITY_COLOR[c.priorityLevel] ?? "text-slate-500";
@@ -1424,9 +1424,9 @@ export default function CasesPage() {
 
       {/* ── Modals ───────────────────────────────────────────────────────────── */}
 
-      {showCreateCase && activeApplicant && (
+      {showCreateCase && activeCustomer && (
         <CreateCaseModal
-          applicant={activeApplicant}
+          customer={activeCustomer}
           onClose={() => setShowCreateCase(false)}
           onCreated={() => {
             setShowCreateCase(false);

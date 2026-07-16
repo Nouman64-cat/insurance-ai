@@ -65,7 +65,7 @@ class PolicyStatusEnum(str, Enum):
     """Lifecycle of a single Policy row, from indicative quote to bound cover.
 
     Quoted     — auto-priced or /quote-priced, no case opened yet (non-binding).
-    Proposed   — applicant selected this quote; an Underwriting Case is open.
+    Proposed   — customer selected this quote; an Underwriting Case is open.
     UnderReview— AI returned Human Review / Approve with Loading; awaiting an
                  underwriter decision (or the aggregation node hasn't run yet).
     Approved   — AI Auto Approve, or an underwriter approved the case.
@@ -114,7 +114,7 @@ class Tenant(SQLModel, table=True):
     established_date: Optional[date] = Field(default=None)
 
     # Relationships
-    applicants: List["Applicant"] = Relationship(back_populates="tenant")
+    customers: List["Customer"] = Relationship(back_populates="tenant")
     organizations: List["Organization"] = Relationship(back_populates="tenant")
     policies: List["Policy"] = Relationship(back_populates="tenant")
     master_policies: List["MasterPolicy"] = Relationship(back_populates="tenant")
@@ -291,33 +291,33 @@ class Organization(SQLModel, table=True):
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="organizations")
-    employees: List["Applicant"] = Relationship(back_populates="organization")
+    employees: List["Customer"] = Relationship(back_populates="organization")
     master_policies: List["MasterPolicy"] = Relationship(back_populates="organization")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Applicant  —  the person applying for a policy
+# Customer  —  the person applying for a policy
 # ─────────────────────────────────────────────────────────────────────────────
 
-class Applicant(SQLModel, table=True):
+class Customer(SQLModel, table=True):
     """
-    Personal and financial profile of an insurance applicant.
+    Personal and financial profile of an insurance customer.
     CNIC is unique per tenant (same person cannot have two records within one insurer).
 
     Also doubles as an "employee" record when organization_id is set — a
-    business's staff enrolled under a MasterPolicy are Applicant rows too, so
+    business's staff enrolled under a MasterPolicy are Customer rows too, so
     they get the same Case/Artifact/RiskAssessment/Claim machinery for free.
     """
-    __tablename__ = "applicants"
+    __tablename__ = "customers"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "cnic", name="uq_applicant_cnic_per_tenant"),
+        UniqueConstraint("tenant_id", "cnic", name="uq_customer_cnic_per_tenant"),
     )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
 
     # Set only for employees enrolled under an Organization's group policy;
-    # NULL for individual applicants (unchanged, existing behavior).
+    # NULL for individual customers (unchanged, existing behavior).
     organization_id: Optional[UUID] = Field(default=None, foreign_key="organizations.id", index=True, nullable=True)
 
     # Identity
@@ -343,11 +343,11 @@ class Applicant(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
-    tenant: Optional[Tenant] = Relationship(back_populates="applicants")
+    tenant: Optional[Tenant] = Relationship(back_populates="customers")
     organization: Optional[Organization] = Relationship(back_populates="employees")
-    policies: List["Policy"] = Relationship(back_populates="applicant")
-    risk_assessments: List["RiskAssessment"] = Relationship(back_populates="applicant")
-    artifacts: List["Artifact"] = Relationship(back_populates="applicant")
+    policies: List["Policy"] = Relationship(back_populates="customer")
+    risk_assessments: List["RiskAssessment"] = Relationship(back_populates="customer")
+    artifacts: List["Artifact"] = Relationship(back_populates="customer")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -386,14 +386,14 @@ class MasterPolicy(SQLModel, table=True):
 
 class Policy(SQLModel, table=True):
     """
-    A requested insurance policy linked to a specific applicant and tenant.
+    A requested insurance policy linked to a specific customer and tenant.
     Coverage details drive the risk-engine scoring logic.
     """
     __tablename__ = "policies"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
-    applicant_id: UUID = Field(foreign_key="applicants.id", index=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False)
 
     # Set only for a Certificate of Insurance issued under a group MasterPolicy;
     # NULL for individually-underwritten policies (unchanged, existing behavior).
@@ -405,7 +405,7 @@ class Policy(SQLModel, table=True):
     term_years: int = Field(ge=1, le=40)
 
     # Only populated for CHILD_EDUCATION_MARRIAGE — the insured milestone
-    # belongs to a dependent, not the proposer/applicant.
+    # belongs to a dependent, not the proposer/customer.
     dependent_name: Optional[str] = Field(default=None, max_length=255)
     dependent_dob: Optional[date] = Field(default=None)
 
@@ -424,7 +424,7 @@ class Policy(SQLModel, table=True):
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="policies")
-    applicant: Optional[Applicant] = Relationship(back_populates="policies")
+    customer: Optional[Customer] = Relationship(back_populates="policies")
     master_policy: Optional[MasterPolicy] = Relationship(back_populates="certificates")
     claims: List["Claim"] = Relationship(back_populates="policy")
     commission: Optional["Commission"] = Relationship(back_populates="policy")
@@ -432,20 +432,20 @@ class Policy(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# RiskAssessment  —  AI underwriting output for an applicant
+# RiskAssessment  —  AI underwriting output for an customer
 # ─────────────────────────────────────────────────────────────────────────────
 
 class RiskAssessment(SQLModel, table=True):
     """
     Stores the output produced by the risk-engine and decision-engine for a
-    given applicant. One applicant may have multiple assessments over time
+    given customer. One customer may have multiple assessments over time
     (re-assessment after additional information, appeals, etc.).
     """
     __tablename__ = "risk_assessments"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
-    applicant_id: UUID = Field(foreign_key="applicants.id", index=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False)
 
     # Policy linkage — optional since older rows predate this column
     policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
@@ -467,6 +467,23 @@ class RiskAssessment(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True),
     )
 
+    # Per-category XAI reasons — kept separately from the flat `reasons` above so
+    # the underwriting UI can always render the Medical / Financial / Fraud
+    # explainability breakdown, even for a persisted assessment (after refresh or
+    # when viewing one plan of a multi-plan batch).
+    medical_reasons: Optional[List[str]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    financial_reasons: Optional[List[str]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+    fraud_reasons: Optional[List[str]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+    )
+
     # Composite weighted score (0–100) computed by the risk engine aggregation node
     composite_risk_score: Optional[int] = Field(default=None, ge=0, le=100)
 
@@ -480,7 +497,7 @@ class RiskAssessment(SQLModel, table=True):
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="risk_assessments")
-    applicant: Optional[Applicant] = Relationship(back_populates="risk_assessments")
+    customer: Optional[Customer] = Relationship(back_populates="risk_assessments")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -511,7 +528,7 @@ class Claim(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Artifact  —  a document attached to an applicant or a claim
+# Artifact  —  a document attached to an customer or a claim
 # Defined after Claim because claim_id is a FK to claims.
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -520,7 +537,7 @@ class Artifact(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
-    applicant_id: Optional[UUID] = Field(default=None, foreign_key="applicants.id", index=True)
+    customer_id: Optional[UUID] = Field(default=None, foreign_key="customers.id", index=True)
     claim_id: Optional[UUID] = Field(default=None, foreign_key="claims.id", index=True)
     case_id: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", index=True)
     uploaded_by: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True)
@@ -540,7 +557,7 @@ class Artifact(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     tenant: Optional[Tenant] = Relationship(back_populates="artifacts")
-    applicant: Optional[Applicant] = Relationship(back_populates="artifacts")
+    customer: Optional[Customer] = Relationship(back_populates="artifacts")
     claim: Optional[Claim] = Relationship(back_populates="artifacts")
 
 
@@ -761,11 +778,11 @@ class Case(SQLModel, table=True):
 
     caseld: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
-    applicant_id: UUID = Field(foreign_key="applicants.id", index=True)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True)
 
     # The specific Policy application this case is underwriting/claiming
     # against. Optional since older cases predate this column and generic
-    # Inquiry cases may not have one — falls back to the applicant's most
+    # Inquiry cases may not have one — falls back to the customer's most
     # recent Policy (see document-checklist) when absent.
     policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
 

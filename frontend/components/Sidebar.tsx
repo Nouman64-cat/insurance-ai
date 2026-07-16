@@ -514,7 +514,7 @@ const NAV_ITEMS = [
 
       {
 
-        href: "/admin/applicants",
+        href: "/admin/customers",
 
         label: "Customer Profile",
 
@@ -838,7 +838,7 @@ export function Sidebar() {
 
 
 
-  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/applicants", "/financial"];
+  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/customers", "/financial"];
 
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens"];
 

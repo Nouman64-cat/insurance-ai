@@ -12,9 +12,9 @@ import type { AIDecision } from "@/lib/mock-data";
 
 interface AssessmentSummary {
   id: string;
-  applicant_id: string;
-  applicant_name: string;
-  applicant_cnic: string;
+  customer_id: string;
+  customer_name: string;
+  customer_cnic: string;
   case_id: string | null;
   medical_score: number;
   financial_score: number;
@@ -160,10 +160,10 @@ function DetailPanel({
       doc.addImage(logoImg, "PNG", W - mg - 36.2, 4.5, 36.2, 13);
     }
 
-    // Applicant block
-    section("APPLICANT DETAILS");
-    row("Name", detail.applicant_name);
-    row("CNIC", detail.applicant_cnic);
+    // Customer block
+    section("CUSTOMER DETAILS");
+    row("Name", detail.customer_name);
+    row("CNIC", detail.customer_cnic);
     if (detail.case_id) row("Case ID", detail.case_id);
     row("Assessed", fmt(detail.created_at));
     y += 3;
@@ -395,7 +395,7 @@ function DetailPanel({
       doc.text(`Page ${p} of ${total}`, W - mg - 18, 292);
     }
 
-    doc.save(`assessment_${detail.applicant_cnic}_${new Date().toISOString().slice(0, 10)}.pdf`);
+    doc.save(`assessment_${detail.customer_cnic}_${new Date().toISOString().slice(0, 10)}.pdf`);
   };
 
   return (
@@ -410,8 +410,8 @@ function DetailPanel({
       {/* Header */}
       <div className="flex items-start justify-between p-5 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
         <div>
-          <p className="text-base font-bold text-slate-800">{item.applicant_name}</p>
-          <p className="text-xs text-slate-500 mt-0.5 font-medium">CNIC {item.applicant_cnic}</p>
+          <p className="text-base font-bold text-slate-800">{item.customer_name}</p>
+          <p className="text-xs text-slate-500 mt-0.5 font-medium">CNIC {item.customer_cnic}</p>
           <p className="text-[10px] text-slate-400 mt-1 font-semibold">{fmt(item.created_at)}</p>
         </div>
         <button
@@ -574,7 +574,7 @@ export default function AssessmentHistoryPage() {
     if (filter !== "All" && a.ai_decision !== (filter as AIDecision)) return false;
     if (search) {
       const q = search.toLowerCase();
-      return a.applicant_name.toLowerCase().includes(q) || a.applicant_cnic.includes(q);
+      return a.customer_name.toLowerCase().includes(q) || a.customer_cnic.includes(q);
     }
     return true;
   });
@@ -656,7 +656,7 @@ export default function AssessmentHistoryPage() {
           <table className="w-full text-xs bg-white">
             <thead className="sticky top-0 bg-slate-50/90 backdrop-blur border-b border-slate-200 z-10">
               <tr>
-                <th className="text-left px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Applicant</th>
+                <th className="text-left px-6 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Customer</th>
                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Decision</th>
                 <th className="text-left px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Composite</th>
                 <th className="text-center px-4 py-3 text-[10px] font-bold uppercase tracking-wider text-slate-550 text-slate-500">Med</th>
@@ -679,10 +679,10 @@ export default function AssessmentHistoryPage() {
                         : "hover:bg-slate-50/50"
                     }`}
                   >
-                    {/* Applicant */}
+                    {/* Customer */}
                     <td className="px-6 py-3.5">
-                      <p className="font-bold text-slate-800">{a.applicant_name}</p>
-                      <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{a.applicant_cnic}</p>
+                      <p className="font-bold text-slate-800">{a.customer_name}</p>
+                      <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{a.customer_cnic}</p>
                     </td>
 
                     {/* Decision badge */}

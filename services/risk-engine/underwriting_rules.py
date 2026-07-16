@@ -151,10 +151,10 @@ def resolve_medical_exam_tier(rules: PlanRules, coverage_amount: float) -> Optio
 
 def check_plan_rules(
     insurance_type: Optional[str],
-    applicant: Dict[str, Any],
+    customer: Dict[str, Any],
     policy: Dict[str, Any],
 ) -> Tuple[bool, List[str]]:
-    """Validate applicant + policy against the rule band for insurance_type.
+    """Validate customer + policy against the rule band for insurance_type.
 
     Falls back to a generic band if insurance_type is missing/unrecognized.
     Returns (is_valid, errors).
@@ -166,20 +166,20 @@ def check_plan_rules(
 
     # ── Proposer age ───────────────────────────────────────────────────────
     try:
-        age = _age_from_dob(applicant["dob"])
+        age = _age_from_dob(customer["dob"])
         if age < rules.min_entry_age:
             errors.append(
-                f"[{plan_label}] Applicant is below minimum entry age of {rules.min_entry_age} (age: {age})."
+                f"[{plan_label}] Customer is below minimum entry age of {rules.min_entry_age} (age: {age})."
             )
         if age > rules.max_entry_age:
             errors.append(
-                f"[{plan_label}] Applicant exceeds maximum entry age of {rules.max_entry_age} (age: {age})."
+                f"[{plan_label}] Customer exceeds maximum entry age of {rules.max_entry_age} (age: {age})."
             )
     except (KeyError, ValueError, TypeError):
         errors.append("Invalid or missing date of birth.")
 
     # ── Income ─────────────────────────────────────────────────────────────
-    income = applicant.get("declared_income", 0)
+    income = customer.get("declared_income", 0)
     if income <= 0:
         errors.append("Declared income must be greater than zero.")
 

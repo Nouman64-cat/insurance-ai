@@ -12,7 +12,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 import { workflowStore, INITIAL_EVAL, INITIAL_FORM, INSURANCE_TYPE_OPTIONS, INSURANCE_TYPE_LABELS } from "./workflowStore";
-import type { Applicant, CaseItem, Artifact, TokenUsage, SumStatus, EvalStatus, EvalState, EvalForm } from "./workflowStore";
+import type { Customer, CaseItem, Artifact, TokenUsage, SumStatus, EvalStatus, EvalState, EvalForm } from "./workflowStore";
 
 const PIPELINE_NODES = [
   { key: "validate_input",       label: "Input\nValidation",     dotColor: "bg-slate-500"   },
@@ -60,12 +60,12 @@ export default function CaseSummarizerPage() {
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
   // Selection
-  const [applicants, setApplicants] = useState<Applicant[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [storeState, setStoreState] = useState(() => ({
-    selectedApplicant: workflowStore.selectedApplicant,
+    selectedCustomer: workflowStore.selectedCustomer,
     selectedCase: workflowStore.selectedCase,
     checkedDocs: workflowStore.checkedDocs,
-    applicantSearch: workflowStore.applicantSearch,
+    customerSearch: workflowStore.customerSearch,
     sumStatus: workflowStore.sumStatus,
     summary: workflowStore.summary,
     tokenUsage: workflowStore.tokenUsage,
@@ -80,10 +80,10 @@ export default function CaseSummarizerPage() {
   useEffect(() => {
     return workflowStore.subscribe(() => {
       setStoreState({
-        selectedApplicant: workflowStore.selectedApplicant,
+        selectedCustomer: workflowStore.selectedCustomer,
         selectedCase: workflowStore.selectedCase,
         checkedDocs: workflowStore.checkedDocs,
-        applicantSearch: workflowStore.applicantSearch,
+        customerSearch: workflowStore.customerSearch,
         sumStatus: workflowStore.sumStatus,
         summary: workflowStore.summary,
         tokenUsage: workflowStore.tokenUsage,
@@ -98,10 +98,10 @@ export default function CaseSummarizerPage() {
   }, []);
 
   const {
-    selectedApplicant,
+    selectedCustomer,
     selectedCase,
     checkedDocs,
-    applicantSearch,
+    customerSearch,
     sumStatus,
     summary,
     tokenUsage,
@@ -113,13 +113,13 @@ export default function CaseSummarizerPage() {
     evalError,
   } = storeState;
 
-  const setSelectedApplicant = (val: Applicant | null) => workflowStore.update({ selectedApplicant: val });
+  const setSelectedCustomer = (val: Customer | null) => workflowStore.update({ selectedCustomer: val });
   const setSelectedCase = (val: CaseItem | null) => workflowStore.update({ selectedCase: val });
   const setCheckedDocs = (val: Set<string> | ((prev: Set<string>) => Set<string>)) => {
     const next = typeof val === "function" ? val(workflowStore.checkedDocs) : val;
     workflowStore.update({ checkedDocs: next });
   };
-  const setApplicantSearch = (val: string) => workflowStore.update({ applicantSearch: val });
+  const setCustomerSearch = (val: string) => workflowStore.update({ customerSearch: val });
   const setSumStatus = (val: SumStatus) => workflowStore.update({ sumStatus: val });
   const setSummary = (val: string | ((prev: string) => string)) => {
     const next = typeof val === "function" ? val(workflowStore.summary) : val;
@@ -147,36 +147,36 @@ export default function CaseSummarizerPage() {
   const [loadingCases, setLoadingCases] = useState(false);
   const [loadingArtifacts, setLoadingArtifacts] = useState(false);
 
-  // Search applicant combobox state
-  const [showApplicantDropdown, setShowApplicantDropdown] = useState(false);
+  // Search customer combobox state
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setShowApplicantDropdown(false);
+        setShowCustomerDropdown(false);
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Load applicants on mount
+  // Load customers on mount
   useEffect(() => {
     if (!tenantId) return;
-    api.get(`/tenants/${tenantId}/applicants`).then(r => setApplicants(r.data)).catch(() => {});
+    api.get(`/tenants/${tenantId}/customers`).then(r => setCustomers(r.data)).catch(() => {});
   }, [tenantId]);
 
-  // Load cases when applicant selected
+  // Load cases when customer selected
   useEffect(() => {
-    if (!selectedApplicant || !tenantId) { setCases([]); setSelectedCase(null); return; }
+    if (!selectedCustomer || !tenantId) { setCases([]); setSelectedCase(null); return; }
     setLoadingCases(true);
-    api.get(`/tenants/${tenantId}/cases`, { params: { applicant_id: selectedApplicant.id } })
+    api.get(`/tenants/${tenantId}/cases`, { params: { customer_id: selectedCustomer.id } })
       .then(r => setCases(r.data))
       .catch(() => {})
       .finally(() => setLoadingCases(false));
-  }, [selectedApplicant, tenantId]);
+  }, [selectedCustomer, tenantId]);
 
   // Load artifacts when case selected
   useEffect(() => {
@@ -201,19 +201,19 @@ export default function CaseSummarizerPage() {
       .finally(() => setLoadingArtifacts(false));
   }, [selectedCase, tenantId]);
 
-  // Pre-fill eval form from selected applicant
+  // Pre-fill eval form from selected customer
   useEffect(() => {
-    if (!selectedApplicant) return;
+    if (!selectedCustomer) return;
     setEvalForm({
       ...evalForm,
-      cnic: selectedApplicant.cnic,
-      name: selectedApplicant.name,
-      dob: selectedApplicant.dob,
-      gender: selectedApplicant.gender,
-      occupation: selectedApplicant.occupation,
-      declaredIncome: String(selectedApplicant.declared_income),
+      cnic: selectedCustomer.cnic,
+      name: selectedCustomer.name,
+      dob: selectedCustomer.dob,
+      gender: selectedCustomer.gender,
+      occupation: selectedCustomer.occupation,
+      declaredIncome: String(selectedCustomer.declared_income),
     });
-  }, [selectedApplicant]);
+  }, [selectedCustomer]);
 
   const selectedDocs = artifacts.filter(a => checkedDocs.has(a.id) && a.ocr_result);
 
@@ -307,8 +307,8 @@ export default function CaseSummarizerPage() {
 
     y = 38;
 
-    // ── Applicant & Policy ───────────────────────────────────────────────────
-    section("APPLICANT DETAILS");
+    // ── Customer & Policy ───────────────────────────────────────────────────
+    section("CUSTOMER DETAILS");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(11);
     doc.setTextColor(15, 23, 42);
@@ -647,31 +647,31 @@ export default function CaseSummarizerPage() {
             </div>
             <div className="p-5 space-y-4">
               <div className="relative" ref={dropdownRef}>
-                <label className="block text-xs font-medium text-slate-600 mb-1.5">Applicant</label>
+                <label className="block text-xs font-medium text-slate-600 mb-1.5">Customer</label>
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search or select applicant..."
-                    value={applicantSearch}
-                    onFocus={() => setShowApplicantDropdown(true)}
+                    placeholder="Search or select customer..."
+                    value={customerSearch}
+                    onFocus={() => setShowCustomerDropdown(true)}
                     onChange={e => {
-                      setApplicantSearch(e.target.value);
-                      setShowApplicantDropdown(true);
+                      setCustomerSearch(e.target.value);
+                      setShowCustomerDropdown(true);
                       if (!e.target.value) {
-                        setSelectedApplicant(null);
+                        setSelectedCustomer(null);
                         setSelectedCase(null);
                       }
                     }}
                     className="w-full px-3 py-2 pr-12 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                   />
-                  {applicantSearch && (
+                  {customerSearch && (
                     <button
                       type="button"
                       onClick={() => {
-                        setApplicantSearch("");
-                        setSelectedApplicant(null);
+                        setCustomerSearch("");
+                        setSelectedCustomer(null);
                         setSelectedCase(null);
-                        setShowApplicantDropdown(true);
+                        setShowCustomerDropdown(true);
                       }}
                       className="absolute right-8 top-2 text-slate-400 hover:text-slate-600 text-xs"
                     >
@@ -680,38 +680,38 @@ export default function CaseSummarizerPage() {
                   )}
                   <button
                     type="button"
-                    onClick={() => setShowApplicantDropdown(!showApplicantDropdown)}
+                    onClick={() => setShowCustomerDropdown(!showCustomerDropdown)}
                     className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
                   >
-                    <svg className={`w-4 h-4 transform transition-transform ${showApplicantDropdown ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <svg className={`w-4 h-4 transform transition-transform ${showCustomerDropdown ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </button>
                 </div>
 
-                {showApplicantDropdown && (
+                {showCustomerDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
                     {(() => {
-                      const filtered = applicants.filter(a =>
-                        a.name.toLowerCase().includes(applicantSearch.toLowerCase()) ||
-                        a.cnic.includes(applicantSearch)
+                      const filtered = customers.filter(a =>
+                        a.name.toLowerCase().includes(customerSearch.toLowerCase()) ||
+                        a.cnic.includes(customerSearch)
                       );
                       if (filtered.length === 0) {
-                        return <div className="px-3 py-2 text-xs text-slate-500">No applicants found</div>;
+                        return <div className="px-3 py-2 text-xs text-slate-500">No customers found</div>;
                       }
                       return filtered.map(a => (
                         <div
                           key={a.id}
                           onClick={() => {
-                            setSelectedApplicant(a);
-                            setApplicantSearch(`${a.name} (${a.cnic})`);
-                            setShowApplicantDropdown(false);
+                            setSelectedCustomer(a);
+                            setCustomerSearch(`${a.name} (${a.cnic})`);
+                            setShowCustomerDropdown(false);
                             setSelectedCase(null);
                             setSumStatus("idle");
                             setSummary("");
                           }}
                           className={`px-3 py-2 text-sm cursor-pointer hover:bg-slate-50 flex flex-col ${
-                            selectedApplicant?.id === a.id ? "bg-blue-50/50" : ""
+                            selectedCustomer?.id === a.id ? "bg-blue-50/50" : ""
                           }`}
                         >
                           <span className="font-semibold text-slate-700">{a.name}</span>
@@ -727,7 +727,7 @@ export default function CaseSummarizerPage() {
                 <label className="block text-xs font-medium text-slate-600 mb-1.5">Case</label>
                 <select
                   value={selectedCase?.caseld ?? ""}
-                  disabled={!selectedApplicant || loadingCases}
+                  disabled={!selectedCustomer || loadingCases}
                   onChange={e => {
                     const c = cases.find(c => c.caseld === e.target.value) ?? null;
                     setSelectedCase(c);
@@ -836,7 +836,7 @@ export default function CaseSummarizerPage() {
               </p>
               <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
                 {!selectedCase
-                  ? "Choose an applicant and case on the left, then select the documents to include."
+                  ? "Choose an customer and case on the left, then select the documents to include."
                   : selectedDocs.length === 0
                   ? "Tick the documents with OCR results on the left, then click Summarize."
                   : `${selectedDocs.length} document${selectedDocs.length !== 1 ? "s" : ""} selected — click Summarize to begin.`}
@@ -959,7 +959,7 @@ export default function CaseSummarizerPage() {
                   </div>
                 )}
 
-                {/* Always-visible quick inputs for coverage + term (the two fields not from applicant) */}
+                {/* Always-visible quick inputs for coverage + term (the two fields not from customer) */}
                 {!showEvalForm && (
                   <div className="px-5 py-4 grid grid-cols-2 gap-3">
                     <EvalField label="Coverage Amount (PKR)" type="number" value={evalForm.coverageAmount} onChange={v => setEvalForm({ ...evalForm, coverageAmount: v })} placeholder="5000000" />

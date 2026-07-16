@@ -35,7 +35,7 @@ from schemas import (
     ProposalAcceptedResponse,
 )
 from shared.events.kafka_events import (
-    ApplicantPayload,
+    CustomerPayload,
     PolicyPayload,
     ProposalPayload,
     ProposalSubmittedEvent,
@@ -43,7 +43,7 @@ from shared.events.kafka_events import (
 from shared.models.core import (
     ActionTypeEnum,
     AIDecision,
-    Applicant,
+    Customer,
     Case,
     CaseHistory,
     CaseStatusEnum,
@@ -119,12 +119,12 @@ async def evaluate(
         tenant_id=tenant_id,
         payload=ProposalPayload(
             proposal_id=proposal_id,
-            applicant=ApplicantPayload(
-                cnic=request.applicant.cnic,
-                dob=str(request.applicant.dob),
-                gender=str(request.applicant.gender.value),
-                occupation=request.applicant.occupation,
-                declared_income=int(request.applicant.declared_income),
+            customer=CustomerPayload(
+                cnic=request.customer.cnic,
+                dob=str(request.customer.dob),
+                gender=str(request.customer.gender.value),
+                occupation=request.customer.occupation,
+                declared_income=int(request.customer.declared_income),
             ),
             policy=PolicyPayload(
                 product_name=request.policy.product_name,
@@ -187,19 +187,19 @@ async def evaluate_stream(
             detail=f"Tenant '{tenant_id}' not found. Create it first via POST /tenants.",
         )
 
-    stmt = select(Applicant).where(
-        Applicant.tenant_id == tenant_id,
-        Applicant.cnic == request.applicant.cnic,
+    stmt = select(Customer).where(
+        Customer.tenant_id == tenant_id,
+        Customer.cnic == request.customer.cnic,
     )
-    existing_applicant = (await session.exec(stmt)).first()
+    existing_customer = (await session.exec(stmt)).first()
 
-    applicant_payload = request.applicant.model_dump(mode="json")
-    if existing_applicant is not None:
-        applicant_payload["is_smoker"] = existing_applicant.is_smoker
-        applicant_payload["height_cm"] = existing_applicant.height_cm
-        applicant_payload["weight_kg"] = existing_applicant.weight_kg
-        if existing_applicant.details:
-            applicant_payload["details"] = existing_applicant.details
+    customer_payload = request.customer.model_dump(mode="json")
+    if existing_customer is not None:
+        customer_payload["is_smoker"] = existing_customer.is_smoker
+        customer_payload["height_cm"] = existing_customer.height_cm
+        customer_payload["weight_kg"] = existing_customer.weight_kg
+        if existing_customer.details:
+            customer_payload["details"] = existing_customer.details
 
     policy_payload = request.policy.model_dump(mode="json")
 
@@ -212,7 +212,7 @@ async def evaluate_stream(
                 async with client.stream(
                     "POST",
                     f"{settings.risk_engine_url}/evaluate/stream",
-                    json={"applicant": applicant_payload, "policy": policy_payload},
+                    json={"customer": customer_payload, "policy": policy_payload},
                     headers={"X-Tenant-Id": str(tenant_id)},
                 ) as risk_resp:
                     if risk_resp.status_code != 200:
@@ -260,22 +260,22 @@ async def evaluate_stream(
         # ── Persist to DB ─────────────────────────────────────────────────────
         try:
             async with _session_factory() as db:
-                stmt = select(Applicant).where(
-                    Applicant.tenant_id == tenant_id,
-                    Applicant.cnic == request.applicant.cnic,
+                stmt = select(Customer).where(
+                    Customer.tenant_id == tenant_id,
+                    Customer.cnic == request.customer.cnic,
                 )
                 existing = (await db.exec(stmt)).first()
                 if existing is not None:
-                    applicant = existing
+                    customer = existing
                 else:
-                    applicant = Applicant(
+                    customer = Customer(
                         tenant_id=tenant_id,
-                        cnic=request.applicant.cnic,
-                        name=request.applicant.name,
-                        dob=request.applicant.dob,
-                        gender=request.applicant.gender,
-                        occupation=request.applicant.occupation,
-                        declared_income=request.applicant.declared_income,
+                        cnic=request.customer.cnic,
+                        name=request.customer.name,
+                        dob=request.customer.dob,
+                        gender=request.customer.gender,
+                        occupation=request.customer.occupation,
+                        declared_income=request.customer.declared_income,
                         # Live Evaluation is a quick what-if risk check, not formal
                         # onboarding — it doesn't collect these pricing-relevant
                         # fields, so they're recorded as unknown placeholders here.
@@ -283,7 +283,7 @@ async def evaluate_stream(
                         height_cm=170,
                         weight_kg=70,
                     )
-                    db.add(applicant)
+                    db.add(customer)
                     await db.flush()
 
                 # A case-driven evaluation (Case Detail's "Run AI Underwriting")
@@ -304,7 +304,7 @@ async def evaluate_stream(
                 if policy is None:
                     policy = Policy(
                         tenant_id=tenant_id,
-                        applicant_id=applicant.id,
+                        customer_id=customer.id,
                         product_name=request.policy.product_name,
                         insurance_type=request.policy.insurance_type,
                         coverage_amount=request.policy.coverage_amount,
@@ -317,7 +317,7 @@ async def evaluate_stream(
 
                 assessment = RiskAssessment(
                     tenant_id=tenant_id,
-                    applicant_id=applicant.id,
+                    customer_id=customer.id,
                     policy_id=policy.id,
                     case_id=request.case_id,
                     medical_score=final_risk["medical_score"],
@@ -327,6 +327,9 @@ async def evaluate_stream(
                     ai_decision=AIDecision(final_risk["ai_decision"]),
                     suggested_loading=final_risk.get("suggested_loading"),
                     reasons=final_risk.get("reasons"),
+                    medical_reasons=final_risk.get("medical_reasons"),
+                    financial_reasons=final_risk.get("financial_reasons"),
+                    fraud_reasons=final_risk.get("fraud_reasons"),
                     ai_summary=request.ai_summary,
                 )
                 db.add(assessment)
@@ -361,7 +364,7 @@ async def evaluate_stream(
                 await db.commit()
                 await db.refresh(assessment)
 
-            yield f"data: {json.dumps({'type': 'saved', 'data': {'assessment_id': str(assessment.id), 'applicant_id': str(applicant.id), 'policy_id': str(policy.id), 'tenant_id': str(tenant_id), 'case_id': str(case.caseld) if case else None, 'policy_status': policy.status.value, 'case_status': case.caseStatus.value if case else None, 'medical_score': assessment.medical_score, 'financial_score': assessment.financial_score, 'fraud_probability': assessment.fraud_probability, 'composite_risk_score': final_risk['composite_risk_score'], 'ai_decision': assessment.ai_decision.value, 'suggested_loading': assessment.suggested_loading, 'reasons': assessment.reasons or [], 'created_at': assessment.created_at.isoformat()}})}\n\n"
+            yield f"data: {json.dumps({'type': 'saved', 'data': {'assessment_id': str(assessment.id), 'customer_id': str(customer.id), 'policy_id': str(policy.id), 'tenant_id': str(tenant_id), 'case_id': str(case.caseld) if case else None, 'policy_status': policy.status.value, 'case_status': case.caseStatus.value if case else None, 'medical_score': assessment.medical_score, 'financial_score': assessment.financial_score, 'fraud_probability': assessment.fraud_probability, 'composite_risk_score': final_risk['composite_risk_score'], 'ai_decision': assessment.ai_decision.value, 'suggested_loading': assessment.suggested_loading, 'reasons': assessment.reasons or [], 'created_at': assessment.created_at.isoformat()}})}\n\n"
 
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': f'Database error: {str(exc)}'})}\n\n"
@@ -397,12 +400,12 @@ async def list_assessments(
     if not assessments:
         return []
 
-    # Batch-load applicant + policy details in two queries so the frontend's
+    # Batch-load customer + policy details in two queries so the frontend's
     # underwriting queue tables (medical/financial/occupational/proposals) get
     # occupation, product, and coverage without an N+1 or a per-row round trip.
-    applicant_ids = list({a.applicant_id for a in assessments})
-    app_stmt = select(Applicant).where(Applicant.id.in_(applicant_ids))
-    applicants = {a.id: a for a in (await session.exec(app_stmt)).all()}
+    customer_ids = list({a.customer_id for a in assessments})
+    app_stmt = select(Customer).where(Customer.id.in_(customer_ids))
+    customers = {a.id: a for a in (await session.exec(app_stmt)).all()}
 
     policy_ids = list({a.policy_id for a in assessments if a.policy_id})
     policies: dict = {}
@@ -412,14 +415,14 @@ async def list_assessments(
 
     result = []
     for a in assessments:
-        applicant = applicants.get(a.applicant_id)
+        customer = customers.get(a.customer_id)
         policy = policies.get(a.policy_id) if a.policy_id else None
         result.append({
             "id": str(a.id),
-            "applicant_id": str(a.applicant_id),
-            "applicant_name": applicant.name if applicant else "Unknown",
-            "applicant_cnic": applicant.cnic if applicant else "—",
-            "applicant_occupation": applicant.occupation if applicant else None,
+            "customer_id": str(a.customer_id),
+            "customer_name": customer.name if customer else "Unknown",
+            "customer_cnic": customer.cnic if customer else "—",
+            "customer_occupation": customer.occupation if customer else None,
             "case_id": str(a.case_id) if a.case_id else None,
             "product_name": policy.product_name if policy else None,
             "insurance_type": policy.insurance_type.value if policy else None,
@@ -450,13 +453,13 @@ async def get_assessment(
     if a is None or a.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Assessment not found")
 
-    applicant = await session.get(Applicant, a.applicant_id)
+    customer = await session.get(Customer, a.customer_id)
 
     return {
         "id": str(a.id),
-        "applicant_id": str(a.applicant_id),
-        "applicant_name": applicant.name if applicant else "Unknown",
-        "applicant_cnic": applicant.cnic if applicant else "—",
+        "customer_id": str(a.customer_id),
+        "customer_name": customer.name if customer else "Unknown",
+        "customer_cnic": customer.cnic if customer else "—",
         "case_id": str(a.case_id) if a.case_id else None,
         "medical_score": a.medical_score,
         "financial_score": a.financial_score,

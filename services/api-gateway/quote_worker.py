@@ -3,22 +3,22 @@ Quote Worker — Kafka consumer daemon for background quotation generation.
 
 Lifecycle
 ---------
-1. Poll insurance.applicant.created.v1 (group: api-gateway-quote-worker-group).
-2. Deserialise ApplicantCreatedEvent.
+1. Poll insurance.customer.created.v1 (group: api-gateway-quote-worker-group).
+2. Deserialise CustomerCreatedEvent.
 3. Look up the tenant's active, individually-underwritten InsurancePlans
    (GROUP_LIFE and CHILD_EDUCATION_MARRIAGE are skipped — the former is priced
    per-MasterPolicy, the latter needs dependent details this event doesn't
    carry).
-4. For each plan the applicant is age-eligible for, pick a default coverage
+4. For each plan the customer is age-eligible for, pick a default coverage
    amount and term within the plan's bands and price it via
    shared.pricing.calculator — the same math POST /quote uses.
 5. Persist one Policy + PremiumQuote pair per eligible plan, so the
-   Quotation page has offers ready the moment the applicant is created.
+   Quotation page has offers ready the moment the customer is created.
 6. Commit the Kafka offset only after a successful DB write (at-least-once).
 
-An applicant who doesn't qualify for any plan simply gets zero quotes —
+An customer who doesn't qualify for any plan simply gets zero quotes —
 this is an enhancement, not a hard requirement, so it never blocks or fails
-applicant creation itself (see routers/applicants.py in tenant-service).
+customer creation itself (see routers/customers.py in tenant-service).
 """
 
 import asyncio
@@ -31,8 +31,8 @@ from pydantic import ValidationError
 from sqlmodel import select
 
 from database import _session_factory
-from shared.events.kafka_events import APPLICANT_CREATED_TOPIC, ApplicantCreatedEvent
-from shared.models.core import Applicant, InsurancePlan, InsuranceTypeEnum, PlanStatusEnum, Policy, PremiumQuote
+from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent
+from shared.models.core import Customer, InsurancePlan, InsuranceTypeEnum, PlanStatusEnum, Policy, PremiumQuote
 from shared.pricing.calculator import PremiumBreakdown, calculate_premium
 
 logger = logging.getLogger("api-gateway.quote-worker")
@@ -42,16 +42,16 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 CONSUMER_GROUP  = "api-gateway-quote-worker-group"
-INBOUND_TOPIC   = APPLICANT_CREATED_TOPIC
+INBOUND_TOPIC   = CUSTOMER_CREATED_TOPIC
 
-# Plans that can't be auto-quoted from an ApplicantCreated event alone:
+# Plans that can't be auto-quoted from an CustomerCreated event alone:
 # GROUP_LIFE is priced per-MasterPolicy, CHILD_EDUCATION_MARRIAGE needs
-# dependent_name/dependent_dob which the applicant record doesn't carry.
+# dependent_name/dependent_dob which the customer record doesn't carry.
 _SKIPPED_TYPES = {InsuranceTypeEnum.GROUP_LIFE, InsuranceTypeEnum.CHILD_EDUCATION_MARRIAGE}
 
 # Default term (years) offered before clamping to the plan's own band /
 # maturity-age limit — a reasonable mid-length policy, not a real quote
-# request, since the applicant hasn't chosen one yet.
+# request, since the customer hasn't chosen one yet.
 _DEFAULT_TERM_YEARS = 15
 
 # Default coverage multiple of annual income offered before clamping to the
@@ -70,7 +70,7 @@ def _default_coverage(annual_income: float, plan: InsurancePlan) -> float:
 
 def _default_term(age: int, plan: InsurancePlan) -> int | None:
     """Returns None if no term in the plan's band keeps the policy within
-    max_maturity_age — i.e. the applicant can't be quoted for this plan."""
+    max_maturity_age — i.e. the customer can't be quoted for this plan."""
     term = min(max(_DEFAULT_TERM_YEARS, plan.term_min_years), plan.term_max_years)
     if age + term > plan.max_maturity_age:
         term = plan.max_maturity_age - age
@@ -81,16 +81,16 @@ def _default_term(age: int, plan: InsurancePlan) -> int | None:
 
 # ── Core processing ─────────────────────────────────────────────────────────────
 
-async def _process(event: ApplicantCreatedEvent) -> None:
+async def _process(event: CustomerCreatedEvent) -> None:
     p = event.payload
     tenant_id = event.tenant_id
     dob = date.fromisoformat(p.dob)
     age = _age_from_dob(dob)
 
     async with _session_factory() as session:
-        applicant = await session.get(Applicant, p.applicant_id)
-        if applicant is None or applicant.tenant_id != tenant_id:
-            logger.warning("applicant not found, skipping | applicant_id=%s", p.applicant_id)
+        customer = await session.get(Customer, p.customer_id)
+        if customer is None or customer.tenant_id != tenant_id:
+            logger.warning("customer not found, skipping | customer_id=%s", p.customer_id)
             return
 
         plans = (
@@ -141,7 +141,7 @@ async def _process(event: ApplicantCreatedEvent) -> None:
         for plan, term, coverage, breakdown in best_by_type.values():
             policy = Policy(
                 tenant_id=tenant_id,
-                applicant_id=applicant.id,
+                customer_id=customer.id,
                 product_name=plan.label,
                 insurance_type=plan.insurance_type,
                 coverage_amount=coverage,
@@ -162,8 +162,8 @@ async def _process(event: ApplicantCreatedEvent) -> None:
 
         await session.commit()
         logger.info(
-            "quotes generated | applicant_id=%s tenant_id=%s plans_checked=%d quotes=%d",
-            p.applicant_id, tenant_id, len(plans), len(best_by_type),
+            "quotes generated | customer_id=%s tenant_id=%s plans_checked=%d quotes=%d",
+            p.customer_id, tenant_id, len(plans), len(best_by_type),
         )
 
 
@@ -195,7 +195,7 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
                     logger.info("received | partition=%s offset=%s", msg.partition, msg.offset)
 
                     try:
-                        event = ApplicantCreatedEvent.model_validate_json(msg.value)
+                        event = CustomerCreatedEvent.model_validate_json(msg.value)
                     except ValidationError as exc:
                         logger.error("invalid event schema, skipping | error=%s", exc)
                         await consumer.commit()
@@ -206,8 +206,8 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
                     except Exception as exc:
                         # DB write failed — do NOT commit; retry on next worker restart
                         logger.exception(
-                            "quote generation failed, will retry | applicant_id=%s error=%s",
-                            event.payload.applicant_id,
+                            "quote generation failed, will retry | customer_id=%s error=%s",
+                            event.payload.customer_id,
                             exc,
                         )
                         continue

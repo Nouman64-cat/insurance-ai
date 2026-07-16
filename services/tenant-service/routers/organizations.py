@@ -9,7 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from group_underwriting import normalize_cnic, validate_census, validate_sum_assured_multiple
 from schemas import (
-    ApplicantRead,
+    CustomerRead,
     CensusConfirmResponse,
     CensusRequest,
     CensusValidationResponse,
@@ -18,7 +18,7 @@ from schemas import (
     OrganizationCreate,
     OrganizationRead,
 )
-from shared.models.core import Applicant, InsuranceTypeEnum, MasterPolicy, Organization, Policy, Tenant
+from shared.models.core import Customer, InsuranceTypeEnum, MasterPolicy, Organization, Policy, Tenant
 from routers.users import verify_admin   # reuse existing Admin guard — tenant-scoped for Admin, cross-tenant for SuperAdmin
 
 router = APIRouter(prefix="/tenants", tags=["Organizations"])
@@ -88,13 +88,13 @@ async def get_organization(tenant_id: UUID, org_id: UUID, session: AsyncSession 
 
 @router.get(
     "/{tenant_id}/organizations/{org_id}/employees",
-    response_model=List[ApplicantRead],
+    response_model=List[CustomerRead],
     dependencies=[Depends(verify_admin)],
 )
 async def list_organization_employees(tenant_id: UUID, org_id: UUID, session: AsyncSession = Depends(get_session)):
     await _get_organization(tenant_id, org_id, session)
     result = await session.exec(
-        select(Applicant).where(Applicant.tenant_id == tenant_id, Applicant.organization_id == org_id)
+        select(Customer).where(Customer.tenant_id == tenant_id, Customer.organization_id == org_id)
     )
     return list(result.all())
 
@@ -163,7 +163,7 @@ async def validate_employee_census(
 ):
     await _get_master_policy(tenant_id, org_id, mp_id, session)
 
-    existing = await session.exec(select(Applicant.cnic).where(Applicant.organization_id == org_id))
+    existing = await session.exec(select(Customer.cnic).where(Customer.organization_id == org_id))
     existing_cnics = set(existing.all())
 
     return validate_census(existing_cnics, body.employees)
@@ -184,7 +184,7 @@ async def confirm_employee_census(
 ):
     master_policy = await _get_master_policy(tenant_id, org_id, mp_id, session)
 
-    existing = await session.exec(select(Applicant.cnic).where(Applicant.organization_id == org_id))
+    existing = await session.exec(select(Customer.cnic).where(Customer.organization_id == org_id))
     existing_cnics = set(existing.all())
 
     result = validate_census(existing_cnics, body.employees)
@@ -202,7 +202,7 @@ async def confirm_employee_census(
                 detail=f"Invalid employee row for CNIC '{row.get('cnic', '?')}': {exc}",
             )
 
-        applicant = Applicant(
+        customer = Customer(
             tenant_id=tenant_id,
             organization_id=org_id,
             cnic=normalize_cnic(row["cnic"]) or row["cnic"],
@@ -217,13 +217,13 @@ async def confirm_employee_census(
             height_cm=float(row.get("height_cm", 170)),
             weight_kg=float(row.get("weight_kg", 70)),
         )
-        session.add(applicant)
+        session.add(customer)
         await session.flush()
 
         coverage_amount = (declared_income / 12) * master_policy.sum_assured_multiple
         policy = Policy(
             tenant_id=tenant_id,
-            applicant_id=applicant.id,
+            customer_id=customer.id,
             master_policy_id=master_policy.id,
             product_name="Group Life",
             insurance_type=master_policy.insurance_type,
@@ -231,11 +231,11 @@ async def confirm_employee_census(
             term_years=master_policy.term_years,
         )
         session.add(policy)
-        created_ids.append(applicant.id)
+        created_ids.append(customer.id)
 
     master_policy.status = "Active"
     session.add(master_policy)
 
     await session.commit()
 
-    return CensusConfirmResponse(created_count=len(created_ids), applicant_ids=created_ids)
+    return CensusConfirmResponse(created_count=len(created_ids), customer_ids=created_ids)
