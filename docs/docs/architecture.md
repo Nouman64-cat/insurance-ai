@@ -32,7 +32,7 @@ graph TB
     end
 
     subgraph "Data Layer"
-        PG[("PostgreSQL 16\n:5434")]
+        PG[("PostgreSQL\n(external — not a container)")]
         MG[("Memgraph\n:7688 Bolt")]
         KF[["Apache Kafka KRaft\n:9092 internal\n:9094 external"]]
         KUI["Kafka UI :8090"]
@@ -63,7 +63,7 @@ Every table in PostgreSQL carries a `tenant_id` foreign key that scopes all read
 | Service | Responsibility |
 |---|---|
 | **API Gateway** | Single public entrypoint. Routes `/auth`, `/users`, `/roles` to Tenant Service via httpx proxy. Calls Risk Engine directly for `/evaluate`. Owns the PostgreSQL writes for applicant, policy, and risk_assessment rows. |
-| **Tenant Service** | Manages `tenants`, `users`, and `roles` tables. Issues and validates JWT tokens. Seeds four RBAC roles on startup: `Admin`, `Underwriter`, `Agent`, `Viewer`. |
+| **Tenant Service** | Manages `tenants`, `users`, and `roles` tables. Issues and validates JWT tokens. Seeds five RBAC roles on startup: `SuperAdmin`, `Admin`, `Underwriter`, `Agent`, `Viewer`. `SuperAdmin` is platform-level — creates tenants and bootstraps each tenant's first `Admin`. |
 | **Risk Engine** | Runs the LangGraph underwriting workflow (medical scoring → financial scoring → fraud detection → decision aggregation). Reads/writes the Memgraph fraud graph. Publishes `RiskEvaluatedEvent` to Kafka. |
 | **OCR Engine** | Accepts PDF/image file uploads and extracts structured text using Gemini 2.5 Flash multimodal. Supports streaming via SSE. |
 | **Text Summarizer** | Receives OCR-extracted text (one or more documents) and generates structured Markdown summaries via Gemini 2.5 Flash. |

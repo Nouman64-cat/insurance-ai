@@ -13,7 +13,8 @@ export interface Applicant {
 export interface CaseItem {
   caseld: string;
   caseNumber: string;
-  status: string;
+  status?: string;
+  caseStatus?: string;
 }
 
 export interface Artifact {
@@ -50,10 +51,26 @@ export interface EvalForm {
   gender: string;
   occupation: string;
   declaredIncome: string;
-  productName: string;
+  insuranceType: string;
   coverageAmount: string;
   termYears: string;
+  dependentName: string;
+  dependentDob: string;
 }
+
+export const INSURANCE_TYPE_OPTIONS = [
+  { value: "TERM_LIFE",               label: "Term Life" },
+  { value: "WHOLE_LIFE",               label: "Whole Life" },
+  { value: "ENDOWMENT",                label: "Endowment / Savings Plan" },
+  { value: "CHILD_EDUCATION_MARRIAGE", label: "Child Education & Marriage Plan" },
+  { value: "SAVINGS",                  label: "Savings / Investment Plan" },
+  { value: "SINGLE_PREMIUM",           label: "Single Premium Investment" },
+  { value: "HEALTH_CASH",              label: "Hospital Cash / Health Plan" },
+] as const;
+
+export const INSURANCE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
+  INSURANCE_TYPE_OPTIONS.map(o => [o.value, o.label]),
+);
 
 export const INITIAL_EVAL: EvalState = {
   completedNodes: [], medicalScore: null, medicalReasons: [],
@@ -64,7 +81,8 @@ export const INITIAL_EVAL: EvalState = {
 
 export const INITIAL_FORM: EvalForm = {
   cnic: "", name: "", dob: "", gender: "Male", occupation: "",
-  declaredIncome: "", productName: "Term Life Insurance", coverageAmount: "", termYears: "",
+  declaredIncome: "", insuranceType: "TERM_LIFE", coverageAmount: "", termYears: "",
+  dependentName: "", dependentDob: "",
 };
 
 type Listener = () => void;
@@ -73,6 +91,7 @@ export interface WorkflowStoreType {
   selectedApplicant: Applicant | null;
   selectedCase: CaseItem | null;
   checkedDocs: Set<string>;
+  autoStartSummarize: boolean;
   applicantSearch: string;
   sumStatus: SumStatus;
   summary: string;
@@ -100,6 +119,7 @@ export const workflowStore: WorkflowStoreType = {
   selectedApplicant: null,
   selectedCase: null,
   checkedDocs: new Set<string>(),
+  autoStartSummarize: false,
   applicantSearch: "",
   
   // Summary
@@ -144,6 +164,7 @@ export const workflowStore: WorkflowStoreType = {
     this.selectedApplicant = null;
     this.selectedCase = null;
     this.checkedDocs = new Set<string>();
+    this.autoStartSummarize = false;
     this.applicantSearch = "";
     this.sumStatus = "idle";
     this.summary = "";
@@ -244,9 +265,13 @@ export const workflowStore: WorkflowStoreType = {
         declared_income: parseFloat(this.evalForm.declaredIncome) || 0,
       },
       policy: {
-        product_name: this.evalForm.productName,
+        product_name: INSURANCE_TYPE_LABELS[this.evalForm.insuranceType] ?? this.evalForm.insuranceType,
+        insurance_type: this.evalForm.insuranceType,
         coverage_amount: parseFloat(this.evalForm.coverageAmount) || 0,
         term_years: parseInt(this.evalForm.termYears) || 0,
+        ...(this.evalForm.insuranceType === "CHILD_EDUCATION_MARRIAGE"
+          ? { dependent_name: this.evalForm.dependentName, dependent_dob: this.evalForm.dependentDob }
+          : {}),
       },
       ...(this.selectedCase?.caseld ? { case_id: this.selectedCase.caseld } : {}),
       ...(this.summary ? { ai_summary: this.summary } : {}),

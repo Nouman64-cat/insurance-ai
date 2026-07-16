@@ -17,11 +17,70 @@ class Gender(str, Enum):
     OTHER = "Other"
 
 
+class MaritalStatus(str, Enum):
+    SINGLE = "Single"
+    MARRIED = "Married"
+    DIVORCED = "Divorced"
+    WIDOWED = "Widowed"
+
+
 class AIDecision(str, Enum):
     AUTO_APPROVE = "Auto Approve"
     APPROVE_WITH_LOADING = "Approve with Loading"
     HUMAN_REVIEW = "Human Review"
     DECLINE = "Decline"
+
+
+class InsuranceTypeEnum(str, Enum):
+    TERM_LIFE = "TERM_LIFE"
+    WHOLE_LIFE = "WHOLE_LIFE"
+    ENDOWMENT = "ENDOWMENT"
+    CHILD_EDUCATION_MARRIAGE = "CHILD_EDUCATION_MARRIAGE"
+    GROUP_LIFE = "GROUP_LIFE"
+    SAVINGS = "SAVINGS"
+    SINGLE_PREMIUM = "SINGLE_PREMIUM"
+    HEALTH_CASH = "HEALTH_CASH"
+
+
+class PlanCategoryEnum(str, Enum):
+    INDIVIDUAL = "Individual"
+    GROUP = "Group"
+
+
+class ProductCategoryEnum(str, Enum):
+    """Business/distribution channel a plan is sold through — orthogonal to
+    PlanCategoryEnum (Individual/Group, the underwriting axis)."""
+    CONVENTIONAL = "Conventional"
+    TAKAFUL = "Takaful"
+    BANCASSURANCE = "Bancassurance"
+
+
+class PlanStatusEnum(str, Enum):
+    DRAFT = "Draft"
+    ACTIVE = "Active"
+    ARCHIVED = "Archived"
+
+
+class PolicyStatusEnum(str, Enum):
+    """Lifecycle of a single Policy row, from indicative quote to bound cover.
+
+    Quoted     — auto-priced or /quote-priced, no case opened yet (non-binding).
+    Proposed   — applicant selected this quote; an Underwriting Case is open.
+    UnderReview— AI returned Human Review / Approve with Loading; awaiting an
+                 underwriter decision (or the aggregation node hasn't run yet).
+    Approved   — AI Auto Approve, or an underwriter approved the case.
+    Declined   — AI hard-declined, or an underwriter rejected the case.
+    Issued     — approved policy accepted + first premium paid (not yet wired
+                 to a payment flow — set manually until that exists).
+    Lapsed     — issued policy that later lapsed (non-payment, cancellation).
+    """
+    QUOTED = "Quoted"
+    PROPOSED = "Proposed"
+    UNDER_REVIEW = "UnderReview"
+    APPROVED = "Approved"
+    DECLINED = "Declined"
+    ISSUED = "Issued"
+    LAPSED = "Lapsed"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -37,17 +96,81 @@ class Tenant(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     name: str = Field(unique=True, index=True, max_length=255)
+    code: str = Field(unique=True, index=True, max_length=50)
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+    # Company profile — captured at onboarding, all optional so existing rows
+    # (and any code that only ever set name/code) keep working.
+    registration_number: Optional[str] = Field(default=None, max_length=100)  # SECP/company reg. no.
+    license_number: Optional[str] = Field(default=None, max_length=100)       # SECP insurance license no.
+    head_office_address: Optional[str] = Field(default=None, max_length=500)
+    city: Optional[str] = Field(default=None, max_length=100)
+    province: Optional[str] = Field(default=None, max_length=100)
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+    website: Optional[str] = Field(default=None, max_length=255)
+    established_date: Optional[date] = Field(default=None)
+
     # Relationships
     applicants: List["Applicant"] = Relationship(back_populates="tenant")
+    organizations: List["Organization"] = Relationship(back_populates="tenant")
     policies: List["Policy"] = Relationship(back_populates="tenant")
+    master_policies: List["MasterPolicy"] = Relationship(back_populates="tenant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="tenant")
     claims: List["Claim"] = Relationship(back_populates="tenant")
     artifacts: List["Artifact"] = Relationship(back_populates="tenant")
     commissions: List["Commission"] = Relationship(back_populates="tenant")
     users: List["User"] = Relationship(back_populates="tenant")
+    insurance_plans: List["InsurancePlan"] = Relationship(back_populates="tenant")
+    premium_quotes: List["PremiumQuote"] = Relationship(back_populates="tenant")
+    branches: List["Branch"] = Relationship(back_populates="tenant")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Branch  —  a physical office (head office / regional / branch / liaison)
+# operated by a Tenant, identified by a tenant-scoped branch code.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BranchTypeEnum(str, Enum):
+    HEAD_OFFICE = "HEAD_OFFICE"
+    REGIONAL_OFFICE = "REGIONAL_OFFICE"
+    BRANCH = "BRANCH"
+    LIAISON_OFFICE = "LIAISON_OFFICE"
+
+
+class Branch(SQLModel, table=True):
+    """
+    One row per physical office of a Tenant. branch_code is unique per tenant
+    (not globally) since codes are tenant-issued, e.g. "LHR-01".
+    """
+    __tablename__ = "branches"
+    __table_args__ = (UniqueConstraint("tenant_id", "branch_code", name="uq_branch_tenant_code"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    branch_code: str = Field(max_length=50, index=True)
+    name: str = Field(max_length=255)
+    branch_type: BranchTypeEnum = Field(default=BranchTypeEnum.BRANCH, max_length=50)
+
+    region: Optional[str] = Field(default=None, max_length=100)
+    city: str = Field(max_length=100)
+    address: Optional[str] = Field(default=None, max_length=500)
+    postal_code: Optional[str] = Field(default=None, max_length=20)
+
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+
+    manager_user_id: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+    is_active: bool = Field(default=True, nullable=False)
+    opened_date: Optional[date] = Field(default=None)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="branches")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,6 +221,7 @@ class User(SQLModel, table=True):
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     role_id: UUID = Field(foreign_key="roles.id", nullable=False)
     user_type_id: Optional[UUID] = Field(default=None, foreign_key="user_types.id", nullable=True)
+    branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", nullable=True)
 
     email: str = Field(unique=True, index=True, max_length=255)
     username: str = Field(unique=True, index=True, max_length=255)
@@ -142,6 +266,36 @@ class UserProfile(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Organization  —  a business/employer insuring its staff under a group policy
+# ─────────────────────────────────────────────────────────────────────────────
+
+class Organization(SQLModel, table=True):
+    """
+    A small/medium business (or any employer) that insures its employees under
+    one or more MasterPolicy contracts, rather than individuals shopping for
+    their own coverage.
+    """
+    __tablename__ = "organizations"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    name: str = Field(max_length=255)
+    registration_number: Optional[str] = Field(default=None, max_length=100)  # NTN / business reg no.
+    industry: Optional[str] = Field(default=None, max_length=255)
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="organizations")
+    employees: List["Applicant"] = Relationship(back_populates="organization")
+    master_policies: List["MasterPolicy"] = Relationship(back_populates="organization")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Applicant  —  the person applying for a policy
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -149,6 +303,10 @@ class Applicant(SQLModel, table=True):
     """
     Personal and financial profile of an insurance applicant.
     CNIC is unique per tenant (same person cannot have two records within one insurer).
+
+    Also doubles as an "employee" record when organization_id is set — a
+    business's staff enrolled under a MasterPolicy are Applicant rows too, so
+    they get the same Case/Artifact/RiskAssessment/Claim machinery for free.
     """
     __tablename__ = "applicants"
     __table_args__ = (
@@ -158,24 +316,68 @@ class Applicant(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
 
+    # Set only for employees enrolled under an Organization's group policy;
+    # NULL for individual applicants (unchanged, existing behavior).
+    organization_id: Optional[UUID] = Field(default=None, foreign_key="organizations.id", index=True, nullable=True)
+
     # Identity
     cnic: str = Field(index=True, max_length=15)        # Pakistani National Identity Card
     name: str = Field(max_length=255)
     dob: date
     gender: Gender
+    marital_status: Optional[MaritalStatus] = Field(default=None, max_length=50)
 
     # Socio-economic profile used by the risk engine
     occupation: str = Field(max_length=255)
     declared_income: float = Field(ge=0)
+
+    # Pricing-relevant risk flags — promoted out of `details` to strongly-typed
+    # columns so the (upcoming) Rating/Pricing Engine has a validated contract
+    # instead of reading an untyped JSON blob.
+    is_smoker: bool = Field(nullable=False)
+    height_cm: float = Field(gt=0)
+    weight_kg: float = Field(gt=0)
+
     details: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="applicants")
+    organization: Optional[Organization] = Relationship(back_populates="employees")
     policies: List["Policy"] = Relationship(back_populates="applicant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="applicant")
     artifacts: List["Artifact"] = Relationship(back_populates="applicant")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# MasterPolicy  —  a group contract between an Organization and the insurer
+# ─────────────────────────────────────────────────────────────────────────────
+
+class MasterPolicy(SQLModel, table=True):
+    """
+    The single contract issued to an Organization covering its employees (e.g.
+    Group Life). Each covered employee gets their own Policy row (their
+    Certificate of Insurance) linked back here via Policy.master_policy_id.
+    """
+    __tablename__ = "master_policies"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    organization_id: UUID = Field(foreign_key="organizations.id", index=True, nullable=False)
+
+    insurance_type: InsuranceTypeEnum = Field(max_length=50)   # GROUP_LIFE in v1
+    sum_assured_multiple: float = Field(ge=0)                  # e.g. 24.0 = 24x monthly basic salary
+    term_years: int = Field(ge=1, le=40)
+    effective_date: date
+    status: str = Field(default="Pending", max_length=50)      # Pending / Active / Review
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="master_policies")
+    organization: Optional[Organization] = Relationship(back_populates="master_policies")
+    certificates: List["Policy"] = Relationship(back_populates="master_policy")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -193,17 +395,40 @@ class Policy(SQLModel, table=True):
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     applicant_id: UUID = Field(foreign_key="applicants.id", index=True, nullable=False)
 
+    # Set only for a Certificate of Insurance issued under a group MasterPolicy;
+    # NULL for individually-underwritten policies (unchanged, existing behavior).
+    master_policy_id: Optional[UUID] = Field(default=None, foreign_key="master_policies.id", index=True, nullable=True)
+
     product_name: str = Field(max_length=255)           # e.g. "Term Life", "Health Platinum"
+    insurance_type: InsuranceTypeEnum = Field(max_length=50)
     coverage_amount: float = Field(ge=0)                # in PKR
     term_years: int = Field(ge=1, le=40)
+
+    # Only populated for CHILD_EDUCATION_MARRIAGE — the insured milestone
+    # belongs to a dependent, not the proposer/applicant.
+    dependent_name: Optional[str] = Field(default=None, max_length=255)
+    dependent_dob: Optional[date] = Field(default=None)
+
+    # Beneficiary on death — optional at the DB layer (nullable, like
+    # dependent_name/dependent_dob above) so existing rows stay valid; the
+    # quote/onboarding API layer enforces it as required for new policies.
+    nominee_name: Optional[str] = Field(default=None, max_length=255)
+    nominee_relationship: Optional[str] = Field(default=None, max_length=100)
+
+    # Lifecycle status — see PolicyStatusEnum. Defaults to Quoted so existing
+    # rows (and every row created by the quote worker / POST /quote) stay
+    # correct without a backfill.
+    status: PolicyStatusEnum = Field(default=PolicyStatusEnum.QUOTED, max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="policies")
     applicant: Optional[Applicant] = Relationship(back_populates="policies")
+    master_policy: Optional[MasterPolicy] = Relationship(back_populates="certificates")
     claims: List["Claim"] = Relationship(back_populates="policy")
     commission: Optional["Commission"] = Relationship(back_populates="policy")
+    premium_quotes: List["PremiumQuote"] = Relationship(back_populates="policy")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -221,6 +446,9 @@ class RiskAssessment(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     applicant_id: UUID = Field(foreign_key="applicants.id", index=True, nullable=False)
+
+    # Policy linkage — optional since older rows predate this column
+    policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
 
     # Scoring  (0–100 for medical/financial; 0.0–1.0 for fraud probability)
     medical_score: int = Field(ge=0, le=100)
@@ -342,6 +570,97 @@ class Commission(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# PremiumQuote  —  ledger of premium calculations produced by the (upcoming)
+# Rating/Pricing Engine for a given Policy. Append-only: re-pricing a policy
+# creates a new row rather than overwriting the previous quote.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PremiumQuote(SQLModel, table=True):
+    __tablename__ = "premium_quotes"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    base_premium: float = Field(ge=0)
+    loading_applied: float = Field(default=0.0, ge=0)   # currency amount added on top of base_premium
+    total_premium: float = Field(ge=0)
+    rate_version: str = Field(max_length=50)             # ties the quote back to the InsurancePlan.rate_version used
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="premium_quotes")
+    policy: Optional[Policy] = Relationship(back_populates="premium_quotes")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# InsurancePlan  —  a tenant's catalog entry defining the eligibility rules and
+# required documents for a plan type. Editable per-tenant by an Admin (the
+# static PLANS list in the frontend and UNDERWRITING_RULES/REQUIRED_DOCUMENTS in
+# the services are the seed defaults this table is populated from).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class InsurancePlan(SQLModel, table=True):
+    __tablename__ = "insurance_plans"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_insurance_plan_code_per_tenant"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    # Identity / classification
+    code: str = Field(index=True, max_length=50)                 # e.g. "TERM_LIFE" — unique per tenant
+    label: str = Field(max_length=255)                           # e.g. "Term Life"
+    insurance_type: InsuranceTypeEnum = Field(max_length=50)
+    category: PlanCategoryEnum = Field(default=PlanCategoryEnum.INDIVIDUAL, max_length=50)
+    product_category: ProductCategoryEnum = Field(default=ProductCategoryEnum.CONVENTIONAL, max_length=50)
+    partner_bank: Optional[str] = Field(default=None, max_length=255)  # set for Bancassurance plans
+    status: PlanStatusEnum = Field(default=PlanStatusEnum.DRAFT, max_length=50)
+    description: str = Field(default="", sa_column=Column(Text, nullable=False))
+    color: str = Field(default="blue", max_length=30)            # UI accent/badge colour
+
+    # Eligibility band (proposer)
+    entry_age_min: int = Field(ge=0, le=120)
+    entry_age_max: int = Field(ge=0, le=120)
+    entry_age_label: str = Field(default="Proposer", max_length=100)
+
+    # Dependent band — only meaningful for CHILD_EDUCATION_MARRIAGE
+    dependent_age_min: Optional[int] = Field(default=None, ge=0, le=120)
+    dependent_age_max: Optional[int] = Field(default=None, ge=0, le=120)
+
+    # Term / maturity / coverage limits
+    term_min_years: int = Field(ge=1, le=100)
+    term_max_years: int = Field(ge=1, le=100)
+    max_maturity_age: int = Field(ge=0, le=120)
+    max_income_multiple: float = Field(ge=0)
+
+    # Group-specific (optional; only for GROUP plans)
+    min_group_size: Optional[int] = Field(default=None, ge=0)
+    underwriting_basis: Optional[str] = Field(default=None, max_length=255)
+
+    # Pricing framework — consumed by the (upcoming) Rating/Pricing Engine.
+    # Defaults are neutral (0 rate / 1.0x factor) so existing plans stay valid
+    # until real rates are loaded per plan.
+    base_premium_rate: float = Field(default=0.0, ge=0)   # e.g. PKR per 1,000 sum assured per year
+    smoker_factor: float = Field(default=1.0, ge=0)       # multiplier applied to base_premium_rate for smokers
+    rate_version: str = Field(default="v1", max_length=50)  # identifies which rate table these values belong to
+
+    # Nested reference data stored as JSON:
+    #   medical_exam_tiers: [{"minSumAssured": 0, "tier": "No medical exam required"}, ...]
+    #   required_documents: ["CNIC", "Medical Report", ...]
+    medical_exam_tiers: List[dict] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    required_documents: List[str] = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+
+    is_active: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    tenant: Optional[Tenant] = Relationship(back_populates="insurance_plans")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Case Management Enums
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -443,6 +762,13 @@ class Case(SQLModel, table=True):
     caseld: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True)
     applicant_id: UUID = Field(foreign_key="applicants.id", index=True)
+
+    # The specific Policy application this case is underwriting/claiming
+    # against. Optional since older cases predate this column and generic
+    # Inquiry cases may not have one — falls back to the applicant's most
+    # recent Policy (see document-checklist) when absent.
+    policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
+
     caseNumber: str = Field(index=True, unique=True, max_length=50)
     caseType: CaseTypeEnum = Field(max_length=50)
     caseStatus: CaseStatusEnum = Field(default=CaseStatusEnum.NEW, max_length=50)
@@ -612,3 +938,17 @@ class CaseAuditTrail(SQLModel, table=True):
     performedBy: UUID = Field(foreign_key="users.id", index=True)
     timestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     ipAddress: Optional[str] = Field(default=None, max_length=45, nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. TokenUsage
+# ─────────────────────────────────────────────────────────────────────────────
+class TokenUsage(SQLModel, table=True):
+    __tablename__ = "token_usage"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    service_name: str = Field(index=True, max_length=100)
+    input_tokens: int = Field(default=0)
+    output_tokens: int = Field(default=0)
+    total_tokens: int = Field(default=0)
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)

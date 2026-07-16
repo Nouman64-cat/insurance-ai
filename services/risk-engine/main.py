@@ -1,5 +1,6 @@
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -7,8 +8,22 @@ from typing import Any, Dict, Optional
 
 from graph_writer import write_applicant_to_graph
 from workflow import run_evaluation, stream_evaluation
+from consumer import start_consumer_task
+from suggestion import suggest_plan
 
-app = FastAPI(title="Risk Engine", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start the Kafka consumer daemon in the background
+    stop_event = asyncio.Event()
+    consumer_task = start_consumer_task(stop_event)
+    
+    yield
+    
+    # Graceful shutdown
+    stop_event.set()
+    await consumer_task
+
+app = FastAPI(title="Risk Engine", version="0.1.0", lifespan=lifespan)
 
 
 # ─── Request / response shapes (Pydantic, not SQLModel — no DB writes here) ──
@@ -20,17 +35,35 @@ class ApplicantInput(BaseModel):
     gender: str
     occupation: str
     declared_income: float
+    is_smoker: Optional[bool] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
+    details: Optional[Dict[str, Any]] = None
 
 
 class PolicyInput(BaseModel):
     product_name: str
+    insurance_type: Optional[str] = None
     coverage_amount: float
     term_years: int
+    dependent_dob: Optional[str] = None
 
 
 class EvaluationRequest(BaseModel):
     applicant: ApplicantInput
     policy: PolicyInput
+
+
+class SuggestPlanRequest(BaseModel):
+    applicant: Dict[str, Any]
+    plans: list[Dict[str, Any]]
+
+
+class SuggestPlanResponse(BaseModel):
+    suggested_plan_id: str
+    suggested_coverage: int
+    suggested_term: int
+    reasoning: str
 
 
 class EvaluationResponse(BaseModel):
@@ -155,3 +188,16 @@ async def evaluate_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
+
+
+@app.post("/suggest-plan", response_model=SuggestPlanResponse)
+async def suggest_plan_endpoint(
+    request: SuggestPlanRequest,
+    x_tenant_id: str = Header(default=""),
+):
+    """Uses LLM to recommend the best plan for the applicant."""
+    try:
+        result = suggest_plan(request.applicant, request.plans)
+        return SuggestPlanResponse(**result)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))

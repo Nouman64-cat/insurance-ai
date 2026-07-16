@@ -1,14 +1,48 @@
+import logging
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from schemas import ApplicantCreate, ApplicantRead, ApplicantUpdate
-from shared.models.core import Applicant, Tenant
+from schemas import ApplicantCreate, ApplicantRead, ApplicantUpdate, PolicyRead
+from shared.events.kafka_events import APPLICANT_CREATED_TOPIC, ApplicantCreatedEvent, ApplicantCreatedPayload
+from shared.models.core import Applicant, Policy, Tenant
 from routers.users import verify_admin   # reuse existing Admin guard
 
+logger = logging.getLogger("tenant-service.applicants")
+
 router = APIRouter(prefix="/tenants", tags=["Applicants"])
+
+
+async def _publish_applicant_created(request: Request, tenant_id: UUID, applicant: Applicant) -> None:
+    """Fire-and-forget: a failed publish must never fail applicant creation
+    itself — the quote worker is a background enhancement, not the source of
+    truth for the applicant record."""
+    event = ApplicantCreatedEvent(
+        tenant_id=tenant_id,
+        payload=ApplicantCreatedPayload(
+            applicant_id=applicant.id,
+            cnic=applicant.cnic,
+            name=applicant.name,
+            dob=str(applicant.dob),
+            gender=applicant.gender.value,
+            occupation=applicant.occupation,
+            declared_income=applicant.declared_income,
+            is_smoker=applicant.is_smoker,
+            height_cm=applicant.height_cm,
+            weight_kg=applicant.weight_kg,
+        ),
+    )
+    try:
+        producer = request.app.state.kafka_producer
+        await producer.send_and_wait(
+            APPLICANT_CREATED_TOPIC,
+            value=event.model_dump_json(),
+            key=str(tenant_id),
+        )
+    except Exception:
+        logger.exception("Failed to publish ApplicantCreated event | applicant_id=%s", applicant.id)
 
 @router.post(
     "/{tenant_id}/applicants",
@@ -19,6 +53,7 @@ router = APIRouter(prefix="/tenants", tags=["Applicants"])
 async def create_applicant(
     tenant_id: UUID,
     body: ApplicantCreate,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ) -> Applicant:
     # 1. Verify tenant exists and is active
@@ -53,11 +88,19 @@ async def create_applicant(
         gender          = body.gender,
         occupation      = body.occupation,
         declared_income = body.declared_income,
+        is_smoker       = body.is_smoker,
+        height_cm       = body.height_cm,
+        weight_kg       = body.weight_kg,
         details         = body.details,
     )
     session.add(applicant)
     await session.commit()
     await session.refresh(applicant)
+
+    # Kick off background quotation generation (Kafka) — see quote_worker.py
+    # in api-gateway. Runs after commit so the worker never races the read.
+    await _publish_applicant_created(request, tenant_id, applicant)
+
     return applicant
 
 @router.get(
@@ -91,6 +134,31 @@ async def get_applicant(
             detail="Applicant not found"
         )
     return applicant
+
+@router.get(
+    "/{tenant_id}/applicants/{applicant_id}/policies",
+    response_model=list[PolicyRead],
+    dependencies=[Depends(verify_admin)],
+)
+async def list_applicant_policies(
+    tenant_id: UUID,
+    applicant_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    applicant = await session.get(Applicant, applicant_id)
+    if not applicant or applicant.tenant_id != tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Applicant not found"
+        )
+
+    result = await session.exec(
+        select(Policy)
+        .where(Policy.tenant_id == tenant_id, Policy.applicant_id == applicant_id)
+        .order_by(Policy.created_at.desc())
+    )
+    return list(result.all())
+
 
 @router.delete(
     "/{tenant_id}/applicants/{applicant_id}",
@@ -166,6 +234,12 @@ async def update_applicant(
         applicant.occupation = body.occupation
     if body.declared_income is not None:
         applicant.declared_income = body.declared_income
+    if body.is_smoker is not None:
+        applicant.is_smoker = body.is_smoker
+    if body.height_cm is not None:
+        applicant.height_cm = body.height_cm
+    if body.weight_kg is not None:
+        applicant.weight_kg = body.weight_kg
     if body.details is not None:
         applicant.details = body.details
 

@@ -43,7 +43,9 @@ INBOUND_TOPIC    = "insurance.artifact.ocr.requested.v1"
 
 _OCR_URL    = os.getenv("OCR_ENGINE_URL", "http://ocr-engine:8004")
 _S3_BUCKET  = os.getenv("S3_BUCKET_NAME", "insurance-ai-dev")
-_AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+# S3 has its own region var, separate from AWS_REGION (used by SES) — see
+# routers/artifacts.py for why.
+_AWS_REGION = os.getenv("AWS_S3_REGION") or os.getenv("AWS_REGION", "us-east-1")
 
 
 # ── S3 helpers ─────────────────────────────────────────────────────────────────
@@ -161,33 +163,38 @@ async def run_consumer(stop_event: asyncio.Event | None = None) -> None:
     logger.info("OCR worker started — polling %s", INBOUND_TOPIC)
 
     try:
-        async for msg in consumer:
-            if stop_event and stop_event.is_set():
-                break
+        # getmany(timeout_ms=...) returns (possibly empty) on a bounded wait,
+        # unlike `async for msg in consumer` which blocks indefinitely for the
+        # next message. That's what lets this loop notice stop_event promptly
+        # even when the topic is idle — required for --reload to ever be able
+        # to tear this task down (see main.py's lifespan shutdown).
+        while not (stop_event and stop_event.is_set()):
+            batches = await consumer.getmany(timeout_ms=1000)
+            for msgs in batches.values():
+                for msg in msgs:
+                    logger.info("received | partition=%s offset=%s", msg.partition, msg.offset)
 
-            logger.info("received | partition=%s offset=%s", msg.partition, msg.offset)
+                    # Deserialise
+                    try:
+                        event = ArtifactOCRRequestedEvent.model_validate_json(msg.value)
+                    except ValidationError as exc:
+                        logger.error("invalid event schema, skipping | error=%s", exc)
+                        await consumer.commit()
+                        continue
 
-            # Deserialise
-            try:
-                event = ArtifactOCRRequestedEvent.model_validate_json(msg.value)
-            except ValidationError as exc:
-                logger.error("invalid event schema, skipping | error=%s", exc)
-                await consumer.commit()
-                continue
+                    # Process — OCR failures are handled inside _process; only DB failures propagate
+                    try:
+                        await _process(event)
+                    except Exception as exc:
+                        # DB write failed — do NOT commit; retry on next worker restart
+                        logger.exception(
+                            "DB update failed, will retry | artifact=%s error=%s",
+                            event.payload.artifact_id,
+                            exc,
+                        )
+                        continue
 
-            # Process — OCR failures are handled inside _process; only DB failures propagate
-            try:
-                await _process(event)
-            except Exception as exc:
-                # DB write failed — do NOT commit; retry on next worker restart
-                logger.exception(
-                    "DB update failed, will retry | artifact=%s error=%s",
-                    event.payload.artifact_id,
-                    exc,
-                )
-                continue
-
-            await consumer.commit()
+                    await consumer.commit()
 
     finally:
         await consumer.stop()

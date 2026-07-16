@@ -75,6 +75,7 @@ All endpoints are proxied through the API Gateway (`:8010`) to the Tenant Servic
 | `PATCH` | `/tenants/{tenant_id}/cases/{case_id}/status` | Change status — creates a `CaseHistory` entry |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/assignments` | Assign case to a user |
 | `POST` | `/tenants/{tenant_id}/cases/{case_id}/comments` | Add a comment |
+| `GET` | `/tenants/{tenant_id}/cases/{case_id}/document-checklist` | Required/received/missing documents, derived from the case's applicant's most recent `Policy.insurance_type` — see [Document Checklist](#document-checklist) below |
 
 ### Create case — request body
 
@@ -119,6 +120,22 @@ Creates a `CaseAssignment` record with `assignmentType = Primary` and `assignmen
   "visibilityLevel": "Team"
 }
 ```
+
+### Document checklist
+
+`GET /tenants/{tenant_id}/cases/{case_id}/document-checklist` returns which documents are required for the case, based on the applicant's most recent `Policy.insurance_type`, and diffs that against artifacts already uploaded for the case:
+
+```json
+{
+  "insurance_type": "CHILD_EDUCATION_MARRIAGE",
+  "case_type": "Underwriting",
+  "required": ["CNIC", "Salary Slip", "Bank Statement", "Child's Birth Certificate"],
+  "received": ["CNIC"],
+  "missing": ["Salary Slip", "Bank Statement", "Child's Birth Certificate"]
+}
+```
+
+The required-document mapping is keyed by `(insurance_type, case_type)` in `services/tenant-service/document_requirements.py`. Claim checklists are currently cause-agnostic (`"*"` wildcard on `insurance_type`) — death/accidental/maturity sub-cases are deferred until there's a `claim_type` selection UI to key off.
 
 ---
 

@@ -132,11 +132,22 @@ flowchart TD
 
 ### Validation rules (validate_input)
 
-- Applicant age must be 18–70 years
-- `declared_income` > 0
-- `coverage_amount` > 0
-- `coverage_amount` ≤ 20 × `declared_income`
-- `term_years` must be 1–40
+Rules are **plan-specific**, keyed by `policy.insurance_type` — see `services/risk-engine/underwriting_rules.py` (`UNDERWRITING_RULES`). If `insurance_type` is missing/unrecognized, a generic fallback band applies (age 18–70, term 1–40, income multiple 20×).
+
+| Insurance type | Entry age | Term (yrs) | Max maturity age | Max income multiple | Dependent age |
+|---|---|---|---|---|---|
+| `TERM_LIFE` | 18–65 | 5–30 | 70 | 20× | — |
+| `WHOLE_LIFE` | 18–65 | 1–40 | 99 | 25× | — |
+| `ENDOWMENT` | 18–60 | 10–30 | 70 | 15× | — |
+| `CHILD_EDUCATION_MARRIAGE` | 20–60 (proposer) | 10–24 | 70 | 15× | 1–15 |
+
+Common checks across all plans:
+- `declared_income` > 0, `coverage_amount` > 0
+- `coverage_amount` ≤ plan's max income multiple × `declared_income`
+- proposer age + `term_years` must not exceed the plan's max maturity age
+- for `CHILD_EDUCATION_MARRIAGE`, `policy.dependent_dob` is required and the dependent's age must fall in the plan's band
+
+Each plan also carries `medical_exam_tiers` (coverage-amount thresholds mapping to `None` / `Paramedical` / `Full medical + financials`) — not yet surfaced in `validation_errors`, informational for a future underwriter-facing rule panel.
 
 ### Decision bands (decision_aggregation)
 

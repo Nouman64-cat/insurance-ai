@@ -3,14 +3,12 @@ API Gateway — single public entry point for the insurance-ai platform.
 
 Responsibilities:
   - Table initialisation on startup (create_db_and_tables via SQLModel).
-  - Tenant bootstrap endpoints (POST /tenants, GET /tenants/{id}).
+  - Proxying tenant/user/auth endpoints to the tenant-service (which owns
+    that data — see POST /tenants, POST /tenants/{id}/setup).
   - Routing POST /evaluate to the underwriting router.
-
-In a production system the tenant lifecycle would live in a dedicated
-tenant-service; these bootstrap routes are here solely to make the
-prototype runnable without standing up every microservice.
 """
 
+import asyncio
 import json
 import os
 import httpx
@@ -22,12 +20,13 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from sqlmodel import select
-from sqlmodel.ext.asyncio.session import AsyncSession
 
-from database import create_db_and_tables, get_session
+from database import create_db_and_tables
 from kafka_producer import create_producer
+from quote_worker import start_quote_worker
 from routers.evaluate import router as evaluate_router
+from routers.quote import router as quote_router
+from routers.suggest import router as suggest_router
 from schemas import (
     CurrentUserResponse,
     RoleRead,
@@ -36,7 +35,6 @@ from schemas import (
     UserRead,
     UserUpdate,
 )
-from shared.models.core import Tenant
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -47,7 +45,16 @@ from shared.models.core import Tenant
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
     app.state.kafka_producer = await create_producer()
+
+    # Quote worker — background asyncio task, generates quotations for newly
+    # created applicants (see quote_worker.py).
+    stop_event = asyncio.Event()
+    worker_task = start_quote_worker(stop_event)
+
     yield
+
+    stop_event.set()
+    await worker_task
     await app.state.kafka_producer.stop()
 
 
@@ -99,6 +106,8 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ─────────────────────────────────────────────────────────────────────────────
 
 app.include_router(evaluate_router)
+app.include_router(quote_router)
+app.include_router(suggest_router)
 
 
 # ── Proxy routing to tenant-service ───────────────────────────────────────────
@@ -161,21 +170,21 @@ async def get_current_user(request: Request, token: str = Depends(oauth2_scheme)
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/auth/me")
 
 
-# ── Bootstrap — no auth ───────────────────────────────────────────────────────
+# ── Bootstrap — SuperAdmin only ────────────────────────────────────────────────
 
 @app.post(
     "/tenants/{tenant_id}/setup",
     tags=["Bootstrap"],
     response_model=UserRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Create first Admin user (no auth required)",
+    summary="Create first Admin user (SuperAdmin only)",
     description=(
-        "One-time bootstrap endpoint. Creates the first Admin user for a tenant "
-        "without requiring a JWT token. Returns **409** if any user already exists — "
+        "One-time bootstrap endpoint. Creates the first Admin user for a tenant. "
+        "Requires a SuperAdmin JWT. Returns **409** if any user already exists — "
         "after that, use `POST /auth/token` to log in and manage users normally."
     ),
 )
-async def seed_admin(tenant_id: UUID, request: Request):
+async def seed_admin(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/setup")
 
 
@@ -271,6 +280,15 @@ async def list_cases(tenant_id: UUID, request: Request, token: str = Depends(oau
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases")
 
 
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/detail",
+    tags=["Cases"],
+    summary="Get bundled case + applicant + policy + document checklist + latest risk assessment",
+)
+async def get_case_detail(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/detail")
+
+
 @app.get("/tenants/{tenant_id}/cases/{case_id}", tags=["Cases"], summary="Get a case by ID")
 async def get_case(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}")
@@ -299,6 +317,15 @@ async def assign_case(tenant_id: UUID, case_id: UUID, request: Request, token: s
 @app.post("/tenants/{tenant_id}/cases/{case_id}/comments", tags=["Cases"], status_code=201, summary="Add a comment")
 async def add_case_comment(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/comments")
+
+
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/document-checklist",
+    tags=["Cases"],
+    summary="Get required/received/missing documents for a case's plan type",
+)
+async def get_case_document_checklist(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/document-checklist")
 
 
 # ── Artifacts ─────────────────────────────────────────────────────────────────
@@ -404,9 +431,24 @@ async def proxy_tenant_applicants(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/applicants{path}")
 
 
+@app.api_route("/tenants/{tenant_id}/organizations{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_organizations(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/organizations{path}")
+
+
+@app.api_route("/tenants/{tenant_id}/insurance-plans{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_insurance_plans(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/insurance-plans{path}")
+
+
 @app.api_route("/roles", methods=["GET", "OPTIONS"], include_in_schema=False)
 async def proxy_roles(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
+
+
+@app.api_route("/tokens/usage", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
+async def proxy_tokens_usage(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tokens/usage")
 
 
 
@@ -420,34 +462,23 @@ async def health_check():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Tenant bootstrap
-# These routes live here for prototype convenience.
-# Move to the tenant-service when that microservice is implemented.
+# Tenant bootstrap — proxied to the tenant-service, which owns the Tenant table
+# and enforces SuperAdmin auth on creation.
 # ─────────────────────────────────────────────────────────────────────────────
 
 @app.post(
     "/tenants",
     status_code=status.HTTP_201_CREATED,
     tags=["Bootstrap"],
-    summary="Create a tenant",
+    summary="Create a tenant (SuperAdmin only)",
     description=(
-        "Creates a tenant record. **Required before calling POST /evaluate.** "
-        "Copy the returned `id` and send it as the `X-Tenant-Id` header."
+        "Creates a tenant record. Requires a SuperAdmin JWT. **Required before "
+        "calling POST /evaluate.** Copy the returned `id` and send it as the "
+        "`X-Tenant-Id` header."
     ),
 )
-async def create_tenant(
-    name: str,
-    session: AsyncSession = Depends(get_session),
-):
-    existing = (await session.exec(select(Tenant).where(Tenant.name == name))).first()
-    if existing:
-        return {"id": str(existing.id), "name": existing.name, "created_at": existing.created_at}
-
-    tenant = Tenant(name=name)
-    session.add(tenant)
-    await session.commit()
-    await session.refresh(tenant)
-    return {"id": str(tenant.id), "name": tenant.name, "created_at": tenant.created_at}
+async def create_tenant(request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/")
 
 
 @app.get(
@@ -455,11 +486,8 @@ async def create_tenant(
     tags=["Bootstrap"],
     summary="List all tenants",
 )
-async def list_tenants(
-    session: AsyncSession = Depends(get_session),
-):
-    tenants = list(await session.exec(select(Tenant)))
-    return [{"id": str(t.id), "name": t.name, "created_at": t.created_at} for t in tenants]
+async def list_tenants(request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/")
 
 
 @app.get(
@@ -467,18 +495,77 @@ async def list_tenants(
     tags=["Bootstrap"],
     summary="Get a tenant by ID",
 )
-async def get_tenant(
-    tenant_id: UUID,
-    session: AsyncSession = Depends(get_session),
-):
-    tenant: Tenant | None = await session.get(Tenant, tenant_id)
-    if tenant is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Tenant '{tenant_id}' not found.",
-        )
-    return {
-        "id": str(tenant.id),
-        "name": tenant.name,
-        "created_at": tenant.created_at,
-    }
+async def get_tenant(tenant_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")
+
+
+@app.patch(
+    "/tenants/{tenant_id}",
+    tags=["Bootstrap"],
+    summary="Update a tenant (SuperAdmin only)",
+)
+async def update_tenant(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")
+
+
+@app.delete(
+    "/tenants/{tenant_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Bootstrap"],
+    summary="Delete a tenant (SuperAdmin only)",
+)
+async def delete_tenant(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Branches — proxied to the tenant-service, which owns the Branch table and
+# enforces SuperAdmin auth on writes (see services/tenant-service/routers/branches.py).
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/branches",
+    status_code=status.HTTP_201_CREATED,
+    tags=["Branches"],
+    summary="Create a branch for a tenant (SuperAdmin only)",
+)
+async def create_branch(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/branches")
+
+
+@app.get(
+    "/tenants/{tenant_id}/branches",
+    tags=["Branches"],
+    summary="List branches for a tenant",
+)
+async def list_branches(tenant_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/branches")
+
+
+@app.get(
+    "/branches/{branch_id}",
+    tags=["Branches"],
+    summary="Get a branch by ID",
+)
+async def get_branch(branch_id: UUID, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/branches/{branch_id}")
+
+
+@app.patch(
+    "/branches/{branch_id}",
+    tags=["Branches"],
+    summary="Update a branch (SuperAdmin only)",
+)
+async def update_branch(branch_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/branches/{branch_id}")
+
+
+@app.delete(
+    "/branches/{branch_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Branches"],
+    summary="Delete a branch (SuperAdmin only)",
+)
+async def delete_branch(branch_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/branches/{branch_id}")
+
