@@ -22,6 +22,7 @@ interface MasterPolicy {
   term_years: number;
   effective_date: string;
   status: string;
+  free_cover_limit: number | null;
   created_at: string;
 }
 
@@ -42,6 +43,13 @@ interface CensusRow {
   gender: string;
   occupation: string;
   declared_income: string;
+  // Optional — the backend defaults these to non-smoker/170cm/70kg when
+  // omitted (guaranteed-issue members never need them), but supplying real
+  // answers here means an above-Free-Cover-Limit member gets scored by
+  // risk-engine's medical node against real data instead of that default.
+  is_smoker: string;
+  height_cm: string;
+  weight_kg: string;
 }
 
 interface CensusValidationResult {
@@ -50,15 +58,45 @@ interface CensusValidationResult {
   duplicate_cnics: string[];
   missing_fields: string[];
   errors: string[];
+  computed_free_cover_limit: number | null;
 }
 
-const EMPTY_ROW: CensusRow = { cnic: "", name: "", dob: "", gender: "Male", occupation: "", declared_income: "" };
+interface CensusEmployeeOutcome {
+  customer_id: string;
+  policy_id: string;
+  coverage_amount: number;
+  status: string;
+  premium_total: number;
+  suggested_loading: number | null;
+  risk_assessment_id: string | null;
+}
+
+interface CensusConfirmResult {
+  free_cover_limit: number;
+  employees: CensusEmployeeOutcome[];
+}
+
+const EMPTY_ROW: CensusRow = {
+  cnic: "", name: "", dob: "", gender: "Male", occupation: "", declared_income: "",
+  is_smoker: "", height_cm: "", weight_kg: "",
+};
 
 const STATUS_STYLE: Record<string, string> = {
   Active: "bg-emerald-50 text-emerald-700 border-emerald-200",
   Pending: "bg-blue-50 text-blue-700 border-blue-200",
   Review: "bg-amber-50 text-amber-700 border-amber-200",
 };
+
+const POLICY_STATUS_STYLE: Record<string, string> = {
+  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  UnderReview: "bg-amber-50 text-amber-700 border-amber-200",
+  Declined: "bg-red-50 text-red-700 border-red-200",
+  Quoted: "bg-slate-100 text-slate-700 border-slate-200",
+};
+
+function formatPKR(n: number): string {
+  return `PKR ${Math.round(n).toLocaleString()}`;
+}
 
 export default function OrganizationDetailPage() {
   const params = useParams();
@@ -86,6 +124,7 @@ export default function OrganizationDetailPage() {
   const [censusRows, setCensusRows] = useState<CensusRow[]>([{ ...EMPTY_ROW }]);
   const [censusResult, setCensusResult] = useState<CensusValidationResult | null>(null);
   const [censusLoading, setCensusLoading] = useState(false);
+  const [confirmResult, setConfirmResult] = useState<CensusConfirmResult | null>(null);
 
   useEffect(() => {
     const role = localStorage.getItem("user_role");
@@ -156,6 +195,9 @@ export default function OrganizationDetailPage() {
       gender: r.gender,
       occupation: r.occupation,
       declared_income: parseFloat(r.declared_income) || 0,
+      ...(r.is_smoker !== "" ? { is_smoker: r.is_smoker === "true" } : {}),
+      ...(r.height_cm !== "" ? { height_cm: parseFloat(r.height_cm) || undefined } : {}),
+      ...(r.weight_kg !== "" ? { weight_kg: parseFloat(r.weight_kg) || undefined } : {}),
     }));
 
   const handleValidateCensus = async () => {
@@ -181,11 +223,16 @@ export default function OrganizationDetailPage() {
     setSuccess("");
     setCensusLoading(true);
     try {
-      const resp = await api.post(
+      const resp = await api.post<CensusConfirmResult>(
         `/tenants/${tenantId}/organizations/${orgId}/master-policies/${selectedMpId}/census/confirm`,
         { employees: buildEmployeesPayload() }
       );
-      setSuccess(`${resp.data.created_count} employee(s) enrolled successfully.`);
+      const aboveFcl = resp.data.employees.filter((e) => e.coverage_amount > resp.data.free_cover_limit).length;
+      setSuccess(
+        `${resp.data.employees.length} employee(s) enrolled — Free Cover Limit ${formatPKR(resp.data.free_cover_limit)}` +
+        (aboveFcl > 0 ? `, ${aboveFcl} above FCL routed to underwriting review.` : ", all guaranteed-issue.")
+      );
+      setConfirmResult(resp.data);
       setCensusRows([{ ...EMPTY_ROW }]);
       setCensusResult(null);
       fetchAll();
@@ -263,6 +310,7 @@ export default function OrganizationDetailPage() {
                       <th className="px-5 py-3 text-left">Sum Assured Formula</th>
                       <th className="px-5 py-3 text-left">Term</th>
                       <th className="px-5 py-3 text-left">Effective Date</th>
+                      <th className="px-5 py-3 text-left">Free Cover Limit</th>
                       <th className="px-5 py-3 text-left">Status</th>
                     </tr>
                   </thead>
@@ -272,6 +320,9 @@ export default function OrganizationDetailPage() {
                         <td className="px-5 py-3 font-semibold text-slate-800">{mp.sum_assured_multiple}× monthly basic salary</td>
                         <td className="px-5 py-3 text-slate-600">{mp.term_years} years</td>
                         <td className="px-5 py-3 text-slate-600">{mp.effective_date}</td>
+                        <td className="px-5 py-3 text-slate-600">
+                          {mp.free_cover_limit != null ? formatPKR(mp.free_cover_limit) : "— (set on first census confirm)"}
+                        </td>
                         <td className="px-5 py-3">
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${STATUS_STYLE[mp.status] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
                             {mp.status}
@@ -304,7 +355,11 @@ export default function OrganizationDetailPage() {
               </div>
 
               <div className="p-5 space-y-3">
-                <p className="text-xs text-slate-400">Minimum group size: 10 employees. Coverage per employee = (annual income ÷ 12) × the master policy's sum-assured multiple.</p>
+                <p className="text-xs text-slate-400">
+                  Minimum group size: 10 employees. Coverage per employee = (annual income ÷ 12) × the master policy's sum-assured multiple.
+                  Employees at or under the computed Free Cover Limit are guaranteed-issue; above it, they're routed through AI underwriting —
+                  Smoker/Height/Weight are optional but improve that scoring beyond the guaranteed-issue defaults (non-smoker, 170cm, 70kg) if left blank.
+                </p>
 
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
@@ -316,6 +371,9 @@ export default function OrganizationDetailPage() {
                         <th className="pb-2 pr-2">Gender</th>
                         <th className="pb-2 pr-2">Occupation</th>
                         <th className="pb-2 pr-2">Annual Income (PKR)</th>
+                        <th className="pb-2 pr-2">Smoker?</th>
+                        <th className="pb-2 pr-2">Height (cm)</th>
+                        <th className="pb-2 pr-2">Weight (kg)</th>
                         <th className="pb-2"></th>
                       </tr>
                     </thead>
@@ -350,6 +408,22 @@ export default function OrganizationDetailPage() {
                             <input type="number" value={row.declared_income} onChange={(e) => updateCensusRow(i, "declared_income", e.target.value)} placeholder="1200000"
                               className="w-28 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
+                          <td className="pr-2 pb-2">
+                            <select value={row.is_smoker} onChange={(e) => updateCensusRow(i, "is_smoker", e.target.value)}
+                              className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1">
+                              <option value="">—</option>
+                              <option value="false">No</option>
+                              <option value="true">Yes</option>
+                            </select>
+                          </td>
+                          <td className="pr-2 pb-2">
+                            <input type="number" value={row.height_cm} onChange={(e) => updateCensusRow(i, "height_cm", e.target.value)} placeholder="170"
+                              className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
+                          </td>
+                          <td className="pr-2 pb-2">
+                            <input type="number" value={row.weight_kg} onChange={(e) => updateCensusRow(i, "weight_kg", e.target.value)} placeholder="70"
+                              className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
+                          </td>
                           <td className="pb-2">
                             <button type="button" onClick={() => removeCensusRow(i)} className="text-red-500 hover:text-red-700 font-bold px-1">✕</button>
                           </td>
@@ -370,6 +444,12 @@ export default function OrganizationDetailPage() {
                     <p className="font-bold">
                       {censusResult.is_valid ? "✓ Census Valid" : "⚠ Census has issues"} — {censusResult.total} row(s)
                     </p>
+                    {censusResult.is_valid && censusResult.computed_free_cover_limit != null && (
+                      <p>
+                        Computed Free Cover Limit: <span className="font-semibold">{formatPKR(censusResult.computed_free_cover_limit)}</span> —
+                        employees whose coverage exceeds this are routed to AI underwriting review instead of guaranteed issue.
+                      </p>
+                    )}
                     {censusResult.errors.map((e, i) => <p key={i}>{e}</p>)}
                     {censusResult.duplicate_cnics.length > 0 && <p>Duplicate CNICs: {censusResult.duplicate_cnics.join(", ")}</p>}
                     {censusResult.missing_fields.map((m, i) => <p key={i}>{m}</p>)}
@@ -390,6 +470,49 @@ export default function OrganizationDetailPage() {
                     Confirm &amp; Enroll
                   </button>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Last Enrollment Result — per-employee outcome from the most recent confirm */}
+          {confirmResult && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
+                <p className="text-sm font-semibold text-slate-700">Last Enrollment Result</p>
+                <span className="text-xs text-slate-500 font-medium">
+                  Free Cover Limit: {formatPKR(confirmResult.free_cover_limit)}
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      <th className="px-5 py-3 text-left">Coverage</th>
+                      <th className="px-5 py-3 text-left">Outcome</th>
+                      <th className="px-5 py-3 text-right">Premium (Annual)</th>
+                      <th className="px-5 py-3 text-right">Suggested Loading</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {confirmResult.employees.map((emp) => (
+                      <tr key={emp.policy_id}>
+                        <td className="px-5 py-3 text-slate-700">{formatPKR(emp.coverage_amount)}</td>
+                        <td className="px-5 py-3">
+                          <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${POLICY_STATUS_STYLE[emp.status] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
+                            {emp.status}
+                          </span>
+                          {emp.risk_assessment_id && (
+                            <span className="ml-2 text-[11px] text-slate-400">AI-assessed</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3 text-right font-semibold text-slate-700">{formatPKR(emp.premium_total)}</td>
+                        <td className="px-5 py-3 text-right text-slate-500">
+                          {emp.suggested_loading != null ? `+${emp.suggested_loading}%` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

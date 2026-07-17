@@ -510,6 +510,7 @@ class MasterPolicyRead(BaseModel):
     term_years: int
     effective_date: date
     status: str
+    free_cover_limit: Optional[float] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -528,11 +529,24 @@ class CensusValidationResponse(BaseModel):
     duplicate_cnics: List[str] = []
     missing_fields: List[str] = []
     errors: List[str] = []
+    # Preview only (nothing persisted yet) — omitted when is_valid is False,
+    # since a malformed batch (e.g. bad dob) can't have its average age computed.
+    computed_free_cover_limit: Optional[float] = None
+
+
+class CensusEmployeeOutcome(BaseModel):
+    customer_id: UUID
+    policy_id: UUID
+    coverage_amount: float
+    status: PolicyStatusEnum
+    premium_total: float
+    suggested_loading: Optional[float] = None
+    risk_assessment_id: Optional[UUID] = None
 
 
 class CensusConfirmResponse(BaseModel):
-    created_count: int
-    customer_ids: List[UUID]
+    free_cover_limit: float
+    employees: List[CensusEmployeeOutcome]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

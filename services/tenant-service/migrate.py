@@ -492,6 +492,10 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v17a — add acquisition_source_id to customers",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS acquisition_source_id UUID REFERENCES acquisition_sources(id)",
     ),
+    (
+        "v18a — add free_cover_limit to master_policies",
+        "ALTER TABLE master_policies ADD COLUMN IF NOT EXISTS free_cover_limit DOUBLE PRECISION",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

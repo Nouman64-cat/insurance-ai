@@ -359,6 +359,11 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 70, "max_income_multiple": 36,
         "min_group_size": 10,
         "underwriting_basis": "Group-level (size, industry, claims history) — guaranteed issue, no medical underwriting",
+        # v1 placeholder rate (PKR per 1,000 sum assured per year) — same order
+        # of magnitude as the individual TERM_LIFE band above (3.5/1.6), not a
+        # regulatory filing. Priced per-employee via calculate_premium() in
+        # routers/organizations.py's census-confirm flow.
+        "base_premium_rate": 3.2, "smoker_factor": 1.4,
         "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_GROUP}],
         "required_documents": [DOC_CENSUS, DOC_BUSINESS_REG],
     },
@@ -370,6 +375,9 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 65, "max_income_multiple": 24,
         "min_group_size": 5,
         "underwriting_basis": "Group-level (size, industry) — guaranteed issue for small teams",
+        # Slightly higher than standard GROUP_LIFE — smaller groups carry less
+        # risk-pooling credibility. Same v1-placeholder caveat as above.
+        "base_premium_rate": 3.8, "smoker_factor": 1.4,
         "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_GROUP}],
         "required_documents": [DOC_CENSUS, DOC_BUSINESS_REG],
     },

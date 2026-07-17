@@ -10,10 +10,16 @@ underwriting each employee individually.
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional, Set
+from datetime import date
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
+# Flat regardless of catalog entry — the seeded GROUP_LIFE_SME InsurancePlan
+# row declares min_group_size=5, but nothing links a MasterPolicy to a specific
+# InsurancePlan row yet, so a 5-9 employee SME group can never pass validation
+# today. Pre-existing gap, not introduced here; fixing it needs the
+# MasterPolicy -> InsurancePlan linkage this module's callers don't have.
 MIN_GROUP_SIZE = 10
 SUM_ASSURED_MULTIPLE_RANGE = (12.0, 36.0)   # x monthly basic salary
 
@@ -109,3 +115,78 @@ def validate_sum_assured_multiple(multiple: float) -> List[str]:
             f"salary (got {multiple:g}x)."
         ]
     return []
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Free Cover Limit (FCL) — the guaranteed-issue ceiling for a group
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Real insurers derive FCL from group size, average age, growth trend, and
+# past mortality experience (see the R&D notes this was designed from) — none
+# of which a brand-new scheme has except size and age. The bands below are a
+# v1 heuristic in the same banded-multiplier spirit as
+# shared/pricing/calculator.py's _AGE_BANDS: a reasonable approximation to
+# make guaranteed-issue vs. above-FCL routing behave sensibly, not an
+# actuarial filing or a regulatory figure.
+
+_FCL_BASE_AMOUNT = 1_000_000.0   # PKR — base FCL for a minimum-size, average-age group
+
+# (min_group_size, factor) — bigger groups give the insurer more confidence in
+# the average risk (credibility-style scaling), so more of the group is
+# auto-issued without evidence of insurability.
+_FCL_SIZE_FACTOR_BANDS: List[Tuple[int, float]] = [
+    (10, 1.0),
+    (25, 1.5),
+    (50, 2.0),
+    (100, 3.0),
+    (250, 4.0),
+]
+
+# (min_average_age, factor) — an older group carries higher mortality risk, so
+# the guaranteed-issue ceiling is lower.
+_FCL_AGE_FACTOR_BANDS: List[Tuple[float, float]] = [
+    (0.0, 1.2),
+    (30.0, 1.0),
+    (40.0, 0.8),
+    (50.0, 0.6),
+]
+
+
+def age_from_dob(dob: date) -> int:
+    """Local helper — risk-engine's equivalent isn't importable cross-service,
+    same reasoning this module already keeps its own underwriting rules
+    separate from services/risk-engine/underwriting_rules.py."""
+    today = date.today()
+    years = today.year - dob.year
+    if (today.month, today.day) < (dob.month, dob.day):
+        years -= 1
+    return years
+
+
+def average_age(employees: List[Dict[str, Any]]) -> float:
+    """Average age (in years) across a census batch, from each row's `dob`."""
+    ages: List[int] = []
+    for row in employees:
+        raw_dob = row.get("dob")
+        if raw_dob is None:
+            continue
+        dob = raw_dob if isinstance(raw_dob, date) else date.fromisoformat(str(raw_dob))
+        ages.append(age_from_dob(dob))
+    return sum(ages) / len(ages) if ages else 0.0
+
+
+def _banded_factor(value: float, bands: List[Tuple[float, float]]) -> float:
+    applicable = [factor for lower, factor in bands if value >= lower]
+    return applicable[-1] if applicable else bands[0][1]
+
+
+def compute_free_cover_limit(group_size: int, average_age: float) -> float:
+    """v1 heuristic FCL: base amount x size-factor x age-factor.
+
+    Not a regulatory filing — a placeholder approximation so guaranteed-issue
+    vs. above-FCL routing behaves sensibly for a brand-new scheme with no
+    claims history yet.
+    """
+    size_factor = _banded_factor(float(group_size), _FCL_SIZE_FACTOR_BANDS)
+    age_factor = _banded_factor(average_age, _FCL_AGE_FACTOR_BANDS)
+    return _FCL_BASE_AMOUNT * size_factor * age_factor

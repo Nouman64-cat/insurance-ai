@@ -427,6 +427,13 @@ class MasterPolicy(SQLModel, table=True):
     effective_date: date
     status: str = Field(default="Pending", max_length=50)      # Pending / Active / Review
 
+    # Guaranteed-issue ceiling — computed from group size + average age the
+    # first time a census is confirmed (group_underwriting.compute_free_cover_limit).
+    # Null until then; not recomputed on later top-up census confirms so the
+    # guaranteed-issue/above-FCL split already applied to the existing roster
+    # doesn't retroactively change.
+    free_cover_limit: Optional[float] = Field(default=None, ge=0)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships

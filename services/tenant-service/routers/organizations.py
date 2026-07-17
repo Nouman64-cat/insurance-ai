@@ -1,5 +1,7 @@
+import asyncio
+import logging
 from datetime import date
-from typing import List
+from typing import Any, Dict, List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -7,21 +9,78 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from group_underwriting import normalize_cnic, validate_census, validate_sum_assured_multiple
+from group_underwriting import (
+    average_age,
+    age_from_dob,
+    compute_free_cover_limit,
+    normalize_cnic,
+    validate_census,
+    validate_sum_assured_multiple,
+)
+from risk_client import evaluate_group_member
+from routers.cases import generate_case_number
 from schemas import (
-    CustomerRead,
     CensusConfirmResponse,
+    CensusEmployeeOutcome,
     CensusRequest,
     CensusValidationResponse,
+    CustomerRead,
     MasterPolicyCreate,
     MasterPolicyRead,
     OrganizationCreate,
     OrganizationRead,
 )
-from shared.models.core import Customer, InsuranceTypeEnum, MasterPolicy, Organization, Policy, Tenant
+from shared.models.core import (
+    ActionTypeEnum,
+    AIDecision,
+    Case,
+    CaseHistory,
+    CasePriorityEnum,
+    CaseStatusEnum,
+    CaseTypeEnum,
+    Customer,
+    InsurancePlan,
+    InsuranceTypeEnum,
+    MasterPolicy,
+    Organization,
+    Policy,
+    PolicyStatusEnum,
+    PremiumQuote,
+    RiskAssessment,
+    SourceChannelEnum,
+    Tenant,
+    User,
+)
+from shared.pricing.calculator import calculate_premium
 from routers.users import verify_admin   # reuse existing Admin guard — tenant-scoped for Admin, cross-tenant for SuperAdmin
 
+logger = logging.getLogger("tenant-service.organizations")
+
 router = APIRouter(prefix="/tenants", tags=["Organizations"])
+
+# AI decision band -> Policy/Case lifecycle status for above-FCL group members
+# routed through risk-engine. Duplicated (not imported) from api-gateway's
+# routers/evaluate.py — these are separate deployable services, and
+# group_underwriting.py already establishes the precedent of not sharing
+# risk-engine's rule modules across the service boundary.
+_GROUP_DECISION_POLICY_STATUS: Dict[str, PolicyStatusEnum] = {
+    "Auto Approve":         PolicyStatusEnum.APPROVED,
+    "Approve with Loading": PolicyStatusEnum.APPROVED,
+    "Human Review":         PolicyStatusEnum.UNDER_REVIEW,
+    "Decline":              PolicyStatusEnum.DECLINED,
+}
+_GROUP_DECISION_CASE_STATUS: Dict[str, CaseStatusEnum] = {
+    "Auto Approve":         CaseStatusEnum.APPROVED,
+    "Approve with Loading": CaseStatusEnum.APPROVED,
+    "Human Review":         CaseStatusEnum.UNDER_REVIEW,
+    "Decline":              CaseStatusEnum.REJECTED,
+}
+
+# Used only if a tenant has no "GROUP_LIFE" InsurancePlan catalog row (e.g. a
+# tenant that hasn't run seeds/insurance_plans_seed.py) — rather than failing
+# enrollment outright, price at a conservative placeholder rate.
+_FALLBACK_GROUP_RATE = 3.5   # PKR per 1,000 sum assured per year
+_RISK_ENGINE_CONCURRENCY = 5
 
 
 def _verify_tenant(tenant: Tenant | None, tenant_id: UUID) -> Tenant:
@@ -166,7 +225,19 @@ async def validate_employee_census(
     existing = await session.exec(select(Customer.cnic).where(Customer.organization_id == org_id))
     existing_cnics = set(existing.all())
 
-    return validate_census(existing_cnics, body.employees)
+    result = validate_census(existing_cnics, body.employees)
+
+    # Preview only — nothing persisted. Only computed when the batch is valid;
+    # a malformed row (e.g. bad dob) would otherwise crash average_age() before
+    # the caller ever sees the validation errors.
+    computed_fcl: Optional[float] = None
+    if result.is_valid:
+        computed_fcl = compute_free_cover_limit(len(body.employees), average_age(body.employees))
+
+    return CensusValidationResponse(
+        **result.model_dump(),
+        computed_free_cover_limit=computed_fcl,
+    )
 
 
 @router.post(
@@ -191,7 +262,10 @@ async def confirm_employee_census(
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
-    created_ids: List[UUID] = []
+    # ── Pass 1: parse rows, resolve FCL, resolve risk-engine calls ───────────
+    # No DB session/transaction held open across this — network I/O to
+    # risk-engine happens entirely before Pass 2 starts writing.
+    parsed_rows: List[Dict[str, Any]] = []
     for row in body.employees:
         try:
             dob = row["dob"] if isinstance(row["dob"], date) else date.fromisoformat(str(row["dob"]))
@@ -201,26 +275,92 @@ async def confirm_employee_census(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"Invalid employee row for CNIC '{row.get('cnic', '?')}': {exc}",
             )
+        parsed_rows.append({**row, "_dob": dob, "_declared_income": declared_income})
+
+    # Only computed on the first confirm — a later top-up batch reuses the
+    # existing FCL so it can't retroactively change the guaranteed-issue/
+    # above-FCL split already applied to the existing roster.
+    if master_policy.free_cover_limit is None:
+        free_cover_limit = compute_free_cover_limit(len(parsed_rows), average_age(body.employees))
+    else:
+        free_cover_limit = master_policy.free_cover_limit
+
+    for row in parsed_rows:
+        row["_coverage_amount"] = (row["_declared_income"] / 12) * master_policy.sum_assured_multiple
+
+    above_fcl_rows = [row for row in parsed_rows if row["_coverage_amount"] > free_cover_limit]
+
+    risk_results: Dict[str, Optional[dict]] = {}
+    if above_fcl_rows:
+        semaphore = asyncio.Semaphore(_RISK_ENGINE_CONCURRENCY)
+
+        async def _evaluate(row: Dict[str, Any]) -> Optional[dict]:
+            customer_payload = {
+                "cnic": normalize_cnic(row["cnic"]) or row["cnic"],
+                "name": row["name"],
+                "dob": row["_dob"].isoformat(),
+                "gender": row["gender"],
+                "occupation": row["occupation"],
+                "declared_income": row["_declared_income"],
+                "is_smoker": bool(row.get("is_smoker", False)),
+                "height_cm": float(row.get("height_cm", 170)),
+                "weight_kg": float(row.get("weight_kg", 70)),
+            }
+            policy_payload = {
+                "product_name": "Group Life",
+                "insurance_type": master_policy.insurance_type.value,
+                "coverage_amount": row["_coverage_amount"],
+                # Always 1 — risk-engine's GROUP_LIFE band is an
+                # annually-renewable certificate, independent of
+                # master_policy.term_years (the multi-year contract term
+                # persisted on Policy.term_years below).
+                "term_years": 1,
+            }
+            async with semaphore:
+                return await evaluate_group_member(customer_payload, policy_payload, str(tenant_id))
+
+        results = await asyncio.gather(*[_evaluate(row) for row in above_fcl_rows])
+        risk_results = {row["cnic"]: res for row, res in zip(above_fcl_rows, results)}
+
+    # ── Pass 2: DB-only — build rows and commit once ─────────────────────────
+    group_plan = (await session.exec(
+        select(InsurancePlan).where(
+            InsurancePlan.tenant_id == tenant_id,
+            InsurancePlan.code == "GROUP_LIFE",
+        )
+    )).first()
+    if group_plan is None:
+        logger.warning(
+            "no GROUP_LIFE InsurancePlan for tenant=%s — pricing at fallback rate", tenant_id
+        )
+
+    audit_user = (await session.exec(select(User).where(User.tenant_id == tenant_id))).first()
+
+    outcomes: List[CensusEmployeeOutcome] = []
+    for row in parsed_rows:
+        is_smoker = bool(row.get("is_smoker", False))
+        height_cm = float(row.get("height_cm", 170))
+        weight_kg = float(row.get("weight_kg", 70))
 
         customer = Customer(
             tenant_id=tenant_id,
             organization_id=org_id,
             cnic=normalize_cnic(row["cnic"]) or row["cnic"],
             name=row["name"],
-            dob=dob,
+            dob=row["_dob"],
             gender=row["gender"],
             occupation=row["occupation"],
-            declared_income=declared_income,
-            # Group/census enrollment is guaranteed-issue — no individual medical
-            # data is collected, so these pricing-relevant fields are unknown.
-            is_smoker=bool(row.get("is_smoker", False)),
-            height_cm=float(row.get("height_cm", 170)),
-            weight_kg=float(row.get("weight_kg", 70)),
+            declared_income=row["_declared_income"],
+            is_smoker=is_smoker,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
         )
         session.add(customer)
         await session.flush()
 
-        coverage_amount = (declared_income / 12) * master_policy.sum_assured_multiple
+        coverage_amount = row["_coverage_amount"]
+        above_fcl = coverage_amount > free_cover_limit
+
         policy = Policy(
             tenant_id=tenant_id,
             customer_id=customer.id,
@@ -229,13 +369,109 @@ async def confirm_employee_census(
             insurance_type=master_policy.insurance_type,
             coverage_amount=coverage_amount,
             term_years=master_policy.term_years,
+            status=PolicyStatusEnum.UNDER_REVIEW if above_fcl else PolicyStatusEnum.APPROVED,
         )
         session.add(policy)
-        created_ids.append(customer.id)
+        await session.flush()
+
+        risk_assessment_id: Optional[UUID] = None
+        suggested_loading: Optional[float] = None
+
+        if above_fcl:
+            case = Case(
+                tenant_id=tenant_id,
+                customer_id=customer.id,
+                policy_id=policy.id,
+                caseNumber=generate_case_number(),
+                caseType=CaseTypeEnum.UNDERWRITING,
+                caseStatus=CaseStatusEnum.NEW,
+                priorityLevel=CasePriorityEnum.NORMAL,
+                sourceChannel=SourceChannelEnum.BRANCH,
+            )
+            session.add(case)
+            await session.flush()
+
+            ai_result = risk_results.get(row["cnic"])
+            if ai_result is not None:
+                assessment = RiskAssessment(
+                    tenant_id=tenant_id,
+                    customer_id=customer.id,
+                    policy_id=policy.id,
+                    case_id=case.caseld,
+                    medical_score=ai_result["medical_score"],
+                    financial_score=ai_result["financial_score"],
+                    fraud_probability=ai_result["fraud_probability"],
+                    composite_risk_score=ai_result.get("composite_risk_score"),
+                    ai_decision=AIDecision(ai_result["ai_decision"]),
+                    suggested_loading=ai_result.get("suggested_loading"),
+                    reasons=ai_result.get("reasons"),
+                )
+                session.add(assessment)
+                await session.flush()
+                risk_assessment_id = assessment.id
+                suggested_loading = assessment.suggested_loading
+
+                new_policy_status = _GROUP_DECISION_POLICY_STATUS.get(ai_result["ai_decision"])
+                if new_policy_status is not None:
+                    policy.status = new_policy_status
+                    session.add(policy)
+
+                new_case_status = _GROUP_DECISION_CASE_STATUS.get(ai_result["ai_decision"])
+                if new_case_status is not None and new_case_status != case.caseStatus:
+                    if audit_user is not None:
+                        session.add(CaseHistory(
+                            caseld=case.caseld,
+                            actionType=ActionTypeEnum.DECISION,
+                            fromStatus=case.caseStatus.value,
+                            toStatus=new_case_status.value,
+                            changedBy=audit_user.id,
+                            systemGeneratedFlag=True,
+                        ))
+                    case.caseStatus = new_case_status
+                    session.add(case)
+            # else: risk-engine unreachable/errored (or returned a non-200) —
+            # Policy stays UnderReview, Case stays New; an underwriter can
+            # still work it manually. Logged inside risk_client.py.
+
+        # Always price — both guaranteed-issue and above-FCL members get an
+        # indicative premium, same reuse of calculate_premium() as
+        # api-gateway/quote_worker.py uses for individual plans.
+        age = age_from_dob(row["_dob"])
+        breakdown = calculate_premium(
+            coverage_amount=coverage_amount,
+            base_premium_rate=group_plan.base_premium_rate if group_plan is not None else _FALLBACK_GROUP_RATE,
+            smoker_factor=group_plan.smoker_factor if group_plan is not None else 1.0,
+            age=age,
+            is_smoker=is_smoker,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+        )
+
+        premium_quote = PremiumQuote(
+            tenant_id=tenant_id,
+            policy_id=policy.id,
+            base_premium=breakdown.base_premium,
+            loading_applied=breakdown.loading_applied,
+            total_premium=breakdown.total_premium,
+            rate_version=group_plan.rate_version if group_plan is not None else "fallback-v1",
+        )
+        session.add(premium_quote)
+
+        outcomes.append(CensusEmployeeOutcome(
+            customer_id=customer.id,
+            policy_id=policy.id,
+            coverage_amount=coverage_amount,
+            status=policy.status,
+            premium_total=breakdown.total_premium,
+            suggested_loading=suggested_loading,
+            risk_assessment_id=risk_assessment_id,
+        ))
 
     master_policy.status = "Active"
+    if master_policy.free_cover_limit is None:
+        master_policy.free_cover_limit = free_cover_limit
     session.add(master_policy)
 
     await session.commit()
 
-    return CensusConfirmResponse(created_count=len(created_ids), customer_ids=created_ids)
+    return CensusConfirmResponse(free_cover_limit=free_cover_limit, employees=outcomes)

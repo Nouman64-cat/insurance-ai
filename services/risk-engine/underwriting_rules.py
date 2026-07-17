@@ -125,6 +125,27 @@ UNDERWRITING_RULES: Dict[str, PlanRules] = {
             (0, MedicalExamTier.NONE),
         ],
     ),
+    # Group/corporate life certificates issued under a MasterPolicy
+    # (services/tenant-service/routers/organizations.py). Only members whose
+    # coverage exceeds the group's computed Free Cover Limit reach this band
+    # at all — at-or-under-FCL members are guaranteed-issue and never call
+    # risk-engine. term_years is always sent as 1 for this check (an
+    # annually-renewable certificate), independent of the MasterPolicy's own
+    # (admin-entered, up to 40-year) contract term.
+    #
+    # max_income_multiple=3.0 — NOT the seeded InsurancePlan.max_income_multiple
+    # (36) for the GROUP_LIFE catalog row, which means something different
+    # there (it mirrors sum_assured_multiple's own 12-36x range). Coverage here
+    # is computed as declared_income (annual) x (sum_assured_multiple / 12), and
+    # sum_assured_multiple is validated to 12-36x MONTHLY salary
+    # (group_underwriting.py), so the true annual-income multiple is 1x-3x,
+    # never more than 3x.
+    "GROUP_LIFE": PlanRules(
+        min_entry_age=18, max_entry_age=65,
+        min_term_years=1, max_term_years=1,
+        max_maturity_age=70,
+        max_income_multiple=3.0,
+    ),
 }
 
 # Used when insurance_type is missing/unrecognized — preserves the original
