@@ -19,6 +19,12 @@ export interface QuoteListItem {
   acquisition_source_name?: string | null;
   acquisition_source_type?: string | null;
   acquisition_source_partner?: string | null;
+  // Set only for a group-life certificate issued under a corporate Master
+  // Policy — null for individually underwritten quotes.
+  organization_id?: string | null;
+  organization_name?: string | null;
+  master_policy_id?: string | null;
+  master_policy_label?: string | null;
 }
 
 export interface QuoteDetail extends QuoteListItem {

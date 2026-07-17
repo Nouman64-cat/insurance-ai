@@ -278,6 +278,16 @@ class QuoteListItem(BaseModel):
     acquisition_source_type: Optional[str] = None
     acquisition_source_partner: Optional[str] = None
 
+    # Set only when this quote's Policy carries a master_policy_id (a group-life
+    # certificate issued under a corporate MasterPolicy) — null for individually
+    # underwritten policies. Lets the frontend nest corporate proposals under
+    # Organization -> Master Policy -> Customer instead of the flat per-customer
+    # folder view used for retail quotes.
+    organization_id: Optional[UUID] = None
+    organization_name: Optional[str] = None
+    master_policy_id: Optional[UUID] = None
+    master_policy_label: Optional[str] = None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /quotes/{quote_id} — full detail behind a single quotation row

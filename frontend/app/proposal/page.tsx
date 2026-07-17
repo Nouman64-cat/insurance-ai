@@ -37,6 +37,32 @@ function formatDate(s: string): string {
   return new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 }
 
+// ── Grouping types ───────────────────────────────────────────────────────────
+// Corporate/group-life quotes (Policy.master_policy_id set) nest three levels
+// deep — Organization -> Master Policy -> Customer — so an underwriter can
+// browse a census the same way they'd browse folders on disk. Retail quotes
+// (no organization) have no policy/org to nest under, so they keep the
+// original flat one-folder-per-customer view.
+
+interface CustomerFolderData {
+  customer_id: string;
+  customer_name: string;
+  customer_cnic: string;
+  quotes: QuoteListItem[];
+}
+
+interface PolicyFolderData {
+  master_policy_id: string;
+  master_policy_label: string;
+  customers: CustomerFolderData[];
+}
+
+interface OrganizationFolderData {
+  organization_id: string;
+  organization_name: string;
+  policies: PolicyFolderData[];
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function QuotePage() {
@@ -55,7 +81,27 @@ export default function QuotePage() {
   const [isBulkProceeding, setIsBulkProceeding] = useState(false);
   const [bulkProceedError, setBulkProceedError] = useState<string | null>(null);
   const [bulkProceedSuccess, setBulkProceedSuccess] = useState<string | null>(null);
-  const [bulkModalQuotes, setBulkModalQuotes] = useState<QuoteListItem[] | null>(null);
+
+  // Expand state — one Set/id-per-level. IDs are globally unique UUIDs so a
+  // flat Set per level is enough; no need to scope by parent.
+  const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
+  const [expandedPolicyId, setExpandedPolicyId] = useState<string | null>(null);
+  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+
+  const toggleOrgFolder = (orgId: string) => {
+    setExpandedOrgId((prev) => (prev === orgId ? null : orgId));
+    setExpandedPolicyId(null);
+    setExpandedCustomerId(null);
+  };
+
+  const togglePolicyFolder = (policyId: string) => {
+    setExpandedPolicyId((prev) => (prev === policyId ? null : policyId));
+    setExpandedCustomerId(null);
+  };
+
+  const toggleFolder = (customerId: string) => {
+    setExpandedCustomerId((prev) => (prev === customerId ? null : customerId));
+  };
 
   const toggleSelection = (quoteId: string) => {
     setSelectedProposalIds((prev) => {
@@ -175,13 +221,7 @@ export default function QuotePage() {
     fetchQuotes();
   }, [fetchQuotes]);
 
-  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
-
-  const toggleFolder = (customerId: string) => {
-    setExpandedCustomerId((prev) => (prev === customerId ? null : customerId));
-  };
-
-  const groupedQuotes = useMemo(() => {
+  const { organizationGroups, individualGroups } = useMemo(() => {
     const q = search.trim().toLowerCase();
     let filteredList = quotes;
     if (q) {
@@ -189,25 +229,69 @@ export default function QuotePage() {
         (row) =>
           row.customer_name.toLowerCase().includes(q) ||
           row.customer_cnic.toLowerCase().includes(q) ||
-          row.plan_label.toLowerCase().includes(q),
+          row.plan_label.toLowerCase().includes(q) ||
+          (row.organization_name?.toLowerCase().includes(q) ?? false),
       );
     }
-    
-    // Group by customer_id
-    const grouped = new Map<string, { customer_id: string, customer_name: string, customer_cnic: string, quotes: QuoteListItem[] }>();
+
+    const orgMap = new Map<string, OrganizationFolderData>();
+    const individualMap = new Map<string, CustomerFolderData>();
+
     for (const quote of filteredList) {
-      if (!grouped.has(quote.customer_id)) {
-        grouped.set(quote.customer_id, {
-          customer_id: quote.customer_id,
-          customer_name: quote.customer_name,
-          customer_cnic: quote.customer_cnic,
-          quotes: [],
-        });
+      if (quote.organization_id && quote.master_policy_id) {
+        let org = orgMap.get(quote.organization_id);
+        if (!org) {
+          org = {
+            organization_id: quote.organization_id,
+            organization_name: quote.organization_name ?? "Unknown Organization",
+            policies: [],
+          };
+          orgMap.set(quote.organization_id, org);
+        }
+
+        let policy = org.policies.find((p) => p.master_policy_id === quote.master_policy_id);
+        if (!policy) {
+          policy = {
+            master_policy_id: quote.master_policy_id,
+            master_policy_label: quote.master_policy_label ?? "Master Policy",
+            customers: [],
+          };
+          org.policies.push(policy);
+        }
+
+        let customer = policy.customers.find((c) => c.customer_id === quote.customer_id);
+        if (!customer) {
+          customer = {
+            customer_id: quote.customer_id,
+            customer_name: quote.customer_name,
+            customer_cnic: quote.customer_cnic,
+            quotes: [],
+          };
+          policy.customers.push(customer);
+        }
+        customer.quotes.push(quote);
+      } else {
+        let customer = individualMap.get(quote.customer_id);
+        if (!customer) {
+          customer = {
+            customer_id: quote.customer_id,
+            customer_name: quote.customer_name,
+            customer_cnic: quote.customer_cnic,
+            quotes: [],
+          };
+          individualMap.set(quote.customer_id, customer);
+        }
+        customer.quotes.push(quote);
       }
-      grouped.get(quote.customer_id)!.quotes.push(quote);
     }
-    return Array.from(grouped.values());
+
+    return {
+      organizationGroups: Array.from(orgMap.values()),
+      individualGroups: Array.from(individualMap.values()),
+    };
   }, [quotes, search]);
+
+  const totalResults = organizationGroups.length + individualGroups.length;
 
   return (
     <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full space-y-5">
@@ -216,6 +300,7 @@ export default function QuotePage() {
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Proposals</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Generated automatically in the background the moment an customer is registered — no form to fill in.
+            Corporate proposals are nested by organization and master policy.
           </p>
         </div>
         <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">
@@ -226,7 +311,7 @@ export default function QuotePage() {
       <div className="flex items-center justify-between gap-3">
         <input
           type="text"
-          placeholder="Search by customer, CNIC, or plan…"
+          placeholder="Search by customer, CNIC, organization, or plan…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
@@ -258,7 +343,7 @@ export default function QuotePage() {
             <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
             <span className="text-xs text-slate-400">Loading proposals…</span>
           </div>
-        ) : groupedQuotes.length === 0 ? (
+        ) : totalResults === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center text-center px-6">
             <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
               <span className="text-2xl">📁</span>
@@ -269,150 +354,74 @@ export default function QuotePage() {
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
                 ? "Register a customer and a proposal will be generated automatically in the background."
-                : "Try a different customer name, CNIC, or plan."}
+                : "Try a different customer name, CNIC, organization, or plan."}
             </p>
           </div>
         ) : (
-          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {groupedQuotes.map((group) => {
-              const isExpanded = expandedCustomerId === group.customer_id;
-              return (
-                <div key={group.customer_id} className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? 'col-span-full border-blue-200 shadow-md ring-1 ring-blue-500/20' : 'border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white'}`}>
-                  {/* Folder Header */}
-                  <div 
-                    onClick={() => toggleFolder(group.customer_id)}
-                    className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? 'bg-blue-50/50' : 'bg-white'}`}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${isExpanded ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500'} transition-colors`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          {isExpanded ? (
-                            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                          ) : (
-                            <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
-                          )}
-                        </svg>
-                      </div>
-                      <div>
-                        <h3 className="text-base font-bold text-slate-900">{group.customer_name}</h3>
-                        <p className="text-xs text-slate-500 font-mono mt-0.5">{group.customer_cnic}</p>
-                        {group.quotes[0]?.acquisition_source_name && (
-                          <p className="text-[11px] text-slate-400 mt-1">
-                            Brought by{" "}
-                            <span className="font-semibold text-slate-600">{group.quotes[0].acquisition_source_name}</span>
-                            <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                              {SOURCE_TYPE_LABELS[group.quotes[0].acquisition_source_type ?? ""] ?? group.quotes[0].acquisition_source_type}
-                            </span>
-                            {group.quotes[0].acquisition_source_partner && (
-                              <span className="ml-1 text-slate-400">· {group.quotes[0].acquisition_source_partner}</span>
-                            )}
-                          </p>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>
-                        {group.quotes.length} {group.quotes.length === 1 ? 'Plan' : 'Plans'}
-                      </span>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-blue-500' : ''}`}>
-                        <polyline points="6 9 12 15 18 9"></polyline>
-                      </svg>
-                    </div>
-                  </div>
-                  
-                  {/* Expanded Content */}
-                  {isExpanded && (
-                    <div className="border-t border-slate-100 bg-white">
-                      {bulkProceedError && (
-                        <div className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
-                          <p className="text-xs text-red-600">{bulkProceedError}</p>
-                        </div>
-                      )}
-                      {bulkProceedSuccess && (
-                        <div className="mx-4 mt-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                          <p className="text-xs text-emerald-700 font-semibold">Success</p>
-                          <p className="text-xs text-emerald-600">{bulkProceedSuccess}</p>
-                        </div>
-                      )}
-                      
-                      <div className="px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
-                        <p className="text-xs font-semibold text-slate-500">
-                          {group.quotes.filter((q) => selectedQuoteIds.has(q.quote_id)).length} plan(s) selected
-                        </p>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleBulkProceed(group.quotes); }}
-                          disabled={isBulkProceeding || group.quotes.filter((q) => selectedQuoteIds.has(q.quote_id)).length === 0}
-                          className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                        >
-                          {isBulkProceeding && <span className="animate-spin h-3 w-3 rounded-full border-2 border-white/30 border-t-white" />}
-                          {isBulkProceeding ? "Processing..." : "Proceed to Underwriting"}
-                        </button>
-                      </div>
+          <div className="p-4 space-y-5">
+            {organizationGroups.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">
+                  Corporate / Group Life
+                </p>
+                {organizationGroups.map((org) => (
+                  <OrganizationFolder
+                    key={org.organization_id}
+                    org={org}
+                    isExpanded={expandedOrgId === org.organization_id}
+                    onToggle={() => toggleOrgFolder(org.organization_id)}
+                    expandedPolicyId={expandedPolicyId}
+                    onTogglePolicy={togglePolicyFolder}
+                    expandedCustomerId={expandedCustomerId}
+                    onToggleCustomer={toggleFolder}
+                    selectedQuoteIds={selectedQuoteIds}
+                    toggleSelection={toggleSelection}
+                    toggleAllInFolder={toggleAllInFolder}
+                    handleBulkProceed={handleBulkProceed}
+                    isBulkProceeding={isBulkProceeding}
+                    bulkProceedError={bulkProceedError}
+                    bulkProceedSuccess={bulkProceedSuccess}
+                    openQuote={openQuote}
+                  />
+                ))}
+              </div>
+            )}
 
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                              <th className="px-5 py-3 text-left w-12">
-                                <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-                                  <input 
-                                    type="checkbox" 
-                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                    checked={group.quotes.length > 0 && group.quotes.every((q) => selectedQuoteIds.has(q.quote_id))}
-                                    onChange={() => toggleAllInFolder(group.quotes.map((q) => q.quote_id))}
-                                  />
-                                </div>
-                              </th>
-                              <th className="px-2 py-3 text-left">Plan</th>
-                              <th className="px-5 py-3 text-right">Coverage</th>
-                              <th className="px-5 py-3 text-center">Term</th>
-                              <th className="px-5 py-3 text-right">Expected Premium</th>
-                              <th className="px-5 py-3 text-right">Risk</th>
-                              <th className="px-5 py-3 text-right">Total payable</th>
-                              <th className="px-5 py-3 text-left">Generated</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {group.quotes.map((row) => (
-                              <tr
-                                key={row.quote_id}
-                                onClick={() => openQuote(row.quote_id)}
-                                className={`transition-colors cursor-pointer ${selectedQuoteIds.has(row.quote_id) ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
-                              >
-                                <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                                  <div className="flex items-center">
-                                    <input 
-                                      type="checkbox" 
-                                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                                      checked={selectedQuoteIds.has(row.quote_id)}
-                                      onChange={() => toggleSelection(row.quote_id)}
-                                    />
-                                  </div>
-                                </td>
-                                <td className="px-2 py-3.5">
-                                  <p className="text-slate-700 font-medium">{row.plan_label}</p>
-                                  <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                                    {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
-                                  </span>
-                                </td>
-                                <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
-                                <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
-                                <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
-                                <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td>
-                                <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
-                                <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
-                                  {new Date(row.created_at).toLocaleDateString()}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+            {individualGroups.length > 0 && (
+              <div className="space-y-3">
+                {organizationGroups.length > 0 && (
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 pt-1">
+                    Individual
+                  </p>
+                )}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {individualGroups.map((group) => (
+                    <div
+                      key={group.customer_id}
+                      className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${
+                        expandedCustomerId === group.customer_id
+                          ? "col-span-full border-blue-200 shadow-md ring-1 ring-blue-500/20"
+                          : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"
+                      }`}
+                    >
+                      <CustomerFolder
+                        customer={group}
+                        isExpanded={expandedCustomerId === group.customer_id}
+                        onToggle={() => toggleFolder(group.customer_id)}
+                        selectedQuoteIds={selectedQuoteIds}
+                        toggleSelection={toggleSelection}
+                        toggleAllInFolder={toggleAllInFolder}
+                        handleBulkProceed={handleBulkProceed}
+                        isBulkProceeding={isBulkProceeding}
+                        bulkProceedError={bulkProceedError}
+                        bulkProceedSuccess={bulkProceedSuccess}
+                        openQuote={openQuote}
+                      />
                     </div>
-                  )}
+                  ))}
                 </div>
-              );
-            })}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -437,6 +446,316 @@ export default function QuotePage() {
             router.push(`/case/${caseId}?autoRun=true`);
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Shared props for the two lower folder levels ────────────────────────────
+
+interface CustomerFolderHandlers {
+  selectedQuoteIds: Set<string>;
+  toggleSelection: (quoteId: string) => void;
+  toggleAllInFolder: (quoteIds: string[]) => void;
+  handleBulkProceed: (quotes: QuoteListItem[]) => void;
+  isBulkProceeding: boolean;
+  bulkProceedError: string | null;
+  bulkProceedSuccess: string | null;
+  openQuote: (quoteId: string) => void;
+}
+
+// ── Level 1: Organization folder ────────────────────────────────────────────
+
+function OrganizationFolder({
+  org,
+  isExpanded,
+  onToggle,
+  expandedPolicyId,
+  onTogglePolicy,
+  expandedCustomerId,
+  onToggleCustomer,
+  ...handlers
+}: {
+  org: OrganizationFolderData;
+  isExpanded: boolean;
+  onToggle: () => void;
+  expandedPolicyId: string | null;
+  onTogglePolicy: (policyId: string) => void;
+  expandedCustomerId: string | null;
+  onToggleCustomer: (customerId: string) => void;
+} & CustomerFolderHandlers) {
+  const totalEmployees = org.policies.reduce((sum, p) => sum + p.customers.length, 0);
+
+  return (
+    <div
+      className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+        isExpanded ? "border-blue-200 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"
+      }`}
+    >
+      <div onClick={onToggle} className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}>
+        <div className="flex items-center gap-4">
+          <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+              <path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" />
+              <path d="M6 12H4a2 2 0 00-2 2v8h4" />
+              <path d="M18 9h2a2 2 0 012 2v11h-4" />
+              <line x1="10" y1="6" x2="14" y2="6" /><line x1="10" y1="10" x2="14" y2="10" />
+              <line x1="10" y1="14" x2="14" y2="14" /><line x1="10" y1="18" x2="14" y2="18" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900">{org.organization_name}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {org.policies.length} master {org.policies.length === 1 ? "policy" : "policies"}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+            {totalEmployees} {totalEmployees === 1 ? "employee" : "employees"}
+          </span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="border-t border-slate-100 bg-slate-50/40 p-4 space-y-3">
+          {org.policies.map((policy) => (
+            <PolicyFolder
+              key={policy.master_policy_id}
+              policy={policy}
+              isExpanded={expandedPolicyId === policy.master_policy_id}
+              onToggle={() => onTogglePolicy(policy.master_policy_id)}
+              expandedCustomerId={expandedCustomerId}
+              onToggleCustomer={onToggleCustomer}
+              {...handlers}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Level 2: Master Policy folder ───────────────────────────────────────────
+
+function PolicyFolder({
+  policy,
+  isExpanded,
+  onToggle,
+  expandedCustomerId,
+  onToggleCustomer,
+  ...handlers
+}: {
+  policy: PolicyFolderData;
+  isExpanded: boolean;
+  onToggle: () => void;
+  expandedCustomerId: string | null;
+  onToggleCustomer: (customerId: string) => void;
+} & CustomerFolderHandlers) {
+  return (
+    <div className={`border rounded-lg overflow-hidden bg-white ${isExpanded ? "border-blue-200" : "border-slate-200"}`}>
+      <div onClick={onToggle} className={`flex items-center justify-between px-4 py-3 cursor-pointer ${isExpanded ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
+        <div className="flex items-center gap-3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400">
+            {isExpanded ? (
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            ) : (
+              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+            )}
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Master Policy</p>
+            <p className="text-[11px] text-slate-500">{policy.master_policy_label}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+            {policy.customers.length} {policy.customers.length === 1 ? "employee" : "employees"}
+          </span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="border-t border-slate-100 p-3 space-y-2.5">
+          {policy.customers.map((customer) => (
+            <div
+              key={customer.customer_id}
+              className={`border rounded-lg overflow-hidden ${expandedCustomerId === customer.customer_id ? "border-blue-200 ring-1 ring-blue-500/10" : "border-slate-200"}`}
+            >
+              <CustomerFolder
+                customer={customer}
+                isExpanded={expandedCustomerId === customer.customer_id}
+                onToggle={() => onToggleCustomer(customer.customer_id)}
+                compact
+                {...handlers}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Level 3: Customer folder — the shared leaf, used both standalone
+// (retail quotes) and nested under a Policy folder (corporate quotes) ──────
+
+function CustomerFolder({
+  customer,
+  isExpanded,
+  onToggle,
+  compact,
+  selectedQuoteIds,
+  toggleSelection,
+  toggleAllInFolder,
+  handleBulkProceed,
+  isBulkProceeding,
+  bulkProceedError,
+  bulkProceedSuccess,
+  openQuote,
+}: {
+  customer: CustomerFolderData;
+  isExpanded: boolean;
+  onToggle: () => void;
+  compact?: boolean;
+} & CustomerFolderHandlers) {
+  return (
+    <div className="flex flex-col">
+      <div
+        onClick={onToggle}
+        className={`flex items-center justify-between cursor-pointer ${compact ? "p-3" : "p-5"} ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}
+      >
+        <div className="flex items-center gap-3">
+          <div className={`flex items-center justify-center rounded-lg ${compact ? "w-9 h-9" : "w-12 h-12 rounded-xl"} ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={compact ? "w-4 h-4" : "w-6 h-6"}>
+              {isExpanded ? (
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+              ) : (
+                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+              )}
+            </svg>
+          </div>
+          <div>
+            <h3 className={`font-bold text-slate-900 ${compact ? "text-sm" : "text-base"}`}>{customer.customer_name}</h3>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">{customer.customer_cnic}</p>
+            {customer.quotes[0]?.acquisition_source_name && (
+              <p className="text-[11px] text-slate-400 mt-1">
+                Brought by{" "}
+                <span className="font-semibold text-slate-600">{customer.quotes[0].acquisition_source_name}</span>
+                <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                  {SOURCE_TYPE_LABELS[customer.quotes[0].acquisition_source_type ?? ""] ?? customer.quotes[0].acquisition_source_type}
+                </span>
+                {customer.quotes[0].acquisition_source_partner && (
+                  <span className="ml-1 text-slate-400">· {customer.quotes[0].acquisition_source_partner}</span>
+                )}
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+            {customer.quotes.length} {customer.quotes.length === 1 ? "Plan" : "Plans"}
+          </span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform duration-200 ${compact ? "w-4 h-4" : "w-5 h-5"} ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="border-t border-slate-100 bg-white">
+          {bulkProceedError && (
+            <div className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-xs text-red-600">{bulkProceedError}</p>
+            </div>
+          )}
+          {bulkProceedSuccess && (
+            <div className="mx-4 mt-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+              <p className="text-xs text-emerald-700 font-semibold">Success</p>
+              <p className="text-xs text-emerald-600">{bulkProceedSuccess}</p>
+            </div>
+          )}
+
+          <div className="px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
+            <p className="text-xs font-semibold text-slate-500">
+              {customer.quotes.filter((q) => selectedQuoteIds.has(q.quote_id)).length} plan(s) selected
+            </p>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleBulkProceed(customer.quotes); }}
+              disabled={isBulkProceeding || customer.quotes.filter((q) => selectedQuoteIds.has(q.quote_id)).length === 0}
+              className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+            >
+              {isBulkProceeding && <span className="animate-spin h-3 w-3 rounded-full border-2 border-white/30 border-t-white" />}
+              {isBulkProceeding ? "Processing..." : "Proceed to Underwriting"}
+            </button>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <th className="px-5 py-3 text-left w-12">
+                    <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                        checked={customer.quotes.length > 0 && customer.quotes.every((q) => selectedQuoteIds.has(q.quote_id))}
+                        onChange={() => toggleAllInFolder(customer.quotes.map((q) => q.quote_id))}
+                      />
+                    </div>
+                  </th>
+                  <th className="px-2 py-3 text-left">Plan</th>
+                  <th className="px-5 py-3 text-right">Coverage</th>
+                  <th className="px-5 py-3 text-center">Term</th>
+                  <th className="px-5 py-3 text-right">Expected Premium</th>
+                  <th className="px-5 py-3 text-right">Risk</th>
+                  <th className="px-5 py-3 text-right">Total payable</th>
+                  <th className="px-5 py-3 text-left">Generated</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {customer.quotes.map((row) => (
+                  <tr
+                    key={row.quote_id}
+                    onClick={() => openQuote(row.quote_id)}
+                    className={`transition-colors cursor-pointer ${selectedQuoteIds.has(row.quote_id) ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
+                  >
+                    <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                          checked={selectedQuoteIds.has(row.quote_id)}
+                          onChange={() => toggleSelection(row.quote_id)}
+                        />
+                      </div>
+                    </td>
+                    <td className="px-2 py-3.5">
+                      <p className="text-slate-700 font-medium">{row.plan_label}</p>
+                      <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                        {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
+                    <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
+                    <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
+                    <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td>
+                    <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
+                    <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
+                      {new Date(row.created_at).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -512,6 +831,12 @@ function QuoteDetailModal({
                 <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500">Proposal Statement</p>
                 <span className="text-[10px] font-mono text-slate-400">Ref: {detail.quote_id.slice(0, 8).toUpperCase()}</span>
               </div>
+              {detail.organization_name && (
+                <p className="text-[11px] text-blue-600 font-semibold">
+                  Corporate — {detail.organization_name}
+                  {detail.master_policy_label ? ` · ${detail.master_policy_label}` : ""}
+                </p>
+              )}
               <p className="text-sm text-slate-700 leading-relaxed">
                 We are pleased to present the following insurance proposal for{" "}
                 <span className="font-semibold text-slate-900">{detail.customer_name}</span>. Based on the
@@ -581,6 +906,8 @@ function QuoteDetailModal({
                 <DetailField label="Type" value={INSURANCE_TYPE_LABELS[detail.insurance_type] ?? detail.insurance_type} />
                 <DetailField label="Coverage" value={formatPKR(detail.coverage_amount)} />
                 <DetailField label="Term" value={`${detail.term_years} years`} />
+                {detail.organization_name && <DetailField label="Organization" value={detail.organization_name} />}
+                {detail.master_policy_label && <DetailField label="Master Policy" value={detail.master_policy_label} />}
                 {detail.nominee_name && <DetailField label="Nominee" value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
                 {detail.dependent_name && <DetailField label="Dependent" value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
               </div>
