@@ -288,6 +288,18 @@ class QuoteListItem(BaseModel):
     master_policy_id: Optional[UUID] = None
     master_policy_label: Optional[str] = None
 
+    # Set only when this quote's Policy carries a family_policy_id (a
+    # floater's shared certificate or a life-bundle member's own certificate,
+    # issued under a FamilyGroup) — null for individual and corporate-group
+    # quotes. Lets the frontend nest family proposals under FamilyGroup ->
+    # Family Policy -> Customer, mirroring the Organization/MasterPolicy
+    # nesting above. A Policy only ever carries one of master_policy_id /
+    # family_policy_id, never both.
+    family_group_id: Optional[UUID] = None
+    family_group_name: Optional[str] = None
+    family_policy_id: Optional[UUID] = None
+    family_policy_label: Optional[str] = None
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # GET /quotes/{quote_id} — full detail behind a single quotation row

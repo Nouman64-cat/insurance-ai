@@ -25,6 +25,13 @@ export interface QuoteListItem {
   organization_name?: string | null;
   master_policy_id?: string | null;
   master_policy_label?: string | null;
+  // Set only for a floater's shared certificate or a life-bundle member's
+  // own certificate, issued under a FamilyGroup — null otherwise. A quote
+  // only ever carries one of organization_id / family_group_id, never both.
+  family_group_id?: string | null;
+  family_group_name?: string | null;
+  family_policy_id?: string | null;
+  family_policy_label?: string | null;
 }
 
 export interface QuoteDetail extends QuoteListItem {

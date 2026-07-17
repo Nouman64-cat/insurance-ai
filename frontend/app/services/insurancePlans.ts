@@ -1,6 +1,6 @@
 import api from "./api";
 
-export type PlanCategory = "Individual" | "Group";
+export type PlanCategory = "Individual" | "Group" | "Family";
 export type ProductCategory = "Conventional" | "Takaful" | "Bancassurance";
 export type PlanStatus = "Draft" | "Active" | "Archived";
 export type InsuranceType =
@@ -11,7 +11,8 @@ export type InsuranceType =
   | "GROUP_LIFE"
   | "SAVINGS"
   | "SINGLE_PREMIUM"
-  | "HEALTH_CASH";
+  | "HEALTH_CASH"
+  | "FAMILY_FLOATER";
 
 export interface MedicalExamTier {
   minSumAssured: number;

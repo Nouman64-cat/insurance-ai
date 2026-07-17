@@ -40,11 +40,33 @@ class InsuranceTypeEnum(str, Enum):
     SAVINGS = "SAVINGS"
     SINGLE_PREMIUM = "SINGLE_PREMIUM"
     HEALTH_CASH = "HEALTH_CASH"
+    FAMILY_FLOATER = "FAMILY_FLOATER"
 
 
 class PlanCategoryEnum(str, Enum):
     INDIVIDUAL = "Individual"
     GROUP = "Group"
+    FAMILY = "Family"
+
+
+class FamilyRelationshipEnum(str, Enum):
+    """A FamilyGroup member's relation to the group's SELF/proposer — exactly
+    one member per group must be SELF (services/tenant-service/
+    family_underwriting.py enforces this at validation time)."""
+    SELF = "Self"
+    SPOUSE = "Spouse"
+    CHILD = "Child"
+    PARENT = "Parent"
+
+
+class FamilyPlanTypeEnum(str, Enum):
+    """Which of the two family-insurance shapes a FamilyPolicy is:
+    FLOATER   — one shared sum-insured pool, one Policy row for the whole group.
+    LIFE_BUNDLE — each member keeps their own individually-underwritten Policy,
+                  grouped here only for a shared discount + single dashboard view.
+    """
+    FLOATER = "Floater"
+    LIFE_BUNDLE = "LifeBundle"
 
 
 class ProductCategoryEnum(str, Enum):
@@ -119,6 +141,8 @@ class Tenant(SQLModel, table=True):
     acquisition_sources: List["AcquisitionSource"] = Relationship(back_populates="tenant")
     policies: List["Policy"] = Relationship(back_populates="tenant")
     master_policies: List["MasterPolicy"] = Relationship(back_populates="tenant")
+    family_groups: List["FamilyGroup"] = Relationship(back_populates="tenant")
+    family_policies: List["FamilyPolicy"] = Relationship(back_populates="tenant")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="tenant")
     claims: List["Claim"] = Relationship(back_populates="tenant")
     artifacts: List["Artifact"] = Relationship(back_populates="tenant")
@@ -370,6 +394,12 @@ class Customer(SQLModel, table=True):
     # NULL for individual customers (unchanged, existing behavior).
     organization_id: Optional[UUID] = Field(default=None, foreign_key="organizations.id", index=True, nullable=True)
 
+    # Set only for members enrolled under a FamilyGroup (floater or life-bundle
+    # policy); NULL for individual and corporate-group customers. A Customer
+    # is never both organization_id and family_group_id at once.
+    family_group_id: Optional[UUID] = Field(default=None, foreign_key="family_groups.id", index=True, nullable=True)
+    family_relationship: Optional[FamilyRelationshipEnum] = Field(default=None, max_length=50)
+
     # Who brought this customer in — the crediting agent/broker/bank/etc.
     # NULL for legacy rows and any customer created before this was tracked.
     acquisition_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", index=True, nullable=True)
@@ -399,6 +429,10 @@ class Customer(SQLModel, table=True):
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="customers")
     organization: Optional[Organization] = Relationship(back_populates="employees")
+    family_group: Optional["FamilyGroup"] = Relationship(
+        back_populates="members",
+        sa_relationship_kwargs={"foreign_keys": "Customer.family_group_id"},
+    )
     acquisition_source: Optional["AcquisitionSource"] = Relationship(back_populates="customers")
     policies: List["Policy"] = Relationship(back_populates="customer")
     risk_assessments: List["RiskAssessment"] = Relationship(back_populates="customer")
@@ -443,6 +477,94 @@ class MasterPolicy(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# FamilyGroup / FamilyPolicy  —  an admin-created household insured under
+# either a shared health floater or a bundle of individually-underwritten
+# life policies. Mirrors Organization/MasterPolicy's shape (an "employer" for
+# a family unit instead of a business), but deliberately has no Free Cover
+# Limit / guaranteed-issue concept — families are small and self-selected, so
+# every member is individually risk-scored regardless of plan type (see
+# services/tenant-service/routers/families.py).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class FamilyGroup(SQLModel, table=True):
+    """An admin/underwriter-created household. Members are Customer rows with
+    family_group_id set (same nullable-FK-on-Customer pattern Organization
+    already uses via organization_id)."""
+    __tablename__ = "family_groups"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    name: str = Field(max_length=255)                     # e.g. "Ahmed Family"
+    contact_person: Optional[str] = Field(default=None, max_length=255)
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+    contact_phone: Optional[str] = Field(default=None, max_length=50)
+
+    # Household income used for every member's risk-engine income-multiple
+    # check on FLOATER plans (children/non-earning spouses have no income of
+    # their own — see family_underwriting.py / routers/families.py). Captured
+    # once at group creation, not derived from any single member row.
+    household_declared_income: Optional[float] = Field(default=None, ge=0)
+
+    # Set once the SELF/proposer member is added — the anchor customer_id
+    # used on the single shared Policy row for a FLOATER FamilyPolicy.
+    primary_member_customer_id: Optional[UUID] = Field(default=None, foreign_key="customers.id", nullable=True)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="family_groups")
+    members: List["Customer"] = Relationship(
+        back_populates="family_group",
+        sa_relationship_kwargs={"foreign_keys": "Customer.family_group_id"},
+    )
+    family_policies: List["FamilyPolicy"] = Relationship(back_populates="family_group")
+
+
+class FamilyPolicy(SQLModel, table=True):
+    """The contract issued under a FamilyGroup — either a shared health
+    floater (one pooled Policy for the whole family) or a life-bundle wrapper
+    (each member keeps their own individually-underwritten Policy, grouped
+    here only for a shared discount + single dashboard view). A FamilyGroup
+    may have both kinds simultaneously, exactly like an Organization can have
+    multiple MasterPolicy rows."""
+    __tablename__ = "family_policies"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    family_group_id: UUID = Field(foreign_key="family_groups.id", index=True, nullable=False)
+
+    plan_type: FamilyPlanTypeEnum = Field(max_length=50)
+
+    # FLOATER only: FAMILY_FLOATER. NULL for LIFE_BUNDLE — each member's own
+    # Policy.insurance_type (TERM_LIFE/WHOLE_LIFE) carries that instead, since
+    # a life bundle can mix plan types across members.
+    insurance_type: Optional[InsuranceTypeEnum] = Field(default=None, max_length=50)
+
+    # FLOATER only: the shared sum-insured pool. NULL for LIFE_BUNDLE, where
+    # each member's own Policy.coverage_amount is authoritative instead.
+    total_sum_insured: Optional[float] = Field(default=None, ge=0)
+
+    # LIFE_BUNDLE only: family-bundling discount applied to each member's
+    # effective base_premium_rate at pricing time. NULL/unused for FLOATER —
+    # a floater's price already reflects the pooling benefit structurally
+    # (one calculation against the eldest life for the whole pool), so
+    # stacking a second discount on top would double-count it.
+    discount_percentage: Optional[float] = Field(default=None, ge=0, le=50)
+
+    term_years: int = Field(ge=1, le=40)
+    effective_date: date
+    status: str = Field(default="Pending", max_length=50)   # Pending / Active / Review
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    tenant: Optional[Tenant] = Relationship(back_populates="family_policies")
+    family_group: Optional[FamilyGroup] = Relationship(back_populates="family_policies")
+    certificates: List["Policy"] = Relationship(back_populates="family_policy")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Policy  —  the insurance product being applied for
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -460,6 +582,13 @@ class Policy(SQLModel, table=True):
     # Set only for a Certificate of Insurance issued under a group MasterPolicy;
     # NULL for individually-underwritten policies (unchanged, existing behavior).
     master_policy_id: Optional[UUID] = Field(default=None, foreign_key="master_policies.id", index=True, nullable=True)
+
+    # Set only for a policy issued under a FamilyGroup — either the single
+    # shared Policy for a FLOATER FamilyPolicy (coverage_amount = the pool
+    # total), or one of N per-member certificates under a LIFE_BUNDLE
+    # FamilyPolicy (own coverage_amount). NULL for everything else. A Policy
+    # is never both master_policy_id and family_policy_id at once.
+    family_policy_id: Optional[UUID] = Field(default=None, foreign_key="family_policies.id", index=True, nullable=True)
 
     product_name: str = Field(max_length=255)           # e.g. "Term Life", "Health Platinum"
     insurance_type: InsuranceTypeEnum = Field(max_length=50)
@@ -488,6 +617,7 @@ class Policy(SQLModel, table=True):
     tenant: Optional[Tenant] = Relationship(back_populates="policies")
     customer: Optional[Customer] = Relationship(back_populates="policies")
     master_policy: Optional[MasterPolicy] = Relationship(back_populates="certificates")
+    family_policy: Optional["FamilyPolicy"] = Relationship(back_populates="certificates")
     claims: List["Claim"] = Relationship(back_populates="policy")
     commission: Optional["Commission"] = Relationship(back_populates="policy")
     premium_quotes: List["PremiumQuote"] = Relationship(back_populates="policy")

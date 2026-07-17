@@ -381,6 +381,25 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_GROUP}],
         "required_documents": [DOC_CENSUS, DOC_BUSINESS_REG],
     },
+
+    # ── Family (admin-created FamilyGroup -> shared-pool floater; see the
+    #    Family Insurance feature — routers/families.py) ─────────────────────
+    {
+        "code": "FAMILY_FLOATER", "label": "Family Health Floater", "insurance_type": "FAMILY_FLOATER",
+        "category": "Family", "product_category": "Conventional", "partner_bank": None, "color": "rose",
+        "description": "One shared sum-insured pool covering an entire family (self, spouse, children, parents) under a single Master Policy, priced once off the eldest member's age. Unlike Group Life, every member is individually medically underwritten — a family is small and self-selected, not a large random employer pool.",
+        "entry_age_min": 0, "entry_age_max": 80, "entry_age_label": "Eldest Member",
+        "term_min_years": 1, "term_max_years": 5, "max_maturity_age": 99, "max_income_multiple": 50,
+        "min_group_size": 2,
+        "underwriting_basis": "Per-member AI risk scoring against the shared pool — no guaranteed-issue shortcut, unlike Group Life's Free Cover Limit",
+        # v1 placeholder rate — slightly above GROUP_LIFE's since a floater
+        # pool has no employer-scale risk-pooling credibility to lean on.
+        # Priced once for the whole pool via calculate_premium() in
+        # routers/families.py's confirm_floater_members.
+        "base_premium_rate": 4.0, "smoker_factor": 1.3,
+        "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_NONE}, {"minSumAssured": 10_000_000, "tier": TIER_PARAMEDICAL}],
+        "required_documents": [DOC_CNIC, DOC_MEDICAL],
+    },
 ]
 
 

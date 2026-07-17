@@ -496,6 +496,28 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v18a — add free_cover_limit to master_policies",
         "ALTER TABLE master_policies ADD COLUMN IF NOT EXISTS free_cover_limit DOUBLE PRECISION",
     ),
+    (
+        # Postgres enum types don't auto-grow — same reasoning as v8a-enum for GROUP_LIFE.
+        "v19a-enum — add FAMILY_FLOATER to insurancetypeenum",
+        "ALTER TYPE insurancetypeenum ADD VALUE IF NOT EXISTS 'FAMILY_FLOATER'",
+    ),
+    (
+        # Enum labels are the Python member NAME ('FAMILY'), not .value ('Family').
+        "v19b-enum — add FAMILY to plancategoryenum",
+        "ALTER TYPE plancategoryenum ADD VALUE IF NOT EXISTS 'FAMILY'",
+    ),
+    (
+        "v19c — add family_group_id to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS family_group_id UUID REFERENCES family_groups(id)",
+    ),
+    (
+        "v19d — add family_relationship to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS family_relationship VARCHAR(50)",
+    ),
+    (
+        "v19e — add family_policy_id to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS family_policy_id UUID REFERENCES family_policies(id)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

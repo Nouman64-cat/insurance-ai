@@ -63,6 +63,24 @@ interface OrganizationFolderData {
   policies: PolicyFolderData[];
 }
 
+// Family quotes (Policy.family_policy_id set) nest the same three levels —
+// FamilyGroup -> FamilyPolicy (Floater or Life Bundle) -> Customer — reusing
+// the identical CustomerFolder leaf. Kept as separate types (not reusing
+// OrganizationFolderData/PolicyFolderData) since a FamilyPolicy carries
+// plan_type-specific fields an employer MasterPolicy doesn't.
+
+interface FamilyPolicyFolderData {
+  family_policy_id: string;
+  family_policy_label: string;
+  customers: CustomerFolderData[];
+}
+
+interface FamilyGroupFolderData {
+  family_group_id: string;
+  family_group_name: string;
+  policies: FamilyPolicyFolderData[];
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function QuotePage() {
@@ -83,10 +101,14 @@ export default function QuotePage() {
   const [bulkProceedSuccess, setBulkProceedSuccess] = useState<string | null>(null);
 
   // Expand state — one Set/id-per-level. IDs are globally unique UUIDs so a
-  // flat Set per level is enough; no need to scope by parent.
+  // flat Set per level is enough; no need to scope by parent. The Family tree
+  // reuses expandedCustomerId at its leaf (same reasoning: customer IDs are
+  // globally unique whether the customer sits under an org or a family).
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
   const [expandedPolicyId, setExpandedPolicyId] = useState<string | null>(null);
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+  const [expandedFamilyGroupId, setExpandedFamilyGroupId] = useState<string | null>(null);
+  const [expandedFamilyPolicyId, setExpandedFamilyPolicyId] = useState<string | null>(null);
 
   const toggleOrgFolder = (orgId: string) => {
     setExpandedOrgId((prev) => (prev === orgId ? null : orgId));
@@ -96,6 +118,17 @@ export default function QuotePage() {
 
   const togglePolicyFolder = (policyId: string) => {
     setExpandedPolicyId((prev) => (prev === policyId ? null : policyId));
+    setExpandedCustomerId(null);
+  };
+
+  const toggleFamilyGroupFolder = (familyGroupId: string) => {
+    setExpandedFamilyGroupId((prev) => (prev === familyGroupId ? null : familyGroupId));
+    setExpandedFamilyPolicyId(null);
+    setExpandedCustomerId(null);
+  };
+
+  const toggleFamilyPolicyFolder = (familyPolicyId: string) => {
+    setExpandedFamilyPolicyId((prev) => (prev === familyPolicyId ? null : familyPolicyId));
     setExpandedCustomerId(null);
   };
 
@@ -221,7 +254,7 @@ export default function QuotePage() {
     fetchQuotes();
   }, [fetchQuotes]);
 
-  const { organizationGroups, individualGroups } = useMemo(() => {
+  const { organizationGroups, familyGroups, individualGroups } = useMemo(() => {
     const q = search.trim().toLowerCase();
     let filteredList = quotes;
     if (q) {
@@ -230,11 +263,13 @@ export default function QuotePage() {
           row.customer_name.toLowerCase().includes(q) ||
           row.customer_cnic.toLowerCase().includes(q) ||
           row.plan_label.toLowerCase().includes(q) ||
-          (row.organization_name?.toLowerCase().includes(q) ?? false),
+          (row.organization_name?.toLowerCase().includes(q) ?? false) ||
+          (row.family_group_name?.toLowerCase().includes(q) ?? false),
       );
     }
 
     const orgMap = new Map<string, OrganizationFolderData>();
+    const familyMap = new Map<string, FamilyGroupFolderData>();
     const individualMap = new Map<string, CustomerFolderData>();
 
     for (const quote of filteredList) {
@@ -270,6 +305,38 @@ export default function QuotePage() {
           policy.customers.push(customer);
         }
         customer.quotes.push(quote);
+      } else if (quote.family_group_id && quote.family_policy_id) {
+        let family = familyMap.get(quote.family_group_id);
+        if (!family) {
+          family = {
+            family_group_id: quote.family_group_id,
+            family_group_name: quote.family_group_name ?? "Unknown Family",
+            policies: [],
+          };
+          familyMap.set(quote.family_group_id, family);
+        }
+
+        let policy = family.policies.find((p) => p.family_policy_id === quote.family_policy_id);
+        if (!policy) {
+          policy = {
+            family_policy_id: quote.family_policy_id,
+            family_policy_label: quote.family_policy_label ?? "Family Policy",
+            customers: [],
+          };
+          family.policies.push(policy);
+        }
+
+        let customer = policy.customers.find((c) => c.customer_id === quote.customer_id);
+        if (!customer) {
+          customer = {
+            customer_id: quote.customer_id,
+            customer_name: quote.customer_name,
+            customer_cnic: quote.customer_cnic,
+            quotes: [],
+          };
+          policy.customers.push(customer);
+        }
+        customer.quotes.push(quote);
       } else {
         let customer = individualMap.get(quote.customer_id);
         if (!customer) {
@@ -287,11 +354,12 @@ export default function QuotePage() {
 
     return {
       organizationGroups: Array.from(orgMap.values()),
+      familyGroups: Array.from(familyMap.values()),
       individualGroups: Array.from(individualMap.values()),
     };
   }, [quotes, search]);
 
-  const totalResults = organizationGroups.length + individualGroups.length;
+  const totalResults = organizationGroups.length + familyGroups.length + individualGroups.length;
 
   return (
     <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full space-y-5">
@@ -300,7 +368,7 @@ export default function QuotePage() {
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Proposals</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Generated automatically in the background the moment an customer is registered — no form to fill in.
-            Corporate proposals are nested by organization and master policy.
+            Corporate proposals are nested by organization and master policy; family proposals by family and floater/life-bundle policy.
           </p>
         </div>
         <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">
@@ -387,9 +455,37 @@ export default function QuotePage() {
               </div>
             )}
 
+            {familyGroups.length > 0 && (
+              <div className="space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">
+                  Family Insurance
+                </p>
+                {familyGroups.map((family) => (
+                  <FamilyGroupFolder
+                    key={family.family_group_id}
+                    family={family}
+                    isExpanded={expandedFamilyGroupId === family.family_group_id}
+                    onToggle={() => toggleFamilyGroupFolder(family.family_group_id)}
+                    expandedFamilyPolicyId={expandedFamilyPolicyId}
+                    onToggleFamilyPolicy={toggleFamilyPolicyFolder}
+                    expandedCustomerId={expandedCustomerId}
+                    onToggleCustomer={toggleFolder}
+                    selectedQuoteIds={selectedQuoteIds}
+                    toggleSelection={toggleSelection}
+                    toggleAllInFolder={toggleAllInFolder}
+                    handleBulkProceed={handleBulkProceed}
+                    isBulkProceeding={isBulkProceeding}
+                    bulkProceedError={bulkProceedError}
+                    bulkProceedSuccess={bulkProceedSuccess}
+                    openQuote={openQuote}
+                  />
+                ))}
+              </div>
+            )}
+
             {individualGroups.length > 0 && (
               <div className="space-y-3">
-                {organizationGroups.length > 0 && (
+                {(organizationGroups.length > 0 || familyGroups.length > 0) && (
                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 pt-1">
                     Individual
                   </p>
@@ -587,6 +683,143 @@ function PolicyFolder({
             <div
               key={customer.customer_id}
               className={`border rounded-lg overflow-hidden ${expandedCustomerId === customer.customer_id ? "border-blue-200 ring-1 ring-blue-500/10" : "border-slate-200"}`}
+            >
+              <CustomerFolder
+                customer={customer}
+                isExpanded={expandedCustomerId === customer.customer_id}
+                onToggle={() => onToggleCustomer(customer.customer_id)}
+                compact
+                {...handlers}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Level 1: Family Group folder ────────────────────────────────────────────
+
+function FamilyGroupFolder({
+  family,
+  isExpanded,
+  onToggle,
+  expandedFamilyPolicyId,
+  onToggleFamilyPolicy,
+  expandedCustomerId,
+  onToggleCustomer,
+  ...handlers
+}: {
+  family: FamilyGroupFolderData;
+  isExpanded: boolean;
+  onToggle: () => void;
+  expandedFamilyPolicyId: string | null;
+  onToggleFamilyPolicy: (familyPolicyId: string) => void;
+  expandedCustomerId: string | null;
+  onToggleCustomer: (customerId: string) => void;
+} & CustomerFolderHandlers) {
+  const totalMembers = family.policies.reduce((sum, p) => sum + p.customers.length, 0);
+
+  return (
+    <div
+      className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+        isExpanded ? "border-rose-200 shadow-md ring-1 ring-rose-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-rose-200 bg-white"
+      }`}
+    >
+      <div onClick={onToggle} className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? "bg-rose-50/50" : "bg-white"}`}>
+        <div className="flex items-center gap-4">
+          <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${isExpanded ? "bg-rose-100 text-rose-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+              <path d="M12 3l9 7-9 7-9-7 9-7z" />
+              <circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" />
+              <path d="M8 15v-2a4 4 0 018 0v2" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-900">{family.family_group_name}</h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {family.policies.length} family {family.policies.length === 1 ? "policy" : "policies"}
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-3">
+          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}>
+            {totalMembers} {totalMembers === 1 ? "member" : "members"}
+          </span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-rose-500" : ""}`}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="border-t border-slate-100 bg-slate-50/40 p-4 space-y-3">
+          {family.policies.map((policy) => (
+            <FamilyPolicyFolder
+              key={policy.family_policy_id}
+              policy={policy}
+              isExpanded={expandedFamilyPolicyId === policy.family_policy_id}
+              onToggle={() => onToggleFamilyPolicy(policy.family_policy_id)}
+              expandedCustomerId={expandedCustomerId}
+              onToggleCustomer={onToggleCustomer}
+              {...handlers}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Level 2: Family Policy folder (Floater or Life Bundle) ─────────────────
+
+function FamilyPolicyFolder({
+  policy,
+  isExpanded,
+  onToggle,
+  expandedCustomerId,
+  onToggleCustomer,
+  ...handlers
+}: {
+  policy: FamilyPolicyFolderData;
+  isExpanded: boolean;
+  onToggle: () => void;
+  expandedCustomerId: string | null;
+  onToggleCustomer: (customerId: string) => void;
+} & CustomerFolderHandlers) {
+  return (
+    <div className={`border rounded-lg overflow-hidden bg-white ${isExpanded ? "border-rose-200" : "border-slate-200"}`}>
+      <div onClick={onToggle} className={`flex items-center justify-between px-4 py-3 cursor-pointer ${isExpanded ? "bg-rose-50/40" : "hover:bg-slate-50"}`}>
+        <div className="flex items-center gap-3">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400">
+            {isExpanded ? (
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            ) : (
+              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
+            )}
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-slate-800">Family Policy</p>
+            <p className="text-[11px] text-slate-500">{policy.family_policy_label}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2.5">
+          <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+            {policy.customers.length} {policy.customers.length === 1 ? "member" : "members"}
+          </span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-rose-500" : ""}`}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </div>
+      </div>
+
+      {isExpanded && (
+        <div className="border-t border-slate-100 p-3 space-y-2.5">
+          {policy.customers.map((customer) => (
+            <div
+              key={customer.customer_id}
+              className={`border rounded-lg overflow-hidden ${expandedCustomerId === customer.customer_id ? "border-rose-200 ring-1 ring-rose-500/10" : "border-slate-200"}`}
             >
               <CustomerFolder
                 customer={customer}
@@ -837,6 +1070,12 @@ function QuoteDetailModal({
                   {detail.master_policy_label ? ` · ${detail.master_policy_label}` : ""}
                 </p>
               )}
+              {detail.family_group_name && (
+                <p className="text-[11px] text-rose-600 font-semibold">
+                  Family — {detail.family_group_name}
+                  {detail.family_policy_label ? ` · ${detail.family_policy_label}` : ""}
+                </p>
+              )}
               <p className="text-sm text-slate-700 leading-relaxed">
                 We are pleased to present the following insurance proposal for{" "}
                 <span className="font-semibold text-slate-900">{detail.customer_name}</span>. Based on the
@@ -908,6 +1147,8 @@ function QuoteDetailModal({
                 <DetailField label="Term" value={`${detail.term_years} years`} />
                 {detail.organization_name && <DetailField label="Organization" value={detail.organization_name} />}
                 {detail.master_policy_label && <DetailField label="Master Policy" value={detail.master_policy_label} />}
+                {detail.family_group_name && <DetailField label="Family" value={detail.family_group_name} />}
+                {detail.family_policy_label && <DetailField label="Family Policy" value={detail.family_policy_label} />}
                 {detail.nominee_name && <DetailField label="Nominee" value={`${detail.nominee_name}${detail.nominee_relationship ? ` (${detail.nominee_relationship})` : ""}`} />}
                 {detail.dependent_name && <DetailField label="Dependent" value={`${detail.dependent_name}${detail.dependent_dob ? ` — b. ${formatDate(detail.dependent_dob)}` : ""}`} />}
               </div>

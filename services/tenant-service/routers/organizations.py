@@ -9,6 +9,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from decision_status import DECISION_CASE_STATUS, DECISION_POLICY_STATUS
 from group_underwriting import (
     average_age,
     age_from_dob,
@@ -57,24 +58,6 @@ from routers.users import verify_admin   # reuse existing Admin guard — tenant
 logger = logging.getLogger("tenant-service.organizations")
 
 router = APIRouter(prefix="/tenants", tags=["Organizations"])
-
-# AI decision band -> Policy/Case lifecycle status for above-FCL group members
-# routed through risk-engine. Duplicated (not imported) from api-gateway's
-# routers/evaluate.py — these are separate deployable services, and
-# group_underwriting.py already establishes the precedent of not sharing
-# risk-engine's rule modules across the service boundary.
-_GROUP_DECISION_POLICY_STATUS: Dict[str, PolicyStatusEnum] = {
-    "Auto Approve":         PolicyStatusEnum.APPROVED,
-    "Approve with Loading": PolicyStatusEnum.APPROVED,
-    "Human Review":         PolicyStatusEnum.UNDER_REVIEW,
-    "Decline":              PolicyStatusEnum.DECLINED,
-}
-_GROUP_DECISION_CASE_STATUS: Dict[str, CaseStatusEnum] = {
-    "Auto Approve":         CaseStatusEnum.APPROVED,
-    "Approve with Loading": CaseStatusEnum.APPROVED,
-    "Human Review":         CaseStatusEnum.UNDER_REVIEW,
-    "Decline":              CaseStatusEnum.REJECTED,
-}
 
 # Used only if a tenant has no "GROUP_LIFE" InsurancePlan catalog row (e.g. a
 # tenant that hasn't run seeds/insurance_plans_seed.py) — rather than failing
@@ -411,12 +394,12 @@ async def confirm_employee_census(
                 risk_assessment_id = assessment.id
                 suggested_loading = assessment.suggested_loading
 
-                new_policy_status = _GROUP_DECISION_POLICY_STATUS.get(ai_result["ai_decision"])
+                new_policy_status = DECISION_POLICY_STATUS.get(ai_result["ai_decision"])
                 if new_policy_status is not None:
                     policy.status = new_policy_status
                     session.add(policy)
 
-                new_case_status = _GROUP_DECISION_CASE_STATUS.get(ai_result["ai_decision"])
+                new_case_status = DECISION_CASE_STATUS.get(ai_result["ai_decision"])
                 if new_case_status is not None and new_case_status != case.caseStatus:
                     if audit_user is not None:
                         session.add(CaseHistory(

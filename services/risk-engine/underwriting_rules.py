@@ -146,6 +146,33 @@ UNDERWRITING_RULES: Dict[str, PlanRules] = {
         max_maturity_age=70,
         max_income_multiple=3.0,
     ),
+    # Family Health Floater — a shared sum-insured pool covering every member
+    # of an admin-created FamilyGroup (services/tenant-service/routers/
+    # families.py). Every member (spouse/child/parent/self) is individually
+    # risk-scored against this band — no guaranteed-issue shortcut, unlike
+    # GROUP_LIFE's Free-Cover-Limit split, since family groups are small and
+    # self-selected rather than large employer pools.
+    #
+    # min_entry_age=0 — must accommodate infants added as CHILD dependents.
+    # max_entry_age=80 — must accommodate PARENT dependents, who skew older
+    # than any other band in this table.
+    # max_income_multiple=50.0 — deliberately high: coverage is compared
+    # against the *household's* declared_income (family_group.
+    # household_declared_income, not any one member's own income — children
+    # and non-earning spouses have none of their own), and the whole family's
+    # shared pool can legitimately be several times even a comfortable
+    # household's annual income, unlike GROUP_LIFE's income-derived coverage
+    # model where coverage is computed FROM income in the first place.
+    "FAMILY_FLOATER": PlanRules(
+        min_entry_age=0, max_entry_age=80,
+        min_term_years=1, max_term_years=5,
+        max_maturity_age=99,
+        max_income_multiple=50.0,
+        medical_exam_tiers=[
+            (0, MedicalExamTier.NONE),
+            (10_000_000, MedicalExamTier.PARAMEDICAL),
+        ],
+    ),
 }
 
 # Used when insurance_type is missing/unrecognized — preserves the original

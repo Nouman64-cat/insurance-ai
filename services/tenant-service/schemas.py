@@ -14,6 +14,8 @@ from shared.models.core import (
     BranchTypeEnum,
     MaritalStatus,
     AcquisitionSourceType,
+    FamilyPlanTypeEnum,
+    FamilyRelationshipEnum,
 )
 
 
@@ -547,6 +549,99 @@ class CensusEmployeeOutcome(BaseModel):
 class CensusConfirmResponse(BaseModel):
     free_cover_limit: float
     employees: List[CensusEmployeeOutcome]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Family Insurance Schemas — mirrors the Organization/MasterPolicy/Census
+# schemas above; see services/tenant-service/routers/families.py.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class FamilyGroupCreate(BaseModel):
+    name: str
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    household_declared_income: Optional[float] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("name must not be blank")
+        return v.strip()
+
+
+class FamilyGroupRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    name: str
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    household_declared_income: Optional[float] = None
+    primary_member_customer_id: Optional[UUID] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FloaterPolicyCreate(BaseModel):
+    total_sum_insured: float
+    term_years: int
+    effective_date: date
+
+
+class LifeBundlePolicyCreate(BaseModel):
+    term_years: int
+    effective_date: date
+    discount_percentage: float = 0.0
+
+
+class FamilyPolicyRead(BaseModel):
+    id: UUID
+    tenant_id: UUID
+    family_group_id: UUID
+    plan_type: FamilyPlanTypeEnum
+    insurance_type: Optional[InsuranceTypeEnum] = None
+    total_sum_insured: Optional[float] = None
+    discount_percentage: Optional[float] = None
+    term_years: int
+    effective_date: date
+    status: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class FamilyMembersRequest(BaseModel):
+    """Raw member rows — kept as loose dicts, same reasoning as CensusRequest:
+    family_underwriting.validate_family_members() reports friendly per-row
+    errors instead of an opaque FastAPI 422 on the first bad row."""
+    members: List[Dict[str, Any]]
+
+
+class FamilyValidationResponse(BaseModel):
+    is_valid: bool
+    total: int
+    duplicate_cnics: List[str] = []
+    missing_fields: List[str] = []
+    errors: List[str] = []
+
+
+class FamilyMemberOutcome(BaseModel):
+    customer_id: UUID
+    policy_id: UUID                       # shared, for FLOATER; own, for LIFE_BUNDLE
+    relationship: FamilyRelationshipEnum
+    status: PolicyStatusEnum
+    premium_total: Optional[float] = None
+    suggested_loading: Optional[float] = None
+    risk_assessment_id: Optional[UUID] = None
+
+
+class FamilyConfirmResponse(BaseModel):
+    family_policy_id: UUID
+    total_sum_insured: Optional[float] = None
+    members: List[FamilyMemberOutcome]
 
 
 # ─────────────────────────────────────────────────────────────────────────────

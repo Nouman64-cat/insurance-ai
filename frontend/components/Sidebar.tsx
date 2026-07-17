@@ -210,6 +210,30 @@ const NAV_ITEMS = [
 
       },
 
+      {
+
+        href: "/admin/families",
+
+        label: "Family Insurance",
+
+        icon: (
+
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+
+            <path d="M12 3l9 7-9 7-9-7 9-7z" />
+
+            <circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" />
+
+            <path d="M8 15v-2a4 4 0 018 0v2" />
+
+          </svg>
+
+        ),
+
+        badge: null,
+
+      },
+
     ],
 
   },
