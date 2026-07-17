@@ -120,16 +120,74 @@ const GEMINI_FUNCTION_DECLARATIONS = TOOLS.map((t) => ({
   parameters: t.function.parameters,
 }));
 
-// Map our OpenAI-style chat history to Gemini's `contents` shape. Gemini only
-// knows the "user" and "model" roles; anything that isn't an assistant turn is
-// treated as user input.
-function toGeminiContents(messages: Array<{ role: string; content: string }>) {
-  return messages
-    .filter((m) => m.role !== 'system' && typeof m.content === 'string' && m.content.length > 0)
-    .map((m) => ({
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text: m.content }],
-    }));
+function toGeminiContents(messages: Array<any>) {
+  const contents = [];
+
+  for (const m of messages) {
+    if (m.role === 'system') {
+      continue;
+    }
+
+    if (m.role === 'user') {
+      if (typeof m.content === 'string' && m.content.trim().length > 0) {
+        contents.push({
+          role: 'user',
+          parts: [{ text: m.content }],
+        });
+      }
+    } else if (m.role === 'assistant') {
+      const parts: any[] = [];
+      if (typeof m.content === 'string' && m.content.trim().length > 0) {
+        parts.push({ text: m.content });
+      }
+      if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+        for (const tc of m.tool_calls) {
+          let parsedArgs = {};
+          try {
+            parsedArgs = typeof tc.function.arguments === 'string'
+              ? JSON.parse(tc.function.arguments)
+              : (tc.function.arguments || {});
+          } catch (e) {
+            console.error('Error parsing tool arguments:', e);
+          }
+          parts.push({
+            functionCall: {
+              name: tc.function.name,
+              args: parsedArgs,
+            },
+          });
+        }
+      }
+      if (parts.length > 0) {
+        contents.push({
+          role: 'model',
+          parts: parts,
+        });
+      }
+    } else if (m.role === 'tool') {
+      let parsedResponse = {};
+      try {
+        parsedResponse = typeof m.content === 'string'
+          ? JSON.parse(m.content)
+          : (m.content || {});
+      } catch (e) {
+        parsedResponse = { result: m.content };
+      }
+      contents.push({
+        role: 'function',
+        parts: [
+          {
+            functionResponse: {
+              name: m.name,
+              response: parsedResponse,
+            },
+          },
+        ],
+      });
+    }
+  }
+
+  return contents;
 }
 
 export async function POST(req: Request) {
