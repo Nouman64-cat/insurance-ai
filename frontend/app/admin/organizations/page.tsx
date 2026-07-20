@@ -23,6 +23,7 @@ export default function OrganizationsPage() {
   const [authorized, setAuthorized] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [search, setSearch] = useState("");
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
@@ -158,15 +159,24 @@ export default function OrganizationsPage() {
             Businesses insuring their staff under a group policy, rather than individuals shopping for their own coverage.
           </p>
         </div>
-        <button
-          onClick={() => handleOpenCreateModal()}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95 self-start"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          Add Organization
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          <input
+            type="text"
+            placeholder="Search organizations..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full sm:w-64 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
+          />
+          <button
+            onClick={() => handleOpenCreateModal()}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95 w-full sm:w-auto justify-center"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Add Organization
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
@@ -204,7 +214,18 @@ export default function OrganizationsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {organizations.map((org) => (
+                {organizations
+                  .filter((org) => {
+                    const q = search.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      org.name.toLowerCase().includes(q) ||
+                      (org.industry || "").toLowerCase().includes(q) ||
+                      (org.contact_person || "").toLowerCase().includes(q) ||
+                      (org.contact_email || "").toLowerCase().includes(q)
+                    );
+                  })
+                  .map((org) => (
                   <tr key={org.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3.5 font-semibold text-slate-800">{org.name}</td>
                     <td className="px-5 py-3.5 text-slate-600">{org.industry ?? "—"}</td>
@@ -216,13 +237,13 @@ export default function OrganizationsPage() {
                     <td className="px-5 py-3.5 text-right space-x-3">
                       <button
                         onClick={() => handleOpenCreateModal(org)}
-                        className="text-xs font-bold text-slate-600 hover:text-blue-600 transition-colors"
+                        className="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDeleteOrganization(org.id, org.name)}
-                        className="text-xs font-bold text-slate-600 hover:text-red-600 transition-colors"
+                        className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors"
                       >
                         Delete
                       </button>

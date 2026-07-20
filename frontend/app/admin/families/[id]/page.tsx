@@ -92,6 +92,15 @@ function formatPKR(n: number): string {
   return `PKR ${Math.round(n).toLocaleString()}`;
 }
 
+function formatCNIC(value: string): string {
+  const v = value.replace(/\D/g, '');
+  let res = '';
+  if (v.length > 0) res += v.substring(0, 5);
+  if (v.length > 5) res += '-' + v.substring(5, 12);
+  if (v.length > 12) res += '-' + v.substring(12, 13);
+  return res;
+}
+
 export default function FamilyDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -119,6 +128,11 @@ export default function FamilyDetailPage() {
   const [lifeBundleEffectiveDate, setLifeBundleEffectiveDate] = useState("");
   const [discountPercentage, setDiscountPercentage] = useState("10");
   const [lifeBundleFormLoading, setLifeBundleFormLoading] = useState(false);
+
+  // Edit Member
+  const [editingMember, setEditingMember] = useState<FamilyMemberRow | null>(null);
+  const [editMemberForm, setEditMemberForm] = useState<Partial<FamilyMemberRow>>({});
+  const [editMemberFormLoading, setEditMemberFormLoading] = useState(false);
 
   // Member entry
   const [selectedPolicyId, setSelectedPolicyId] = useState("");
@@ -210,7 +224,11 @@ export default function FamilyDetailPage() {
   };
 
   const updateMemberRow = (index: number, field: keyof MemberFormRow, value: string) => {
-    setMemberRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    let finalValue = value;
+    if (field === "cnic") {
+      finalValue = formatCNIC(value);
+    }
+    setMemberRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: finalValue } : row)));
   };
 
   const addMemberRow = () => setMemberRows((prev) => [...prev, { ...EMPTY_ROW }]);
@@ -270,10 +288,65 @@ export default function FamilyDetailPage() {
       setValidationResult(null);
       fetchAll();
     } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      setError(typeof detail === "object" ? JSON.stringify(detail) : detail ?? err.message ?? "Failed to confirm members.");
+      let detail = err.response?.data?.detail;
+      if (typeof detail === "string") {
+        try { detail = JSON.parse(detail); } catch (e) {}
+      }
+      if (err.response?.status === 422 && typeof detail === "object" && detail !== null && "is_valid" in detail) {
+        setValidationResult(detail);
+      } else {
+        setError(typeof detail === "object" ? JSON.stringify(detail) : detail ?? err.message ?? "Failed to confirm members.");
+      }
     } finally {
       setMemberLoading(false);
+    }
+  };
+
+  const handleEditMember = (member: FamilyMemberRow) => {
+    setEditingMember(member);
+    setEditMemberForm({ ...member });
+  };
+
+  const handleSaveMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMember) return;
+    setEditMemberFormLoading(true);
+    setError("");
+    setSuccess("");
+    try {
+      const names = (editMemberForm.name || "").trim().split(" ");
+      const firstName = names[0] || "";
+      const lastName = names.slice(1).join(" ");
+      const payload = {
+        cnic: editMemberForm.cnic,
+        first_name: firstName,
+        last_name: lastName || undefined,
+        date_of_birth: editMemberForm.dob,
+        gender: editMemberForm.gender,
+        occupation: editMemberForm.occupation,
+        declared_income: editMemberForm.declared_income,
+      };
+      await api.put(`/tenants/${tenantId}/customers/${editingMember.id}`, payload);
+      setSuccess("Family member updated successfully.");
+      setEditingMember(null);
+      fetchAll();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to update member.");
+    } finally {
+      setEditMemberFormLoading(false);
+    }
+  };
+
+  const handleDeleteMember = async (memberId: string, memberName: string) => {
+    if (!confirm(`Are you sure you want to delete ${memberName}? This will also delete their policy, quotes, and AI assessments.`)) return;
+    setError("");
+    setSuccess("");
+    try {
+      await api.delete(`/tenants/${tenantId}/families/${familyId}/members/${memberId}`);
+      setSuccess(`Family member ${memberName} deleted successfully.`);
+      fetchAll();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete member.");
     }
   };
 
@@ -310,7 +383,40 @@ export default function FamilyDetailPage() {
         </div>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
+      {error && (() => {
+        try {
+          const parsed = JSON.parse(error);
+          if (parsed && typeof parsed === "object") {
+            const missing = parsed.missing_fields || [];
+            const errs = parsed.errors || [];
+            const dups = parsed.duplicate_cnics || [];
+            
+            // Handle Pydantic validation array fallback
+            if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].loc) {
+              return (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium space-y-1">
+                  <p className="font-bold mb-2">Invalid Data Format:</p>
+                  {parsed.map((e: any, i: number) => (
+                    <p key={i}>• {e.loc.join(" -> ")}: {e.msg}</p>
+                  ))}
+                </div>
+              );
+            }
+            
+            if (missing.length > 0 || errs.length > 0 || dups.length > 0) {
+              return (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium space-y-1">
+                  <p className="font-bold mb-2">Please fix the following issues before enrolling:</p>
+                  {missing.map((m: string, i: number) => <p key={`m-${i}`}>• {m}</p>)}
+                  {errs.map((e: string, i: number) => <p key={`e-${i}`}>• {e}</p>)}
+                  {dups.length > 0 && <p>• Duplicate CNICs: {dups.join(", ")}</p>}
+                </div>
+              );
+            }
+          }
+        } catch (e) {}
+        return <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>;
+      })()}
       {success && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium">{success}</div>}
 
       {loading ? (
@@ -425,19 +531,22 @@ export default function FamilyDetailPage() {
                     <tbody>
                       {memberRows.map((row, i) => (
                         <tr key={i}>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input value={row.cnic} onChange={(e) => updateMemberRow(i, "cnic", e.target.value)} placeholder="61101-1234567-1"
-                              className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
+                              className={`w-32 bg-slate-50 border rounded px-2 py-1 ${row.cnic && !/^\d{5}-\d{7}-\d$/.test(row.cnic) ? 'border-red-400 focus:outline-red-400' : 'border-slate-200'}`} />
+                            {row.cnic && !/^\d{5}-\d{7}-\d$/.test(row.cnic) && (
+                              <p className="text-[10px] text-red-500 mt-0.5 leading-tight">Invalid format</p>
+                            )}
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input value={row.name} onChange={(e) => updateMemberRow(i, "name", e.target.value)} placeholder="Full name"
                               className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="date" value={row.dob} onChange={(e) => updateMemberRow(i, "dob", e.target.value)}
                               className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <select value={row.gender} onChange={(e) => updateMemberRow(i, "gender", e.target.value)}
                               className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1">
                               <option value="Male">Male</option>
@@ -445,7 +554,7 @@ export default function FamilyDetailPage() {
                               <option value="Other">Other</option>
                             </select>
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <select value={row.relationship} onChange={(e) => updateMemberRow(i, "relationship", e.target.value)}
                               className="w-24 bg-slate-50 border border-slate-200 rounded px-2 py-1">
                               <option value="Self">Self</option>
@@ -454,22 +563,22 @@ export default function FamilyDetailPage() {
                               <option value="Parent">Parent</option>
                             </select>
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input value={row.occupation} onChange={(e) => updateMemberRow(i, "occupation", e.target.value)} placeholder="Job title"
                               className="w-28 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="number" value={row.declared_income} onChange={(e) => updateMemberRow(i, "declared_income", e.target.value)} placeholder="0"
                               className="w-24 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
                           {isLifeBundle && (
-                            <td className="pr-2 pb-2">
+                            <td className="pr-2 pb-2 align-top">
                               <input type="number" value={row.coverage_amount} onChange={(e) => updateMemberRow(i, "coverage_amount", e.target.value)} placeholder="5000000"
                                 className="w-28 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                             </td>
                           )}
                           {isLifeBundle && (
-                            <td className="pr-2 pb-2">
+                            <td className="pr-2 pb-2 align-top">
                               <select value={row.plan_code} onChange={(e) => updateMemberRow(i, "plan_code", e.target.value)}
                                 className="w-36 bg-slate-50 border border-slate-200 rounded px-2 py-1">
                                 <option value="">— select plan —</option>
@@ -479,7 +588,7 @@ export default function FamilyDetailPage() {
                               </select>
                             </td>
                           )}
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <select value={row.is_smoker} onChange={(e) => updateMemberRow(i, "is_smoker", e.target.value)}
                               className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1">
                               <option value="">—</option>
@@ -487,16 +596,16 @@ export default function FamilyDetailPage() {
                               <option value="true">Yes</option>
                             </select>
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="number" value={row.height_cm} onChange={(e) => updateMemberRow(i, "height_cm", e.target.value)} placeholder="170"
                               className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="number" value={row.weight_kg} onChange={(e) => updateMemberRow(i, "weight_kg", e.target.value)} placeholder="70"
                               className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pb-2">
-                            <button type="button" onClick={() => removeMemberRow(i)} className="text-red-500 hover:text-red-700 font-bold px-1">✕</button>
+                          <td className="pb-2 align-top">
+                            <button type="button" onClick={() => removeMemberRow(i)} className="text-red-500 hover:text-red-700 font-bold px-1 mt-1">✕</button>
                           </td>
                         </tr>
                       ))}
@@ -523,13 +632,7 @@ export default function FamilyDetailPage() {
 
                 <div className="flex gap-3 pt-2 border-t border-slate-100">
                   <button
-                    type="button" onClick={handleValidateMembers} disabled={memberLoading || !selectedPolicy}
-                    className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
-                  >
-                    Validate Members
-                  </button>
-                  <button
-                    type="button" onClick={handleConfirmMembers} disabled={memberLoading || !validationResult?.is_valid}
+                    type="button" onClick={handleConfirmMembers} disabled={memberLoading}
                     className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/40 rounded-lg transition-colors"
                   >
                     {memberLoading ? "Working..." : "Confirm & Enroll"}
@@ -605,6 +708,7 @@ export default function FamilyDetailPage() {
                       <th className="px-5 py-3 text-left">Age / Gender</th>
                       <th className="px-5 py-3 text-left">Occupation</th>
                       <th className="px-5 py-3 text-right">Income</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -618,6 +722,10 @@ export default function FamilyDetailPage() {
                         </td>
                         <td className="px-5 py-3 text-slate-600">{m.occupation}</td>
                         <td className="px-5 py-3 text-right font-semibold text-slate-700">PKR {m.declared_income.toLocaleString()}</td>
+                        <td className="px-5 py-3 text-right space-x-3">
+                          <button onClick={() => handleEditMember(m)} className="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors">Edit</button>
+                          <button onClick={() => handleDeleteMember(m.id, m.name)} className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors">Delete</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -703,6 +811,78 @@ export default function FamilyDetailPage() {
                 <button type="submit" disabled={lifeBundleFormLoading}
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors">
                   {lifeBundleFormLoading ? "Creating..." : "Create Life Bundle Policy"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT MEMBER MODAL ── */}
+      {editingMember && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Edit Family Member</h3>
+              <button onClick={() => setEditingMember(null)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
+            </div>
+            <form onSubmit={handleSaveMember} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">CNIC *</label>
+                <input
+                  type="text" required value={editMemberForm.cnic || ""} onChange={(e) => setEditMemberForm({...editMemberForm, cnic: formatCNIC(e.target.value)})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
+                <input
+                  type="text" required value={editMemberForm.name || ""} onChange={(e) => setEditMemberForm({...editMemberForm, name: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">DOB *</label>
+                  <input
+                    type="date" required value={editMemberForm.dob || ""} onChange={(e) => setEditMemberForm({...editMemberForm, dob: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Gender *</label>
+                  <select
+                    required value={editMemberForm.gender || "Male"} onChange={(e) => setEditMemberForm({...editMemberForm, gender: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Occupation *</label>
+                <input
+                  type="text" required value={editMemberForm.occupation || ""} onChange={(e) => setEditMemberForm({...editMemberForm, occupation: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Declared Income (Annual) *</label>
+                <input
+                  type="number" required value={editMemberForm.declared_income || ""} onChange={(e) => setEditMemberForm({...editMemberForm, declared_income: parseFloat(e.target.value)})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button type="button" onClick={() => setEditingMember(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={editMemberFormLoading}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors">
+                  {editMemberFormLoading ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>

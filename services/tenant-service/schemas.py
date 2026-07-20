@@ -579,6 +579,23 @@ class FamilyGroupCreate(BaseModel):
         return v.strip()
 
 
+class FamilyGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+    household_declared_income: Optional[float] = None
+
+    @field_validator("name")
+    @classmethod
+    def name_not_blank(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and not v.strip():
+            raise ValueError("name must not be blank")
+        if v is not None:
+            return v.strip()
+        return v
+
+
 class FamilyGroupRead(BaseModel):
     id: UUID
     tenant_id: UUID

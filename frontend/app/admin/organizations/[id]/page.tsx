@@ -652,8 +652,8 @@ export default function OrganizationDetailPage() {
                         <td className="px-5 py-3 text-slate-600">{emp.occupation}</td>
                         <td className="px-5 py-3 text-right font-semibold text-slate-700">PKR {emp.declared_income.toLocaleString()}</td>
                         <td className="px-5 py-3 text-right space-x-3">
-                          <button onClick={() => handleEditEmployee(emp)} className="text-xs font-bold text-blue-600 hover:text-blue-800">Edit</button>
-                          <button onClick={() => handleDeleteEmployee(emp.id, emp.name)} className="text-xs font-bold text-red-600 hover:text-red-800">Delete</button>
+                          <button onClick={() => handleEditEmployee(emp)} className="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors">Edit</button>
+                          <button onClick={() => handleDeleteEmployee(emp.id, emp.name)} className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors">Delete</button>
                         </td>
                       </tr>
                     ))}
