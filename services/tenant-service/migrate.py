@@ -518,6 +518,53 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v19e — add family_policy_id to policies",
         "ALTER TABLE policies ADD COLUMN IF NOT EXISTS family_policy_id UUID REFERENCES family_policies(id)",
     ),
+    (
+        "v20a-enum — add profilestatusenum",
+        "DO $$ BEGIN CREATE TYPE profilestatusenum AS ENUM ('LEAD', 'PROSPECT', 'UNDERWRITING_READY'); EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    ),
+    (
+        "v20b — add profile_status to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS profile_status profilestatusenum NOT NULL DEFAULT 'LEAD'",
+    ),
+    (
+        "v20c — alter cnic drop not null",
+        "ALTER TABLE customers ALTER COLUMN cnic DROP NOT NULL",
+    ),
+    (
+        "v20d — alter dob drop not null",
+        "ALTER TABLE customers ALTER COLUMN dob DROP NOT NULL",
+    ),
+    (
+        "v20e — alter gender drop not null",
+        "ALTER TABLE customers ALTER COLUMN gender DROP NOT NULL",
+    ),
+    (
+        "v20f — alter occupation drop not null",
+        "ALTER TABLE customers ALTER COLUMN occupation DROP NOT NULL",
+    ),
+    (
+        "v20g — alter declared_income drop not null",
+        "ALTER TABLE customers ALTER COLUMN declared_income DROP NOT NULL",
+    ),
+    (
+        "v20h — alter is_smoker drop not null",
+        "ALTER TABLE customers ALTER COLUMN is_smoker DROP NOT NULL",
+    ),
+    (
+        "v20i — alter height_cm drop not null",
+        "ALTER TABLE customers ALTER COLUMN height_cm DROP NOT NULL",
+    ),
+    (
+        "v20j — alter weight_kg drop not null",
+        "ALTER TABLE customers ALTER COLUMN weight_kg DROP NOT NULL",
+    ),
+    (
+        # Lets Admins mark a lead/prospect as disqualified (declined the offer,
+        # unreachable, etc.) — same reasoning as v8a-enum for growing an
+        # existing Postgres enum type in place.
+        "v21a-enum — add NOT_INTERESTED to profilestatusenum",
+        "ALTER TYPE profilestatusenum ADD VALUE IF NOT EXISTS 'NOT_INTERESTED'",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

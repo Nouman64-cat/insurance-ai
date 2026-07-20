@@ -253,6 +253,11 @@ async def list_customers(tenant_id: UUID, request: Request, token: str = Depends
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers")
 
 
+@app.get("/tenants/{tenant_id}/customers/stats", tags=["Customers"], summary="Get customer stats (admin only)")
+async def get_customer_stats(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers/stats")
+
+
 @app.get("/tenants/{tenant_id}/customers/{customer_id}", tags=["Customers"], summary="Get an customer by ID")
 async def get_customer(tenant_id: UUID, customer_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/customers/{customer_id}")

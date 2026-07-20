@@ -596,7 +596,7 @@ const NAV_ITEMS = [
 
         href: "/admin/customers",
 
-        label: "Customer Profile",
+        label: "Customers Profile",
 
         icon: (
 

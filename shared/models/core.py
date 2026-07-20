@@ -105,6 +105,13 @@ class PolicyStatusEnum(str, Enum):
     LAPSED = "Lapsed"
 
 
+class ProfileStatusEnum(str, Enum):
+    LEAD = "LEAD"
+    PROSPECT = "PROSPECT"
+    UNDERWRITING_READY = "UNDERWRITING_READY"
+    NOT_INTERESTED = "NOT_INTERESTED"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Tenant  —  top-level isolation boundary
 # ─────────────────────────────────────────────────────────────────────────────
@@ -405,22 +412,24 @@ class Customer(SQLModel, table=True):
     acquisition_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", index=True, nullable=True)
 
     # Identity
-    cnic: str = Field(index=True, max_length=15)        # Pakistani National Identity Card
+    cnic: Optional[str] = Field(default=None, index=True, max_length=15, nullable=True)        # Pakistani National Identity Card
     name: str = Field(max_length=255)
-    dob: date
-    gender: Gender
-    marital_status: Optional[MaritalStatus] = Field(default=None, max_length=50)
+    dob: Optional[date] = Field(default=None, nullable=True)
+    gender: Optional[Gender] = Field(default=None, max_length=50, nullable=True)
+    marital_status: Optional[MaritalStatus] = Field(default=None, max_length=50, nullable=True)
 
     # Socio-economic profile used by the risk engine
-    occupation: str = Field(max_length=255)
-    declared_income: float = Field(ge=0)
+    occupation: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    declared_income: Optional[float] = Field(default=None, ge=0, nullable=True)
 
     # Pricing-relevant risk flags — promoted out of `details` to strongly-typed
     # columns so the (upcoming) Rating/Pricing Engine has a validated contract
     # instead of reading an untyped JSON blob.
-    is_smoker: bool = Field(nullable=False)
-    height_cm: float = Field(gt=0)
-    weight_kg: float = Field(gt=0)
+    is_smoker: Optional[bool] = Field(default=False, nullable=True)
+    height_cm: Optional[float] = Field(default=170.0, gt=0, nullable=True)
+    weight_kg: Optional[float] = Field(default=70.0, gt=0, nullable=True)
+
+    profile_status: ProfileStatusEnum = Field(default=ProfileStatusEnum.LEAD, max_length=50)
 
     details: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
@@ -434,9 +443,18 @@ class Customer(SQLModel, table=True):
         sa_relationship_kwargs={"foreign_keys": "Customer.family_group_id"},
     )
     acquisition_source: Optional["AcquisitionSource"] = Relationship(back_populates="customers")
-    policies: List["Policy"] = Relationship(back_populates="customer")
-    risk_assessments: List["RiskAssessment"] = Relationship(back_populates="customer")
-    artifacts: List["Artifact"] = Relationship(back_populates="customer")
+    policies: List["Policy"] = Relationship(
+        back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    risk_assessments: List["RiskAssessment"] = Relationship(
+        back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    artifacts: List["Artifact"] = Relationship(
+        back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    cases: List["Case"] = Relationship(
+        back_populates="customer", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -618,9 +636,18 @@ class Policy(SQLModel, table=True):
     customer: Optional[Customer] = Relationship(back_populates="policies")
     master_policy: Optional[MasterPolicy] = Relationship(back_populates="certificates")
     family_policy: Optional["FamilyPolicy"] = Relationship(back_populates="certificates")
-    claims: List["Claim"] = Relationship(back_populates="policy")
-    commission: Optional["Commission"] = Relationship(back_populates="policy")
-    premium_quotes: List["PremiumQuote"] = Relationship(back_populates="policy")
+    claims: List["Claim"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    commission: Optional["Commission"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    premium_quotes: List["PremiumQuote"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    cases: List["Case"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -992,12 +1019,26 @@ class Case(SQLModel, table=True):
     parentCaseld: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", nullable=True)
 
     # Relationships
-    workflows: List["CaseWorkflow"] = Relationship(back_populates="case")
-    assignments: List["CaseAssignment"] = Relationship(back_populates="case")
-    history: List["CaseHistory"] = Relationship(back_populates="case")
-    escalations: List["CaseEscalation"] = Relationship(back_populates="case")
-    comments: List["CaseComment"] = Relationship(back_populates="case")
-    attachments: List["CaseAttachment"] = Relationship(back_populates="case")
+    customer: Optional["Customer"] = Relationship(back_populates="cases")
+    policy: Optional["Policy"] = Relationship(back_populates="cases")
+    workflows: List["CaseWorkflow"] = Relationship(
+        back_populates="case", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    assignments: List["CaseAssignment"] = Relationship(
+        back_populates="case", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    history: List["CaseHistory"] = Relationship(
+        back_populates="case", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    escalations: List["CaseEscalation"] = Relationship(
+        back_populates="case", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    comments: List["CaseComment"] = Relationship(
+        back_populates="case", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    attachments: List["CaseAttachment"] = Relationship(
+        back_populates="case", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

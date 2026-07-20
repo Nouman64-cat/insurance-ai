@@ -16,6 +16,7 @@ from shared.models.core import (
     AcquisitionSourceType,
     FamilyPlanTypeEnum,
     FamilyRelationshipEnum,
+    ProfileStatusEnum,
 )
 
 
@@ -302,23 +303,27 @@ class MaritalStatus(str, Enum):
     WIDOWED  = "Widowed"
 
 class CustomerCreate(BaseModel):
-    cnic:             str          # e.g. "35201-1234567-1"
+    cnic:             Optional[str] = None
     first_name:       str
-    last_name:        str
-    date_of_birth:    date
-    gender:           Gender       # "Male" | "Female" | "Other"
+    last_name:        Optional[str] = ""
+    date_of_birth:    Optional[date] = None
+    gender:           Optional[Gender] = None
     marital_status:   Optional[MaritalStatus] = None
     nationality:      str = "Pakistani"
-    occupation:       str
-    declared_income:  float        # annual PKR
-    is_smoker:        bool         # mandatory — pricing-relevant risk flag
-    height_cm:        float        # mandatory — pricing-relevant risk flag
-    weight_kg:        float        # mandatory — pricing-relevant risk flag
+    occupation:       Optional[str] = None
+    declared_income:  Optional[float] = None
+    is_smoker:        Optional[bool] = False
+    height_cm:        Optional[float] = 170.0
+    weight_kg:        Optional[float] = 70.0
+    profile_status:   Optional[ProfileStatusEnum] = None
+    acquisition_source_id: Optional[UUID] = None
     details:          Optional[dict] = None
 
     @field_validator("cnic")
     @classmethod
-    def validate_cnic(cls, v: str) -> str:
+    def validate_cnic(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
         import re
         v = v.strip()
         if re.fullmatch(r"\d{13}", v):
@@ -329,15 +334,15 @@ class CustomerCreate(BaseModel):
 
     @field_validator("height_cm")
     @classmethod
-    def height_cm_positive(cls, v: float) -> float:
-        if v <= 0:
+    def height_cm_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
             raise ValueError("height_cm must be greater than 0")
         return v
 
     @field_validator("weight_kg")
     @classmethod
-    def weight_kg_positive(cls, v: float) -> float:
-        if v <= 0:
+    def weight_kg_positive(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v <= 0:
             raise ValueError("weight_kg must be greater than 0")
         return v
 
@@ -396,16 +401,17 @@ class AcquisitionSourceFull(BaseModel):
 class CustomerRead(BaseModel):
     id:               UUID
     tenant_id:        UUID
-    cnic:             str
+    cnic:             Optional[str] = None
     name:             str
-    dob:              date
-    gender:           Gender
+    dob:              Optional[date] = None
+    gender:           Optional[Gender] = None
     marital_status:   Optional[MaritalStatus] = None
-    occupation:       str
-    declared_income:  float
-    is_smoker:        bool
-    height_cm:        float
-    weight_kg:        float
+    occupation:       Optional[str] = None
+    declared_income:  Optional[float] = None
+    is_smoker:        Optional[bool] = False
+    height_cm:        Optional[float] = 170.0
+    weight_kg:        Optional[float] = 70.0
+    profile_status:   ProfileStatusEnum = ProfileStatusEnum.LEAD
     created_at:       datetime
     details:          Optional[dict] = None
 
@@ -414,6 +420,14 @@ class CustomerRead(BaseModel):
     acquisition_source:    Optional[AcquisitionSourceRead] = None
 
     model_config = {"from_attributes": True}
+
+class CustomerStatsRead(BaseModel):
+    """Counts backing the KPI cards atop the admin Customers directory."""
+    total_customers:      int
+    active_policyholders: int   # has >=1 Policy in Approved/Issued status — "taking insurance"
+    full_details:         int   # PROSPECT/UNDERWRITING_READY, not yet an active policyholder
+    quick_leads:          int   # LEAD, not yet an active policyholder
+    not_interested:       int   # explicitly disqualified/declined
 
 class CustomerUpdate(BaseModel):
     cnic:             Optional[str] = None
@@ -428,6 +442,8 @@ class CustomerUpdate(BaseModel):
     is_smoker:        Optional[bool] = None
     height_cm:        Optional[float] = None
     weight_kg:        Optional[float] = None
+    profile_status:   Optional[ProfileStatusEnum] = None
+    acquisition_source_id: Optional[UUID] = None
     details:          Optional[dict] = None
 
     @field_validator("height_cm")
@@ -446,6 +462,18 @@ class CustomerUpdate(BaseModel):
 
 
 # ── Policy ────────────────────────────────────────────────────────────────────
+
+class PolicyCreate(BaseModel):
+    plan_id:              Optional[UUID] = None
+    product_name:         str
+    insurance_type:       InsuranceTypeEnum
+    coverage_amount:      float
+    term_years:           int
+    dependent_name:       Optional[str] = None
+    dependent_dob:        Optional[date] = None
+    nominee_name:          Optional[str] = None
+    nominee_relationship: Optional[str] = None
+
 
 class PolicyRead(BaseModel):
     id:               UUID
