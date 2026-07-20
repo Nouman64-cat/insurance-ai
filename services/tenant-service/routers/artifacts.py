@@ -213,7 +213,7 @@ async def list_case_artifacts(
         raise HTTPException(status_code=404, detail="Case not found")
 
     rows = (await session.exec(
-        select(Artifact).where(Artifact.case_id == case_id, Artifact.tenant_id == tenant_id)
+        select(Artifact).where(Artifact.customer_id == case.customer_id, Artifact.tenant_id == tenant_id)
     )).all()
 
     return [_artifact_response(a, a.storage_url.split(".amazonaws.com/", 1)[1] if a.storage_url and ".amazonaws.com/" in a.storage_url else None, request) for a in rows]

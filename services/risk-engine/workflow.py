@@ -36,15 +36,15 @@ class RiskState(TypedDict):
     is_valid: bool
     validation_errors: List[str]
     medical_score: int
-    medical_reasons: List[str]
+    medical_reasons: List[Any]
     financial_score: int
-    financial_reasons: List[str]
+    financial_reasons: List[Any]
     fraud_probability: float
-    fraud_reasons: List[str]
+    fraud_reasons: List[Any]
     composite_risk_score: int
     ai_decision: str
     suggested_loading: Optional[float]
-    reasons: List[str]
+    reasons: List[Any]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -63,28 +63,34 @@ def _llm() -> ChatGoogleGenerativeAI:
 # LLM output schemas
 # ─────────────────────────────────────────────────────────────────────────────
 
+class RiskFactor(BaseModel):
+    parameter: str = Field(description="The specific parameter being evaluated (e.g. 'Age', 'BMI', 'Diabetes', 'Coverage Ratio')")
+    observation: str = Field(description="The observed value or finding (e.g. '54', '29.0 (Overweight)', 'Type 2 (controlled)', '5x annual income')")
+    risk_rating: str = Field(description="The severity of this risk ('High', 'Moderate', 'Low')")
+
+
 class MedicalScoreOutput(BaseModel):
     medical_score: int = Field(
         ge=0, le=100,
         description="Actuarial medical risk score from 0 to 100.")
-    medical_reasons: List[str] = Field(
-        description="List of strings explaining the exact reasons for the score.")
+    medical_reasons: List[RiskFactor] = Field(
+        description="List of structured medical risk factors and their explanations.")
 
 
 class FinancialScoreOutput(BaseModel):
     financial_score: int = Field(
         ge=0, le=100,
         description="Financial risk score from 0 to 100.")
-    financial_reasons: List[str] = Field(
-        description="List of strings explaining the financial risk assessment.")
+    financial_reasons: List[RiskFactor] = Field(
+        description="List of structured financial risk factors and their explanations.")
 
 
 class FraudScoreOutput(BaseModel):
     fraud_probability: float = Field(
         ge=0.0, le=1.0,
         description="Float between 0.0 (no fraud) and 1.0 (certain fraud).")
-    fraud_reasons: List[str] = Field(
-        description="List of specific reasons for this probability based on graph data.")
+    fraud_reasons: List[RiskFactor] = Field(
+        description="List of structured fraud risk factors based on graph data.")
 
 
 # DecisionOutput removed — final node is deterministic (no LLM).
@@ -118,11 +124,12 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
          7. Driving & Legal History (Driving violations, DUI history).
 
          Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons. 
-         Keep each reason extremely concise (maximum 10 words). Do not include explanatory filler or justifications."""),
+         Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user", "Customer Data: {customer}")
     ])
     result = (prompt | structured_llm).invoke({"customer": customer})
-    return {"medical_score": result.medical_score, "medical_reasons": result.medical_reasons}
+    medical_reasons = [r.dict() for r in result.medical_reasons]
+    return {"medical_score": result.medical_score, "medical_reasons": medical_reasons}
 
 
 def financial_scoring(state: RiskState) -> Dict[str, Any]:
@@ -137,11 +144,12 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
          3. Occupation stability and income reliability.
 
          Output a financial risk score from 0 (low risk) to 100 (very high risk) and specific reasons.
-         Keep each reason extremely concise (maximum 10 words). Do not include explanatory filler or justifications."""),
+         Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user", "Customer: {customer}\nPolicy: {policy}")
     ])
     result = (prompt | structured_llm).invoke({"customer": customer, "policy": policy})
-    return {"financial_score": result.financial_score, "financial_reasons": result.financial_reasons}
+    financial_reasons = [r.dict() for r in result.financial_reasons]
+    return {"financial_score": result.financial_score, "financial_reasons": financial_reasons}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -283,7 +291,7 @@ and cap probability at 0.5 — absence of graph evidence is not proof of fraud.
 
 Output a fraud_probability from 0.0 (clean) to 1.0 (certain fraud) and a list
 of specific, evidence-backed reasons referencing the actual graph findings.
-Keep each reason extremely concise (maximum 10 words). Do not include explanatory filler."""),
+Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user",
          "=== CUSTOMER DATA ===\n{customer}\n\n"
          "=== POLICY DATA ===\n{policy}\n\n"
@@ -296,9 +304,10 @@ Keep each reason extremely concise (maximum 10 words). Do not include explanator
         "graph_summary": graph_summary,
     })
 
+    fraud_reasons = [r.dict() for r in result.fraud_reasons]
     return {
         "fraud_probability": result.fraud_probability,
-        "fraud_reasons":     result.fraud_reasons,
+        "fraud_reasons":     fraud_reasons,
     }
 
 
@@ -355,13 +364,17 @@ def decision_aggregation(state: RiskState) -> Dict[str, Any]:
         )
 
     # ── 4. XAI reasons — all node outputs + mathematical breakdown ────────────
-    math_breakdown = (
-        f"Composite score {composite_risk_score}/100 = "
-        f"(40% × medical {medical_score}) + "
-        f"(40% × financial {financial_score}) + "
-        f"(20% × fraud {fraud_scaled:.0f}) → "
-        f"{band_rationale} → decision: '{ai_decision}'"
-    )
+    math_breakdown = {
+        "parameter": "Composite Logic",
+        "risk_rating": "Info",
+        "observation": (
+            f"Composite score {composite_risk_score}/100 = "
+            f"(40% × medical {medical_score}) + "
+            f"(40% × financial {financial_score}) + "
+            f"(20% × fraud {fraud_scaled:.0f}) → "
+            f"{band_rationale} → decision: '{ai_decision}'"
+        )
+    }
 
     reasons = [*medical_reasons, *financial_reasons, *fraud_reasons, math_breakdown]
 

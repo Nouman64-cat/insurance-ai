@@ -1,6 +1,6 @@
 from datetime import date, datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
 from sqlalchemy import Column, Integer, JSON, String, Text, UniqueConstraint
@@ -654,7 +654,7 @@ class RiskAssessment(SQLModel, table=True):
 
     # Explainable-AI reasons — stored as a JSON array of human-readable strings
     # e.g. ["BMI above threshold", "High-risk occupation", "Income–coverage ratio 8x"]
-    reasons: Optional[List[str]] = Field(
+    reasons: Optional[List[Any]] = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
@@ -663,15 +663,15 @@ class RiskAssessment(SQLModel, table=True):
     # the underwriting UI can always render the Medical / Financial / Fraud
     # explainability breakdown, even for a persisted assessment (after refresh or
     # when viewing one plan of a multi-plan batch).
-    medical_reasons: Optional[List[str]] = Field(
+    medical_reasons: Optional[List[Any]] = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
-    financial_reasons: Optional[List[str]] = Field(
+    financial_reasons: Optional[List[Any]] = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
     )
-    fraud_reasons: Optional[List[str]] = Field(
+    fraud_reasons: Optional[List[Any]] = Field(
         default=None,
         sa_column=Column(JSON, nullable=True),
     )

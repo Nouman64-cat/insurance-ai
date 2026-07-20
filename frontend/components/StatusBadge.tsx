@@ -22,7 +22,7 @@ const CONFIG: Record<
     icon: "↗",
   },
   "Human Review": {
-    label: "Human Review",
+    label: "Departmental Review",
     classes: "bg-blue-50 text-blue-800 border border-blue-200",
     dot: "bg-blue-500",
     icon: "⚑",
@@ -89,14 +89,14 @@ export function DecisionBanner({ decision }: { decision: AIDecision }) {
   const LABEL: Record<AIDecision, string> = {
     "Auto Approve": "AUTO APPROVED",
     "Approve with Loading": "APPROVED WITH PREMIUM LOADING",
-    "Human Review": "REFERRED FOR HUMAN REVIEW",
+    "Human Review": "REFERRED FOR DEPARTMENTAL REVIEW",
     Decline: "APPLICATION DECLINED",
   };
 
   const SUB: Record<AIDecision, string> = {
     "Auto Approve": "AI risk assessment completed successfully. Ready for fast-track policy issuance.",
     "Approve with Loading": "Policy approved subject to premium adjustment.",
-    "Human Review": "Composite risk falls in the 51–75 range. Senior underwriter review required.",
+    "Human Review": "Composite risk falls in the 51–75 range. Departmental review required.",
     Decline: "Risk profile exceeds acceptable thresholds. Application cannot proceed.",
   };
 

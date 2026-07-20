@@ -11,7 +11,7 @@ export interface PDFReportData {
   composite_risk_score: number | null;
   ai_decision: string;
   suggested_loading: number | null;
-  reasons: string[];
+  reasons: any[];
   ai_summary: string | null;
   product_name?: string | null;
 }
@@ -185,8 +185,10 @@ export async function generateAssessmentPDF(detail: PDFReportData) {
     section("Key Risk Factors");
 
     for (let i = 0; i < visibleReasons.length; i++) {
+      const reasonObj = visibleReasons[i];
+      const isObj = typeof reasonObj === "object" && reasonObj !== null;
+      const reasonText = isObj ? reasonObj.reason : reasonObj as string;
       const isLast = i === visibleReasons.length - 1;
-      const reasonText = visibleReasons[i];
 
       const isMathBreakdown = isLast && (reasonText.includes("->") || reasonText.includes("!'") || reasonText.toLowerCase().includes("composite score"));
 
@@ -265,10 +267,13 @@ export async function generateAssessmentPDF(detail: PDFReportData) {
         doc.setFontSize(8.5);
         doc.setTextColor(71, 85, 105);
         
-        const wrapped = doc.splitTextToSize(reasonText, cw - 5);
+        const displayStr = isObj ? `${reasonObj.parameter || reasonObj.factor}: ${reasonObj.observation || reasonObj.reason}` : reasonText;
+        const wrapped = doc.splitTextToSize(displayStr, cw - 5);
         nextPage(wrapped.length * 4.5);
         
-        doc.setFillColor(59, 130, 246); // blue-500 dot
+        const riskRating = isObj ? (reasonObj.risk_rating || reasonObj.risk_level) : "Low";
+        const isHighOrMod = isObj && (riskRating.toLowerCase().includes("high") || riskRating.toLowerCase().includes("moderate"));
+        doc.setFillColor(isHighOrMod ? 245 : 59, isHighOrMod ? 158 : 130, isHighOrMod ? 11 : 246); // amber-500 or blue-500
         doc.circle(mg + 1.5, y - 1, 0.8, "F");
         
         for (const line of wrapped) {
