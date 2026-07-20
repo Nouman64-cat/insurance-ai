@@ -50,6 +50,8 @@ def _row_missing_fields(row: Dict[str, Any], index: int) -> List[str]:
 def validate_family_members(
     existing_cnics: Set[str],
     members: List[Dict[str, Any]],
+    existing_count: int = 0,
+    has_existing_self: bool = False,
 ) -> FamilyValidationResult:
     """Validate a family-member batch before it's persisted.
 
@@ -66,9 +68,10 @@ def validate_family_members(
     errors: List[str] = []
     missing_fields: List[str] = []
 
-    if len(members) < MIN_FAMILY_SIZE or len(members) > MAX_FAMILY_SIZE:
+    total_size = existing_count + len(members)
+    if total_size < MIN_FAMILY_SIZE or total_size > MAX_FAMILY_SIZE:
         errors.append(
-            f"Family size ({len(members)}) must be between {MIN_FAMILY_SIZE} and "
+            f"Family size ({total_size}) must be between {MIN_FAMILY_SIZE} and "
             f"{MAX_FAMILY_SIZE} members."
         )
 
@@ -110,7 +113,9 @@ def validate_family_members(
             f"this batch or already enrolled in this family policy."
         )
 
-    if self_count != 1:
+    if has_existing_self and self_count > 0:
+        errors.append("A family group can only have one 'Self' member, and one is already enrolled.")
+    elif not has_existing_self and self_count != 1:
         errors.append(
             f"A family group must have exactly one 'Self' member (found {self_count})."
         )
@@ -129,10 +134,12 @@ def validate_family_members(
 def validate_life_bundle_members(
     existing_cnics: Set[str],
     members: List[Dict[str, Any]],
+    existing_count: int = 0,
+    has_existing_self: bool = False,
 ) -> FamilyValidationResult:
     """Same checks as validate_family_members, plus each row must also carry
     its own coverage_amount + plan_code (see LIFE_BUNDLE_EXTRA_FIELDS)."""
-    result = validate_family_members(existing_cnics, members)
+    result = validate_family_members(existing_cnics, members, existing_count, has_existing_self)
 
     extra_missing: List[str] = []
     for i, row in enumerate(members):

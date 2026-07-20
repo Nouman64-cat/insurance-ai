@@ -245,6 +245,11 @@ async def delete_family_group(
 ):
     fg = await _get_family_group(tenant_id, family_id, session)
     
+    # Nullify the primary member reference to avoid foreign key violation when deleting the customer
+    fg.primary_member_customer_id = None
+    session.add(fg)
+    await session.flush()
+    
     # Cascade delete family policies
     family_policies = await session.exec(select(FamilyPolicy).where(FamilyPolicy.family_group_id == family_id))
     for fp in family_policies.all():
@@ -460,11 +465,14 @@ async def validate_floater_members(
     # expected to be reused across a family's multiple policies (see
     # family_underwriting.validate_family_members's docstring).
     existing = await session.exec(
-        select(Customer.cnic).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
+        select(Customer.cnic, Customer.family_relationship).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
     )
-    existing_cnics = set(existing.all())
+    existing_list = existing.all()
+    existing_cnics = {m.cnic for m in existing_list}
+    existing_count = len(existing_cnics)
+    has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_family_members(existing_cnics, body.members)
+    result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self)
     return FamilyValidationResponse(**result.model_dump())
 
 
@@ -488,11 +496,14 @@ async def confirm_floater_members(
     # expected to be reused across a family's multiple policies (see
     # family_underwriting.validate_family_members's docstring).
     existing = await session.exec(
-        select(Customer.cnic).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
+        select(Customer.cnic, Customer.family_relationship).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
     )
-    existing_cnics = set(existing.all())
+    existing_list = existing.all()
+    existing_cnics = {m.cnic for m in existing_list}
+    existing_count = len(existing_cnics)
+    has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_family_members(existing_cnics, body.members)
+    result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self)
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
@@ -736,11 +747,14 @@ async def validate_life_bundle_members(
     # expected to be reused across a family's multiple policies (see
     # family_underwriting.validate_family_members's docstring).
     existing = await session.exec(
-        select(Customer.cnic).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
+        select(Customer.cnic, Customer.family_relationship).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
     )
-    existing_cnics = set(existing.all())
+    existing_list = existing.all()
+    existing_cnics = {m.cnic for m in existing_list}
+    existing_count = len(existing_cnics)
+    has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_life_bundle_member_fields(existing_cnics, body.members)
+    result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self)
     return FamilyValidationResponse(**result.model_dump())
 
 
@@ -764,11 +778,14 @@ async def confirm_life_bundle_members(
     # expected to be reused across a family's multiple policies (see
     # family_underwriting.validate_family_members's docstring).
     existing = await session.exec(
-        select(Customer.cnic).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
+        select(Customer.cnic, Customer.family_relationship).join(Policy, Policy.customer_id == Customer.id).where(Policy.family_policy_id == fp_id)
     )
-    existing_cnics = set(existing.all())
+    existing_list = existing.all()
+    existing_cnics = {m.cnic for m in existing_list}
+    existing_count = len(existing_cnics)
+    has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_life_bundle_member_fields(existing_cnics, body.members)
+    result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self)
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
