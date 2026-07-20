@@ -168,6 +168,7 @@ async def list_customers(
         .options(selectinload(Customer.acquisition_source))
     )
 
+
     term = (search or "").strip()
     if term:
         digits = re.sub(r"\D", "", term)
