@@ -9,7 +9,22 @@ CRITICAL INSTRUCTION: You have access to system tools (functions) to perform rea
 4. Get details about a case or customer (use get_case_details)
 5. Run an underwriting risk assessment (use run_risk_assessment)
 
-DO NOT hallucinate or pretend to perform these actions. If you need more information to execute a tool (like a CNIC, Date of Birth, etc.), ask the user for it first, and once you have it, EXECUTE the tool call. Never just output text saying you updated it without calling the function!`;
+DO NOT hallucinate or pretend to perform these actions. If you need more information to execute a tool, ask the user for it first, and once you have it, EXECUTE the tool call. Never just output text saying you updated it without calling the function!
+
+IMPORTANT RULES FOR ADDING CUSTOMERS AND USERS:
+- If the user asks to add a "user" (e.g. admin, agent, system user), use the 'add_user' tool.
+- If the user asks to add an insurance "customer" or "applicant", use the 'add_customer' tool.
+- If the user asks to add an "organization" or "corporate" insurance, use the 'add_organization' tool.
+- If the user asks to add a "family" insurance, use the 'add_family_group' tool.
+- If the user provides a list or table of multiple customers to add, use the 'bulk_add_customers' tool to add them all in a single action.
+- If the user asks to generate "generic", "random", or "dummy" data for a customer or user, you MUST generate completely unique values each time (especially a random 13-digit CNIC like XXXXX-XXXXXXX-X with different numbers, or a random email) to avoid duplicate errors. Do not reuse the same generic CNIC or email from a previous request. Instead of asking for info, automatically generate the generic data and execute the tool.
+
+BE HIGHLY INTELLIGENT AND FRIENDLY. Never complain about formatting or act confused about obvious inputs. You MUST automatically parse, normalize, and infer user inputs to match the required tool parameters without bothering the user. For example:
+- Automatically format CNIC as XXXXX-XXXXXXX-X (e.g. 4567897654367 -> 45678-9765436-7).
+- Automatically format dates as YYYY-MM-DD (e.g. '12 14 2004' -> 2004-12-14).
+- Automatically convert shorthand values to numbers (e.g., '50kpkr', '50k' -> 50000).
+- If only one name is provided (like "zia"), use it for both first_name and last_name or use a logical default so you don't block the user.
+Act as an intelligent agent that actively helps the user.`;
 
 const TOOLS = [
   {
@@ -56,14 +71,30 @@ const TOOLS = [
         type: "object",
         properties: {
           first_name: { type: "string" },
-          last_name: { type: "string" },
-          cnic: { type: "string", description: "Format: XXXXX-XXXXXXX-X" },
-          date_of_birth: { type: "string", description: "YYYY-MM-DD" },
+          last_name: { type: "string", description: "Last name. If only one name is known, use it here too." },
+          cnic: { type: "string", description: "Format: XXXXX-XXXXXXX-X. Intelligently format this from 13 digit input." },
+          date_of_birth: { type: "string", description: "YYYY-MM-DD. Parse natural language or different formats into this automatically." },
           gender: { type: "string", enum: ["Male", "Female", "Other"] },
           occupation: { type: "string" },
-          declared_income: { type: "number" }
+          declared_income: { type: "number", description: "Convert shorthand like '50k' to 50000 automatically." }
         },
         required: ["first_name", "last_name", "cnic", "date_of_birth", "gender", "occupation", "declared_income"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_user",
+      description: "Adds a new system user (e.g. admin, agent, underwriter) to the system.",
+      parameters: {
+        type: "object",
+        properties: {
+          full_name: { type: "string", description: "The full name of the user to be added." },
+          email: { type: "string", description: "The email address for the new user. If not provided, generate a sensible dummy email like firstname.lastname@example.com." },
+          role_name: { type: "string", enum: ["SuperAdmin", "Admin", "Underwriter", "Agent", "Viewer"], description: "The role of the user. If not specified, default to Agent." }
+        },
+        required: ["full_name", "email", "role_name"]
       }
     }
   },
@@ -106,6 +137,58 @@ const TOOLS = [
           applicant_name: { type: "string" },
           case_number: { type: "string" }
         }
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_organization",
+      description: "Adds a new corporate or organization insurance group.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Name of the organization." },
+          contact_person: { type: "string" },
+          contact_email: { type: "string" },
+          contact_phone: { type: "string" }
+        },
+        required: ["name"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "add_family_group",
+      description: "Adds a new family insurance group.",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string", description: "Name of the family group (e.g. Smith Family)." },
+          contact_person: { type: "string" },
+          contact_email: { type: "string" },
+          contact_phone: { type: "string" },
+          household_declared_income: { type: "number" }
+        },
+        required: ["name"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "bulk_add_customers",
+      description: "Adds multiple individual insurance customers at once.",
+      parameters: {
+        type: "object",
+        properties: {
+          customers_json: {
+            type: "string",
+            description: "A JSON stringified array of customer objects. Each object must have: first_name, last_name, cnic, date_of_birth, gender (Male/Female), occupation, declared_income (number), is_smoker (boolean), height_cm (number), weight_kg (number)."
+          }
+        },
+        required: ["customers_json"]
       }
     }
   }
@@ -192,10 +275,15 @@ function toGeminiContents(messages: Array<any>) {
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages, role } = await req.json();
 
     if (!messages || !Array.isArray(messages)) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
+    }
+
+    let finalPrompt = SYSTEM_PROMPT;
+    if (role && role !== "SuperAdmin" && role !== "Admin") {
+      finalPrompt += `\n\nCRITICAL SECURITY INSTRUCTION: The current user's role is '${role}'. They are NOT an Admin. You are strictly FORBIDDEN from using any tools that create, edit, or delete data (e.g. add_customer, bulk_add_customers, add_organization, add_family_group, add_user, delete_customer). If the user asks you to perform these actions, politely refuse and state that they do not have sufficient permissions. You can only view or assess data.`;
     }
 
     const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -210,7 +298,7 @@ export async function POST(req: Request) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+          system_instruction: { parts: [{ text: finalPrompt }] },
           contents: toGeminiContents(messages),
           tools: [{ function_declarations: GEMINI_FUNCTION_DECLARATIONS }],
           tool_config: { function_calling_config: { mode: 'AUTO' } },

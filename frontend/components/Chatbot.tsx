@@ -52,6 +52,13 @@ function IconClose() {
     </svg>
   );
 }
+function IconRefresh() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+    </svg>
+  );
+}
 function IconChat() {
   return (
     <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -92,11 +99,41 @@ export function Chatbot() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+
+  // ── Load/Save Chat History ──────────────────────────────────────────────────
+  useEffect(() => {
+    const saved = localStorage.getItem("chat_messages");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+    setIsLoaded(true);
+  }, []);
+
+  useEffect(() => {
+    if (isLoaded) {
+      localStorage.setItem("chat_messages", JSON.stringify(messages));
+    }
+  }, [messages, isLoaded]);
+
+  const handleNewChat = () => {
+    if (window.confirm("Are you sure you want to start a new chat? This will clear your current history.")) {
+      setMessages([WELCOME]);
+      localStorage.removeItem("chat_messages");
+    }
+  };
 
   // ── Tool Execution Helper ──────────────────────────────────────────────────
   const executeLocalTool = async (name: string, argsString: string) => {
@@ -112,15 +149,95 @@ export function Chatbot() {
         router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
         result = { success: true, message: `Navigating to ${args.page_name}` };
       } 
+      else if (name === "add_user") {
+        const rolesRes = await api.get(`/roles`);
+        const role = rolesRes.data.find((r: any) => r.name.toLowerCase() === args.role_name.toLowerCase());
+        if (!role) throw new Error(`Role ${args.role_name} not found`);
+
+        const res = await api.post(`/tenants/${tenantId}/users/`, {
+           full_name: args.full_name,
+           email: args.email,
+           role_id: role.id
+        });
+        result = { success: true, user_id: res.data.id, message: `System user ${args.full_name} added successfully as ${args.role_name}.` };
+      }
+      else if (name === "add_organization") {
+        const res = await api.post(`/tenants/${tenantId}/organizations`, {
+           name: args.name,
+           contact_person: args.contact_person,
+           contact_email: args.contact_email,
+           contact_phone: args.contact_phone
+        });
+        result = { success: true, organization_id: res.data.id, message: `Organization ${args.name} added successfully.` };
+      }
+      else if (name === "add_family_group") {
+        const res = await api.post(`/tenants/${tenantId}/families`, {
+           name: args.name,
+           contact_person: args.contact_person,
+           contact_email: args.contact_email,
+           contact_phone: args.contact_phone,
+           household_declared_income: args.household_declared_income
+        });
+        result = { success: true, family_group_id: res.data.id, message: `Family Group ${args.name} added successfully.` };
+      }
+      else if (name === "bulk_add_customers") {
+        let customers = [];
+        try {
+          let jsonStr = args.customers_json || args.customers;
+          if (typeof jsonStr === "string") {
+            jsonStr = jsonStr.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
+            customers = JSON.parse(jsonStr);
+          } else {
+            customers = jsonStr;
+          }
+        } catch (e: any) {
+          throw new Error("Invalid customers JSON format provided by AI: " + e.message);
+        }
+        
+        if (!Array.isArray(customers)) throw new Error("Expected an array of customers.");
+
+        const results = await Promise.allSettled(customers.map((c: any) => {
+          const genderNormalized = c.gender ? c.gender.charAt(0).toUpperCase() + c.gender.slice(1).toLowerCase() : "Other";
+          const income = typeof c.declared_income === "string" ? parseFloat(c.declared_income) : c.declared_income;
+          return api.post(`/tenants/${tenantId}/customers`, {
+             first_name: c.first_name,
+             last_name: c.last_name,
+             cnic: c.cnic,
+             date_of_birth: c.date_of_birth,
+             gender: genderNormalized,
+             occupation: c.occupation,
+             declared_income: income || 0,
+             is_smoker: c.is_smoker ?? false,
+             height_cm: c.height_cm ?? 170,
+             weight_kg: c.weight_kg ?? 70
+          });
+        }));
+        
+        const successCount = results.filter(r => r.status === 'fulfilled').length;
+        const failCount = results.length - successCount;
+        if (successCount === 0 && failCount > 0) {
+          const firstErr = (results.find(r => r.status === 'rejected') as any)?.reason;
+          throw new Error("All customer additions failed. First error: " + (firstErr?.response?.data?.detail || firstErr?.message));
+        }
+        result = { success: true, message: `Successfully added ${successCount} customers. Failed: ${failCount}.` };
+      }
       else if (name === "add_customer") {
+        const genderNormalized = args.gender ? args.gender.charAt(0).toUpperCase() + args.gender.slice(1).toLowerCase() : "Other";
+        const income = typeof args.declared_income === "string" ? parseFloat(args.declared_income) : args.declared_income;
+        
+        let dob = args.date_of_birth;
+        if (dob && dob.length > 10) {
+           try { dob = new Date(dob).toISOString().split('T')[0]; } catch {}
+        }
+
         const res = await api.post(`/tenants/${tenantId}/customers`, {
            first_name: args.first_name,
            last_name: args.last_name,
            cnic: args.cnic,
-           date_of_birth: args.date_of_birth,
-           gender: args.gender,
+           date_of_birth: dob,
+           gender: genderNormalized,
            occupation: args.occupation,
-           declared_income: args.declared_income,
+           declared_income: income || 0,
            is_smoker: false,
            height_cm: 170,
            weight_kg: 70,
@@ -129,12 +246,14 @@ export function Chatbot() {
         result = { success: true, customer_id: res.data.id, message: "Customer added successfully." };
       }
       else if (name === "delete_customer") {
-        const list = await api.get(`/tenants/${tenantId}/customers`);
-        const app = list.data.find((a: any) => 
-          (args.cnic && a.cnic === args.cnic) || 
-          (args.name && a.name.toLowerCase().includes(args.name.toLowerCase()))
-        );
-        if (!app) throw new Error("Customer not found");
+        const params = new URLSearchParams();
+        if (args.cnic) params.append("cnic", args.cnic);
+        if (args.name) params.append("name", args.name);
+        
+        const list = await api.get(`/tenants/${tenantId}/customers?${params.toString()}`);
+        if (!list.data || list.data.length === 0) throw new Error("Customer not found");
+        
+        const app = list.data[0];
         await api.delete(`/tenants/${tenantId}/customers/${app.id}`);
         result = { success: true, message: `Customer ${app.name} deleted.` };
       }
@@ -201,10 +320,15 @@ export function Chatbot() {
 
     try {
       while (true) {
+        const roleStr = typeof window !== 'undefined' ? localStorage.getItem("user_role") || "Agent" : "Agent";
+        
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: currentMessages }),
+          body: JSON.stringify({ 
+            messages: currentMessages.slice(-20),
+            role: roleStr 
+          }),
         });
         if (!res.ok) throw new Error("Chat API failed");
         const data = await res.json();
@@ -335,7 +459,10 @@ export function Chatbot() {
             </div>
             <div className="flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
-              <button onClick={() => setIsOpen(false)} className="ml-2 text-white/70 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors">
+              <button onClick={handleNewChat} title="New Chat" className="ml-3 text-white/70 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors">
+                <IconRefresh />
+              </button>
+              <button onClick={() => setIsOpen(false)} title="Close Chat" className="text-white/70 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors">
                 <IconClose />
               </button>
             </div>
