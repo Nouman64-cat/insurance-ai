@@ -232,6 +232,49 @@ async def delete_organization(
     session: AsyncSession = Depends(get_session)
 ):
     org = await _get_organization(tenant_id, org_id, session)
+
+    # 1. Cascade delete Master Policies
+    master_policies = await session.exec(select(MasterPolicy).where(MasterPolicy.organization_id == org_id))
+    for mp in master_policies.all():
+        await session.delete(mp)
+
+    # 2. Cascade delete all Employees
+    employees = await session.exec(select(Customer).where(Customer.organization_id == org_id))
+    for employee in employees.all():
+        artifacts = await session.exec(select(Artifact).where(Artifact.customer_id == employee.id))
+        for a in artifacts.all(): await session.delete(a)
+
+        assessments = await session.exec(select(RiskAssessment).where(RiskAssessment.customer_id == employee.id))
+        for a in assessments.all(): await session.delete(a)
+
+        policies = await session.exec(select(Policy).where(Policy.customer_id == employee.id))
+        for policy in policies.all():
+            cases = await session.exec(select(Case).where(Case.policy_id == policy.id))
+            for case in cases.all():
+                for h in (await session.exec(select(CaseHistory).where(CaseHistory.caseld == case.caseld))).all(): await session.delete(h)
+                for w in (await session.exec(select(CaseWorkflow).where(CaseWorkflow.caseld == case.caseld))).all(): await session.delete(w)
+                for a in (await session.exec(select(CaseAssignment).where(CaseAssignment.caseld == case.caseld))).all(): await session.delete(a)
+                for e in (await session.exec(select(CaseEscalation).where(CaseEscalation.caseld == case.caseld))).all(): await session.delete(e)
+                for c in (await session.exec(select(CaseComment).where(CaseComment.caseld == case.caseld))).all(): await session.delete(c)
+                for att in (await session.exec(select(CaseAttachment).where(CaseAttachment.caseld == case.caseld))).all(): await session.delete(att)
+                for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
+                for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
+                for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
+                await session.delete(case)
+                
+            quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))
+            for q in quotes.all(): await session.delete(q)
+            
+            claims = await session.exec(select(Claim).where(Claim.policy_id == policy.id))
+            for c in claims.all():
+                for art in (await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all(): await session.delete(art)
+                await session.delete(c)
+                
+            await session.delete(policy)
+
+        await session.delete(employee)
+
+    # 3. Finally, delete the Organization itself
     await session.delete(org)
     await session.commit()
 
