@@ -179,7 +179,10 @@ export async function generateAssessmentPDF(detail: PDFReportData) {
   // Reasons — drop the composite-score / decision math breakdown line; it's
   // internal aggregation arithmetic, not an underwriting risk factor.
   const visibleReasons = (detail.reasons ?? []).filter(
-    (r) => !(r.includes("->") || r.includes("!'") || r.toLowerCase().includes("composite score")),
+    (r) => {
+      const text = (typeof r === "object" && r !== null) ? (r.observation || r.reason || "") : (r as string);
+      return !(text.includes("->") || text.includes("!'") || text.toLowerCase().includes("composite score"));
+    }
   );
   if (visibleReasons.length > 0) {
     section("Key Risk Factors");
@@ -187,7 +190,7 @@ export async function generateAssessmentPDF(detail: PDFReportData) {
     for (let i = 0; i < visibleReasons.length; i++) {
       const reasonObj = visibleReasons[i];
       const isObj = typeof reasonObj === "object" && reasonObj !== null;
-      const reasonText = isObj ? reasonObj.reason : reasonObj as string;
+      const reasonText = isObj ? (reasonObj.observation || reasonObj.reason || "") : (reasonObj as string);
       const isLast = i === visibleReasons.length - 1;
 
       const isMathBreakdown = isLast && (reasonText.includes("->") || reasonText.includes("!'") || reasonText.toLowerCase().includes("composite score"));

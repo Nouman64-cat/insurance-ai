@@ -98,6 +98,15 @@ function formatPKR(n: number): string {
   return `PKR ${Math.round(n).toLocaleString()}`;
 }
 
+function formatCNIC(value: string): string {
+  const v = value.replace(/\D/g, '');
+  let res = '';
+  if (v.length > 0) res += v.substring(0, 5);
+  if (v.length > 5) res += '-' + v.substring(5, 12);
+  if (v.length > 12) res += '-' + v.substring(12, 13);
+  return res;
+}
+
 export default function OrganizationDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -118,6 +127,11 @@ export default function OrganizationDetailPage() {
   const [termYears, setTermYears] = useState("10");
   const [effectiveDate, setEffectiveDate] = useState("");
   const [mpFormLoading, setMpFormLoading] = useState(false);
+
+  // Employee CRUD
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editEmpForm, setEditEmpForm] = useState<Partial<Employee>>({});
+  const [empFormLoading, setEmpFormLoading] = useState(false);
 
   // Census
   const [selectedMpId, setSelectedMpId] = useState("");
@@ -181,7 +195,11 @@ export default function OrganizationDetailPage() {
   };
 
   const updateCensusRow = (index: number, field: keyof CensusRow, value: string) => {
-    setCensusRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: value } : row)));
+    let finalValue = value;
+    if (field === "cnic") {
+      finalValue = formatCNIC(value);
+    }
+    setCensusRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: finalValue } : row)));
   };
 
   const addCensusRow = () => setCensusRows((prev) => [...prev, { ...EMPTY_ROW }]);
@@ -237,10 +255,65 @@ export default function OrganizationDetailPage() {
       setCensusResult(null);
       fetchAll();
     } catch (err: any) {
-      const detail = err.response?.data?.detail;
-      setError(typeof detail === "object" ? JSON.stringify(detail) : detail ?? err.message ?? "Failed to confirm census.");
+      let detail = err.response?.data?.detail;
+      if (typeof detail === "string") {
+        try { detail = JSON.parse(detail); } catch (e) {}
+      }
+      if (err.response?.status === 422 && typeof detail === "object" && detail !== null && "is_valid" in detail) {
+        setCensusResult(detail);
+      } else {
+        setError(typeof detail === "object" ? JSON.stringify(detail) : detail ?? err.message ?? "Failed to confirm census.");
+      }
     } finally {
       setCensusLoading(false);
+    }
+  };
+
+  const handleEditEmployee = (emp: Employee) => {
+    setEditingEmployee(emp);
+    setEditEmpForm({ ...emp });
+  };
+
+  const handleSaveEmployee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEmployee) return;
+    setEmpFormLoading(true);
+    setError("");
+    setSuccess("");
+    try {
+      const names = (editEmpForm.name || "").trim().split(" ");
+      const firstName = names[0] || "";
+      const lastName = names.slice(1).join(" ");
+      const payload = {
+        cnic: editEmpForm.cnic,
+        first_name: firstName,
+        last_name: lastName || undefined,
+        date_of_birth: editEmpForm.dob,
+        gender: editEmpForm.gender,
+        occupation: editEmpForm.occupation,
+        declared_income: editEmpForm.declared_income,
+      };
+      await api.put(`/tenants/${tenantId}/customers/${editingEmployee.id}`, payload);
+      setSuccess("Employee updated successfully.");
+      setEditingEmployee(null);
+      fetchAll();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to update employee.");
+    } finally {
+      setEmpFormLoading(false);
+    }
+  };
+
+  const handleDeleteEmployee = async (empId: string, empName: string) => {
+    if (!confirm(`Are you sure you want to delete ${empName}? This will also delete their policy, quotes, and AI assessments.`)) return;
+    setError("");
+    setSuccess("");
+    try {
+      await api.delete(`/tenants/${tenantId}/organizations/${orgId}/employees/${empId}`);
+      setSuccess(`Employee ${empName} deleted successfully.`);
+      fetchAll();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete employee.");
     }
   };
 
@@ -276,7 +349,40 @@ export default function OrganizationDetailPage() {
         </div>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
+      {error && (() => {
+        try {
+          const parsed = JSON.parse(error);
+          if (parsed && typeof parsed === "object") {
+            const missing = parsed.missing_fields || [];
+            const errs = parsed.errors || [];
+            const dups = parsed.duplicate_cnics || [];
+            
+            // Handle Pydantic validation array fallback
+            if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].loc) {
+              return (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium space-y-1">
+                  <p className="font-bold mb-2">Invalid Data Format:</p>
+                  {parsed.map((e: any, i: number) => (
+                    <p key={i}>• {e.loc.join(" -> ")}: {e.msg}</p>
+                  ))}
+                </div>
+              );
+            }
+            
+            if (missing.length > 0 || errs.length > 0 || dups.length > 0) {
+              return (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium space-y-1">
+                  <p className="font-bold mb-2">Please fix the following issues before enrolling:</p>
+                  {missing.map((m: string, i: number) => <p key={`m-${i}`}>• {m}</p>)}
+                  {errs.map((e: string, i: number) => <p key={`e-${i}`}>• {e}</p>)}
+                  {dups.length > 0 && <p>• Duplicate CNICs: {dups.join(", ")}</p>}
+                </div>
+              );
+            }
+          }
+        } catch (e) {}
+        return <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>;
+      })()}
       {success && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium">{success}</div>}
 
       {loading ? (
@@ -380,19 +486,22 @@ export default function OrganizationDetailPage() {
                     <tbody>
                       {censusRows.map((row, i) => (
                         <tr key={i}>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input value={row.cnic} onChange={(e) => updateCensusRow(i, "cnic", e.target.value)} placeholder="35201-1234567-1"
-                              className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
+                              className={`w-32 bg-slate-50 border rounded px-2 py-1 ${row.cnic && !/^\d{5}-\d{7}-\d$/.test(row.cnic) ? 'border-red-400 focus:outline-red-400' : 'border-slate-200'}`} />
+                            {row.cnic && !/^\d{5}-\d{7}-\d$/.test(row.cnic) && (
+                              <p className="text-[10px] text-red-500 mt-0.5 leading-tight">Invalid format</p>
+                            )}
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input value={row.name} onChange={(e) => updateCensusRow(i, "name", e.target.value)} placeholder="Full name"
                               className="w-36 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="date" value={row.dob} onChange={(e) => updateCensusRow(i, "dob", e.target.value)}
                               className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <select value={row.gender} onChange={(e) => updateCensusRow(i, "gender", e.target.value)}
                               className="w-24 bg-slate-50 border border-slate-200 rounded px-2 py-1">
                               <option value="Male">Male</option>
@@ -400,15 +509,15 @@ export default function OrganizationDetailPage() {
                               <option value="Other">Other</option>
                             </select>
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input value={row.occupation} onChange={(e) => updateCensusRow(i, "occupation", e.target.value)} placeholder="Job title"
                               className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="number" value={row.declared_income} onChange={(e) => updateCensusRow(i, "declared_income", e.target.value)} placeholder="1200000"
                               className="w-28 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <select value={row.is_smoker} onChange={(e) => updateCensusRow(i, "is_smoker", e.target.value)}
                               className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1">
                               <option value="">—</option>
@@ -416,16 +525,16 @@ export default function OrganizationDetailPage() {
                               <option value="true">Yes</option>
                             </select>
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="number" value={row.height_cm} onChange={(e) => updateCensusRow(i, "height_cm", e.target.value)} placeholder="170"
                               className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pr-2 pb-2">
+                          <td className="pr-2 pb-2 align-top">
                             <input type="number" value={row.weight_kg} onChange={(e) => updateCensusRow(i, "weight_kg", e.target.value)} placeholder="70"
                               className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
                           </td>
-                          <td className="pb-2">
-                            <button type="button" onClick={() => removeCensusRow(i)} className="text-red-500 hover:text-red-700 font-bold px-1">✕</button>
+                          <td className="pb-2 align-top">
+                            <button type="button" onClick={() => removeCensusRow(i)} className="text-red-500 hover:text-red-700 font-bold px-1 mt-1">✕</button>
                           </td>
                         </tr>
                       ))}
@@ -458,13 +567,7 @@ export default function OrganizationDetailPage() {
 
                 <div className="flex gap-3 pt-2 border-t border-slate-100">
                   <button
-                    type="button" onClick={handleValidateCensus} disabled={censusLoading}
-                    className="px-4 py-2 text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
-                  >
-                    Validate Census
-                  </button>
-                  <button
-                    type="button" onClick={handleConfirmCensus} disabled={censusLoading || !censusResult?.is_valid}
+                    type="button" onClick={handleConfirmCensus} disabled={censusLoading}
                     className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/40 rounded-lg transition-colors"
                   >
                     Confirm &amp; Enroll
@@ -535,6 +638,7 @@ export default function OrganizationDetailPage() {
                       <th className="px-5 py-3 text-left">Age / Gender</th>
                       <th className="px-5 py-3 text-left">Occupation</th>
                       <th className="px-5 py-3 text-right">Income</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -547,6 +651,10 @@ export default function OrganizationDetailPage() {
                         </td>
                         <td className="px-5 py-3 text-slate-600">{emp.occupation}</td>
                         <td className="px-5 py-3 text-right font-semibold text-slate-700">PKR {emp.declared_income.toLocaleString()}</td>
+                        <td className="px-5 py-3 text-right space-x-3">
+                          <button onClick={() => handleEditEmployee(emp)} className="text-xs font-bold text-blue-600 hover:text-blue-800">Edit</button>
+                          <button onClick={() => handleDeleteEmployee(emp.id, emp.name)} className="text-xs font-bold text-red-600 hover:text-red-800">Delete</button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -593,6 +701,80 @@ export default function OrganizationDetailPage() {
                 <button type="submit" disabled={mpFormLoading}
                   className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors">
                   {mpFormLoading ? "Creating..." : "Create Master Policy"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT EMPLOYEE MODAL ── */}
+      {editingEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Edit Employee</h3>
+              <button onClick={() => setEditingEmployee(null)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
+            </div>
+            <form onSubmit={handleSaveEmployee} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">CNIC *</label>
+                <input
+                  type="text" required value={editEmpForm.cnic || ""} onChange={(e) => setEditEmpForm({...editEmpForm, cnic: formatCNIC(e.target.value)})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
+                <input
+                  type="text" required value={editEmpForm.name || ""} onChange={(e) => setEditEmpForm({...editEmpForm, name: e.target.value})}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">DOB *</label>
+                  <input
+                    type="date" required value={editEmpForm.dob || ""} onChange={(e) => setEditEmpForm({...editEmpForm, dob: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Gender *</label>
+                  <select
+                    required value={editEmpForm.gender || "Male"} onChange={(e) => setEditEmpForm({...editEmpForm, gender: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Occupation *</label>
+                  <input
+                    type="text" required value={editEmpForm.occupation || ""} onChange={(e) => setEditEmpForm({...editEmpForm, occupation: e.target.value})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Annual Income *</label>
+                  <input
+                    type="number" required value={editEmpForm.declared_income || ""} onChange={(e) => setEditEmpForm({...editEmpForm, declared_income: parseFloat(e.target.value) || 0})}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button type="button" onClick={() => setEditingEmployee(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors">
+                  Cancel
+                </button>
+                <button type="submit" disabled={empFormLoading}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors">
+                  {empFormLoading ? "Saving..." : "Save Changes"}
                 </button>
               </div>
             </form>

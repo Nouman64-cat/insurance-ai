@@ -483,6 +483,14 @@ class OrganizationCreate(BaseModel):
         return v.strip()
 
 
+class OrganizationUpdate(BaseModel):
+    name: Optional[str] = None
+    registration_number: Optional[str] = None
+    industry: Optional[str] = None
+    contact_person: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    contact_phone: Optional[str] = None
+
 class OrganizationRead(BaseModel):
     id: UUID
     tenant_id: UUID

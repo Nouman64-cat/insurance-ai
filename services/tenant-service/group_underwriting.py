@@ -20,7 +20,7 @@ from pydantic import BaseModel
 # InsurancePlan row yet, so a 5-9 employee SME group can never pass validation
 # today. Pre-existing gap, not introduced here; fixing it needs the
 # MasterPolicy -> InsurancePlan linkage this module's callers don't have.
-MIN_GROUP_SIZE = 10
+
 SUM_ASSURED_MULTIPLE_RANGE = (12.0, 36.0)   # x monthly basic salary
 
 REQUIRED_CENSUS_FIELDS = ["cnic", "name", "dob", "gender", "occupation", "declared_income"]
@@ -62,11 +62,7 @@ def validate_census(
     errors: List[str] = []
     missing_fields: List[str] = []
 
-    if len(employees) < MIN_GROUP_SIZE:
-        errors.append(
-            f"Group size ({len(employees)}) is below the minimum of {MIN_GROUP_SIZE} "
-            f"employees required for a group policy."
-        )
+
 
     seen_cnics: Set[str] = set()
     duplicate_cnics: Set[str] = set()
