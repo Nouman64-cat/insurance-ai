@@ -530,7 +530,20 @@ class OrganizationRead(BaseModel):
     contact_phone: Optional[str] = None
     created_at: datetime
 
+    # Computed, populated only by the list/get endpoints (routers/organizations.py) —
+    # not persisted columns. Defaults let create/update responses skip the extra queries.
+    employee_count:       int = 0
+    master_policy_status: Optional[str] = None   # "Active" | "Pending" | None (no policy yet)
+
     model_config = {"from_attributes": True}
+
+
+class OrganizationStatsRead(BaseModel):
+    """Counts backing the KPI cards atop the admin Organizations directory."""
+    total_organizations: int
+    active:               int   # has a MasterPolicy with status Active
+    in_progress:          int   # has a MasterPolicy, none Active yet (census/setup pending)
+    new_no_policy:        int   # no MasterPolicy at all yet
 
 
 class MasterPolicyCreate(BaseModel):
@@ -635,7 +648,20 @@ class FamilyGroupRead(BaseModel):
     primary_member_customer_id: Optional[UUID] = None
     created_at: datetime
 
+    # Computed, populated only by the list/get endpoints (routers/families.py) —
+    # not persisted columns. Defaults let create/update responses skip the extra queries.
+    member_count:         int = 0
+    family_policy_status: Optional[str] = None   # "Active" | "Pending" | None (no policy yet)
+
     model_config = {"from_attributes": True}
+
+
+class FamilyStatsRead(BaseModel):
+    """Counts backing the KPI cards atop the admin Family Insurance directory."""
+    total_families: int
+    active:          int   # has a FamilyPolicy with status Active
+    in_progress:     int   # members added and/or a Pending policy, none Active yet
+    new_no_members:  int   # just created, no members added yet
 
 
 class FloaterPolicyCreate(BaseModel):

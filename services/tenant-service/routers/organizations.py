@@ -1,10 +1,11 @@
 import asyncio
 import logging
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, or_
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -31,6 +32,7 @@ from schemas import (
     OrganizationCreate,
     OrganizationUpdate,
     OrganizationRead,
+    OrganizationStatsRead,
 )
 from shared.models.core import (
     ActionTypeEnum,
@@ -95,6 +97,54 @@ async def _get_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, session
     return mp
 
 
+OrganizationCategory = Literal["active", "in_progress", "new"]
+
+
+async def _employee_counts(tenant_id: UUID, session: AsyncSession) -> Dict[UUID, int]:
+    rows = (await session.execute(
+        select(Customer.organization_id, func.count())
+        .where(Customer.tenant_id == tenant_id, Customer.organization_id.is_not(None))
+        .group_by(Customer.organization_id)
+    )).all()
+    return {oid: cnt for oid, cnt in rows}
+
+
+async def _master_policy_status_map(tenant_id: UUID, session: AsyncSession) -> Dict[UUID, str]:
+    """One representative status per organization — "Active" wins if any master
+    policy has cleared setup, otherwise the first non-Active status seen (in
+    practice just "Pending", the only other value any endpoint writes today)."""
+    rows = (await session.execute(
+        select(MasterPolicy.organization_id, MasterPolicy.status)
+        .where(MasterPolicy.tenant_id == tenant_id)
+    )).all()
+    status_map: Dict[UUID, str] = {}
+    for oid, mp_status in rows:
+        if status_map.get(oid) == "Active":
+            continue
+        status_map[oid] = mp_status
+    return status_map
+
+
+def _org_category(dto: OrganizationRead) -> OrganizationCategory:
+    if dto.master_policy_status == "Active":
+        return "active"
+    if dto.master_policy_status:
+        return "in_progress"
+    return "new"
+
+
+async def _enrich_organizations(tenant_id: UUID, orgs: List[Organization], session: AsyncSession) -> List[OrganizationRead]:
+    emp_counts = await _employee_counts(tenant_id, session)
+    policy_status = await _master_policy_status_map(tenant_id, session)
+    results = []
+    for org in orgs:
+        dto = OrganizationRead.model_validate(org)
+        dto.employee_count = emp_counts.get(org.id, 0)
+        dto.master_policy_status = policy_status.get(org.id)
+        results.append(dto)
+    return results
+
+
 # ── Organizations ───────────────────────────────────────────────────────────────
 
 @router.post(
@@ -123,9 +173,49 @@ async def create_organization(
     response_model=List[OrganizationRead],
     dependencies=[Depends(verify_admin)],
 )
-async def list_organizations(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
-    result = await session.exec(select(Organization).where(Organization.tenant_id == tenant_id))
-    return list(result.all())
+async def list_organizations(
+    tenant_id: UUID,
+    search: Optional[str] = Query(None, description="Matches name, registration number, industry, or contact person"),
+    category: Optional[OrganizationCategory] = Query(None, description="active | in_progress | new"),
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(Organization).where(Organization.tenant_id == tenant_id)
+    term = (search or "").strip()
+    if term:
+        like = f"%{term}%"
+        query = query.where(
+            or_(
+                Organization.name.ilike(like),
+                Organization.registration_number.ilike(like),
+                Organization.industry.ilike(like),
+                Organization.contact_person.ilike(like),
+            )
+        )
+    query = query.order_by(Organization.created_at.desc())
+    orgs = list((await session.exec(query)).all())
+
+    results = await _enrich_organizations(tenant_id, orgs, session)
+    if category:
+        results = [dto for dto in results if _org_category(dto) == category]
+    return results
+
+
+@router.get(
+    "/{tenant_id}/organizations/stats",
+    response_model=OrganizationStatsRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def get_organization_stats(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
+    orgs = list((await session.exec(select(Organization).where(Organization.tenant_id == tenant_id))).all())
+    enriched = await _enrich_organizations(tenant_id, orgs, session)
+    active = sum(1 for dto in enriched if _org_category(dto) == "active")
+    in_progress = sum(1 for dto in enriched if _org_category(dto) == "in_progress")
+    return OrganizationStatsRead(
+        total_organizations=len(enriched),
+        active=active,
+        in_progress=in_progress,
+        new_no_policy=len(enriched) - active - in_progress,
+    )
 
 
 @router.get(
@@ -134,7 +224,8 @@ async def list_organizations(tenant_id: UUID, session: AsyncSession = Depends(ge
     dependencies=[Depends(verify_admin)],
 )
 async def get_organization(tenant_id: UUID, org_id: UUID, session: AsyncSession = Depends(get_session)):
-    return await _get_organization(tenant_id, org_id, session)
+    org = await _get_organization(tenant_id, org_id, session)
+    return (await _enrich_organizations(tenant_id, [org], session))[0]
 
 
 @router.get(

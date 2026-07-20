@@ -184,30 +184,6 @@ const NAV_ITEMS = [
 
 
 
-      {
-
-        href: "/admin/families",
-
-        label: "Family Insurance",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M12 3l9 7-9 7-9-7 9-7z" />
-
-            <circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" />
-
-            <path d="M8 15v-2a4 4 0 018 0v2" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-      },
-
     ],
 
   },
@@ -536,41 +512,15 @@ const NAV_ITEMS = [
 
   {
 
-    group: "Management",
+    group: "Customer Management",
 
     links: [
-
-      /*
-
-            {
-
-              href: "/reports",
-
-              label: "Reports",
-
-              icon: (
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-                  <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" />
-
-                  <line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /><line x1="10" y1="9" x2="8" y2="9" />
-
-                </svg>
-
-              ),
-
-              badge: null,
-
-            },
-
-      */
 
       {
 
         href: "/admin/customers",
 
-        label: "Customers Profile",
+        label: "Individual Customers",
 
         icon: (
 
@@ -583,6 +533,32 @@ const NAV_ITEMS = [
             <path d="M23 21v-2a4 4 0 00-3-3.87" />
 
             <path d="M16 3.13a4 4 0 010 7.75" />
+
+          </svg>
+
+        ),
+
+        badge: null,
+
+        adminOnly: true,
+
+      },
+
+      {
+
+        href: "/admin/families",
+
+        label: "Family Insurance",
+
+        icon: (
+
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+
+            <path d="M12 3l9 7-9 7-9-7 9-7z" />
+
+            <circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" />
+
+            <path d="M8 15v-2a4 4 0 018 0v2" />
 
           </svg>
 
@@ -623,6 +599,16 @@ const NAV_ITEMS = [
         adminOnly: true,
 
       },
+
+    ],
+
+  },
+
+  {
+
+    group: "Administration",
+
+    links: [
 
       {
 
@@ -922,7 +908,7 @@ export function Sidebar() {
 
 
 
-  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/customers", "/financial"];
+  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/customers", "/admin/families", "/admin/organizations", "/financial"];
 
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens"];
 
