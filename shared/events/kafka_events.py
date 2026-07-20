@@ -123,16 +123,16 @@ CUSTOMER_CREATED_TOPIC = "insurance.customer.created.v1"
 
 class CustomerCreatedPayload(BaseModel):
     customer_id: UUID
-    cnic: str
+    cnic: Optional[str] = None
     name: str
-    dob: str                  # YYYY-MM-DD
-    gender: str
+    dob: Optional[str] = None                  # YYYY-MM-DD
+    gender: Optional[str] = None
     marital_status: Optional[str] = None
-    occupation: str
-    declared_income: float    # annual PKR
-    is_smoker: bool
-    height_cm: float
-    weight_kg: float
+    occupation: Optional[str] = None
+    declared_income: Optional[float] = None    # annual PKR
+    is_smoker: Optional[bool] = None
+    height_cm: Optional[float] = None
+    weight_kg: Optional[float] = None
 
 
 class CustomerCreatedEvent(BaseModel):

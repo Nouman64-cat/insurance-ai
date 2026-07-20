@@ -99,18 +99,18 @@ class RoleRead(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class CustomerIn(BaseModel):
-    cnic: str = Field(
-        ...,
+    cnic: Optional[str] = Field(
+        default=None,
         description="Pakistani National Identity Card number (13 digits, hyphens optional).",
         examples=["3520112345671"],
     )
     name: str = Field(..., examples=["Muhammad Ali Khan"])
-    dob: date = Field(..., description="Date of birth (YYYY-MM-DD).", examples=["1985-06-15"])
-    gender: Gender = Field(..., examples=["Male"])
+    dob: Optional[date] = Field(default=None, description="Date of birth (YYYY-MM-DD).", examples=["1985-06-15"])
+    gender: Optional[Gender] = Field(default=None, examples=["Male"])
     marital_status: Optional[MaritalStatus] = Field(default=None, examples=["Married"])
-    occupation: str = Field(..., examples=["Software Engineer"])
-    declared_income: float = Field(
-        ..., ge=0, description="Annual declared income in PKR.", examples=[1200000]
+    occupation: Optional[str] = Field(default=None, examples=["Software Engineer"])
+    declared_income: Optional[float] = Field(
+        default=None, ge=0, description="Annual declared income in PKR.", examples=[1200000]
     )
 
 

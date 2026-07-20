@@ -5,27 +5,81 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
+import {
+  fetchCustomerStats,
+  listCustomers,
+  setProfileStatus,
+  CustomerStats,
+  CustomerCategory,
+  ProfileStatus,
+} from "@/app/services/customers";
 import { registerPendingQuote } from "@/lib/pendingQuotes";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 
 const customerCoreSchema = z.object({
-  cnic: z.string().trim().regex(/^\d{5}-\d{7}-\d{1}$/, "Format: XXXXX-XXXXXXX-X"),
-  firstName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
-  lastName: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
-  dob: z.string().min(1, "Required"),
-  gender: z.enum(["Male", "Female", "Other"]),
-  maritalStatus: z.enum(["Single", "Married", "Divorced", "Widowed"]),
-  nationality: z.string().min(2, "Required"),
-  occupation: z.string().min(2, "Required").regex(/^[A-Za-z\s]+$/, "Only alphabets and spaces allowed"),
-  declaredIncome: z.coerce.number().min(0, "Must be positive"),
-  selectedPlanId: z.string().optional(),
-  policyCoverage: z.coerce.number().optional(),
-  policyTerm: z.coerce.number().optional(),
-  policyDependentName: z.string().regex(/^[A-Za-z\s]*$/, "Only alphabets and spaces allowed").optional(),
-  policyDependentDob: z.string().optional(),
+  cnic: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ""),
+  firstName: z.string().min(1, "First Name is required"),
+  lastName: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ""),
+  dob: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ""),
+  gender: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ""),
+  maritalStatus: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ""),
+  nationality: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ""),
+  occupation: z.union([z.string(), z.null(), z.undefined()]).transform((v) => v ?? ""),
+  declaredIncome: z.union([z.coerce.number(), z.string(), z.null(), z.undefined()]).optional(),
+  selectedPlanId: z.union([z.string(), z.null(), z.undefined()]).optional(),
+  policyCoverage: z.union([z.coerce.number(), z.string(), z.null(), z.undefined()]).optional(),
+  policyTerm: z.union([z.coerce.number(), z.string(), z.null(), z.undefined()]).optional(),
+  policyDependentName: z.union([z.string(), z.null(), z.undefined()]).optional(),
 });
+
+function getPlanValidationError(
+  plan: InsurancePlan,
+  coverage: any,
+  term: any,
+  declaredIncome?: number | null,
+  dob?: string | null,
+  dependentName?: string | null,
+  dependentDob?: string | null
+): string | null {
+  if (coverage === undefined || coverage === null || String(coverage).trim() === "" || isNaN(Number(coverage)) || Number(coverage) <= 0) {
+    return "Please enter a valid Coverage Amount greater than PKR 0.";
+  }
+  const coverageNum = Number(coverage);
+
+  if (term === undefined || term === null || String(term).trim() === "" || isNaN(Number(term))) {
+    return `Please enter a Policy Term between ${plan.term_min_years} and ${plan.term_max_years} years.`;
+  }
+  const termNum = Number(term);
+  if (termNum < plan.term_min_years || termNum > plan.term_max_years) {
+    return `Policy Term (${termNum} yrs) is out of allowed range (${plan.term_min_years}–${plan.term_max_years} yrs) for plan '${plan.label}'.`;
+  }
+
+  if (declaredIncome && declaredIncome > 0 && plan.max_income_multiple) {
+    const maxAllowed = declaredIncome * plan.max_income_multiple;
+    if (coverageNum > maxAllowed) {
+      return `Coverage Amount (PKR ${coverageNum.toLocaleString()}) exceeds the maximum allowed limit of PKR ${maxAllowed.toLocaleString()} (${plan.max_income_multiple}× declared income of PKR ${declaredIncome.toLocaleString()}).`;
+    }
+  }
+
+  if (dob) {
+    const birthYear = new Date(dob).getFullYear();
+    const currentYear = new Date().getFullYear();
+    if (!isNaN(birthYear)) {
+      const age = currentYear - birthYear;
+      if (age < plan.entry_age_min || age > plan.entry_age_max) {
+        return `Customer age (${age} yrs) is outside the allowed entry age range (${plan.entry_age_min}–${plan.entry_age_max} yrs) for plan '${plan.label}'.`;
+      }
+    }
+  }
+
+  if (plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && !dependentName?.trim()) {
+    return "Dependent Name is required for Child Education & Marriage plans.";
+  }
+
+  return null;
+}
 
 interface AcquisitionSource {
   id: string;
@@ -39,12 +93,13 @@ interface AcquisitionSource {
 interface Customer {
   id: string;
   tenant_id: string;
-  cnic: string;
+  cnic?: string | null;
   name: string;
-  dob: string;
-  gender: string;
-  occupation: string;
-  declared_income: number;
+  dob?: string | null;
+  gender?: string | null;
+  occupation?: string | null;
+  declared_income?: number | null;
+  profile_status?: ProfileStatus;
   created_at: string;
   details?: any;
   acquisition_source_id?: string | null;
@@ -83,6 +138,61 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   DIGITAL: "Digital",
 };
 
+const CATEGORY_META: Record<CustomerCategory, {
+  label: string;
+  description: string;
+  accent: string;      // column header text/border color
+  headerBg: string;     // column header background
+  dot: string;          // status dot color
+  badgeBg: string;
+  badgeText: string;
+  emptyHint: string;
+}> = {
+  active: {
+    label: "Active Policyholders",
+    description: "Approved or issued a policy — taking insurance",
+    accent: "text-emerald-700 border-emerald-200",
+    headerBg: "bg-white border-t-[4px] border-t-emerald-500",
+    dot: "bg-emerald-500",
+    badgeBg: "bg-emerald-50",
+    badgeText: "text-emerald-700",
+    emptyHint: "No active policyholders yet.",
+  },
+  full_details: {
+    label: "Full Details",
+    description: "Complete profile, underwriting-ready or in progress",
+    accent: "text-blue-700 border-blue-200",
+    headerBg: "bg-white border-t-[4px] border-t-blue-600",
+
+    dot: "bg-blue-500",
+    badgeBg: "bg-blue-50",
+    badgeText: "text-blue-700",
+    emptyHint: "No customers with full details yet.",
+  },
+  quick_lead: {
+    label: "Quick Leads",
+    description: "Just name & phone captured so far",
+    accent: "text-amber-700 border-amber-200",
+    headerBg: "bg-white border-t-[4px] border-t-amber-400",
+    dot: "bg-amber-500",
+    badgeBg: "bg-amber-50",
+    badgeText: "text-amber-700",
+    emptyHint: "No quick leads yet.",
+  },
+  not_interested: {
+    label: "Not Interested",
+    description: "Declined or rejected — parked for later",
+    accent: "text-slate-600 border-slate-200",
+    headerBg: "bg-white border-t-[4px] border-t-slate-400",
+    dot: "bg-slate-400",
+    badgeBg: "bg-slate-100",
+    badgeText: "text-slate-600",
+    emptyHint: "Nobody has been marked not interested.",
+  },
+};
+
+const CATEGORY_ORDER: CustomerCategory[] = ["active", "full_details", "quick_lead", "not_interested"];
+
 const formatCNIC = (value: string): string => {
   const clean = value.replace(/\D/g, "");
   const trimmed = clean.slice(0, 13);
@@ -110,6 +220,82 @@ export default function CustomersPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
 
+  // Quick Lead Modal State
+  const [showQuickLeadModal, setShowQuickLeadModal] = useState(false);
+  const [quickFirstName, setQuickFirstName] = useState("");
+  const [quickLastName, setQuickLastName] = useState("");
+  const [quickPhone, setQuickPhone] = useState("");
+  const [quickAcquisitionSourceId, setQuickAcquisitionSourceId] = useState("");
+  const [quickSaving, setQuickSaving] = useState(false);
+  const [sources, setSources] = useState<AcquisitionSource[]>([]);
+  const [underwritingGuardCustomer, setUnderwritingGuardCustomer] = useState<Customer | null>(null);
+
+  // Stats, search, filters, view mode
+  const [stats, setStats] = useState<CustomerStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
+  const [board, setBoard] = useState<Record<CustomerCategory, Customer[]>>({
+    active: [],
+    full_details: [],
+    quick_lead: [],
+    not_interested: [],
+  });
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  const getProfileCompleteness = (c: Customer): number => {
+    let score = 25; // Contact & Name
+    if (c.cnic) score += 25;
+    if (c.dob && c.gender) score += 20;
+    if (c.occupation && c.declared_income) score += 20;
+    if (c.details?.phone || c.acquisition_source_id) score += 10;
+    return Math.min(score, 100);
+  };
+
+
+  const handleCreateQuickLead = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickFirstName.trim()) {
+      setError("First Name is required for Quick Lead.");
+      return;
+    }
+    setQuickSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      const tenantId = localStorage.getItem("tenant_id");
+      const payload = {
+        first_name: quickFirstName.trim(),
+        last_name: quickLastName.trim(),
+        profile_status: "LEAD",
+        acquisition_source_id: quickAcquisitionSourceId || null,
+        details: {
+          phone: quickPhone.trim(),
+          created_via: "Quick Lead Onboarding",
+        },
+      };
+      await api.post(`/tenants/${tenantId}/customers`, payload);
+      setSuccess(`Lead '${quickFirstName.trim()} ${quickLastName.trim()}' added successfully!`);
+      setShowQuickLeadModal(false);
+      setQuickFirstName("");
+      setQuickLastName("");
+      setQuickPhone("");
+      setQuickAcquisitionSourceId("");
+      fetchCustomers();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to create quick lead.");
+    } finally {
+      setQuickSaving(false);
+    }
+  };
+
   // Tab State
   const [formTab, setFormTab] = useState("demographics");
   const [viewTab, setViewTab] = useState("demographics");
@@ -123,7 +309,7 @@ export default function CustomersPage() {
     setValue,
   } = useForm<z.infer<typeof customerCoreSchema>>({
     resolver: zodResolver(customerCoreSchema) as any,
-    mode: "onChange",
+    mode: "onSubmit",
     defaultValues: {
       gender: "Male",
       maritalStatus: "Single",
@@ -311,8 +497,33 @@ export default function CustomersPage() {
       setLoading(false);
       return;
     }
-    fetchCustomers();
+    const tenantId = localStorage.getItem("tenant_id");
+    if (tenantId) {
+      api
+        .get<AcquisitionSource[]>(`/tenants/${tenantId}/acquisition-sources`)
+        .then((resp) => setSources(resp.data || []))
+        .catch(() => setSources([]));
+    }
   }, []);
+
+  // Re-runs on mount (once authorized) and whenever search/source filters change.
+  useEffect(() => {
+    if (!authorized) return;
+    fetchCustomers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authorized, debouncedSearch, sourceFilter]);
+
+  const fetchStats = async (tenantId: string) => {
+    setStatsLoading(true);
+    try {
+      const s = await fetchCustomerStats(tenantId);
+      setStats(s);
+    } catch {
+      setStats(null);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
 
   const fetchCustomers = async () => {
     setLoading(true);
@@ -324,13 +535,50 @@ export default function CustomersPage() {
       return;
     }
     try {
-      const resp = await api.get<Customer[]>(`/tenants/${tenantId}/customers`);
-      setCustomers(resp.data);
-      fetchLatestPlans(tenantId, resp.data);
+      const params = { search: debouncedSearch, acquisition_source_id: sourceFilter || undefined };
+      const [active, fullDetails, quickLead, notInterested] = await Promise.all([
+        listCustomers<Customer>(tenantId, { ...params, category: "active" }),
+        listCustomers<Customer>(tenantId, { ...params, category: "full_details" }),
+        listCustomers<Customer>(tenantId, { ...params, category: "quick_lead" }),
+        listCustomers<Customer>(tenantId, { ...params, category: "not_interested" }),
+      ]);
+      setBoard({ active, full_details: fullDetails, quick_lead: quickLead, not_interested: notInterested });
+      const combined = [...active, ...fullDetails, ...quickLead, ...notInterested];
+      setCustomers(combined);
+      fetchLatestPlans(tenantId, combined);
+      fetchStats(tenantId);
     } catch (err: any) {
       setError(err.message ?? "Failed to load customers directory.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMarkNotInterested = async (customer: Customer) => {
+    if (!confirm(`Mark "${customer.name}" as Not Interested? They'll move out of the active pipeline until reactivated.`)) return;
+    await applyProfileStatus(customer, "NOT_INTERESTED", `"${customer.name}" marked as Not Interested.`);
+  };
+
+  const handleReactivate = async (customer: Customer) => {
+    const hasDetails = !!(customer.cnic || customer.dob || customer.occupation || customer.declared_income);
+    const target: ProfileStatus = hasDetails ? "PROSPECT" : "LEAD";
+    await applyProfileStatus(customer, target, `"${customer.name}" reactivated.`);
+  };
+
+  const applyProfileStatus = async (customer: Customer, next: ProfileStatus, successMsg: string) => {
+    setError("");
+    setSuccess("");
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setStatusUpdatingId(customer.id);
+    try {
+      await setProfileStatus(tenantId, customer.id, next);
+      setSuccess(successMsg);
+      fetchCustomers();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to update customer status.");
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
@@ -437,6 +685,27 @@ export default function CustomersPage() {
         }
       };
 
+      // If a plan was selected, validate plan bounds first
+      if (data.selectedPlanId) {
+        const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
+        if (selectedPlan) {
+          const planErr = getPlanValidationError(
+            selectedPlan,
+            data.policyCoverage,
+            data.policyTerm,
+            data.declaredIncome,
+            data.dob,
+            data.policyDependentName,
+            data.policyDependentDob
+          );
+          if (planErr) {
+            setError(planErr);
+            setFormLoading(false);
+            return;
+          }
+        }
+      }
+
       const customerResp = await api.post<Customer>(`/tenants/${tenantId}/customers`, {
         cnic: data.cnic,
         first_name: data.firstName,
@@ -489,13 +758,13 @@ export default function CustomersPage() {
     setSelectedCustomer(customer);
     const parts = customer.name.split(" ");
     reset({
-      cnic: customer.cnic,
+      cnic: customer.cnic || "",
       firstName: parts[0] || "",
       lastName: parts.slice(1).join(" ") || "",
-      dob: customer.dob,
-      gender: customer.gender as any,
-      occupation: customer.occupation,
-      declaredIncome: customer.declared_income,
+      dob: customer.dob || "",
+      gender: (customer.gender as any) || "",
+      occupation: customer.occupation || "",
+      declaredIncome: customer.declared_income ?? undefined,
       maritalStatus: customer.details?.marital_status || "Single",
       nationality: customer.details?.nationality || "Pakistani",
     });
@@ -523,7 +792,7 @@ export default function CustomersPage() {
     setEditPolicyTerm("");
     setEditPolicyDependentName("");
     setEditPolicyDependentDob("");
-    setEditAddingPolicy(false);
+    setEditAddingPolicy(true);
 
     // Fetch existing policies
     const tenantId = localStorage.getItem("tenant_id");
@@ -562,26 +831,81 @@ export default function CustomersPage() {
         ...details,
         income_record: {
           ...details.income_record,
-          declared_income: data.declaredIncome,
-          annual_income: data.declaredIncome
+          declared_income: data.declaredIncome || null,
+          annual_income: data.declaredIncome || null
         }
       };
 
+      const dobVal = data.dob && String(data.dob).trim() !== "" ? data.dob : null;
+      const cnicVal = data.cnic && String(data.cnic).trim() !== "" ? data.cnic : null;
+      const genderVal = data.gender && String(data.gender).trim() !== "" ? data.gender : null;
+      const occupationVal = data.occupation && String(data.occupation).trim() !== "" ? data.occupation : null;
+      const incomeVal = data.declaredIncome && String(data.declaredIncome).trim() !== "" ? parseFloat(String(data.declaredIncome)) : null;
+
+      // If an insurance plan was selected in the edit modal, validate plan bounds first
+      const planId = editSelectedPlanId || data.selectedPlanId;
+      const coverage = editPolicyCoverage || data.policyCoverage;
+      const term = editPolicyTerm || data.policyTerm;
+      const depName = editPolicyDependentName || data.policyDependentName;
+      const depDob = editPolicyDependentDob || data.policyDependentDob;
+
+      if (planId) {
+        const plan = availablePlans.find((p) => p.id === planId);
+        if (plan) {
+          const planErr = getPlanValidationError(
+            plan,
+            coverage,
+            term,
+            incomeVal ?? selectedCustomer.declared_income,
+            dobVal ?? selectedCustomer.dob,
+            depName,
+            depDob
+          );
+          if (planErr) {
+            setError(planErr);
+            setFormLoading(false);
+            return;
+          }
+        }
+      }
+
       await api.put(`/tenants/${tenantId}/customers/${selectedCustomer.id}`, {
-        cnic: data.cnic,
+        cnic: cnicVal,
         first_name: data.firstName,
         last_name: data.lastName,
-        date_of_birth: data.dob,
-        gender: data.gender,
-        occupation: data.occupation,
-        declared_income: data.declaredIncome,
+        date_of_birth: dobVal,
+        gender: genderVal,
+        occupation: occupationVal,
+        declared_income: incomeVal,
         is_smoker: !!payloadDetails.medical_history.is_smoker,
         height_cm: parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
         weight_kg: parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
         details: payloadDetails
       });
 
-      setSuccess("Customer updated successfully!");
+      // If an insurance plan was selected in the edit modal, create policy for this customer
+      if (planId && coverage && term) {
+        const plan = availablePlans.find((p) => p.id === planId);
+        if (plan) {
+          const policyPayload: any = {
+            plan_id: planId,
+            product_name: plan.label,
+            insurance_type: plan.insurance_type,
+            coverage_amount: parseFloat(String(coverage)),
+            term_years: parseInt(String(term)),
+          };
+          if (plan.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
+            policyPayload.dependent_name = depName || null;
+            policyPayload.dependent_dob = depDob || null;
+          }
+          await api.post(
+            `/tenants/${tenantId}/customers/${selectedCustomer.id}/policies`,
+            policyPayload
+          );
+        }
+      }
+
+      setSuccess("Customer profile updated successfully!");
       setShowEditModal(false);
       fetchCustomers();
     } catch (err: any) {
@@ -689,6 +1013,113 @@ export default function CustomersPage() {
     setNewFamilyHistory({ relation: "Father", age: "", is_alive: true, condition_name: "" });
   };
 
+  const renderStatTile = (label: string, value: number | undefined, accentColor: string, textColor: string) => (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
+      <div className={`h-1 ${accentColor}`} />
+      <div className="p-4 sm:p-5">
+        <div className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-slate-400">{label}</div>
+        <div className={`text-2xl sm:text-4xl font-extrabold tracking-tight mt-1 sm:mt-2 ${textColor}`}>
+          {statsLoading || value === undefined ? (
+            <span className="inline-block w-10 h-8 bg-current/10 rounded animate-pulse" />
+          ) : (
+            value.toLocaleString()
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderCustomerCard = (customer: Customer, category: CustomerCategory) => {
+    const age = customer.dob ? new Date().getFullYear() - new Date(customer.dob).getFullYear() : null;
+    const isUpdating = statusUpdatingId === customer.id;
+    return (
+      <div
+        key={customer.id}
+        className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-slate-300 transition-all p-3.5 space-y-2.5"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="font-semibold text-slate-800 text-sm truncate">{customer.name || "Unnamed"}</div>
+            {category !== "quick_lead" && (
+              <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+                {customer.cnic || <span className="italic text-slate-400">Pending CNIC</span>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500">
+          {customer.details?.phone && <span>📞 {customer.details.phone}</span>}
+          {category !== "quick_lead" && age !== null && customer.gender && <span>{age} yrs · {customer.gender}</span>}
+          {category !== "quick_lead" && customer.occupation && <span className="truncate max-w-[160px]">{customer.occupation}</span>}
+        </div>
+
+        {category !== "quick_lead" && customer.declared_income != null && (
+          <div className="text-xs font-semibold text-slate-700">
+            PKR {customer.declared_income.toLocaleString()}
+          </div>
+        )}
+
+        {customer.acquisition_source && (
+          <div className="inline-flex w-fit items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+            Lead by: {customer.acquisition_source.name}
+          </div>
+        )}
+
+        {latestPlans[customer.id] && (
+          <Link
+            href={`/admin/customers/${customer.id}/plans`}
+            className="inline-flex w-fit px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100 hover:bg-blue-100 transition-colors"
+          >
+            {INSURANCE_TYPE_LABELS[latestPlans[customer.id]!.insurance_type] ?? latestPlans[customer.id]!.insurance_type}
+          </Link>
+        )}
+
+        <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-slate-100">
+          <div className="flex gap-1">
+            <button
+              onClick={() => handleOpenProfileModal(customer)}
+              className="px-2 py-1 text-[11px] font-semibold text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-md transition-colors"
+            >
+              View
+            </button>
+            <button
+              onClick={() => handleOpenEditModal(customer)}
+              className="px-2 py-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 rounded-md transition-colors"
+            >
+              Edit
+            </button>
+          </div>
+          <div className="flex gap-1">
+            {category === "not_interested" ? (
+              <button
+                disabled={isUpdating}
+                onClick={() => handleReactivate(customer)}
+                className="px-2 py-1 text-[11px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors disabled:opacity-50"
+              >
+                {isUpdating ? "…" : "Reactivate"}
+              </button>
+            ) : category !== "active" ? (
+              <button
+                disabled={isUpdating}
+                onClick={() => handleMarkNotInterested(customer)}
+                className="px-2 py-1 text-[11px] font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-md transition-colors disabled:opacity-50"
+              >
+                {isUpdating ? "…" : "Not Interested"}
+              </button>
+            ) : null}
+            <button
+              onClick={() => handleDeleteCustomer(customer.id, customer.name)}
+              className="px-2 py-1 text-[11px] font-semibold text-red-600 bg-white hover:bg-red-50 border border-red-100 rounded-md transition-colors"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   if (!authorized) {
     return (
       <div className="flex items-center justify-center min-h-[60vh] font-sans">
@@ -740,7 +1171,7 @@ export default function CustomersPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Customers Profile</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Customers</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Admin console to configure full multi-module diagnostic profile attributes for underwriting evaluation.
           </p>
@@ -748,7 +1179,7 @@ export default function CustomersPage() {
         <div className="flex items-center gap-2 self-start">
           <button
             onClick={() => router.push("/plans")}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
@@ -759,18 +1190,141 @@ export default function CustomersPage() {
             Insurance Plans
           </button>
           <button
+            onClick={() => setShowQuickLeadModal(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg hover:bg-emerald-100 transition-all shadow-sm active:scale-95"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-emerald-600">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="8.5" cy="7" r="4"></circle>
+              <line x1="20" y1="8" x2="20" y2="14"></line>
+              <line x1="17" y1="11" x2="23" y2="11"></line>
+            </svg>
+            + Quick Lead
+          </button>
+          <button
             onClick={handleOpenCreateModal}
             className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
-            Add Customer
+            Full Customer Entry
           </button>
         </div>
       </div>
 
-      {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
-      {success && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium">{success}</div>}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium flex justify-between items-center shadow-sm">
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => setError("")}
+            className="text-red-400 hover:text-red-700 font-bold ml-4 text-sm leading-none cursor-pointer hover:bg-red-100 p-1.5 rounded-lg transition-colors"
+            title="Close message"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {success && (
+        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium flex justify-between items-center shadow-sm">
+          <span>{success}</span>
+          <button
+            type="button"
+            onClick={() => setSuccess("")}
+            className="text-emerald-400 hover:text-emerald-700 font-bold ml-4 text-sm leading-none cursor-pointer hover:bg-emerald-100 p-1.5 rounded-lg transition-colors"
+            title="Close message"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {renderStatTile("Total Customers", stats?.total_customers, "bg-slate-400", "text-slate-700")}
+        {renderStatTile("Active Policyholders", stats?.active_policyholders, "bg-emerald-500", "text-emerald-700")}
+        {renderStatTile("Full Details", stats?.full_details, "bg-blue-600", "text-blue-700")}
+        {renderStatTile("Quick Leads", stats?.quick_leads, "bg-amber-400", "text-amber-700")}
+        {renderStatTile("Not Interested", stats?.not_interested, "bg-slate-400", "text-slate-600")}
+      </div>
+
+      {/* Search & filters */}
+      <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+        <div className="relative flex-1">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search by name, CNIC, or lead source..."
+            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
+          />
+        </div>
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          className="px-3 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 shrink-0"
+        >
+          <option value="">All Lead Sources</option>
+          {sources.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name} ({SOURCE_TYPE_LABELS[s.source_type] ?? s.source_type})
+            </option>
+          ))}
+        </select>
+        <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden shrink-0">
+          <button
+            onClick={() => setViewMode("cards")}
+            className={`px-3 py-2 text-xs font-semibold transition-colors ${viewMode === "cards" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+          >
+            Cards
+          </button>
+          <button
+            onClick={() => setViewMode("table")}
+            className={`px-3 py-2 text-xs font-semibold transition-colors border-l border-slate-200 ${viewMode === "table" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+          >
+            Table
+          </button>
+        </div>
+      </div>
+
+      {/* Card board — one column per pipeline category */}
+      {viewMode === "cards" && (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {CATEGORY_ORDER.map((cat) => {
+            const meta = CATEGORY_META[cat];
+            const list = board[cat];
+            return (
+              <div key={cat} className="flex flex-col bg-slate-50/60 rounded-xl border border-slate-200 overflow-hidden">
+                <div className={`px-3.5 py-3 border-b ${meta.headerBg} ${meta.accent} flex items-center justify-between shrink-0`}>
+                  <div>
+                    <div className="text-xs font-bold">{meta.label}</div>
+                    <div className="text-[10px] font-normal opacity-70 mt-0.5">{meta.description}</div>
+                  </div>
+                  <span className="inline-flex items-center justify-center min-w-[1.5rem] h-6 px-1.5 rounded-full bg-white text-xs font-bold border border-slate-200">
+                    {loading ? "…" : list.length}
+                  </span>
+                </div>
+                <div className="flex-1 overflow-y-auto max-h-[calc(100vh-360px)] min-h-[160px] p-2.5 space-y-2.5">
+                  {loading ? (
+                    <div className="py-10 text-center text-xs text-slate-400">Loading…</div>
+                  ) : list.length === 0 ? (
+                    <div className="py-10 text-center text-xs text-slate-400 px-3">{meta.emptyHint}</div>
+                  ) : (
+                    list.map((c) => renderCustomerCard(c, cat))
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Directory Table */}
+      {viewMode === "table" && (
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
           <div className="py-20 flex flex-col items-center justify-center gap-2">
@@ -779,7 +1333,7 @@ export default function CustomersPage() {
           </div>
         ) : customers.length === 0 ? (
           <div className="py-20 text-center text-slate-400">
-            <p className="text-sm">No customers registered in this tenant.</p>
+            <p className="text-sm">No customers match the current search/filters.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -791,7 +1345,7 @@ export default function CustomersPage() {
                   <th className="px-5 py-3 text-left">Age / Gender</th>
                   <th className="px-5 py-3 text-left">Occupation</th>
                   <th className="px-5 py-3 text-right">Income</th>
-                  <th className="px-5 py-3 text-left">Brought By</th>
+                  <th className="px-5 py-3 text-left">Lead Generated By</th>
                   <th className="px-5 py-3 text-left">Plan</th>
                   <th className="px-5 py-3 text-center">Actions</th>
                 </tr>
@@ -799,16 +1353,40 @@ export default function CustomersPage() {
               <tbody className="divide-y divide-slate-100">
                 {customers.map((customer) => {
                   const plan = latestPlans[customer.id];
+                  const age = customer.dob ? new Date().getFullYear() - new Date(customer.dob).getFullYear() : null;
                   return (
                     <tr key={customer.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-3.5 font-medium text-slate-700">{customer.cnic}</td>
-                      <td className="px-5 py-3.5 font-semibold text-slate-800">{customer.name}</td>
-                      <td className="px-5 py-3.5 text-slate-600">
-                        {new Date().getFullYear() - new Date(customer.dob).getFullYear()} yrs · {customer.gender}
+                      <td className="px-5 py-3.5 font-medium text-slate-700">
+                        {customer.profile_status === "LEAD" ? (
+                          <span className="text-xs italic text-slate-400">—</span>
+                        ) : customer.cnic ? (
+                          customer.cnic
+                        ) : (
+                          <span className="text-xs italic text-slate-400">Pending CNIC</span>
+                        )}
                       </td>
-                      <td className="px-5 py-3.5 text-slate-600">{customer.occupation}</td>
+                      <td className="px-5 py-3.5 font-semibold text-slate-800">
+                        <div>{customer.name}</div>
+                        {customer.details?.phone && (
+                          <div className="text-[11px] font-normal text-slate-500 font-mono mt-0.5">📞 {customer.details.phone}</div>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-600">
+                        {customer.profile_status !== "LEAD" && age !== null && customer.gender ? (
+                          `${age} yrs · ${customer.gender}`
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-600">
+                        {customer.profile_status !== "LEAD" && customer.occupation ? customer.occupation : <span className="text-xs text-slate-400">—</span>}
+                      </td>
                       <td className="px-5 py-3.5 text-right font-semibold text-slate-700">
-                        PKR {customer.declared_income.toLocaleString()}
+                        {customer.profile_status !== "LEAD" && customer.declared_income != null ? (
+                          `PKR ${customer.declared_income.toLocaleString()}`
+                        ) : (
+                          <span className="text-xs text-slate-400 font-normal">—</span>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         {customer.acquisition_source ? (
@@ -847,7 +1425,7 @@ export default function CustomersPage() {
                           </button>
                           <button
                             onClick={() => handleOpenEditModal(customer)}
-                            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 transition-colors"
+                            className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50/40 hover:bg-emerald-100/50 transition-colors"
                           >
                             Edit
                           </button>
@@ -867,6 +1445,7 @@ export default function CustomersPage() {
           </div>
         )}
       </div>
+      )}
 
       {/* ── CREATE / EDIT MODAL ── */}
       {(showCreateModal || showEditModal) && (
@@ -876,7 +1455,7 @@ export default function CustomersPage() {
             {/* Header */}
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
               <div>
-                <h3 className="text-base font-bold text-slate-900">{showCreateModal ? "Add New Customers Profile" : "Edit Customers Profile"}</h3>
+                <h3 className="text-base font-bold text-slate-900">{showCreateModal ? "Add New Customer" : "Edit Customer"}</h3>
                 <p className="text-xs text-slate-500 mt-0.5">Please populate the structured underwriting variables below.</p>
               </div>
               <button
@@ -908,7 +1487,34 @@ export default function CustomersPage() {
             </div>
 
             {/* Scrollable Form Body */}
-            <form onSubmit={hookFormSubmit((data: any) => showCreateModal ? handleCreateCustomer(data) : handleEditCustomer(data))} className="flex-1 overflow-y-auto p-6 space-y-6">
+            <form id="customer-main-form" onSubmit={hookFormSubmit((data: any) => showCreateModal ? handleCreateCustomer(data) : handleEditCustomer(data))} className="flex-1 overflow-y-auto p-6 space-y-6">
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-3.5 text-xs text-red-600 font-medium flex justify-between items-center shadow-sm">
+                  <span>{error}</span>
+                  <button
+                    type="button"
+                    onClick={() => setError("")}
+                    className="text-red-400 hover:text-red-700 font-bold ml-3 text-xs leading-none cursor-pointer hover:bg-red-100 p-1 rounded-md transition-colors"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+              {success && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-600 font-medium flex justify-between items-center shadow-sm">
+                  <span>{success}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSuccess("")}
+                    className="text-emerald-400 hover:text-emerald-700 font-bold ml-3 text-xs leading-none cursor-pointer hover:bg-emerald-100 p-1 rounded-md transition-colors"
+                    title="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
               {/* TAB 1: Demographics & Contact */}
               {formTab === "demographics" && (
@@ -920,7 +1526,7 @@ export default function CustomersPage() {
                         <label className="text-xs font-semibold text-slate-600">First Name *</label>
                         <input
                           type="text"
-                          {...register("firstName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                          {...register("firstName")}
                           className={`w-full bg-slate-50 border ${errors.firstName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
                         {errors.firstName && <span className="text-[10px] text-red-500">{errors.firstName.message}</span>}
@@ -929,20 +1535,18 @@ export default function CustomersPage() {
                         <label className="text-xs font-semibold text-slate-600">Last Name *</label>
                         <input
                           type="text"
-                          {...register("lastName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                          {...register("lastName")}
                           className={`w-full bg-slate-50 border ${errors.lastName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
                         {errors.lastName && <span className="text-[10px] text-red-500">{errors.lastName.message}</span>}
                       </div>
                       <div className="space-y-1">
-                        <label className="text-xs font-semibold text-slate-600">CNIC *</label>
+                        <label className="text-xs font-semibold text-slate-600">CNIC (Optional for Lead)</label>
                         <input
                           type="text"
                           {...register("cnic", {
                             onChange: (e) => {
-                              const formatted = formatCNIC(e.target.value);
-                              e.target.value = formatted;
-                              setValue("cnic", formatted, { shouldValidate: true });
+                              e.target.value = formatCNIC(e.target.value);
                             }
                           })}
                           placeholder="35201-XXXXXXX-X"
@@ -1170,7 +1774,7 @@ export default function CustomersPage() {
                         <label className="text-xs font-semibold text-slate-600">Occupation *</label>
                         <input
                           type="text"
-                          {...register("occupation", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                          {...register("occupation")}
                           className={`w-full bg-slate-50 border ${errors.occupation ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                         />
                         {errors.occupation && <span className="text-[10px] text-red-500">{errors.occupation.message}</span>}
@@ -1907,10 +2511,14 @@ export default function CustomersPage() {
                                   key={plan.id}
                                   type="button"
                                   onClick={() => {
-                                    setEditSelectedPlanId(isSelected ? "" : plan.id);
+                                    const nextId = isSelected ? "" : plan.id;
+                                    setEditSelectedPlanId(nextId);
+                                    setValue("selectedPlanId", nextId);
                                     if (!isSelected) {
                                       setEditPolicyCoverage("");
                                       setEditPolicyTerm(String(plan.term_min_years));
+                                      setValue("policyCoverage", "");
+                                      setValue("policyTerm", String(plan.term_min_years));
                                     }
                                   }}
                                   className={`relative w-full text-left p-4 rounded-xl border-2 transition-all ${isSelected
@@ -1939,19 +2547,58 @@ export default function CustomersPage() {
                         {editSelectedPlanId && (() => {
                           const plan = availablePlans.find((p) => p.id === editSelectedPlanId);
                           if (!plan) return null;
+
+                          const currentIncome = parseFloat(String(watch("declaredIncome") || selectedCustomer?.declared_income || 0));
+                          const maxIncomeCoverage = currentIncome > 0 && plan.max_income_multiple ? currentIncome * plan.max_income_multiple : null;
+
+                          const coverageNum = parseFloat(String(editPolicyCoverage || 0));
+                          const termNum = parseInt(String(editPolicyTerm || 0));
+
+                          const isTermOutOfRange = editPolicyTerm !== "" && (termNum < plan.term_min_years || termNum > plan.term_max_years);
+                          const isCoverageOverLimit = editPolicyCoverage !== "" && maxIncomeCoverage !== null && coverageNum > maxIncomeCoverage;
+
+                          const customerDob = watch("dob") || selectedCustomer?.dob;
+                          let ageNotice: string | null = null;
+                          if (customerDob) {
+                            const bYear = new Date(customerDob).getFullYear();
+                            if (!isNaN(bYear)) {
+                              const age = new Date().getFullYear() - bYear;
+                              if (age < plan.entry_age_min || age > plan.entry_age_max) {
+                                ageNotice = `Customer age (${age} yrs) is outside allowed entry age range (${plan.entry_age_min}–${plan.entry_age_max} yrs) for ${plan.label}.`;
+                              }
+                            }
+                          }
+
                           return (
                             <div className="space-y-4 pt-2">
+                              {ageNotice && (
+                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
+                                  <span>⚠️ {ageNotice}</span>
+                                </div>
+                              )}
+
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1">
                                   <label className="text-xs font-semibold text-slate-600">Coverage Amount (PKR) *</label>
                                   <input
                                     type="number" min={0}
                                     value={editPolicyCoverage}
-                                    onChange={(e) => setEditPolicyCoverage(e.target.value)}
+                                    onChange={(e) => {
+                                      setEditPolicyCoverage(e.target.value);
+                                      setValue("policyCoverage", e.target.value);
+                                    }}
                                     placeholder="e.g. 5000000"
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                                    className={`w-full bg-white border ${isCoverageOverLimit ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                                   />
-                                  <p className="text-[10px] text-slate-400">Max {plan.max_income_multiple}× declared income</p>
+                                  {isCoverageOverLimit ? (
+                                    <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                      ❌ Exceeds max limit of PKR {maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}× declared income)
+                                    </span>
+                                  ) : (
+                                    <p className="text-[10px] text-slate-400">
+                                      {maxIncomeCoverage ? `Max allowed: PKR ${maxIncomeCoverage.toLocaleString()} (${plan.max_income_multiple}× declared income)` : `Max ${plan.max_income_multiple}× declared income`}
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="space-y-1">
                                   <label className="text-xs font-semibold text-slate-600">Policy Term (Years) *</label>
@@ -1959,20 +2606,32 @@ export default function CustomersPage() {
                                     type="number"
                                     min={plan.term_min_years} max={plan.term_max_years}
                                     value={editPolicyTerm}
-                                    onChange={(e) => setEditPolicyTerm(e.target.value)}
-                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
+                                    onChange={(e) => {
+                                      setEditPolicyTerm(e.target.value);
+                                      setValue("policyTerm", e.target.value);
+                                    }}
+                                    className={`w-full bg-white border ${isTermOutOfRange ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                                   />
-                                  <p className="text-[10px] text-slate-400">Range: {plan.term_min_years}–{plan.term_max_years} yrs</p>
+                                  {isTermOutOfRange ? (
+                                    <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                      ❌ Invalid term: Must be between {plan.term_min_years}–{plan.term_max_years} yrs
+                                    </span>
+                                  ) : (
+                                    <p className="text-[10px] text-slate-400">Allowed range: {plan.term_min_years}–{plan.term_max_years} yrs</p>
+                                  )}
                                 </div>
                               </div>
                               {plan.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                   <div className="space-y-1">
-                                    <label className="text-xs font-semibold text-slate-600">Dependent Name</label>
+                                    <label className="text-xs font-semibold text-slate-600">Dependent Name *</label>
                                     <input
                                       type="text"
                                       value={editPolicyDependentName}
-                                      onChange={(e) => setEditPolicyDependentName(e.target.value)}
+                                      onChange={(e) => {
+                                        setEditPolicyDependentName(e.target.value);
+                                        setValue("policyDependentName", e.target.value);
+                                      }}
                                       placeholder="Child's full name"
                                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                                     />
@@ -1982,7 +2641,10 @@ export default function CustomersPage() {
                                     <input
                                       type="date"
                                       value={editPolicyDependentDob}
-                                      onChange={(e) => setEditPolicyDependentDob(e.target.value)}
+                                      onChange={(e) => {
+                                        setEditPolicyDependentDob(e.target.value);
+                                        setValue("policyDependentDob", e.target.value);
+                                      }}
                                       className="w-full bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                                     />
                                   </div>
@@ -1990,10 +2652,25 @@ export default function CustomersPage() {
                               )}
                               <button
                                 type="button"
-                                disabled={editPolicyLoading || !editPolicyCoverage || !editPolicyTerm}
+                                disabled={editPolicyLoading || !editPolicyCoverage || !editPolicyTerm || isTermOutOfRange || isCoverageOverLimit}
                                 onClick={async () => {
                                   const tenantId = localStorage.getItem("tenant_id");
                                   if (!tenantId || !selectedCustomer) return;
+
+                                  const valErr = getPlanValidationError(
+                                    plan,
+                                    editPolicyCoverage,
+                                    editPolicyTerm,
+                                    currentIncome,
+                                    customerDob,
+                                    editPolicyDependentName,
+                                    editPolicyDependentDob
+                                  );
+                                  if (valErr) {
+                                    setError(valErr);
+                                    return;
+                                  }
+
                                   setEditPolicyLoading(true);
                                   try {
                                     const payload: any = {
@@ -2024,7 +2701,7 @@ export default function CustomersPage() {
                                     setEditPolicyLoading(false);
                                   }
                                 }}
-                                className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 rounded-lg transition-colors"
+                                className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed rounded-lg transition-colors"
                               >
                                 {editPolicyLoading ? "Assigning..." : "Confirm & Assign Policy"}
                               </button>
@@ -2134,9 +2811,41 @@ export default function CustomersPage() {
                     {selectedPlanId && (() => {
                       const plan = availablePlans.find((p) => p.id === selectedPlanId);
                       if (!plan) return null;
+
+                      const currentIncome = parseFloat(String(watch("declaredIncome") || 0));
+                      const maxIncomeCoverage = currentIncome > 0 && plan.max_income_multiple ? currentIncome * plan.max_income_multiple : null;
+
+                      const coverageVal = watch("policyCoverage");
+                      const termVal = watch("policyTerm");
+
+                      const coverageNum = parseFloat(String(coverageVal || 0));
+                      const termNum = parseInt(String(termVal || 0));
+
+                      const isTermOutOfRange = termVal !== undefined && termVal !== "" && (termNum < plan.term_min_years || termNum > plan.term_max_years);
+                      const isCoverageOverLimit = coverageVal !== undefined && coverageVal !== "" && maxIncomeCoverage !== null && coverageNum > maxIncomeCoverage;
+
+                      const customerDob = watch("dob");
+                      let ageNotice: string | null = null;
+                      if (customerDob) {
+                        const bYear = new Date(customerDob).getFullYear();
+                        if (!isNaN(bYear)) {
+                          const age = new Date().getFullYear() - bYear;
+                          if (age < plan.entry_age_min || age > plan.entry_age_max) {
+                            ageNotice = `Customer age (${age} yrs) is outside allowed entry age range (${plan.entry_age_min}–${plan.entry_age_max} yrs) for ${plan.label}.`;
+                          }
+                        }
+                      }
+
                       return (
                         <div className="bg-slate-50 border border-slate-200 rounded-xl p-5 space-y-4">
                           <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Plan Configuration</h4>
+
+                          {ageNotice && (
+                            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-800 font-medium flex items-center gap-2">
+                              <span>⚠️ {ageNotice}</span>
+                            </div>
+                          )}
+
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1">
                               <label className="text-xs font-semibold text-slate-600">
@@ -2147,12 +2856,19 @@ export default function CustomersPage() {
                                 min={0}
                                 {...register("policyCoverage")}
                                 placeholder="e.g. 5000000"
-                                className={`w-full bg-white border ${errors.policyCoverage ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                                className={`w-full bg-white border ${isCoverageOverLimit || errors.policyCoverage ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                               />
-                              {errors.policyCoverage && <span className="text-[10px] text-red-500">{errors.policyCoverage.message}</span>}
-                              <p className="text-[10px] text-slate-400">
-                                Max {plan.max_income_multiple}× declared income recommended
-                              </p>
+                              {isCoverageOverLimit ? (
+                                <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                  ❌ Exceeds max limit of PKR {maxIncomeCoverage!.toLocaleString()} ({plan.max_income_multiple}× declared income)
+                                </span>
+                              ) : errors.policyCoverage ? (
+                                <span className="text-[10px] text-red-500">{errors.policyCoverage.message}</span>
+                              ) : (
+                                <p className="text-[10px] text-slate-400">
+                                  {maxIncomeCoverage ? `Max limit: PKR ${maxIncomeCoverage.toLocaleString()} (${plan.max_income_multiple}× declared income)` : `Max ${plan.max_income_multiple}× declared income`}
+                                </p>
+                              )}
                             </div>
                             <div className="space-y-1">
                               <label className="text-xs font-semibold text-slate-600">
@@ -2163,12 +2879,19 @@ export default function CustomersPage() {
                                 min={plan.term_min_years}
                                 max={plan.term_max_years}
                                 {...register("policyTerm")}
-                                className={`w-full bg-white border ${errors.policyTerm ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
+                                className={`w-full bg-white border ${isTermOutOfRange || errors.policyTerm ? 'border-red-500 bg-red-50/20 ring-1 ring-red-500 text-red-900' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                               />
-                              {errors.policyTerm && <span className="text-[10px] text-red-500">{errors.policyTerm.message}</span>}
-                              <p className="text-[10px] text-slate-400">
-                                Allowed range: {plan.term_min_years}–{plan.term_max_years} years
-                              </p>
+                              {isTermOutOfRange ? (
+                                <span className="block text-[11px] font-semibold text-red-600 mt-1">
+                                  ❌ Invalid term: Must be between {plan.term_min_years}–{plan.term_max_years} yrs
+                                </span>
+                              ) : errors.policyTerm ? (
+                                <span className="text-[10px] text-red-500">{errors.policyTerm.message}</span>
+                              ) : (
+                                <p className="text-[10px] text-slate-400">
+                                  Allowed range: {plan.term_min_years}–{plan.term_max_years} years
+                                </p>
+                              )}
                             </div>
                           </div>
 
@@ -2178,10 +2901,10 @@ export default function CustomersPage() {
                               <h5 className="text-xs font-bold text-slate-700 uppercase tracking-wider">Dependent / Child Details</h5>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div className="space-y-1">
-                                  <label className="text-xs font-semibold text-slate-600">Dependent Name</label>
+                                  <label className="text-xs font-semibold text-slate-600">Dependent Name *</label>
                                   <input
                                     type="text"
-                                    {...register("policyDependentName", { onChange: (e) => e.target.value = e.target.value.replace(/[^A-Za-z\s]/g, '') })}
+                                    {...register("policyDependentName")}
                                     placeholder="Child's full name"
                                     className={`w-full bg-white border ${errors.policyDependentName ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                                   />
@@ -2239,18 +2962,29 @@ export default function CustomersPage() {
                         </button>
                       )}
                       {currentIdx < activeTabs.length - 1 ? (
-                        <button
-                          type="button"
-                          onClick={() => setFormTab(activeTabs[currentIdx + 1].id)}
-                          className="px-5 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg"
-                        >
-                          Next Step
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setFormTab(activeTabs[currentIdx + 1].id)}
+                            className="px-5 py-2 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-900 rounded-lg"
+                          >
+                            Next Step
+                          </button>
+                          <button
+                            type="button"
+                            onClick={hookFormSubmit((data: any) => showCreateModal ? handleCreateCustomer(data) : handleEditCustomer(data))}
+                            disabled={formLoading}
+                            className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm cursor-pointer"
+                          >
+                            {formLoading ? "Saving..." : showCreateModal ? "Register Customer" : "Update Profile"}
+                          </button>
+                        </div>
                       ) : (
                         <button
-                          type="submit"
+                          type="button"
+                          onClick={hookFormSubmit((data: any) => showCreateModal ? handleCreateCustomer(data) : handleEditCustomer(data))}
                           disabled={formLoading}
-                          className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm"
+                          className="px-6 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 rounded-lg shadow-sm cursor-pointer"
                         >
                           {formLoading ? "Saving Profile..." : showCreateModal ? "Register Customer" : "Update Profile"}
                         </button>
@@ -2289,7 +3023,7 @@ export default function CustomersPage() {
 
               {/* Sidebar Navigation */}
               <div className="w-64 bg-slate-50 border-r border-slate-100 flex flex-col py-6 px-4 space-y-1.5 overflow-y-auto">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Customers Profile</p>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 px-2">Customer Profile</p>
                 {tabs.map((tab) => (
                   <button
                     key={tab.id}
@@ -2603,6 +3337,107 @@ export default function CustomersPage() {
               </button>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Quick Lead Capture Modal */}
+      {showQuickLeadModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 transform transition-all">
+            <div className="px-6 py-5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold flex items-center gap-2">
+                  <span>🚀</span> Quick Lead Entry
+                </h3>
+                <p className="text-xs text-emerald-100 mt-0.5">
+                  Capture initial contact info. Diagnostic medical & financial details can be filled later.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowQuickLeadModal(false)}
+                className="text-white/80 hover:text-white text-xl font-bold p-1 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateQuickLead} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  First Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Tariq"
+                  value={quickFirstName}
+                  onChange={(e) => setQuickFirstName(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Last Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Mahmood"
+                  value={quickLastName}
+                  onChange={(e) => setQuickLastName(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Phone Number
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 0300-1234567"
+                  value={quickPhone}
+                  onChange={(e) => setQuickPhone(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+                  Lead Generated By (Source)
+                </label>
+                <select
+                  value={quickAcquisitionSourceId}
+                  onChange={(e) => setQuickAcquisitionSourceId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                >
+                  <option value="">-- Direct / Unassigned --</option>
+                  {sources.map((src) => (
+                    <option key={src.id} value={src.id}>
+                      {src.name} ({SOURCE_TYPE_LABELS[src.source_type] ?? src.source_type})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickLeadModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickSaving}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all shadow-md disabled:opacity-50"
+                >
+                  {quickSaving ? "Capturing..." : "Register Lead"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

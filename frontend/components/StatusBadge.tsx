@@ -89,7 +89,7 @@ export function DecisionBanner({ decision }: { decision: AIDecision }) {
   const LABEL: Record<AIDecision, string> = {
     "Auto Approve": "AUTO APPROVED",
     "Approve with Loading": "APPROVED WITH PREMIUM LOADING",
-    "Human Review": "REFERRED FOR HUMAN REVIEW",
+    "Human Review": "REFERRED FOR DEPARTMENTAL REVIEW",
     Decline: "APPLICATION DECLINED",
   };
 
