@@ -22,6 +22,7 @@ from routers.cases import generate_case_number
 from schemas import (
     FamilyConfirmResponse,
     FamilyGroupCreate,
+    FamilyGroupUpdate,
     FamilyGroupRead,
     FamilyMembersRequest,
     FamilyMemberOutcome,
@@ -33,11 +34,19 @@ from schemas import (
 from shared.models.core import (
     ActionTypeEnum,
     AIDecision,
+    Artifact,
     Case,
+    CaseAssignment,
+    CaseAttachment,
+    CaseAuditTrail,
+    CaseComment,
+    CaseEscalation,
     CaseHistory,
     CasePriorityEnum,
     CaseStatusEnum,
     CaseTypeEnum,
+    CaseWorkflow,
+    Claim,
     Customer,
     FamilyGroup,
     FamilyPlanTypeEnum,
@@ -200,6 +209,135 @@ async def list_family_groups(tenant_id: UUID, session: AsyncSession = Depends(ge
 )
 async def get_family_group(tenant_id: UUID, family_id: UUID, session: AsyncSession = Depends(get_session)):
     return await _get_family_group(tenant_id, family_id, session)
+
+
+@router.patch(
+    "/{tenant_id}/families/{family_id}",
+    response_model=FamilyGroupRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_family_group(
+    tenant_id: UUID,
+    family_id: UUID,
+    body: FamilyGroupUpdate,
+    session: AsyncSession = Depends(get_session)
+):
+    fg = await _get_family_group(tenant_id, family_id, session)
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(fg, key, value)
+    
+    session.add(fg)
+    await session.commit()
+    await session.refresh(fg)
+    return fg
+
+
+@router.delete(
+    "/{tenant_id}/families/{family_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_family_group(
+    tenant_id: UUID,
+    family_id: UUID,
+    session: AsyncSession = Depends(get_session)
+):
+    fg = await _get_family_group(tenant_id, family_id, session)
+    
+    # Cascade delete family policies
+    family_policies = await session.exec(select(FamilyPolicy).where(FamilyPolicy.family_group_id == family_id))
+    for fp in family_policies.all():
+        await session.delete(fp)
+        
+    # Cascade delete members (customers) and their dependencies
+    members = await session.exec(select(Customer).where(Customer.family_group_id == family_id))
+    for customer in members.all():
+        artifacts = await session.exec(select(Artifact).where(Artifact.customer_id == customer.id))
+        for a in artifacts.all(): await session.delete(a)
+        
+        assessments = await session.exec(select(RiskAssessment).where(RiskAssessment.customer_id == customer.id))
+        for a in assessments.all(): await session.delete(a)
+
+        policies = await session.exec(select(Policy).where(Policy.customer_id == customer.id))
+        for policy in policies.all():
+            cases = await session.exec(select(Case).where(Case.policy_id == policy.id))
+            for case in cases.all():
+                for h in (await session.exec(select(CaseHistory).where(CaseHistory.caseld == case.caseld))).all(): await session.delete(h)
+                for w in (await session.exec(select(CaseWorkflow).where(CaseWorkflow.caseld == case.caseld))).all(): await session.delete(w)
+                for a in (await session.exec(select(CaseAssignment).where(CaseAssignment.caseld == case.caseld))).all(): await session.delete(a)
+                for e in (await session.exec(select(CaseEscalation).where(CaseEscalation.caseld == case.caseld))).all(): await session.delete(e)
+                for c in (await session.exec(select(CaseComment).where(CaseComment.caseld == case.caseld))).all(): await session.delete(c)
+                for att in (await session.exec(select(CaseAttachment).where(CaseAttachment.caseld == case.caseld))).all(): await session.delete(att)
+                for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
+                for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
+                for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
+                await session.delete(case)
+                
+            quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))
+            for q in quotes.all(): await session.delete(q)
+            
+            claims = await session.exec(select(Claim).where(Claim.policy_id == policy.id))
+            for c in claims.all():
+                for art in (await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all(): await session.delete(art)
+                await session.delete(c)
+                
+            await session.delete(policy)
+        await session.delete(customer)
+        
+    await session.delete(fg)
+    await session.commit()
+    return None
+
+
+@router.delete(
+    "/{tenant_id}/families/{family_id}/members/{member_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_family_member(tenant_id: UUID, family_id: UUID, member_id: UUID, session: AsyncSession = Depends(get_session)):
+    await _get_family_group(tenant_id, family_id, session)
+    customer = await session.get(Customer, member_id)
+    if not customer or customer.tenant_id != tenant_id or customer.family_group_id != family_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found.")
+
+    # Cascading delete for related records
+    # 1. Artifacts & Risk Assessments (linked to customer)
+    artifacts = await session.exec(select(Artifact).where(Artifact.customer_id == member_id))
+    for a in artifacts.all(): await session.delete(a)
+
+    assessments = await session.exec(select(RiskAssessment).where(RiskAssessment.customer_id == member_id))
+    for a in assessments.all(): await session.delete(a)
+
+    # 2. Policies and their downstream dependents
+    policies = await session.exec(select(Policy).where(Policy.customer_id == member_id))
+    for policy in policies.all():
+        cases = await session.exec(select(Case).where(Case.policy_id == policy.id))
+        for case in cases.all():
+            for h in (await session.exec(select(CaseHistory).where(CaseHistory.caseld == case.caseld))).all(): await session.delete(h)
+            for w in (await session.exec(select(CaseWorkflow).where(CaseWorkflow.caseld == case.caseld))).all(): await session.delete(w)
+            for a in (await session.exec(select(CaseAssignment).where(CaseAssignment.caseld == case.caseld))).all(): await session.delete(a)
+            for e in (await session.exec(select(CaseEscalation).where(CaseEscalation.caseld == case.caseld))).all(): await session.delete(e)
+            for c in (await session.exec(select(CaseComment).where(CaseComment.caseld == case.caseld))).all(): await session.delete(c)
+            for att in (await session.exec(select(CaseAttachment).where(CaseAttachment.caseld == case.caseld))).all(): await session.delete(att)
+            for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
+            for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
+            for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
+            await session.delete(case)
+            
+        quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))
+        for q in quotes.all(): await session.delete(q)
+        
+        claims = await session.exec(select(Claim).where(Claim.policy_id == policy.id))
+        for c in claims.all():
+            for art in (await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all(): await session.delete(art)
+            await session.delete(c)
+            
+        await session.delete(policy)
+
+    await session.delete(customer)
+    await session.commit()
+    return None
 
 
 @router.get(

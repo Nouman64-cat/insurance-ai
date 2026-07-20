@@ -29,16 +29,25 @@ from schemas import (
     MasterPolicyCreate,
     MasterPolicyRead,
     OrganizationCreate,
+    OrganizationUpdate,
     OrganizationRead,
 )
 from shared.models.core import (
     ActionTypeEnum,
     AIDecision,
+    Artifact,
     Case,
+    CaseAssignment,
+    CaseAttachment,
+    CaseAuditTrail,
+    CaseComment,
+    CaseEscalation,
     CaseHistory,
     CasePriorityEnum,
     CaseStatusEnum,
     CaseTypeEnum,
+    CaseWorkflow,
+    Claim,
     Customer,
     InsurancePlan,
     InsuranceTypeEnum,
@@ -139,6 +148,92 @@ async def list_organization_employees(tenant_id: UUID, org_id: UUID, session: As
         select(Customer).where(Customer.tenant_id == tenant_id, Customer.organization_id == org_id)
     )
     return list(result.all())
+
+@router.delete(
+    "/{tenant_id}/organizations/{org_id}/employees/{employee_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_organization_employee(tenant_id: UUID, org_id: UUID, employee_id: UUID, session: AsyncSession = Depends(get_session)):
+    await _get_organization(tenant_id, org_id, session)
+    customer = await session.get(Customer, employee_id)
+    if not customer or customer.tenant_id != tenant_id or customer.organization_id != org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found.")
+
+    # Cascading delete for related records
+    # 1. Artifacts & Risk Assessments (linked to customer)
+    artifacts = await session.exec(select(Artifact).where(Artifact.customer_id == employee_id))
+    for a in artifacts.all(): await session.delete(a)
+
+    assessments = await session.exec(select(RiskAssessment).where(RiskAssessment.customer_id == employee_id))
+    for a in assessments.all(): await session.delete(a)
+
+    # 2. Policies and their downstream dependents
+    policies = await session.exec(select(Policy).where(Policy.customer_id == employee_id))
+    for policy in policies.all():
+        cases = await session.exec(select(Case).where(Case.policy_id == policy.id))
+        for case in cases.all():
+            for h in (await session.exec(select(CaseHistory).where(CaseHistory.caseld == case.caseld))).all(): await session.delete(h)
+            for w in (await session.exec(select(CaseWorkflow).where(CaseWorkflow.caseld == case.caseld))).all(): await session.delete(w)
+            for a in (await session.exec(select(CaseAssignment).where(CaseAssignment.caseld == case.caseld))).all(): await session.delete(a)
+            for e in (await session.exec(select(CaseEscalation).where(CaseEscalation.caseld == case.caseld))).all(): await session.delete(e)
+            for c in (await session.exec(select(CaseComment).where(CaseComment.caseld == case.caseld))).all(): await session.delete(c)
+            for att in (await session.exec(select(CaseAttachment).where(CaseAttachment.caseld == case.caseld))).all(): await session.delete(att)
+            for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
+            for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
+            for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
+            await session.delete(case)
+            
+        quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))
+        for q in quotes.all(): await session.delete(q)
+        
+        claims = await session.exec(select(Claim).where(Claim.policy_id == policy.id))
+        for c in claims.all():
+            for art in (await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all(): await session.delete(art)
+            await session.delete(c)
+            
+        await session.delete(policy)
+
+    await session.delete(customer)
+    await session.commit()
+    return None
+
+
+@router.patch(
+    "/{tenant_id}/organizations/{org_id}",
+    response_model=OrganizationRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_organization(
+    tenant_id: UUID,
+    org_id: UUID,
+    body: OrganizationUpdate,
+    session: AsyncSession = Depends(get_session)
+):
+    org = await _get_organization(tenant_id, org_id, session)
+    update_data = body.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(org, key, value)
+    
+    session.add(org)
+    await session.commit()
+    await session.refresh(org)
+    return org
+
+
+@router.delete(
+    "/{tenant_id}/organizations/{org_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_organization(
+    tenant_id: UUID,
+    org_id: UUID,
+    session: AsyncSession = Depends(get_session)
+):
+    org = await _get_organization(tenant_id, org_id, session)
+    await session.delete(org)
+    await session.commit()
 
 
 # ── Master policies ─────────────────────────────────────────────────────────────

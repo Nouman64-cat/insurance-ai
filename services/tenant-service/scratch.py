@@ -1,11 +1,15 @@
 import asyncio
+import logging
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
-from database import _session_factory
-from shared.models.core import Customer, Policy
+from sqlmodel import SQLModel
+import os
+from database import get_session
+import uvicorn
+from fastapi import FastAPI, Depends
+from routers.organizations import delete_organization_employee
+from uuid import UUID
 
-async def main():
-    async with _session_factory() as db:
-        print("Connected to DB")
+# Mock the dependency injection to just test the deletion logic
+# Actually, I can just use curl to hit the local server and look at the uvicorn output
 
-if __name__ == "__main__":
-    asyncio.run(main())

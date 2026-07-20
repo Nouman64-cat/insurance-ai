@@ -30,6 +30,7 @@ export default function FamiliesPage() {
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
+  const [editingFamId, setEditingFamId] = useState<string | null>(null);
 
   const [name, setName] = useState("");
   const [contactPerson, setContactPerson] = useState("");
@@ -66,18 +67,28 @@ export default function FamiliesPage() {
     }
   };
 
-  const handleOpenCreateModal = () => {
-    setName("");
-    setContactPerson("");
-    setContactEmail("");
-    setContactPhone("");
-    setHouseholdIncome("");
+  const handleOpenCreateModal = (fam?: FamilyGroup) => {
+    if (fam) {
+      setEditingFamId(fam.id);
+      setName(fam.name);
+      setContactPerson(fam.contact_person || "");
+      setContactEmail(fam.contact_email || "");
+      setContactPhone(fam.contact_phone || "");
+      setHouseholdIncome(fam.household_declared_income?.toString() || "");
+    } else {
+      setEditingFamId(null);
+      setName("");
+      setContactPerson("");
+      setContactEmail("");
+      setContactPhone("");
+      setHouseholdIncome("");
+    }
     setError("");
     setSuccess("");
     setShowCreateModal(true);
   };
 
-  const handleCreateFamily = async (e: React.FormEvent) => {
+  const handleSubmitFamily = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccess("");
@@ -85,20 +96,43 @@ export default function FamiliesPage() {
     const tenantId = localStorage.getItem("tenant_id");
 
     try {
-      await api.post(`/tenants/${tenantId}/families`, {
+      const payload = {
         name,
         contact_person: contactPerson || null,
         contact_email: contactEmail || null,
         contact_phone: contactPhone || null,
         household_declared_income: householdIncome ? parseFloat(householdIncome) : null,
-      });
-      setSuccess(`Family "${name}" created successfully!`);
+      };
+
+      if (editingFamId) {
+        await api.patch(`/tenants/${tenantId}/families/${editingFamId}`, payload);
+        setSuccess(`Family "${name}" updated successfully!`);
+      } else {
+        await api.post(`/tenants/${tenantId}/families`, payload);
+        setSuccess(`Family "${name}" created successfully!`);
+      }
       setShowCreateModal(false);
       fetchFamilies();
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to create family group.");
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to save family group.");
     } finally {
       setFormLoading(false);
+    }
+  };
+
+  const handleDeleteFamily = async (famId: string, famName: string) => {
+    if (!confirm(`Are you sure you want to delete the family "${famName}"? This action cannot be undone.`)) {
+      return;
+    }
+    setError("");
+    setSuccess("");
+    const tenantId = localStorage.getItem("tenant_id");
+    try {
+      await api.delete(`/tenants/${tenantId}/families/${famId}`);
+      setSuccess(`Family "${famName}" deleted successfully!`);
+      fetchFamilies();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete family group.");
     }
   };
 
@@ -125,7 +159,7 @@ export default function FamiliesPage() {
           </p>
         </div>
         <button
-          onClick={handleOpenCreateModal}
+          onClick={() => handleOpenCreateModal()}
           className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-600 rounded-lg hover:bg-rose-700 transition-all shadow-sm hover:shadow active:scale-95 self-start"
         >
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
@@ -152,7 +186,7 @@ export default function FamiliesPage() {
         ) : families.length === 0 ? (
           <div className="py-20 text-center text-slate-400">
             <p className="text-sm">No family groups registered in this tenant.</p>
-            <button onClick={handleOpenCreateModal} className="mt-3 text-xs text-blue-600 font-semibold hover:underline">
+            <button onClick={() => handleOpenCreateModal()} className="mt-3 text-xs text-blue-600 font-semibold hover:underline">
               Add the first family
             </button>
           </div>
@@ -181,7 +215,19 @@ export default function FamiliesPage() {
                     <td className="px-5 py-3.5 text-xs text-slate-400">
                       {new Date(fam.created_at).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })}
                     </td>
-                    <td className="px-5 py-3.5 text-right">
+                    <td className="px-5 py-3.5 text-right space-x-3">
+                      <button
+                        onClick={() => handleOpenCreateModal(fam)}
+                        className="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => handleDeleteFamily(fam.id, fam.name)}
+                        className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors"
+                      >
+                        Delete
+                      </button>
                       <button
                         onClick={() => router.push(`/admin/families/${fam.id}`)}
                         className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
@@ -202,7 +248,7 @@ export default function FamiliesPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="text-base font-bold text-slate-900">Add New Family</h3>
+              <h3 className="text-base font-bold text-slate-900">{editingFamId ? "Edit Family" : "Add New Family"}</h3>
               <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
@@ -210,7 +256,7 @@ export default function FamiliesPage() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateFamily} className="space-y-4">
+            <form onSubmit={handleSubmitFamily} className="space-y-4">
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Family Name *</label>
                 <input
@@ -277,7 +323,7 @@ export default function FamiliesPage() {
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
                   )}
-                  Create Family
+                  {editingFamId ? "Update Family" : "Create Family"}
                 </button>
               </div>
             </form>

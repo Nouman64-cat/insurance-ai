@@ -244,7 +244,7 @@ async def get_case_detail(
     if required is None:
         required = get_required_documents(insurance_type, case.caseType.value)
 
-    artifacts_stmt = select(Artifact.document_type).where(Artifact.case_id == case_id)
+    artifacts_stmt = select(Artifact.document_type).where(Artifact.customer_id == case.customer_id, Artifact.tenant_id == tenant_id)
     received = sorted({row[0] for row in (await session.execute(artifacts_stmt)).all()})
     missing = [doc for doc in required if doc not in received]
 
@@ -443,7 +443,7 @@ async def get_document_checklist(
         required = get_required_documents(insurance_type, case.caseType.value)
 
 
-    artifacts_stmt = select(Artifact.document_type).where(Artifact.case_id == case_id)
+    artifacts_stmt = select(Artifact.document_type).where(Artifact.customer_id == case.customer_id, Artifact.tenant_id == tenant_id)
     received = sorted({row[0] for row in (await session.execute(artifacts_stmt)).all()})
 
     missing = [doc for doc in required if doc not in received]

@@ -155,17 +155,23 @@ function fmtFileSize(bytes: number): string {
 
 type StreamStatus = "idle" | "streaming" | "done" | "error";
 
+export interface RiskFactorObject {
+  factor: string;
+  risk_level: string;
+  reason: string;
+}
+
 interface LiveResult {
   completedNodes: string[];
   medicalScore: number | null;
-  medicalReasons: string[];
+  medicalReasons: (string | RiskFactorObject)[];
   financialScore: number | null;
-  financialReasons: string[];
+  financialReasons: (string | RiskFactorObject)[];
   fraudProbability: number | null;
-  fraudReasons: string[];
+  fraudReasons: (string | RiskFactorObject)[];
   compositeScore: number | null;
   aiDecision: AIDecision | null;
-  reasons: string[];
+  reasons: (string | RiskFactorObject)[];
 }
 
 const EMPTY_LIVE: LiveResult = {
@@ -245,14 +251,15 @@ function ReasonIcon({ kind, className = "w-3.5 h-3.5" }: { kind: "risk" | "clear
 interface ReasonSection {
   label: string;       // full heading, e.g. "Medical Risk Factors"
   short: string;       // compact label for the table, e.g. "Medical"
+  icon: string;        // emoji icon for domain
   score: number;
   scoreLabel: string;
-  reasons: string[];
+  reasons: (string | RiskFactorObject)[];
   accentColor: string;
 }
 
 function ReasonGroup({ label, scoreLabel, reasons, accentColor }: {
-  label: string; scoreLabel: string; reasons: string[]; accentColor: string;
+  label: string; scoreLabel: string; reasons: (string | RiskFactorObject)[]; accentColor: string;
 }) {
   return (
     <div className="space-y-2">
@@ -262,12 +269,22 @@ function ReasonGroup({ label, scoreLabel, reasons, accentColor }: {
       </div>
       <ul className="space-y-0.5">
         {reasons.length === 0 && <li className="text-xs text-slate-400 italic px-2.5 py-1">No factors recorded.</li>}
-        {reasons.map((reason, i) => (
-          <li key={i} className="flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-slate-50/70 transition-colors">
-            <ReasonIcon kind={classifyReason(reason)} className="w-3.5 h-3.5 mt-0.5" />
-            <span className="text-xs text-slate-600 leading-snug">{tidyReason(reason)}</span>
-          </li>
-        ))}
+        {reasons.map((reason, i) => {
+          const isObj = typeof reason === "object" && reason !== null;
+          const factorStr = isObj ? reason.factor : reason;
+          const detailStr = isObj ? reason.reason : tidyReason(reason);
+          const kind = isObj ? (reason.risk_level.toLowerCase().includes("high") || reason.risk_level.toLowerCase().includes("moderate") ? "risk" : "clear") : classifyReason(reason);
+          
+          return (
+            <li key={i} className="flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-slate-50/70 transition-colors">
+              <ReasonIcon kind={kind as any} className="w-3.5 h-3.5 mt-0.5" />
+              <div className="flex flex-col">
+                <span className="text-xs font-semibold text-slate-700 leading-snug">{factorStr}</span>
+                <span className="text-[11px] text-slate-500 leading-snug">{detailStr}</span>
+              </div>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -277,7 +294,18 @@ function ReasonGroup({ label, scoreLabel, reasons, accentColor }: {
 // with the same ⚠ / ✓ signal symbols and a short category chip.
 function ReasonTable({ sections }: { sections: ReasonSection[] }) {
   const rows = sections.flatMap(s =>
-    s.reasons.map(reason => ({ short: s.short, accentColor: s.accentColor, reason }))
+    s.reasons.map(reason => {
+      const isObj = typeof reason === "object" && reason !== null;
+      return {
+        short: s.short,
+        icon: s.icon,
+        accentColor: s.accentColor,
+        parameter: isObj ? (reason.parameter || reason.factor) : reason,
+        risk_rating: isObj ? (reason.risk_rating || reason.risk_level) : (classifyReason(reason) === "risk" ? "Moderate" : "Low"),
+        observation: isObj ? (reason.observation || reason.reason) : tidyReason(reason),
+        kind: isObj ? ((reason.risk_rating || reason.risk_level).toLowerCase().includes("high") || (reason.risk_rating || reason.risk_level).toLowerCase().includes("moderate") ? "risk" : "clear") : classifyReason(reason),
+      };
+    })
   );
 
   if (rows.length === 0) {
@@ -288,25 +316,37 @@ function ReasonTable({ sections }: { sections: ReasonSection[] }) {
     <div className="overflow-x-auto -mx-1">
       <table className="w-full text-xs border-collapse">
         <thead>
-          <tr className="text-left text-[10px] uppercase tracking-widest text-slate-400 border-b border-slate-100">
-            <th className="py-2 pl-1 pr-2 font-bold w-6"></th>
-            <th className="py-2 px-2 font-bold w-24">Category</th>
-            <th className="py-2 px-2 font-bold">Factor</th>
+          <tr className="text-left text-[11px] uppercase tracking-widest text-slate-500 border-b border-slate-200">
+            <th className="py-3 px-3 font-medium w-40">Category</th>
+            <th className="py-3 px-3 font-medium w-40">Parameter</th>
+            <th className="py-3 px-3 font-medium">Observation</th>
+            <th className="py-3 px-3 font-medium w-32">Risk Rating</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => {
-            const kind = classifyReason(row.reason);
-            return (
-              <tr key={i} className="border-b border-slate-50 last:border-0 align-top">
-                <td className="py-2 pl-1 pr-2"><ReasonIcon kind={kind} className="w-3.5 h-3.5 mt-0.5" /></td>
-                <td className="py-2 px-2">
-                  <span className={`font-bold uppercase tracking-wide text-[10px] ${row.accentColor}`}>{row.short}</span>
-                </td>
-                <td className="py-2 px-2 text-slate-600 leading-snug">{tidyReason(row.reason)}</td>
-              </tr>
-            );
-          })}
+          {rows.map((row, i) => (
+            <tr key={i} className="border-b border-slate-200 last:border-0 align-middle">
+              <td className="py-3 px-3">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">{row.icon}</span>
+                  <span className={`font-bold uppercase tracking-wide text-xs ${row.accentColor}`}>{row.short}</span>
+                </div>
+              </td>
+              <td className="py-3 px-3 text-slate-800 font-semibold">{row.parameter}</td>
+              <td className="py-3 px-3 text-slate-600">{row.observation}</td>
+              <td className="py-3 px-3">
+                <div className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded-full ${
+                    row.risk_rating.toLowerCase().includes("high") ? "bg-red-500" :
+                    row.risk_rating.toLowerCase().includes("moderate") ? "bg-amber-500" :
+                    row.risk_rating.toLowerCase().includes("info") ? "bg-blue-500" :
+                    "bg-emerald-500"
+                  }`} />
+                  <span className="text-sm text-slate-700">{row.risk_rating}</span>
+                </div>
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>
@@ -449,6 +489,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const [artifacts, setArtifacts] = useState<ArtifactData[]>([]);
   const [showUpload, setShowUpload] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [downloadingApp, setDownloadingApp] = useState(false);
 
   const [docSummary, setDocSummary] = useState<string | null>(null);
@@ -491,6 +532,29 @@ export default function CasePage({ params }: { params: { id: string } }) {
   useEffect(() => { currentCaseIdRef.current = caseId; }, [caseId]);
 
   const isGroup = planGroup.length > 1;
+  const effStatus = isGroup ? (groupStatuses[caseId] ?? "idle") : status;
+  const effLive = isGroup ? (groupLive[caseId] ?? EMPTY_LIVE) : live;
+  const hasLive = effLive.compositeScore !== null;
+
+  // Automatically trigger PDF download and note generation when AI underwriting completes
+  // ONLY triggers if we just performed a fresh live stream (`hasLive` is true).
+  // Prevents downloading on every page load for previously-completed cases.
+  const autoTriggeredRef = useRef(false);
+  const downloadPDFRef = useRef<(() => void) | null>(null);
+  const triggerNotesRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (effStatus === "streaming") {
+      autoTriggeredRef.current = false;
+    } else if (effStatus === "done" && hasLive && !autoTriggeredRef.current) {
+      autoTriggeredRef.current = true;
+      setTimeout(() => {
+        downloadPDFRef.current?.();
+        triggerNotesRef.current?.();
+        setShowReportModal(true);
+      }, 500);
+    }
+  }, [effStatus, hasLive]);
 
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
@@ -845,21 +909,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
   };
 
   const downloadPDF = async () => {
-    if (!customer || !assessment) return;
+    if (!customer || (!hasLive && !assessment)) return;
     const { generateAssessmentPDF } = await import("@/lib/pdf-export");
 
     await generateAssessmentPDF({
       customer_name: customer.name,
       customer_cnic: customer.cnic,
       case_id: caseId,
-      created_at: assessment.created_at,
-      medical_score: assessment.medical_score,
-      financial_score: assessment.financial_score,
-      fraud_probability: assessment.fraud_probability,
-      composite_risk_score: assessment.composite_risk_score,
-      ai_decision: assessment.ai_decision,
-      suggested_loading: assessment.suggested_loading,
-      reasons: assessment.reasons ?? [],
+      created_at: hasLive ? new Date().toISOString() : assessment!.created_at,
+      medical_score: medicalScore,
+      financial_score: financialScore,
+      fraud_probability: fraudProbability,
+      composite_risk_score: compositeScore,
+      ai_decision: aiDecision ?? "Pending",
+      suggested_loading: suggestedLoading,
+      reasons: hasLive ? [...medicalReasons, ...financialReasons, ...fraudReasons] : (assessment?.reasons ?? []),
       ai_summary: docSummary ?? null,
       product_name: policy?.product_name ?? null,
     });
@@ -934,8 +998,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // In a multi-plan group each plan streams in parallel into its own slice of the
   // maps; otherwise fall back to the single-case state. Everything below renders
   // whichever plan is currently on screen.
-  const effLive = isGroup ? (groupLive[caseId] ?? EMPTY_LIVE) : live;
-  const effStatus = isGroup ? (groupStatuses[caseId] ?? "idle") : status;
   const effStreamError = isGroup ? (groupErrors[caseId] ?? null) : streamError;
   const handleRun = () => (isGroup ? runGroupCase(caseId, true) : runUnderwriting());
 
@@ -943,7 +1005,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // last persisted assessment. Live gives per-category reasons; persisted only
   // has the flat merged `reasons` array (decision_aggregation merges them
   // before writing to the DB), so the two render slightly differently below.
-  const hasLive = effLive.compositeScore !== null;
   const assessment = detail.latest_assessment;
   const hasAny = hasLive || assessment !== null;
 
@@ -970,9 +1031,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // Single source of truth for the AI Analysis — both the list and table views
   // render from this so the two stay perfectly in sync.
   const reasonSections: ReasonSection[] = [
-    { label: "Medical Risk Factors", short: "Medical", score: medicalScore, scoreLabel: `${medicalScore}%`, reasons: medicalReasons, accentColor: "text-orange-700" },
-    { label: "Financial Risk Factors", short: "Financial", score: financialScore, scoreLabel: `${financialScore}%`, reasons: financialReasons, accentColor: "text-blue-700" },
-    { label: "Fraud Risk Factors", short: "Fraud", score: fraudPct, scoreLabel: `${fraudPct}%`, reasons: fraudReasons, accentColor: "text-violet-700" },
+    { label: "Medical Risk Factors", short: "Medical", icon: "🩺", score: medicalScore, scoreLabel: `${medicalScore}%`, reasons: medicalReasons, accentColor: "text-slate-800" },
+    { label: "Financial Risk Factors", short: "Financial", icon: "💰", score: financialScore, scoreLabel: `${financialScore}%`, reasons: financialReasons, accentColor: "text-slate-800" },
+    { label: "Fraud Risk Factors", short: "Fraud", icon: "🛡️", score: fraudPct, scoreLabel: `${fraudPct}%`, reasons: fraudReasons, accentColor: "text-slate-800" },
   ];
 
   // Compact case context handed to the AI note generator — mirrors what the
@@ -999,6 +1060,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (docSummary) lines.push(`Document summary: ${docSummary.replace(/[#*]/g, "").replace(/\s+/g, " ").trim().slice(0, 600)}`);
     return lines.join("\n");
   };
+
+  downloadPDFRef.current = downloadPDF;
+  triggerNotesRef.current = () => generateNote(buildNoteContext());
 
   return (
     <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
@@ -1478,6 +1542,118 @@ export default function CasePage({ params }: { params: { id: string } }) {
           onClose={() => setShowUpload(false)}
           onUploaded={() => { setShowUpload(false); fetchArtifacts(); fetchDetail(); }}
         />
+      )}
+
+      {/* ── AI Assessment Report Modal ────────────────────────────────────── */}
+      {showReportModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="flex items-center gap-4">
+                <img src="/rizvi.png" alt="Rizviz" className="h-8" />
+                <div className="h-6 w-px bg-slate-300"></div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900 tracking-tight">AI Underwriting Assessment</h2>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">Applicant: {customer?.name} &nbsp;·&nbsp; Case: {c.caseNumber}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowReportModal(false)} className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors focus:outline-none">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 md:p-8 space-y-8 bg-white overflow-y-auto max-h-[75vh]">
+              
+              {/* Hero Decision Section */}
+              <div className="flex flex-col items-center justify-center text-center space-y-3 pb-8 border-b border-slate-100">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Final AI Decision</h3>
+                {aiDecision ? (
+                  <div className="scale-125 transform-origin-center my-1">
+                    <StatusBadge decision={aiDecision} size="lg" />
+                  </div>
+                ) : (
+                  <span className="text-xl font-bold text-slate-400 my-1">Pending</span>
+                )}
+                {suggestedLoading !== null && (
+                  <p className="text-sm font-semibold text-amber-800 bg-amber-50 px-4 py-1.5 rounded-full border border-amber-200/50 mt-2 shadow-sm">
+                    Suggested Loading: +{suggestedLoading}%
+                  </p>
+                )}
+                
+                <div className="w-full max-w-lg mt-8">
+                  <div className="flex justify-between items-end mb-2">
+                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Composite Risk</span>
+                    <span className="text-3xl font-black text-slate-900 tracking-tighter">{compositeScore}%</span>
+                  </div>
+                  <div className="h-3.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
+                    <div 
+                      className={`h-full rounded-full transition-all duration-1000 ${
+                        compositeScore <= 30 ? "bg-emerald-500" :
+                        compositeScore <= 70 ? "bg-amber-500" : "bg-red-500"
+                      }`}
+                      style={{ width: `${compositeScore}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Metrics Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {reasonSections.map((section, idx) => (
+                  <div key={idx} className="bg-slate-50/80 rounded-2xl border border-slate-200/60 p-6 flex flex-col text-left shadow-sm">
+                    <div className="flex justify-between items-start mb-4">
+                      <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">{section.label}</span>
+                      <span className={`text-2xl font-black ${section.accentColor}`}>{section.scoreLabel}</span>
+                    </div>
+                    
+                    <ul className="w-full space-y-2.5">
+                      {section.reasons.length > 0 ? (
+                        section.reasons.map((r, rIdx) => {
+                          const isObj = typeof r === "object" && r !== null;
+                          const text = isObj ? `${r.parameter || r.factor}: ${r.observation || r.reason}` : (r as string);
+                          return (
+                            <li key={rIdx} className="text-[13px] text-slate-700 flex items-start gap-2.5 leading-relaxed">
+                              <span className={`mt-[3px] font-bold ${section.accentColor}`}>•</span> {text.replace(/\*\*/g, "")}
+                            </li>
+                          );
+                        })
+                      ) : (
+                        <li className="text-[13px] text-slate-400 italic py-2">No significant risk factors flagged.</li>
+                      )}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between px-6 py-4 bg-slate-50 border-t border-slate-200/80">
+              <span className="text-xs text-slate-500 font-medium">
+                Generated {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+              <div className="flex items-center gap-3">
+                <button 
+                  onClick={downloadPDF}
+                  className="px-5 py-2.5 text-[13px] font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2 focus:ring-2 focus:ring-slate-200"
+                >
+                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                  Save PDF
+                </button>
+                <button 
+                  onClick={() => setShowReportModal(false)}
+                  className="px-6 py-2.5 text-[13px] font-bold text-white bg-blue-600 border border-transparent rounded-xl hover:bg-blue-700 shadow-sm shadow-blue-600/20 transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
       )}
     </div>
   );

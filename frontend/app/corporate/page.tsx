@@ -36,6 +36,7 @@ export default function CorporatePage() {
   const [rows, setRows] = useState<AccountRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     fetchData();
@@ -92,12 +93,21 @@ export default function CorporatePage() {
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Corporate Underwriting</h1>
           <p className="text-sm text-slate-500 mt-0.5">Group life accounts for small &amp; medium businesses insuring their staff under a master policy.</p>
         </div>
-        <button
-          onClick={() => router.push("/admin/organizations")}
-          className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm self-start"
-        >
-          Manage Organizations
-        </button>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          <input
+            type="text"
+            placeholder="Search by company or industry..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full sm:w-64 px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+          />
+          <button
+            onClick={() => router.push("/admin/organizations")}
+            className="flex items-center justify-center px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm w-full sm:w-auto"
+          >
+            Manage Organizations
+          </button>
+        </div>
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
@@ -144,7 +154,16 @@ export default function CorporatePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {rows.map((row) => {
+                {rows
+                  .filter((row) => {
+                    const q = search.trim().toLowerCase();
+                    if (!q) return true;
+                    return (
+                      row.organization.name.toLowerCase().includes(q) ||
+                      (row.organization.industry || "").toLowerCase().includes(q)
+                    );
+                  })
+                  .map((row) => {
                   const status = accountStatus(row);
                   return (
                     <tr key={row.organization.id} className="hover:bg-slate-50 transition-colors">
