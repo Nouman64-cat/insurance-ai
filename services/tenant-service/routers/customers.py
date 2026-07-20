@@ -1,6 +1,7 @@
 import logging
 import re
 from typing import Literal, Optional
+from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_
@@ -165,6 +166,18 @@ async def list_customers(
         select(Customer)
         .where(Customer.tenant_id == tenant_id)
         .options(selectinload(Customer.acquisition_source))
+    cnic: Optional[str] = None,
+    name: Optional[str] = None,
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(Customer).where(Customer.tenant_id == tenant_id)
+    if cnic:
+        query = query.where(Customer.cnic == cnic)
+    if name:
+        query = query.where(Customer.name.ilike(f"%{name}%"))
+        
+    result = await session.exec(
+        query.options(selectinload(Customer.acquisition_source))
     )
 
     term = (search or "").strip()
