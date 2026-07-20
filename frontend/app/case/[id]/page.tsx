@@ -128,9 +128,24 @@ interface AssessmentData {
   created_at: string;
 }
 
+interface OrganizationMemberCase {
+  customer_id: string;
+  name: string;
+  cnic: string | null;
+  case_id: string;
+  case_number: string;
+  case_status: string;
+  is_current: boolean;
+}
+
 interface CaseDetailResponse {
   case: CaseData;
   customer: CustomerData | null;
+  principal_participant_name?: string | null;
+  is_principal_participant?: boolean;
+  family_relationship?: string | null;
+  organization_name?: string | null;
+  organization_members?: OrganizationMemberCase[];
   policy: PolicyData | null;
   document_checklist: DocumentChecklist;
   latest_assessment: AssessmentData | null;
@@ -1194,14 +1209,60 @@ export default function CasePage({ params }: { params: { id: string } }) {
           {customer && (
             <div className="card p-5">
               <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-100">
-                <InitialsAvatar name={customer.name} />
+                <InitialsAvatar name={!detail?.is_principal_participant && detail?.principal_participant_name ? detail.principal_participant_name : customer.name} />
                 <div>
-                  <p className="font-bold text-slate-900 leading-tight">{customer.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{customer.gender}</p>
-                  <p className="text-xs text-blue-600 font-mono mt-0.5">{customer.cnic}</p>
+                  <p className="font-bold text-slate-900 leading-tight">
+                    {!detail?.is_principal_participant && detail?.principal_participant_name ? detail.principal_participant_name : customer.name}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {detail?.principal_participant_name || detail?.is_principal_participant ? "Principal Participant" : customer.gender}
+                  </p>
+                  <p className="text-xs text-blue-600 font-mono mt-0.5">{(!detail?.principal_participant_name || detail?.is_principal_participant) ? customer.cnic : "Family Group Owner"}</p>
                 </div>
               </div>
               <p className="section-label mb-3">Customer Details</p>
+              {!detail?.is_principal_participant && detail?.principal_participant_name && (
+                <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <p className="text-xs font-semibold text-blue-800">Dependent Member</p>
+                  <p className="text-xs text-blue-600 mt-0.5 leading-snug">
+                    <span className="font-bold">{customer.name}</span> ({detail.family_relationship || "Dependent"}) belongs to <span className="font-bold">{detail.principal_participant_name}</span>'s family policy.
+                  </p>
+                </div>
+              )}
+              {detail?.organization_name && (
+                <div className="mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-semibold text-slate-700">
+                    Company: <span className="font-bold">{detail.organization_name}</span>
+                  </p>
+                  {detail.organization_members && detail.organization_members.length > 1 ? (
+                    <>
+                      <label className="block text-[11px] font-semibold text-slate-500">Switch to another member of this company</label>
+                      <select
+                        value={detail.case.caseld ?? ""}
+                        onChange={(e) => {
+                          const target = e.target.value;
+                          if (target && target !== detail.case.caseld) router.push(`/case/${target}`);
+                        }}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs"
+                      >
+                        {detail.organization_members.map((m) => (
+                          <option key={m.case_id} value={m.case_id}>
+                            {m.name} — {m.case_number} ({m.case_status})
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  ) : (
+                    <p className="text-xs text-slate-500">No other company members are currently in underwriting.</p>
+                  )}
+                </div>
+              )}
+              {detail?.principal_participant_name && (
+                  <DataRow label="Member Name" value={customer.name} />
+              )}
+              {detail?.is_principal_participant && (
+                  <DataRow label="Family Role" value="Principal Participant" />
+              )}
               <DataRow label="Date of Birth" value={fmtDob(customer.dob)} />
               <DataRow label="Gender" value={customer.gender} />
               <DataRow label="Marital Status" value={customer.marital_status || <span className="text-slate-400 italic">Missing</span>} />

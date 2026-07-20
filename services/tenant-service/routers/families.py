@@ -196,6 +196,12 @@ async def _get_or_create_member_customer(
             is_smoker=bool(row.get("is_smoker", False)),
             height_cm=float(row.get("height_cm", 170)),
             weight_kg=float(row.get("weight_kg", 70)),
+            # Optional rich profile (address/contact/medical/lifestyle/financial/
+            # beneficiary modules) — same `details` shape the individual Customer
+            # "Full Customer Entry" form captures. Absent on a quick roster add;
+            # filled in later via PUT /customers/{id} from the family member's
+            # "Full Details" editor, same endpoint individual customers use.
+            details=row.get("details"),
         )
         session.add(customer)
         await session.flush()
@@ -214,6 +220,8 @@ async def _get_or_create_member_customer(
 
     existing.family_group_id = family_id
     existing.family_relationship = _relationship_enum(row["relationship"])
+    if row.get("details"):
+        existing.details = row["details"]
     session.add(existing)
     await session.flush()
     return existing
@@ -441,9 +449,14 @@ async def list_family_members(tenant_id: UUID, family_id: UUID, session: AsyncSe
     )
     return [
         {
-            "id": str(c.id), "cnic": c.cnic, "name": c.name, "dob": c.dob.isoformat(),
-            "gender": c.gender.value, "occupation": c.occupation, "declared_income": c.declared_income,
+            "id": str(c.id), "cnic": c.cnic, "name": c.name, "dob": c.dob.isoformat() if c.dob else None,
+            "gender": c.gender.value if c.gender else None, "occupation": c.occupation, "declared_income": c.declared_income,
             "relationship": c.family_relationship.value if c.family_relationship else None,
+            "is_smoker": c.is_smoker, "height_cm": c.height_cm, "weight_kg": c.weight_kg,
+            # Full profile modules (address/contact/medical/lifestyle/financial/
+            # beneficiary) captured via the member's "Full Details" editor —
+            # None until an Admin fills it in, same as an individual Customer.
+            "details": c.details,
         }
         for c in result.all()
     ]

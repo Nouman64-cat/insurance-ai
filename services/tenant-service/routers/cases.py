@@ -256,9 +256,75 @@ async def get_case_detail(
     assessments = (await session.execute(assessments_stmt)).scalars().all()
     latest = assessments[0] if assessments else None
 
+    principal_participant_name = None
+    is_principal_participant = False
+    family_relationship = None
+
+    if customer and customer.family_group_id:
+        family_relationship = customer.family_relationship.value if customer.family_relationship else None
+        from shared.models.core import FamilyGroup
+        family_group = await session.get(FamilyGroup, customer.family_group_id)
+        if family_group and family_group.primary_member_customer_id:
+            if family_group.primary_member_customer_id == customer.id:
+                is_principal_participant = True
+            else:
+                pp = await session.get(Customer, family_group.primary_member_customer_id)
+                if pp:
+                    principal_participant_name = pp.name
+
+    organization_name = None
+    organization_members: List[dict] = []
+
+    if customer and customer.organization_id:
+        from shared.models.core import Organization
+        org = await session.get(Organization, customer.organization_id)
+        organization_name = org.name if org else None
+
+        peers = (await session.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.organization_id == customer.organization_id,
+            )
+        )).scalars().all()
+        peer_ids = [p.id for p in peers]
+
+        # Guaranteed-issue employees (at/under the Free Cover Limit) never get
+        # a Case, so only peers routed through underwriting show up here —
+        # this list powers the "switch to another member of this company"
+        # dropdown on the case page, and there's nothing to switch *to* for
+        # a peer without a case.
+        latest_case_by_customer: dict = {}
+        if peer_ids:
+            peer_cases = (await session.execute(
+                select(Case)
+                .where(Case.tenant_id == tenant_id, Case.customer_id.in_(peer_ids))
+                .order_by(Case.createdAt.desc())
+            )).scalars().all()
+            for c in peer_cases:
+                latest_case_by_customer.setdefault(c.customer_id, c)
+
+        for p in peers:
+            peer_case = latest_case_by_customer.get(p.id)
+            if not peer_case:
+                continue
+            organization_members.append({
+                "customer_id": str(p.id),
+                "name": p.name,
+                "cnic": p.cnic,
+                "case_id": str(peer_case.caseld),
+                "case_number": peer_case.caseNumber,
+                "case_status": peer_case.caseStatus.value,
+                "is_current": peer_case.caseld == case.caseld,
+            })
+
     return {
         "case": CaseRead.model_validate(case),
         "customer": CustomerRead.model_validate(customer) if customer else None,
+        "principal_participant_name": principal_participant_name,
+        "is_principal_participant": is_principal_participant,
+        "family_relationship": family_relationship,
+        "organization_name": organization_name,
+        "organization_members": organization_members,
         "policy": PolicyRead.model_validate(policy) if policy else None,
         "document_checklist": {
             "insurance_type": insurance_type,
