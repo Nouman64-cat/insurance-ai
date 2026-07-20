@@ -1,10 +1,11 @@
 import asyncio
 import logging
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, or_
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -27,6 +28,7 @@ from schemas import (
     FamilyMembersRequest,
     FamilyMemberOutcome,
     FamilyPolicyRead,
+    FamilyStatsRead,
     FamilyValidationResponse,
     FloaterPolicyCreate,
     LifeBundlePolicyCreate,
@@ -87,6 +89,54 @@ async def _get_family_group(tenant_id: UUID, family_id: UUID, session: AsyncSess
     if not fg or fg.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family group not found.")
     return fg
+
+
+FamilyCategory = Literal["active", "in_progress", "new"]
+
+
+async def _member_counts(tenant_id: UUID, session: AsyncSession) -> Dict[UUID, int]:
+    rows = (await session.execute(
+        select(Customer.family_group_id, func.count())
+        .where(Customer.tenant_id == tenant_id, Customer.family_group_id.is_not(None))
+        .group_by(Customer.family_group_id)
+    )).all()
+    return {fid: cnt for fid, cnt in rows}
+
+
+async def _family_policy_status_map(tenant_id: UUID, session: AsyncSession) -> Dict[UUID, str]:
+    """One representative status per family group — "Active" wins if any family
+    policy has cleared setup, otherwise the first non-Active status seen (in
+    practice just "Pending", the only other value any endpoint writes today)."""
+    rows = (await session.execute(
+        select(FamilyPolicy.family_group_id, FamilyPolicy.status)
+        .where(FamilyPolicy.tenant_id == tenant_id)
+    )).all()
+    status_map: Dict[UUID, str] = {}
+    for fid, fp_status in rows:
+        if status_map.get(fid) == "Active":
+            continue
+        status_map[fid] = fp_status
+    return status_map
+
+
+def _family_category(dto: FamilyGroupRead) -> FamilyCategory:
+    if dto.family_policy_status == "Active":
+        return "active"
+    if dto.family_policy_status or dto.member_count > 0:
+        return "in_progress"
+    return "new"
+
+
+async def _enrich_families(tenant_id: UUID, groups: List[FamilyGroup], session: AsyncSession) -> List[FamilyGroupRead]:
+    member_counts = await _member_counts(tenant_id, session)
+    policy_status = await _family_policy_status_map(tenant_id, session)
+    results = []
+    for fg in groups:
+        dto = FamilyGroupRead.model_validate(fg)
+        dto.member_count = member_counts.get(fg.id, 0)
+        dto.family_policy_status = policy_status.get(fg.id)
+        results.append(dto)
+    return results
 
 
 async def _get_family_policy(
@@ -197,9 +247,42 @@ async def create_family_group(
     response_model=List[FamilyGroupRead],
     dependencies=[Depends(verify_admin)],
 )
-async def list_family_groups(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
-    result = await session.exec(select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id))
-    return list(result.all())
+async def list_family_groups(
+    tenant_id: UUID,
+    search: Optional[str] = Query(None, description="Matches name or contact person"),
+    category: Optional[FamilyCategory] = Query(None, description="active | in_progress | new"),
+    session: AsyncSession = Depends(get_session),
+):
+    query = select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id)
+    term = (search or "").strip()
+    if term:
+        like = f"%{term}%"
+        query = query.where(or_(FamilyGroup.name.ilike(like), FamilyGroup.contact_person.ilike(like)))
+    query = query.order_by(FamilyGroup.created_at.desc())
+    groups = list((await session.exec(query)).all())
+
+    results = await _enrich_families(tenant_id, groups, session)
+    if category:
+        results = [dto for dto in results if _family_category(dto) == category]
+    return results
+
+
+@router.get(
+    "/{tenant_id}/families/stats",
+    response_model=FamilyStatsRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def get_family_stats(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
+    groups = list((await session.exec(select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id))).all())
+    enriched = await _enrich_families(tenant_id, groups, session)
+    active = sum(1 for dto in enriched if _family_category(dto) == "active")
+    in_progress = sum(1 for dto in enriched if _family_category(dto) == "in_progress")
+    return FamilyStatsRead(
+        total_families=len(enriched),
+        active=active,
+        in_progress=in_progress,
+        new_no_members=len(enriched) - active - in_progress,
+    )
 
 
 @router.get(
@@ -208,7 +291,8 @@ async def list_family_groups(tenant_id: UUID, session: AsyncSession = Depends(ge
     dependencies=[Depends(verify_admin)],
 )
 async def get_family_group(tenant_id: UUID, family_id: UUID, session: AsyncSession = Depends(get_session)):
-    return await _get_family_group(tenant_id, family_id, session)
+    fg = await _get_family_group(tenant_id, family_id, session)
+    return (await _enrich_families(tenant_id, [fg], session))[0]
 
 
 @router.patch(
