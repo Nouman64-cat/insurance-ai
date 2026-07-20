@@ -240,6 +240,44 @@ async def list_organization_employees(tenant_id: UUID, org_id: UUID, session: As
     )
     return list(result.all())
 
+@router.get(
+    "/{tenant_id}/organizations/{org_id}/cases",
+    dependencies=[Depends(verify_admin)],
+)
+async def list_organization_cases(tenant_id: UUID, org_id: UUID, session: AsyncSession = Depends(get_session)):
+    """One row per employee that has an underwriting Case — powers the
+    per-employee "Proceed to Underwriting" action on the roster. Guaranteed-
+    issue employees (at/under the Free Cover Limit) never get a Case, so
+    they're simply absent from this list."""
+    await _get_organization(tenant_id, org_id, session)
+
+    employee_ids = list((await session.exec(
+        select(Customer.id).where(Customer.tenant_id == tenant_id, Customer.organization_id == org_id)
+    )).all())
+    if not employee_ids:
+        return []
+
+    cases = (await session.exec(
+        select(Case)
+        .where(Case.tenant_id == tenant_id, Case.customer_id.in_(employee_ids))
+        .order_by(Case.createdAt.desc())
+    )).all()
+
+    seen: set = set()
+    out = []
+    for c in cases:
+        if c.customer_id in seen:
+            continue
+        seen.add(c.customer_id)
+        out.append({
+            "customer_id": str(c.customer_id),
+            "case_id": str(c.caseld),
+            "case_number": c.caseNumber,
+            "case_status": c.caseStatus.value,
+        })
+    return out
+
+
 @router.delete(
     "/{tenant_id}/organizations/{org_id}/employees/{employee_id}",
     status_code=status.HTTP_204_NO_CONTENT,
