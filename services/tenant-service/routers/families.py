@@ -385,10 +385,16 @@ async def delete_family_group(
     dependencies=[Depends(verify_admin)],
 )
 async def delete_family_member(tenant_id: UUID, family_id: UUID, member_id: UUID, session: AsyncSession = Depends(get_session)):
-    await _get_family_group(tenant_id, family_id, session)
+    fg = await _get_family_group(tenant_id, family_id, session)
     customer = await session.get(Customer, member_id)
     if not customer or customer.tenant_id != tenant_id or customer.family_group_id != family_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Member not found.")
+
+    # Nullify the primary member reference if we are deleting the primary member
+    if fg.primary_member_customer_id == member_id:
+        fg.primary_member_customer_id = None
+        session.add(fg)
+        await session.flush()
 
     # Cascading delete for related records
     # 1. Artifacts & Risk Assessments (linked to customer)
