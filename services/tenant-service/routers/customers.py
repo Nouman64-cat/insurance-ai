@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import selectinload
@@ -115,12 +116,18 @@ async def create_customer(
 )
 async def list_customers(
     tenant_id: UUID,
+    cnic: Optional[str] = None,
+    name: Optional[str] = None,
     session: AsyncSession = Depends(get_session),
 ):
+    query = select(Customer).where(Customer.tenant_id == tenant_id)
+    if cnic:
+        query = query.where(Customer.cnic == cnic)
+    if name:
+        query = query.where(Customer.name.ilike(f"%{name}%"))
+        
     result = await session.exec(
-        select(Customer)
-        .where(Customer.tenant_id == tenant_id)
-        .options(selectinload(Customer.acquisition_source))
+        query.options(selectinload(Customer.acquisition_source))
     )
     return list(result.all())
 
