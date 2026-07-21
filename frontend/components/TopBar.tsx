@@ -1,4 +1,5 @@
 "use client";
+import { useCopilot } from "@/components/CopilotContext";
 
 function BellIcon() {
   return (
@@ -44,6 +45,8 @@ interface TopBarProps {
 }
 
 export function TopBar({ title = "Management Intelligence Dashboard", subtitle }: TopBarProps) {
+  const { isAutomationMode, setAutomationMode } = useCopilot();
+
   return (
     <header className="sticky top-0 z-30 h-14 flex-shrink-0 flex items-center justify-between gap-4 px-6 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
 
@@ -79,7 +82,24 @@ export function TopBar({ title = "Management Intelligence Dashboard", subtitle }
       </div>
 
       {/* Right: Actions */}
-      <div className="flex items-center gap-2 flex-shrink-0">
+      <div className="flex items-center gap-3 flex-shrink-0">
+        
+        {/* Automation Mode Toggle */}
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-full border border-slate-200">
+          <button
+            onClick={() => setAutomationMode(false)}
+            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all ${!isAutomationMode ? 'bg-white shadow-sm text-slate-800' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Manual
+          </button>
+          <button
+            onClick={() => setAutomationMode(true)}
+            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all ${isAutomationMode ? 'bg-indigo-600 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Automation
+          </button>
+        </div>
+
         <button
           type="button"
           className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all"

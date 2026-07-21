@@ -41,6 +41,8 @@ def to_user_read(user: User, profile: Optional[UserProfile]) -> UserRead:
         employee_id=profile.employee_id if profile else None,
         designation=profile.designation if profile else None,
         date_of_joining=profile.date_of_joining if profile else None,
+        cnic=profile.cnic if profile else None,
+        location=profile.location if profile else None,
     )
 
 
@@ -265,6 +267,8 @@ async def create_user(
         user_id=user.id,
         first_name=first_name,
         last_name=last_name,
+        cnic=body.cnic,
+        location=body.location,
     )
     session.add(profile)
     await session.commit()
@@ -389,6 +393,10 @@ async def update_user(
         profile.designation = body.designation
     if body.date_of_joining is not None:
         profile.date_of_joining = body.date_of_joining
+    if body.cnic is not None:
+        profile.cnic = body.cnic
+    if body.location is not None:
+        profile.location = body.location
 
     # Update full name if either first_name or last_name changed
     first_name = profile.first_name

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { ClientLayout } from "./ClientLayout";
+import { CopilotProvider } from "@/components/CopilotContext";
 import "./globals.css";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <ClientLayout>{children}</ClientLayout>
+      <CopilotProvider>
+        <ClientLayout>{children}</ClientLayout>
+      </CopilotProvider>
     </html>
   );
 }

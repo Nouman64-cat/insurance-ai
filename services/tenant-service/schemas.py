@@ -210,6 +210,8 @@ class UserCreate(BaseModel):
     full_name: str
     role_id: UUID
     branch_id: Optional[UUID] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
 
     @field_validator("full_name")
     @classmethod
@@ -240,6 +242,8 @@ class UserRead(BaseModel):
     employee_id: Optional[str] = None
     designation: Optional[str] = None
     date_of_joining: Optional[date] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -259,6 +263,8 @@ class UserUpdate(BaseModel):
     employee_id: Optional[str] = None
     designation: Optional[str] = None
     date_of_joining: Optional[date] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
 
     @field_validator("password")
     @classmethod
@@ -278,6 +284,8 @@ class ProfileUpdate(BaseModel):
     employee_id: Optional[str] = None
     designation: Optional[str] = None
     date_of_joining: Optional[date] = None
+    cnic: Optional[str] = None
+    location: Optional[str] = None
 
 
 class ChangePasswordRequest(BaseModel):
@@ -367,6 +375,8 @@ class AcquisitionSourceCreate(BaseModel):
     contact_phone:    Optional[str] = None
     contact_email:    Optional[str] = None
     city:             Optional[str] = None
+    cnic:             Optional[str] = None
+    location:         Optional[str] = None
     is_active:        bool = True
 
 class AcquisitionSourceUpdate(BaseModel):
@@ -378,6 +388,8 @@ class AcquisitionSourceUpdate(BaseModel):
     contact_phone:    Optional[str] = None
     contact_email:    Optional[str] = None
     city:             Optional[str] = None
+    cnic:             Optional[str] = None
+    location:         Optional[str] = None
     is_active:        Optional[bool] = None
 
 class AcquisitionSourceFull(BaseModel):
@@ -392,6 +404,8 @@ class AcquisitionSourceFull(BaseModel):
     contact_phone:    Optional[str] = None
     contact_email:    Optional[str] = None
     city:             Optional[str] = None
+    cnic:             Optional[str] = None
+    location:         Optional[str] = None
     is_active:        bool
     created_at:       datetime
     customer_count:   int = 0    # how many customers this source has brought in
@@ -518,6 +532,7 @@ class OrganizationUpdate(BaseModel):
     contact_person: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
+    profile_status: Optional[ProfileStatusEnum] = None
 
 class OrganizationRead(BaseModel):
     id: UUID
@@ -528,6 +543,7 @@ class OrganizationRead(BaseModel):
     contact_person: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
+    profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD
     created_at: datetime
 
     # Computed, populated only by the list/get endpoints (routers/organizations.py) —
@@ -626,6 +642,7 @@ class FamilyGroupUpdate(BaseModel):
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
     household_declared_income: Optional[float] = None
+    profile_status: Optional[ProfileStatusEnum] = None
 
     @field_validator("name")
     @classmethod
@@ -646,6 +663,7 @@ class FamilyGroupRead(BaseModel):
     contact_phone: Optional[str] = None
     household_declared_income: Optional[float] = None
     primary_member_customer_id: Optional[UUID] = None
+    profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD
     created_at: datetime
 
     # Computed, populated only by the list/get endpoints (routers/families.py) —

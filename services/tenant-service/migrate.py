@@ -565,6 +565,26 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v21a-enum — add NOT_INTERESTED to profilestatusenum",
         "ALTER TYPE profilestatusenum ADD VALUE IF NOT EXISTS 'NOT_INTERESTED'",
     ),
+    (
+        "v22a-enum — add POLICYHOLDER to profilestatusenum",
+        "ALTER TYPE profilestatusenum ADD VALUE IF NOT EXISTS 'POLICYHOLDER'",
+    ),
+    (
+        "v22b — add cnic to user_profiles",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS cnic VARCHAR(15)",
+    ),
+    (
+        "v22c — add location to user_profiles",
+        "ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS location VARCHAR(255)",
+    ),
+    (
+        "v22d — add profile_status to family_groups",
+        "ALTER TABLE family_groups ADD COLUMN IF NOT EXISTS profile_status VARCHAR(50) NOT NULL DEFAULT 'LEAD'",
+    ),
+    (
+        "v22e — add profile_status to organizations",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS profile_status VARCHAR(50) NOT NULL DEFAULT 'LEAD'",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
