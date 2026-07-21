@@ -48,6 +48,9 @@ ujson==5.13.0
 uvicorn==0.30.1
 uvloop==0.22.1
 watchfiles==1.2.0
-websockets==16.0
+websockets>=14.0
 boto3
 aiokafka
+pgvector==0.3.1
+google-genai
+

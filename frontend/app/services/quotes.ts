@@ -51,11 +51,17 @@ export interface QuoteDetail extends QuoteListItem {
 }
 
 export async function listQuotes(): Promise<QuoteListItem[]> {
-  const resp = await api.get<QuoteListItem[]>("/quotes");
+  const tenantId = localStorage.getItem("tenant_id");
+  const resp = await api.get<QuoteListItem[]>("/quotes", {
+    headers: { "X-Tenant-Id": tenantId }
+  });
   return resp.data;
 }
 
 export async function getQuote(quoteId: string): Promise<QuoteDetail> {
-  const resp = await api.get<QuoteDetail>(`/quotes/${quoteId}`);
+  const tenantId = localStorage.getItem("tenant_id");
+  const resp = await api.get<QuoteDetail>(`/quotes/${quoteId}`, {
+    headers: { "X-Tenant-Id": tenantId }
+  });
   return resp.data;
 }

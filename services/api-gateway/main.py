@@ -466,6 +466,11 @@ async def proxy_tokens_usage(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tokens/usage")
 
 
+@app.api_route("/agent/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_agent(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/agent/{path}")
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Health

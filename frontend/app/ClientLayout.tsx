@@ -259,7 +259,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
                   <div className="flex-1 overflow-auto bg-slate-50 relative">
                     {children}
                   </div>
-                  <div className="w-[45%] lg:w-[40%] flex-shrink-0 border-l border-slate-200 bg-white h-full relative z-20 shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.1)] overflow-hidden">
+                  <div className="w-[45%] lg:w-[40%] flex-shrink-0 border-l border-slate-200 bg-white h-full relative z-30 shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.1)]">
                     <CopilotInterface />
                   </div>
                 </>

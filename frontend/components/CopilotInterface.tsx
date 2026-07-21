@@ -43,6 +43,16 @@ export function CopilotInterface() {
   const [showVoice, setShowVoice] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [autoSubmitPrompt, setAutoSubmitPrompt] = useState("");
+  const [suggestedActions, setSuggestedActions] = useState<string[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY + "_suggestions");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return [];
+  });
+  const [suggestionRationale, setSuggestionRationale] = useState("");
   const router = useRouter();
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -58,6 +68,10 @@ export function CopilotInterface() {
     scrollToBottom();
     localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(messages));
   }, [messages]);
+
+  useEffect(() => {
+    localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY + "_suggestions", JSON.stringify(suggestedActions));
+  }, [suggestedActions]);
 
   const handleSubmit = async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
@@ -100,6 +114,26 @@ export function CopilotInterface() {
       }
       
       setMessages(prev => [...prev, agentMsg]);
+
+      // RAG-based Next Best Actions
+      try {
+        const api = (await import("@/app/services/api")).default;
+        const tenantId = localStorage.getItem("tenant_id");
+        if (tenantId) {
+          const chatContext = newMessages.slice(-4).map(m => `${m.role}: ${m.text}`).join("\n");
+          const suggestRes = await api.post("/agent/suggest-actions", { context: chatContext, tenant_id: tenantId });
+          if (suggestRes.data?.suggested_actions?.length > 0) {
+            setSuggestedActions(suggestRes.data.suggested_actions);
+            setSuggestionRationale(suggestRes.data.rationale);
+          } else {
+            setSuggestedActions([]);
+            setSuggestionRationale("");
+          }
+        }
+      } catch (e) {
+        console.error("Failed to fetch RAG suggestions", e);
+      }
+
     } catch (err) {
       setMessages(prev => [...prev, { id: Date.now().toString(), role: "agent", text: "Oops, I encountered an error connecting to the brain." }]);
     } finally {
@@ -146,19 +180,27 @@ export function CopilotInterface() {
         const successCount = results.filter(r => r.status === 'fulfilled').length;
         if (successCount === 0) throw new Error("All customer additions failed.");
       } else if (name === "add_customer") {
-        await api.post(`/tenants/${tenantId}/customers`, {
-          first_name: params.first_name,
-          last_name: params.last_name,
-          cnic: params.cnic,
-          date_of_birth: params.date_of_birth,
-          gender: params.gender,
-          occupation: params.occupation,
-          declared_income: params.declared_income,
-          is_smoker: false,
-          height_cm: 170,
-          weight_kg: 70,
-          details: {}
-        });
+        try {
+          await api.post(`/tenants/${tenantId}/customers`, {
+            first_name: params.first_name,
+            last_name: params.last_name,
+            cnic: params.cnic,
+            date_of_birth: params.date_of_birth,
+            gender: params.gender,
+            occupation: params.occupation,
+            declared_income: params.declared_income,
+            is_smoker: false,
+            height_cm: 170,
+            weight_kg: 70,
+            details: {}
+          });
+        } catch (err: any) {
+          if (err.message && err.message.toLowerCase().includes("already registered")) {
+            console.log("Customer already exists, proceeding gracefully.");
+          } else {
+            throw err;
+          }
+        }
       } else if (name === "add_organization") {
         await api.post(`/tenants/${tenantId}/organizations`, params);
       } else if (name === "create_case") {
@@ -225,6 +267,8 @@ export function CopilotInterface() {
 
         await api.post(`/evaluate`, { applicant: customer, policy, case_id: c.caseld });
         targetCaseId = c.caseld;
+      } else if (name === "navigate_to_page") {
+        // Nothing needed here, handled below in the actionLink logic
       } else if (name === "upload_document") {
         if (!selectedFile) throw new Error("No file was attached. Please attach the document using the paperclip icon first.");
         
@@ -250,7 +294,7 @@ export function CopilotInterface() {
       let actionLink = "";
       let actionLabel = "";
       if (name === "add_customer" || name === "bulk_add_customers") {
-        actionLink = "/admin/leads";
+        actionLink = params.cnic ? `/admin/leads?cnic=${params.cnic}` : "/admin/leads";
         actionLabel = "View Leads";
       } else if (name === "create_case" || name === "run_risk_assessment" || name === "upload_document") {
         actionLink = targetCaseId ? `/cases?case_id=${targetCaseId}` : "/cases";
@@ -258,23 +302,86 @@ export function CopilotInterface() {
       } else if (name === "add_organization") {
         actionLink = "/admin/organizations";
         actionLabel = "View Organizations";
+      } else if (name === "navigate_to_page") {
+        let p = params.page_name || "dashboard";
+        if (p === "dashboard") p = "";
+        actionLink = `/${p}`;
+        actionLabel = `Go to ${params.page_name?.replace(/[-/]/g, " ") || "Dashboard"}`;
       }
 
-      setMessages(prev => [...prev, {
+      const successMsg = {
         id: Date.now().toString(),
-        role: "agent",
+        role: "agent" as const,
         text: `✅ Successfully executed the \`${name}\` workflow!`,
         actionLink,
         actionLabel
-      }]);
+      };
+      
+      setMessages(prev => {
+        const next = [...prev, successMsg];
+        
+        // RAG-based Next Best Actions trigger in background
+        const tenantId = localStorage.getItem("tenant_id");
+        if (tenantId) {
+          const chatContext = next.slice(-4).map(m => `${m.role}: ${m.text}`).join("\n");
+          api.post("/agent/suggest-actions", { context: chatContext, tenant_id: tenantId })
+            .then(suggestRes => {
+              if (suggestRes.data?.suggested_actions?.length > 0) {
+                setSuggestedActions(suggestRes.data.suggested_actions);
+                setSuggestionRationale(suggestRes.data.rationale);
+              } else {
+                setSuggestedActions([]);
+                setSuggestionRationale("");
+              }
+            })
+            .catch(e => console.error("Failed to fetch RAG suggestions", e));
+        }
+        
+        return next;
+      });
+
+      if (name === "create_case") {
+        setTimeout(() => {
+          setMessages(prev => [...prev, {
+            id: Date.now().toString() + "_2",
+            role: "agent",
+            text: `Would you like to upload the required documents (like CNIC) for this case now?`,
+            quickActionText: "$UPLOAD",
+            quickActionLabel: "Upload Documents"
+          }]);
+        }, 500);
+      }
     } catch (err: any) {
-      setMessages(prev => [...prev, {
+      const failMsg = {
         id: Date.now().toString(),
-        role: "agent",
+        role: "agent" as const,
         text: `❌ Failed to execute: ${err.message}`
-      }]);
-      // Revert status
-      setMessages(prev => prev.map(m => m.id === msgId && m.toolCall ? { ...m, toolCall: { ...m.toolCall, status: "pending" } } : m));
+      };
+      
+      setMessages(prev => {
+        const next = [...prev, failMsg];
+        
+        // Revert status of tool call
+        const reverted = next.map(m => m.id === msgId && m.toolCall ? { ...m, toolCall: { ...m.toolCall, status: "pending" as const } } : m);
+        
+        // Fetch new suggestions based on failure context
+        const tenantId = localStorage.getItem("tenant_id");
+        if (tenantId) {
+          const chatContext = reverted.slice(-4).map(m => `${m.role}: ${m.text}`).join("\n");
+          import("@/app/services/api").then(mod => {
+            mod.default.post("/agent/suggest-actions", { context: chatContext, tenant_id: tenantId })
+              .then(suggestRes => {
+                if (suggestRes.data?.suggested_actions?.length > 0) {
+                  setSuggestedActions(suggestRes.data.suggested_actions);
+                  setSuggestionRationale(suggestRes.data.rationale);
+                }
+              })
+              .catch(e => console.error("Failed to fetch RAG suggestions on fail", e));
+          });
+        }
+        
+        return reverted;
+      });
     } finally {
       setIsTyping(false);
     }
@@ -332,38 +439,43 @@ export function CopilotInterface() {
       {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
       
       {/* Background Decor */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-50/50 via-white to-white pointer-events-none"></div>
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-blue-50/50 via-slate-50/30 to-white pointer-events-none"></div>
 
       {/* Header */}
-      <div className="flex-shrink-0 p-6 border-b border-slate-100 flex items-center justify-between z-10 bg-white/80 backdrop-blur-md">
-        <div className="flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-600/20">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-white"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+      <div className="flex-shrink-0 px-5 py-3 border-b border-slate-200/60 flex items-center justify-between z-10 bg-white/70 backdrop-blur-xl sticky top-0">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shadow-md shadow-blue-900/5 border border-slate-100 overflow-hidden shrink-0">
+            <img src="/rizvi.png" alt="Rizviz Logo" className="w-6 h-6 object-contain drop-shadow-sm" />
           </div>
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">AI Copilot</h1>
-            <p className="text-sm font-medium text-slate-500">Maximum automation mode active. Tell me what to do.</p>
+          <div className="flex flex-col justify-center">
+            <h1 className="text-lg font-extrabold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent tracking-tight leading-tight">Rizviz AI Agent</h1>
+            <p className="text-[11px] font-semibold text-slate-500 leading-tight">Intelligent Underwriting & Automation</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="flex h-3 w-3">
-            <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-          </span>
-          <span className="text-xs font-bold text-emerald-600 uppercase tracking-widest">Systems Online</span>
-          <button onClick={clearChat} className="ml-4 text-[10px] uppercase font-bold text-slate-400 hover:text-slate-700 transition-colors">Clear Chat</button>
+        <div className="flex flex-col items-end gap-1">
+          <div className="flex items-center gap-1.5">
+            <span className="flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest leading-none">Online</span>
+          </div>
+          <button onClick={clearChat} className="text-[9px] uppercase font-bold text-slate-400 hover:text-slate-700 transition-colors leading-none">Clear Chat</button>
         </div>
       </div>
 
       {/* Chat Feed */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-8 z-10">
-        <div className="max-w-4xl mx-auto space-y-8 pb-10">
+      <div className="flex-1 overflow-y-auto p-6 space-y-8 z-10 relative">
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] z-0">
+          <img src="/rizvi.png" alt="Rizviz Background" className="w-1/2 max-w-lg object-contain" />
+        </div>
+        <div className="max-w-4xl mx-auto space-y-8 pb-10 relative z-10">
           {messages.map((msg) => (
             <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} group animate-in slide-in-from-bottom-2 duration-300`}>
               
               {msg.role === 'agent' && (
-                <div className="w-8 h-8 rounded-full bg-indigo-100 border border-indigo-200 flex flex-shrink-0 items-center justify-center mr-3 mt-1">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-indigo-600"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/></svg>
+                <div className="w-8 h-8 rounded-full bg-white border border-slate-200 shadow-sm flex flex-shrink-0 items-center justify-center mr-3 mt-1 overflow-hidden">
+                  <img src="/rizvi.png" alt="Agent" className="w-6 h-6 object-contain" />
                 </div>
               )}
 
@@ -456,8 +568,36 @@ export function CopilotInterface() {
         </div>
       </div>
 
+      {/* Pop-out Suggestions Panel (Floats outside Copilot) */}
+      {suggestedActions.length > 0 && !isTyping && (
+        <div className="absolute bottom-[100px] right-full mr-6 w-[280px] z-50 animate-in slide-in-from-right-8 fade-in duration-500 pointer-events-auto">
+          <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_15px_50px_-12px_rgba(0,0,0,0.15)] border border-slate-200 p-4 flex flex-col gap-3">
+            <div className="flex items-center gap-2 px-1">
+              <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full bg-emerald-100">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              </span>
+              <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Suggested Next Actions</span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {suggestedActions.map((action, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setSuggestedActions([]);
+                    handleSubmit(undefined, action);
+                  }}
+                  className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 text-[13px] font-semibold rounded-xl border border-transparent hover:border-indigo-100 transition-all active:scale-[0.98]"
+                >
+                  {action}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Input Area */}
-      <div className="flex-shrink-0 p-6 bg-white border-t border-slate-100 z-10">
+      <div className="flex-shrink-0 p-6 bg-white border-t border-slate-100 z-20 shadow-[0_-10px_40px_-15px_rgba(0,0,0,0.05)]">
         <div className="max-w-4xl mx-auto">
           {selectedFile && (
             <div className="mb-3 flex items-center gap-2">
@@ -531,7 +671,7 @@ export function CopilotInterface() {
               <button 
                 type="submit"
                 disabled={!input.trim() || isTyping}
-                className="p-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white rounded-xl transition-all"
+                className="p-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-xl transition-all shadow-md active:scale-95"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               </button>

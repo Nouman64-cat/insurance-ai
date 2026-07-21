@@ -6,6 +6,12 @@ from uuid import UUID, uuid4
 from sqlalchemy import Column, Integer, JSON, String, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
+try:
+    from pgvector.sqlalchemy import Vector
+    HAS_PGVECTOR = True
+except ImportError:
+    HAS_PGVECTOR = False
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Domain enumerations
@@ -298,6 +304,19 @@ class UserProfile(SQLModel, table=True):
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     user: Optional[User] = Relationship(back_populates="profile")
+
+
+if HAS_PGVECTOR:
+    class AgentKnowledgeBase(SQLModel, table=True):
+        __tablename__ = "agent_knowledge_base"
+
+        id: UUID = Field(default_factory=uuid4, primary_key=True)
+        tenant_id: Optional[UUID] = Field(default=None, index=True) # Nullable for global SOPs
+        category: str = Field(max_length=50) # "SOP", "Rule", "Product"
+        title: str = Field(max_length=255)
+        content: str
+        embedding: Any = Field(sa_column=Column(Vector(3072))) # Gemini embeddings are 3072 dims
+        created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
