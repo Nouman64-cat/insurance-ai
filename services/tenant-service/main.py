@@ -28,6 +28,7 @@ from routers.families import router as families_router
 from routers.insurance_plans import router as insurance_plans_router
 from routers.tokens import router as tokens_router
 from routers.acquisition_sources import router as acquisition_sources_router
+from routers.agent import router as agent_router
 from shared.models.core import Role
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
@@ -127,6 +128,7 @@ app.include_router(families_router)
 app.include_router(insurance_plans_router)
 app.include_router(tokens_router)
 app.include_router(acquisition_sources_router)
+app.include_router(agent_router)
 
 
 @app.get("/health", tags=["Ops"])

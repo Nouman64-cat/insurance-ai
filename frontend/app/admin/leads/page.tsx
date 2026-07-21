@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
 
@@ -23,6 +23,8 @@ type FilterType = "ALL" | "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
 export default function LeadsHubPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const cnicQuery = searchParams.get("cnic");
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,6 +34,13 @@ export default function LeadsHubPage() {
   useEffect(() => {
     fetchLeads();
   }, []);
+
+  useEffect(() => {
+    if (cnicQuery && leads.length > 0) {
+      const match = leads.find(l => l.primaryIdentifier === cnicQuery);
+      if (match) setSelectedEntity({ id: match.id, type: match.type });
+    }
+  }, [cnicQuery, leads]);
 
   const fetchLeads = async () => {
     setLoading(true);

@@ -585,6 +585,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v22e — add profile_status to organizations",
         "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS profile_status VARCHAR(50) NOT NULL DEFAULT 'LEAD'",
     ),
+    (
+        "v23a — add cnic to acquisition_sources",
+        "ALTER TABLE acquisition_sources ADD COLUMN IF NOT EXISTS cnic VARCHAR(15)",
+    ),
+    (
+        "v23b — add location to acquisition_sources",
+        "ALTER TABLE acquisition_sources ADD COLUMN IF NOT EXISTS location VARCHAR(255)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -615,6 +623,10 @@ async def _create_enums_idempotent(conn) -> None:
                     END $$;
                 """))
     log.info("enums created/verified: %s", sorted(seen))
+
+async def _create_vector_extension(conn) -> None:
+    await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    log.info("vector extension created/verified")
 
 
 async def _seed_user_types(conn) -> None:
@@ -700,6 +712,9 @@ async def run_migrations() -> None:
         # 1. Create enum types idempotently before create_all so that restarts
         #    with an existing volume do not raise UniqueViolationError.
         await _create_enums_idempotent(conn)
+
+        # 1.5 Create vector extension for pgvector BEFORE create_all so AgentKnowledgeBase succeeds
+        await _create_vector_extension(conn)
 
         # 2. Tell SQLAlchemy the enum types already exist so create_all only
         #    issues CREATE TABLE statements (never CREATE TYPE).
