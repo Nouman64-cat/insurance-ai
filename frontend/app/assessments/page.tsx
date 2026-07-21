@@ -6,6 +6,8 @@ import ReactMarkdown from "react-markdown";
 import api from "@/app/services/api";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { StatusBadge } from "@/components/StatusBadge";
+import { MetricCard } from "@/components/MetricCard";
+import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } from "@/components/SegmentDropdown";
 import type { AIDecision } from "@/lib/mock-data";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -15,6 +17,7 @@ interface AssessmentSummary {
   customer_id: string;
   customer_name: string;
   customer_cnic: string;
+  customer_segment: "individual" | "family" | "organization";
   case_id: string | null;
   medical_score: number;
   financial_score: number;
@@ -24,6 +27,12 @@ interface AssessmentSummary {
   suggested_loading: number | null;
   has_summary: boolean;
   created_at: string;
+}
+
+interface AssessmentStats {
+  total: number;
+  by_decision: Record<AIDecision, number>;
+  segment_counts: { individual: number; family: number; organization: number };
 }
 
 interface AssessmentDetail extends AssessmentSummary {
@@ -186,12 +195,15 @@ function DetailPanel({
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Assessment Reasons</p>
                 <ul className="space-y-1.5">
-                  {detail.reasons.map((r, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs text-slate-600 leading-relaxed">
-                      <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
-                      <span>{r}</span>
-                    </li>
-                  ))}
+                  {detail.reasons.map((r: any, i) => {
+                    const text = typeof r === "string" ? r : (r.reason || r.observation || JSON.stringify(r));
+                    return (
+                      <li key={i} className="flex items-start gap-2 text-xs text-slate-600 leading-relaxed">
+                        <span className="mt-1.5 w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0" />
+                        <span>{text}</span>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -239,6 +251,16 @@ function DetailPanel({
 const DECISION_FILTERS = ["All", "Auto Approve", "Approve with Loading", "Human Review", "Decline"] as const;
 type Filter = (typeof DECISION_FILTERS)[number];
 
+// Color-codes each quick-filter pill (dot + active state) to match the
+// decision's semantic color used everywhere else (StatusBadge, table rows).
+const DECISION_META: Record<Filter, { label: string; dot: string; active: string }> = {
+  All: { label: "All", dot: "bg-slate-400", active: "bg-slate-800 text-white border-slate-800" },
+  "Auto Approve": { label: "Approved", dot: "bg-emerald-500", active: "bg-emerald-50 text-emerald-700 border-emerald-300" },
+  "Approve with Loading": { label: "Approved +L", dot: "bg-amber-500", active: "bg-amber-50 text-amber-700 border-amber-300" },
+  "Human Review": { label: "Referred", dot: "bg-blue-500", active: "bg-blue-50 text-blue-700 border-blue-300" },
+  Decline: { label: "Declined", dot: "bg-red-500", active: "bg-red-50 text-red-700 border-red-300" },
+};
+
 export default function AssessmentHistoryPage() {
   const [tenantId, setTenantId] = useState("");
   const [assessments, setAssessments] = useState<AssessmentSummary[]>([]);
@@ -246,9 +268,11 @@ export default function AssessmentHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("All");
   const [search, setSearch] = useState("");
+  const [segment, setSegment] = useState<SegmentFilter>("all");
   const [selected, setSelected] = useState<AssessmentSummary | null>(null);
   const [skip, setSkip] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [stats, setStats] = useState<AssessmentStats | null>(null);
   const LIMIT = 50;
 
   useEffect(() => {
@@ -262,7 +286,9 @@ export default function AssessmentHistoryPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get(`/assessments?skip=${offset}&limit=${LIMIT}`, {
+      const params = new URLSearchParams({ skip: String(offset), limit: String(LIMIT) });
+      if (segment !== "all") params.set("segment", segment);
+      const res = await api.get(`/assessments?${params.toString()}`, {
         headers: { "X-Tenant-Id": tenantId },
       });
       const data = res.data as AssessmentSummary[];
@@ -274,12 +300,48 @@ export default function AssessmentHistoryPage() {
     } finally {
       setLoading(false);
     }
-  }, [tenantId, skip]);
+  }, [tenantId, skip, segment]);
+
+  // Counts computed server-side (SQL COUNT/GROUP BY) so the stat tiles, the
+  // decision pills, and the dropdown's segment badges stay correct no matter
+  // how many pages of the paginated list below have actually been loaded.
+  const loadStats = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const params = segment !== "all" ? `?segment=${segment}` : "";
+      const res = await api.get(`/assessments/stats${params}`, {
+        headers: { "X-Tenant-Id": tenantId },
+      });
+      setStats(res.data as AssessmentStats);
+    } catch {
+      setStats(null);
+    }
+  }, [tenantId, segment]);
 
   useEffect(() => {
-    if (tenantId) load(true);
+    if (!tenantId) return;
+    setSkip(0);
+    load(true);
+    loadStats();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tenantId]);
+  }, [tenantId, segment]);
+
+  const segmentCounts = stats
+    ? {
+        all: stats.segment_counts.individual + stats.segment_counts.family + stats.segment_counts.organization,
+        individual: stats.segment_counts.individual,
+        family: stats.segment_counts.family,
+        organization: stats.segment_counts.organization,
+      }
+    : undefined;
+
+  const kpis = [
+    { title: "Total Assessments", value: stats?.total ?? "—", subtitle: "in this view", accent: "slate" as const },
+    { title: "Approved", value: stats?.by_decision["Auto Approve"] ?? "—", subtitle: "auto-approved", accent: "emerald" as const },
+    { title: "Approved +L", value: stats?.by_decision["Approve with Loading"] ?? "—", subtitle: "with loading", accent: "amber" as const },
+    { title: "Referred", value: stats?.by_decision["Human Review"] ?? "—", subtitle: "human review", accent: "blue" as const },
+    { title: "Declined", value: stats?.by_decision["Decline"] ?? "—", subtitle: "declined", accent: "red" as const },
+  ];
 
   const visible = assessments.filter((a) => {
     if (filter !== "All" && a.ai_decision !== (filter as AIDecision)) return false;
@@ -298,27 +360,44 @@ export default function AssessmentHistoryPage() {
         <p className="text-xs text-slate-500 mt-0.5">All stored risk evaluations for this tenant</p>
       </div>
 
+      {/* Stats */}
+      <div className="px-6 pt-4 pb-1 bg-slate-50/50 flex-shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {kpis.map((k) => <MetricCard key={k.title} {...k} />)}
+        </div>
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-200 bg-white flex-shrink-0 flex-wrap">
         {/* Decision filter */}
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
           {DECISION_FILTERS.map((f) => {
-            const label = f === "All" ? "All" : f === "Auto Approve" ? "Approved" : f === "Approve with Loading" ? "Approved +L" : f === "Human Review" ? "Referred" : "Declined";
+            const meta = DECISION_META[f];
+            const count = f === "All" ? stats?.total : stats?.by_decision[f as AIDecision];
+            const active = filter === f;
             return (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className={`text-[11px] font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                  filter === f
-                    ? "bg-blue-50 text-blue-600 border border-blue-200"
-                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                className={`inline-flex items-center gap-1.5 text-[11px] font-semibold px-3 py-1.5 rounded-lg border transition-colors ${
+                  active
+                    ? meta.active
+                    : "text-slate-500 border-transparent hover:text-slate-700 hover:bg-slate-50"
                 }`}
               >
-                {label}
+                <span className={`w-1.5 h-1.5 rounded-full ${meta.dot}`} />
+                {meta.label}
+                {count != null && (
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${active ? "bg-white/50" : "bg-slate-100 text-slate-500"}`}>
+                    {count}
+                  </span>
+                )}
               </button>
             );
           })}
         </div>
+
+        <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
 
         {/* Search */}
         <div className="relative ml-auto">
@@ -335,7 +414,7 @@ export default function AssessmentHistoryPage() {
         </div>
 
         <button
-          onClick={() => { setSkip(0); load(true); }}
+          onClick={() => { setSkip(0); load(true); loadStats(); }}
           disabled={loading}
           className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-40"
           title="Refresh"
@@ -358,8 +437,14 @@ export default function AssessmentHistoryPage() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-10 h-10 mb-3 opacity-60">
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            <p className="text-sm font-semibold">No assessments found</p>
-            <p className="text-xs mt-1 opacity-70">Run an evaluation from Live Evaluation or Case Summarizer</p>
+            <p className="text-sm font-semibold">
+              {assessments.length === 0 ? "No assessments found" : "No assessments match your filters"}
+            </p>
+            <p className="text-xs mt-1 opacity-70">
+              {assessments.length === 0
+                ? "Run an evaluation from Live Evaluation or Case Summarizer"
+                : "Try a different segment, decision, or search term."}
+            </p>
           </div>
         )}
 
@@ -392,7 +477,14 @@ export default function AssessmentHistoryPage() {
                   >
                     {/* Customer */}
                     <td className="px-6 py-3.5">
-                      <p className="font-bold text-slate-800">{a.customer_name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-bold text-slate-800">{a.customer_name}</p>
+                        {segment === "all" && a.customer_segment && (
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[a.customer_segment]}`}>
+                            {SEGMENT_LABEL[a.customer_segment]}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-[10px] text-slate-400 mt-0.5 font-mono">{a.customer_cnic}</p>
                     </td>
 

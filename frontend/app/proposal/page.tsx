@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "../services/api";
 import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
+import { MetricCard } from "@/components/MetricCard";
+import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
+import { fmtCoverage } from "@/lib/mock-data";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -35,6 +38,14 @@ function formatPKR(n: number): string {
 
 function formatDate(s: string): string {
   return new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+}
+
+// A quote only ever carries one of organization_id / family_group_id, never
+// both — same mutually-exclusive segmentation the grouping logic below relies on.
+function quoteSegment(q: QuoteListItem): "individual" | "family" | "organization" {
+  if (q.organization_id && q.master_policy_id) return "organization";
+  if (q.family_group_id && q.family_policy_id) return "family";
+  return "individual";
 }
 
 // ── Grouping types ───────────────────────────────────────────────────────────
@@ -89,6 +100,7 @@ export default function QuotePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [segment, setSegment] = useState<SegmentFilter>("all");
 
   const [selectedQuoteId, setSelectedProposalId] = useState<string | null>(null);
   const [detail, setDetail] = useState<QuoteDetail | null>(null);
@@ -254,11 +266,38 @@ export default function QuotePage() {
     fetchQuotes();
   }, [fetchQuotes]);
 
+  // The dropdown-selected segment scopes which quotes count toward the stats
+  // and folder list; the search box then narrows within that scope.
+  const segmentQuotes = useMemo(() => {
+    if (segment === "all") return quotes;
+    return quotes.filter((q) => quoteSegment(q) === segment);
+  }, [quotes, segment]);
+
+  const segmentCounts = useMemo(() => {
+    const counts: Partial<Record<SegmentFilter, number>> = { all: quotes.length };
+    for (const s of ["individual", "family", "organization"] as const) {
+      counts[s] = quotes.filter((q) => quoteSegment(q) === s).length;
+    }
+    return counts;
+  }, [quotes]);
+
+  const kpis = useMemo(() => {
+    const customerCount = new Set(segmentQuotes.map((q) => q.customer_id)).size;
+    const totalCoverage = segmentQuotes.reduce((sum, q) => sum + q.coverage_amount, 0);
+    const totalPremium = segmentQuotes.reduce((sum, q) => sum + q.total_premium, 0);
+    return [
+      { title: "Customers", value: customerCount, subtitle: "in this view", accent: "blue" as const },
+      { title: "Proposals", value: segmentQuotes.length, subtitle: "plans generated", accent: "slate" as const },
+      { title: "Total Coverage", value: segmentQuotes.length ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "amber" as const },
+      { title: "Total Premium", value: segmentQuotes.length ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "emerald" as const },
+    ];
+  }, [segmentQuotes]);
+
   const { organizationGroups, familyGroups, individualGroups } = useMemo(() => {
     const q = search.trim().toLowerCase();
-    let filteredList = quotes;
+    let filteredList = segmentQuotes;
     if (q) {
-      filteredList = quotes.filter(
+      filteredList = segmentQuotes.filter(
         (row) =>
           row.customer_name.toLowerCase().includes(q) ||
           row.customer_cnic.toLowerCase().includes(q) ||
@@ -357,7 +396,7 @@ export default function QuotePage() {
       familyGroups: Array.from(familyMap.values()),
       individualGroups: Array.from(individualMap.values()),
     };
-  }, [quotes, search]);
+  }, [segmentQuotes, search]);
 
   const totalResults = organizationGroups.length + familyGroups.length + individualGroups.length;
 
@@ -376,14 +415,21 @@ export default function QuotePage() {
         </span>
       </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <input
-          type="text"
-          placeholder="Search by customer, CNIC, organization, or plan…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-        />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {kpis.map((k) => <MetricCard key={k.title} {...k} />)}
+      </div>
+
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+          <input
+            type="text"
+            placeholder="Search by customer, CNIC, organization, or plan…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+          />
+          <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
+        </div>
         <button
           onClick={fetchQuotes}
           disabled={loading}
@@ -417,11 +463,17 @@ export default function QuotePage() {
               <span className="text-2xl">📁</span>
             </div>
             <p className="text-sm font-semibold text-slate-600">
-              {quotes.length === 0 ? "No proposals yet" : "No proposals match your search"}
+              {quotes.length === 0
+                ? "No proposals yet"
+                : segmentQuotes.length === 0
+                ? `No ${segment === "all" ? "" : segment} proposals`
+                : "No proposals match your search"}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
                 ? "Register a customer and a proposal will be generated automatically in the background."
+                : segmentQuotes.length === 0
+                ? "Try switching the segment filter to All Customers."
                 : "Try a different customer name, CNIC, organization, or plan."}
             </p>
           </div>

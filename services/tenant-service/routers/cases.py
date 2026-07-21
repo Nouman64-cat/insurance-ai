@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, delete
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID
 from datetime import datetime
 
@@ -113,6 +113,9 @@ async def list_cases(
     status: CaseStatusEnum = Query(None, description="Filter by status"),
     assigned_user: UUID = Query(None, description="Filter by assignee"),
     case_type: CaseTypeEnum = Query(None, description="Filter by case type"),
+    segment: Optional[Literal["individual", "family", "organization"]] = Query(
+        None, description="Filter by customer segment: individual | family | organization"
+    ),
     session: AsyncSession = Depends(get_session)
 ):
     """Enriched case list — the data source for the Underwriting queue page.
@@ -146,6 +149,18 @@ async def list_cases(
         )).scalars().all()
     }
 
+    if segment:
+        def _segment_of(customer: Optional[Customer]) -> str:
+            if customer and customer.organization_id:
+                return "organization"
+            if customer and customer.family_group_id:
+                return "family"
+            return "individual"
+
+        cases = [c for c in cases if _segment_of(customers.get(c.customer_id)) == segment]
+        if not cases:
+            return []
+
     policy_ids = list({c.policy_id for c in cases if c.policy_id})
     policies = {}
     if policy_ids:
@@ -175,6 +190,12 @@ async def list_cases(
         row = CaseRead.model_validate(c).model_dump()
         row["customer_name"] = customer.name if customer else None
         row["customer_cnic"] = customer.cnic if customer else None
+        if customer and customer.organization_id:
+            row["customer_segment"] = "organization"
+        elif customer and customer.family_group_id:
+            row["customer_segment"] = "family"
+        else:
+            row["customer_segment"] = "individual"
         row["product_name"] = policy.product_name if policy else None
         row["coverage_amount"] = policy.coverage_amount if policy else None
         row["latest_ai_decision"] = latest.ai_decision.value if latest else None

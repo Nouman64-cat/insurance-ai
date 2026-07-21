@@ -136,9 +136,12 @@ export async function generateApplicationPDF(detail: ApplicationData) {
   const paragraph = (text: string, size = 8.5) => {
     if (!text) return;
     const wrapped = doc.splitTextToSize(text, cw);
-    nextPage(wrapped.length * 4.4 + 2);
     doc.setFont("helvetica", "normal").setFontSize(size).setTextColor(71, 85, 105);
-    for (const line of wrapped) { doc.text(line, mg, y); y += 4.4; }
+    for (const line of wrapped) { 
+      nextPage(4.4);
+      doc.text(line, mg, y); 
+      y += 4.4; 
+    }
     y += 2;
   };
 
@@ -402,14 +405,50 @@ export async function generateApplicationPDF(detail: ApplicationData) {
     ];
     // Drop the composite-score / decision math breakdown line — it's internal
     // aggregation arithmetic, not an underwriting risk factor.
-    const visibleReasons = reasons.filter(
-      (r) => !(r.includes("->") || r.includes("!'") || r.toLowerCase().includes("composite score")),
-    );
+    const visibleReasons = reasons
+      .map((r: any) => typeof r === "string" ? r : (r?.parameter ? `${r.parameter}: ${r.observation}` : (r?.reason || r?.observation || JSON.stringify(r) || "")))
+      .filter((text: string) => text && !(text.includes("->") || text.includes("!'") || text.toLowerCase().includes("composite score")));
     if (visibleReasons.length) {
       doc.setFont("helvetica", "bold").setFontSize(7).setTextColor(100, 116, 139); nextPage(8); doc.text("Key Risk Factors", mg, y); y += 4.5;
       for (const r of visibleReasons) bullet(r);
     }
-    if (a.ai_summary) { section("AI Case Summary"); paragraph(String(a.ai_summary).replace(/[#*]/g, ""), 8.5); }
+    if (a.ai_summary) { 
+      section("AI CASE SUMMARY");
+      const lines = String(a.ai_summary).split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i].trim();
+        if (!line) {
+          y += 3;
+          continue;
+        }
+        if (line.startsWith("###### ")) {
+          nextPage(8); doc.setFont("helvetica", "bold").setFontSize(8).setTextColor(100, 116, 139); doc.text(line.replace("###### ", "").trim(), mg, y); y += 4;
+        } else if (line.startsWith("##### ")) {
+          nextPage(8); doc.setFont("helvetica", "bold").setFontSize(8.5).setTextColor(100, 116, 139); doc.text(line.replace("##### ", "").trim(), mg, y); y += 4.5;
+        } else if (line.startsWith("#### ")) {
+          nextPage(8); doc.setFont("helvetica", "bold").setFontSize(9).setTextColor(71, 85, 105); doc.text(line.replace("#### ", "").trim(), mg, y); y += 4.5;
+        } else if (line.startsWith("### ")) {
+          nextPage(8); doc.setFont("helvetica", "bold").setFontSize(9.5).setTextColor(71, 85, 105); doc.text(line.replace("### ", "").trim(), mg, y); y += 5;
+        } else if (line.startsWith("## ")) {
+          nextPage(10); doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(30, 41, 59); doc.text(line.replace("## ", "").trim(), mg, y); y += 5.5;
+        } else if (line.startsWith("# ")) {
+          nextPage(12); doc.setFont("helvetica", "bold").setFontSize(11).setTextColor(15, 23, 42); doc.text(line.replace("# ", "").trim(), mg, y); y += 6;
+        } else if (line.startsWith("- ") || line.startsWith("* ") || line.startsWith("• ")) {
+          const text = line.substring(2).trim().replace(/\*\*/g, "").replace(/\*/g, "");
+          const wrapped = doc.splitTextToSize(text, cw - 6);
+          nextPage(wrapped.length * 4.5 + 2);
+          doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(71, 85, 105);
+          doc.text("•", mg + 2, y);
+          for (const w of wrapped) { doc.text(w, mg + 6, y); y += 4.5; }
+        } else {
+          const cleanLine = line.replace(/\*\*/g, "").replace(/\*/g, "");
+          const wrapped = doc.splitTextToSize(cleanLine, cw);
+          nextPage(wrapped.length * 4.5 + 2);
+          doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(71, 85, 105);
+          for (const w of wrapped) { doc.text(w, mg, y); y += 4.5; }
+        }
+      }
+    }
   } else {
     emptyNote("This case has not been underwritten yet — run AI underwriting to complete the application.");
   }
