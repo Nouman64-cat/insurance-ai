@@ -55,6 +55,8 @@ export default function UserManagementPage() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [roleId, setRoleId] = useState("");
+  const [cnic, setCnic] = useState("");
+  const [location, setLocation] = useState("");
   const [formLoading, setFormLoading] = useState(false);
 
   // Edit form fields
@@ -68,6 +70,8 @@ export default function UserManagementPage() {
   const [editEmployeeId, setEditEmployeeId] = useState("");
   const [editDesignation, setEditDesignation] = useState("");
   const [editDateOfJoining, setEditDateOfJoining] = useState("");
+  const [editCnic, setEditCnic] = useState("");
+  const [editLocation, setEditLocation] = useState("");
 
   useEffect(() => {
     const role = localStorage.getItem("user_role");
@@ -133,6 +137,8 @@ export default function UserManagementPage() {
     setFullName("");
     setEmail("");
     if (roles.length > 0) setRoleId(roles[0].id);
+    setCnic("");
+    setLocation("");
     setError("");
     setSuccess("");
     setShowCreateModal(true);
@@ -150,6 +156,8 @@ export default function UserManagementPage() {
     setEditEmployeeId(user.employee_id ?? "");
     setEditDesignation(user.designation ?? "");
     setEditDateOfJoining(user.date_of_joining ?? "");
+    setEditCnic(user.cnic ?? "");
+    setEditLocation(user.location ?? "");
     setError("");
     setSuccess("");
     setShowEditModal(true);
@@ -167,6 +175,8 @@ export default function UserManagementPage() {
         email,
         full_name: fullName,
         role_id: roleId,
+        cnic: cnic || null,
+        location: location || null,
       });
 
       setSuccess(`User created successfully! Login credentials were emailed to ${email}.`);
@@ -199,6 +209,8 @@ export default function UserManagementPage() {
         employee_id: editEmployeeId || null,
         designation: editDesignation || null,
         date_of_joining: editDateOfJoining || null,
+        cnic: editCnic || null,
+        location: editLocation || null,
       };
 
       if (editPassword) {
@@ -444,6 +456,30 @@ export default function UserManagementPage() {
                 />
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">CNIC (Optional)</label>
+                  <input
+                    type="text"
+                    value={cnic}
+                    onChange={(e) => setCnic(e.target.value)}
+                    placeholder="XXXXX-XXXXXXX-X"
+                    pattern="[0-9]{5}-[0-9]{7}-[0-9]{1}"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Location (Optional)</label>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
+                    placeholder="e.g. Karachi"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Role *</label>
                 <select
@@ -628,6 +664,29 @@ export default function UserManagementPage() {
                     value={editDateOfJoining}
                     onChange={(e) => setEditDateOfJoining(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">CNIC</label>
+                  <input
+                    type="text"
+                    value={editCnic}
+                    onChange={(e) => setEditCnic(e.target.value)}
+                    placeholder="XXXXX-XXXXXXX-X"
+                    pattern="[0-9]{5}-[0-9]{7}-[0-9]{1}"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Location</label>
+                  <input
+                    type="text"
+                    value={editLocation}
+                    onChange={(e) => setEditLocation(e.target.value)}
+                    placeholder="e.g. Karachi"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
                   />
                 </div>
 

@@ -18,6 +18,8 @@ interface AcquisitionSource {
   contact_phone?: string | null;
   contact_email?: string | null;
   city?: string | null;
+  cnic?: string | null;
+  location?: string | null;
   is_active: boolean;
   created_at: string;
   customer_count: number;
@@ -52,6 +54,8 @@ const EMPTY_FORM = {
   contact_phone: "",
   contact_email: "",
   city: "",
+  cnic: "",
+  location: "",
   is_active: true,
 };
 
@@ -118,6 +122,8 @@ export default function AcquisitionSourcesPage() {
       contact_phone: s.contact_phone ?? "",
       contact_email: s.contact_email ?? "",
       city: s.city ?? "",
+      cnic: s.cnic ?? "",
+      location: s.location ?? "",
       is_active: s.is_active,
     });
     setError("");
@@ -145,9 +151,10 @@ export default function AcquisitionSourcesPage() {
       code: form.code.trim(),
       partner_name: form.partner_name.trim() || null,
       contact_person: form.contact_person.trim() || null,
-      contact_phone: form.contact_phone.trim() || null,
       contact_email: form.contact_email.trim() || null,
       city: form.city.trim() || null,
+      cnic: form.cnic.trim() || null,
+      location: form.location.trim() || null,
       is_active: form.is_active,
     };
     try {
@@ -385,6 +392,24 @@ export default function AcquisitionSourcesPage() {
                     type="text"
                     value={form.city}
                     onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-600">Location</label>
+                  <input
+                    type="text"
+                    value={form.location}
+                    onChange={(e) => setForm((f) => ({ ...f, location: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-semibold text-slate-600">CNIC</label>
+                  <input
+                    type="text"
+                    value={form.cnic}
+                    onChange={(e) => setForm((f) => ({ ...f, cnic: e.target.value }))}
                     className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
                   />
                 </div>

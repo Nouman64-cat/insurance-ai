@@ -80,6 +80,7 @@ export const runRiskAssessmentTool = tool(
     description: "Runs the AI underwriting risk assessment for a specific case.",
     schema: z.object({
       applicant_name: z.string().optional().describe("Name of the applicant."),
+      cnic: z.string().optional().describe("CNIC of the applicant. Prefer this if provided."),
       case_number: z.string().optional().describe("Case number.")
     }),
   }
@@ -92,6 +93,7 @@ export const getCaseDetailsTool = tool(
     description: "Fetches the status and details of a specific case or applicant.",
     schema: z.object({
       applicant_name: z.string().optional().describe("Name of the applicant."),
+      cnic: z.string().optional().describe("CNIC of the applicant."),
       case_number: z.string().optional().describe("Case number.")
     }),
   }
@@ -149,6 +151,33 @@ export const bulkAddCustomersTool = tool(
   }
 );
 
+export const createCaseTool = tool(
+  async (args) => { return JSON.stringify({ success: true, dummy: true }); },
+  {
+    name: "create_case",
+    description: "Creates an insurance application (case) for an existing customer so that underwriting and evaluation can proceed.",
+    schema: z.object({
+      applicant_name: z.string().optional().describe("The name of the applicant to create the case for."),
+      cnic: z.string().optional().describe("CNIC of the applicant. Prefer this if provided."),
+      case_type: z.enum(["Underwriting", "Claim", "Inquiry"]).optional().describe("Type of case. Default to Underwriting."),
+      priority_level: z.enum(["Low", "Normal", "High", "Critical"]).optional().describe("Priority level. Default to Normal.")
+    }),
+  }
+);
+
+export const uploadDocumentTool = tool(
+  async (args) => { return JSON.stringify({ success: true, dummy: true }); },
+  {
+    name: "upload_document",
+    description: "Uploads a document (artifact) to a customer's case. Use this when the user attaches a file and specifies what type of document it is (e.g. CNIC, Salary Slip, Medical Report).",
+    schema: z.object({
+      applicant_name: z.string().optional().describe("The name of the applicant the document belongs to."),
+      cnic: z.string().optional().describe("CNIC of the applicant."),
+      document_type: z.string().describe("The type of document being uploaded (e.g. CNIC, Salary Slip, Medical Report).")
+    })
+  }
+);
+
 export const ALL_TOOLS = [
   navigateToPageTool,
   addCustomerTool,
@@ -158,5 +187,7 @@ export const ALL_TOOLS = [
   getCaseDetailsTool,
   addOrganizationTool,
   addFamilyGroupTool,
-  bulkAddCustomersTool
+  bulkAddCustomersTool,
+  createCaseTool,
+  uploadDocumentTool
 ];

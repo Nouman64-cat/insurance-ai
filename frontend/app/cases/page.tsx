@@ -992,6 +992,28 @@ export default function CasesPage() {
     ]).then(([aRes, cRes]) => {
       setCustomers(aRes.data);
       setCases(cRes.data);
+
+      const params = new URLSearchParams(window.location.search);
+      const deepLinkId = params.get("case_id");
+      if (deepLinkId) {
+        const c = cRes.data.find((x: any) => x.caseld === deepLinkId);
+        if (c) {
+          const cust = aRes.data.find((x: any) => x.id === c.customer_id);
+          if (cust) setActiveCustomer(cust);
+          setActiveCase(c);
+          setView("documents");
+          api.get(`/tenants/${tenantId}/cases/${c.caseld}/artifacts`)
+            .then(r => setArtifacts(r.data)).catch(() => setArtifacts([]));
+          api.get(`/tenants/${tenantId}/cases/${c.caseld}/document-checklist`)
+            .then(r => {
+              setChecklistRequired(r.data.required ?? []);
+              setChecklistInsuranceType(r.data.insurance_type ?? null);
+            }).catch(() => {
+              setChecklistRequired(null);
+              setChecklistInsuranceType(null);
+            });
+        }
+      }
     }).catch(err => setError(err.message ?? "Failed to load."))
       .finally(() => setLoadingMain(false));
   }, [tenantId]);

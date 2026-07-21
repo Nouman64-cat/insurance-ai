@@ -110,6 +110,7 @@ class ProfileStatusEnum(str, Enum):
     PROSPECT = "PROSPECT"
     UNDERWRITING_READY = "UNDERWRITING_READY"
     NOT_INTERESTED = "NOT_INTERESTED"
+    POLICYHOLDER = "POLICYHOLDER"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -292,6 +293,8 @@ class UserProfile(SQLModel, table=True):
     employee_id: Optional[str] = Field(default=None, max_length=100, nullable=True)
     designation: Optional[str] = Field(default=None, max_length=255, nullable=True)
     date_of_joining: Optional[date] = Field(default=None, nullable=True)
+    cnic: Optional[str] = Field(default=None, max_length=15, nullable=True)
+    location: Optional[str] = Field(default=None, max_length=255, nullable=True)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     user: Optional[User] = Relationship(back_populates="profile")
@@ -318,6 +321,8 @@ class Organization(SQLModel, table=True):
     contact_person: Optional[str] = Field(default=None, max_length=255)
     contact_email: Optional[str] = Field(default=None, max_length=255)
     contact_phone: Optional[str] = Field(default=None, max_length=50)
+
+    profile_status: ProfileStatusEnum = Field(default=ProfileStatusEnum.LEAD, max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -367,6 +372,8 @@ class AcquisitionSource(SQLModel, table=True):
     contact_phone: Optional[str] = Field(default=None, max_length=50)
     contact_email: Optional[str] = Field(default=None, max_length=255)
     city: Optional[str] = Field(default=None, max_length=100)
+    cnic: Optional[str] = Field(default=None, max_length=20)
+    location: Optional[str] = Field(default=None, max_length=255)
 
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -527,6 +534,8 @@ class FamilyGroup(SQLModel, table=True):
     # Set once the SELF/proposer member is added — the anchor customer_id
     # used on the single shared Policy row for a FLOATER FamilyPolicy.
     primary_member_customer_id: Optional[UUID] = Field(default=None, foreign_key="customers.id", nullable=True)
+
+    profile_status: ProfileStatusEnum = Field(default=ProfileStatusEnum.LEAD, max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

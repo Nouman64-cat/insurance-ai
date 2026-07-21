@@ -3,11 +3,12 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
-import { Chatbot } from "@/components/Chatbot";
 import { useEffect, useState, useCallback, useRef } from "react";
 import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
 import { PENDING_QUOTES_STORAGE_KEY, PENDING_QUOTES_EVENT, PendingQuoteWatch } from "@/lib/pendingQuotes";
+import { useCopilot } from "@/components/CopilotContext";
+import { CopilotInterface } from "@/components/CopilotInterface";
 
 // Give up watching an customer after this many polls (~2 min at 4s/poll) —
 // they simply didn't qualify for any active plan, so no quote will ever land.
@@ -50,6 +51,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const [authChecked, setAuthChecked] = useState(false);
   const [toasts, setToasts] = useState<ToastMsg[]>([]);
   const toastIdRef = useRef(0);
+  const { isAutomationMode } = useCopilot();
 
   const showToast = useCallback((text: string, ok: boolean) => {
     const id = ++toastIdRef.current;
@@ -251,8 +253,21 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             <TopBar />
 
             {/* ── Page content ──────────────────────────────────────────────── */}
-            <main className="flex-1 overflow-auto">
-              {children}
+            <main className="flex-1 overflow-hidden relative flex">
+              {isAutomationMode ? (
+                <>
+                  <div className="flex-1 overflow-auto bg-slate-50 relative">
+                    {children}
+                  </div>
+                  <div className="w-[45%] lg:w-[40%] flex-shrink-0 border-l border-slate-200 bg-white h-full relative z-20 shadow-[-10px_0_15px_-3px_rgba(0,0,0,0.1)] overflow-hidden">
+                    <CopilotInterface />
+                  </div>
+                </>
+              ) : (
+                <div className="flex-1 overflow-auto bg-slate-50 relative h-full">
+                  {children}
+                </div>
+              )}
             </main>
 
             {/* ── Footer ────────────────────────────────────────────────────── */}
@@ -264,7 +279,6 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
           </div>
         </>
       )}
-      <Chatbot />
       <ToastBanner toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
     </body>
   );

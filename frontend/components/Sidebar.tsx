@@ -509,94 +509,34 @@ const NAV_ITEMS = [
   },
 
   {
-
     group: "Customer Management",
-
     links: [
-
       {
-
-        href: "/admin/customers",
-
-        label: "Individual Customers",
-
+        href: "/admin/leads",
+        label: "Leads",
         icon: (
-
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-
             <circle cx="9" cy="7" r="4" />
-
             <path d="M23 21v-2a4 4 0 00-3-3.87" />
-
             <path d="M16 3.13a4 4 0 010 7.75" />
-
           </svg>
-
         ),
-
         badge: null,
-
         adminOnly: true,
-
       },
-
       {
-        href: "/admin/families",
-        label: "Family Management",
+        href: "/admin/policyholders",
+        label: "Policy Holders",
         icon: (
-
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M12 3l9 7-9 7-9-7 9-7z" />
-
-            <circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" />
-
-            <path d="M8 15v-2a4 4 0 018 0v2" />
-
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
           </svg>
-
         ),
-
         badge: null,
-
         adminOnly: true,
-
       },
-
-      {
-
-        href: "/admin/organizations",
-
-        label: "Organization Management",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" />
-
-            <path d="M6 12H4a2 2 0 00-2 2v8h4" />
-
-            <path d="M18 9h2a2 2 0 012 2v11h-4" />
-
-            <line x1="10" y1="6" x2="14" y2="6" /><line x1="10" y1="10" x2="14" y2="10" />
-
-            <line x1="10" y1="14" x2="14" y2="14" /><line x1="10" y1="18" x2="14" y2="18" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-        adminOnly: true,
-
-      },
-
     ],
-
   },
 
   {
@@ -903,7 +843,7 @@ export function Sidebar() {
 
 
 
-  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/customers", "/admin/families", "/admin/organizations", "/financial"];
+  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial"];
 
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens"];
 
