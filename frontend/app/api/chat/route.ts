@@ -1,13 +1,11 @@
 import { NextResponse } from 'next/server';
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { HumanMessage, AIMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { ALL_TOOLS } from "../../../lib/agent/tools";
 
 const SYSTEM_PROMPT = `Your name is Insurance AI Agent, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
 
-CRITICAL INSTRUCTION: You have access to system tools (functions) to perform real actions. You MUST use these tools when a user asks you to:
-1. Navigate to a page (use navigate_to_page)
-2. Add a new customer (use add_customer)
-3. Delete a customer (use delete_customer)
-4. Get details about a case or customer (use get_case_details)
-5. Run an underwriting risk assessment (use run_risk_assessment)
+CRITICAL INSTRUCTION: You have access to system tools (functions) to perform real actions. You MUST use these tools when a user asks you to.
 
 DO NOT hallucinate or pretend to perform these actions. If you need more information to execute a tool, ask the user for it first, and once you have it, EXECUTE the tool call. Never just output text saying you updated it without calling the function!
 
@@ -26,203 +24,21 @@ BE HIGHLY INTELLIGENT AND FRIENDLY. Never complain about formatting or act confu
 - If only one name is provided (like "zia"), use it for both first_name and last_name or use a logical default so you don't block the user.
 Act as an intelligent agent that actively helps the user.`;
 
-const TOOLS = [
-  {
-    type: "function",
-    function: {
-      name: "navigate_to_page",
-      description: "Navigates the user to a specific section of the application.",
-      parameters: {
-        type: "object",
-        properties: {
-          page_name: { 
-            type: "string", 
-            enum: [
-              "dashboard", 
-              "underwriting", 
-              "cases", 
-              "artifacts", 
-              "proposal", 
-              "live-evaluation", 
-              "case-summarizer", 
-              "assessments", 
-              "admin/customers", 
-              "admin/organizations",
-              "super-admin/tenants",
-              "super-admin/admins",
-              "super-admin/branches",
-              "super-admin/tokens",
-              "admin/users",
-              "profile"
-            ],
-            description: "The path of the page to navigate to (e.g. 'underwriting' for the Underwriting page, 'cases' for Cases, etc.)"
-          }
-        },
-        required: ["page_name"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "add_customer",
-      description: "Adds a new customer to the system.",
-      parameters: {
-        type: "object",
-        properties: {
-          first_name: { type: "string" },
-          last_name: { type: "string", description: "Last name. If only one name is known, use it here too." },
-          cnic: { type: "string", description: "Format: XXXXX-XXXXXXX-X. Intelligently format this from 13 digit input." },
-          date_of_birth: { type: "string", description: "YYYY-MM-DD. Parse natural language or different formats into this automatically." },
-          gender: { type: "string", enum: ["Male", "Female", "Other"] },
-          occupation: { type: "string" },
-          declared_income: { type: "number", description: "Convert shorthand like '50k' to 50000 automatically." }
-        },
-        required: ["first_name", "last_name", "cnic", "date_of_birth", "gender", "occupation", "declared_income"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "add_user",
-      description: "Adds a new system user (e.g. admin, agent, underwriter) to the system.",
-      parameters: {
-        type: "object",
-        properties: {
-          full_name: { type: "string", description: "The full name of the user to be added." },
-          email: { type: "string", description: "The email address for the new user. If not provided, generate a sensible dummy email like firstname.lastname@example.com." },
-          role_name: { type: "string", enum: ["SuperAdmin", "Admin", "Underwriter", "Agent", "Viewer"], description: "The role of the user. If not specified, default to Agent." }
-        },
-        required: ["full_name", "email", "role_name"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "delete_customer",
-      description: "Deletes a customer from the system.",
-      parameters: {
-        type: "object",
-        properties: {
-          cnic: { type: "string" },
-          name: { type: "string" }
-        }
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "run_risk_assessment",
-      description: "Runs the AI underwriting risk assessment for a specific case.",
-      parameters: {
-        type: "object",
-        properties: {
-          applicant_name: { type: "string" },
-          case_number: { type: "string" }
-        }
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "get_case_details",
-      description: "Fetches the status and details of a specific case or applicant.",
-      parameters: {
-        type: "object",
-        properties: {
-          applicant_name: { type: "string" },
-          case_number: { type: "string" }
-        }
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "add_organization",
-      description: "Adds a new corporate or organization insurance group.",
-      parameters: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "Name of the organization." },
-          contact_person: { type: "string" },
-          contact_email: { type: "string" },
-          contact_phone: { type: "string" }
-        },
-        required: ["name"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "add_family_group",
-      description: "Adds a new family insurance group.",
-      parameters: {
-        type: "object",
-        properties: {
-          name: { type: "string", description: "Name of the family group (e.g. Smith Family)." },
-          contact_person: { type: "string" },
-          contact_email: { type: "string" },
-          contact_phone: { type: "string" },
-          household_declared_income: { type: "number" }
-        },
-        required: ["name"]
-      }
-    }
-  },
-  {
-    type: "function",
-    function: {
-      name: "bulk_add_customers",
-      description: "Adds multiple individual insurance customers at once.",
-      parameters: {
-        type: "object",
-        properties: {
-          customers_json: {
-            type: "string",
-            description: "A JSON stringified array of customer objects. Each object must have: first_name, last_name, cnic, date_of_birth, gender (Male/Female), occupation, declared_income (number), is_smoker (boolean), height_cm (number), weight_kg (number)."
-          }
-        },
-        required: ["customers_json"]
-      }
-    }
+function toLangchainMessages(messages: Array<any>, role: string) {
+  let finalPrompt = SYSTEM_PROMPT;
+  if (role && role !== "SuperAdmin" && role !== "Admin") {
+    finalPrompt += `\n\nCRITICAL SECURITY INSTRUCTION: The current user's role is '${role}'. They are NOT an Admin. You are strictly FORBIDDEN from using any tools that create, edit, or delete data (e.g. add_customer, bulk_add_customers, add_organization, add_family_group, add_user, delete_customer). If the user asks you to perform these actions, politely refuse and state that they do not have sufficient permissions. You can only view or assess data.`;
   }
-];
 
-// Gemini function declarations are the OpenAI tool schema minus the `type`/
-// `function` wrapper — reuse the same TOOLS definitions above so there's one
-// source of truth for the assistant's capabilities.
-const GEMINI_FUNCTION_DECLARATIONS = TOOLS.map((t) => ({
-  name: t.function.name,
-  description: t.function.description,
-  parameters: t.function.parameters,
-}));
-
-function toGeminiContents(messages: Array<any>) {
-  const contents = [];
+  const lcMessages: any[] = [new SystemMessage(finalPrompt)];
 
   for (const m of messages) {
-    if (m.role === 'system') {
-      continue;
-    }
+    if (m.role === 'system') continue;
 
     if (m.role === 'user') {
-      if (typeof m.content === 'string' && m.content.trim().length > 0) {
-        contents.push({
-          role: 'user',
-          parts: [{ text: m.content }],
-        });
-      }
+      lcMessages.push(new HumanMessage(m.content || ""));
     } else if (m.role === 'assistant') {
-      const parts: any[] = [];
-      if (typeof m.content === 'string' && m.content.trim().length > 0) {
-        parts.push({ text: m.content });
-      }
+      let tool_calls: any[] = [];
       if (Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
         for (const tc of m.tool_calls) {
           let parsedArgs = {};
@@ -233,44 +49,23 @@ function toGeminiContents(messages: Array<any>) {
           } catch (e) {
             console.error('Error parsing tool arguments:', e);
           }
-          parts.push({
-            functionCall: {
-              name: tc.function.name,
-              args: parsedArgs,
-            },
+          tool_calls.push({
+            name: tc.function.name,
+            args: parsedArgs,
+            id: tc.id
           });
         }
       }
-      if (parts.length > 0) {
-        contents.push({
-          role: 'model',
-          parts: parts,
-        });
-      }
+      lcMessages.push(new AIMessage({ content: m.content || "", tool_calls }));
     } else if (m.role === 'tool') {
-      let parsedResponse = {};
-      try {
-        parsedResponse = typeof m.content === 'string'
-          ? JSON.parse(m.content)
-          : (m.content || {});
-      } catch (e) {
-        parsedResponse = { result: m.content };
-      }
-      contents.push({
-        role: 'function',
-        parts: [
-          {
-            functionResponse: {
-              name: m.name,
-              response: parsedResponse,
-            },
-          },
-        ],
-      });
+      lcMessages.push(new ToolMessage({
+        tool_call_id: m.tool_call_id,
+        content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+        name: m.name
+      }));
     }
   }
-
-  return contents;
+  return lcMessages;
 }
 
 export async function POST(req: Request) {
@@ -281,54 +76,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Messages array is required' }, { status: 400 });
     }
 
-    let finalPrompt = SYSTEM_PROMPT;
-    if (role && role !== "SuperAdmin" && role !== "Admin") {
-      finalPrompt += `\n\nCRITICAL SECURITY INSTRUCTION: The current user's role is '${role}'. They are NOT an Admin. You are strictly FORBIDDEN from using any tools that create, edit, or delete data (e.g. add_customer, bulk_add_customers, add_organization, add_family_group, add_user, delete_customer). If the user asks you to perform these actions, politely refuse and state that they do not have sufficient permissions. You can only view or assess data.`;
-    }
-
     const geminiApiKey = process.env.GEMINI_API_KEY;
     if (!geminiApiKey) {
       return NextResponse.json({ error: 'GEMINI_API_KEY is not configured' }, { status: 500 });
     }
     const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          system_instruction: { parts: [{ text: finalPrompt }] },
-          contents: toGeminiContents(messages),
-          tools: [{ function_declarations: GEMINI_FUNCTION_DECLARATIONS }],
-          tool_config: { function_calling_config: { mode: 'AUTO' } },
-          generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
-        }),
-      }
-    );
+    const llm = new ChatGoogleGenerativeAI({
+      model,
+      apiKey: geminiApiKey,
+      temperature: 0.7,
+      maxOutputTokens: 1024
+    }).bindTools(ALL_TOOLS);
 
-    if (!response.ok) {
-      const errorData = await response.text();
-      console.error('Gemini API Error:', errorData);
-      return NextResponse.json({ error: 'Failed to communicate with Gemini AI' }, { status: response.status });
+    const lcMessages = toLangchainMessages(messages, role);
+    const response = await llm.invoke(lcMessages);
+
+    let message = '';
+    if (typeof response.content === "string") {
+      message = response.content;
+    } else if (Array.isArray(response.content)) {
+      message = response.content.map(c => typeof c === 'string' ? c : c.text || '').join('');
     }
 
-    const data = await response.json();
-    const parts = data.candidates?.[0]?.content?.parts ?? [];
-
-    // Flatten Gemini parts back into the OpenAI-compatible response the client
-    // already expects: a text `message` plus optional `tool_calls`.
-    let message = '';
     const toolCalls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> = [];
-    for (const part of parts) {
-      if (part.text) message += part.text;
-      if (part.functionCall) {
+    if (response.tool_calls && response.tool_calls.length > 0) {
+      for (const tc of response.tool_calls) {
         toolCalls.push({
-          id: `call_${toolCalls.length}_${part.functionCall.name}`,
+          id: tc.id || `call_${toolCalls.length}_${tc.name}`,
           type: 'function',
           function: {
-            name: part.functionCall.name,
-            arguments: JSON.stringify(part.functionCall.args ?? {}),
+            name: tc.name,
+            arguments: JSON.stringify(tc.args ?? {}),
           },
         });
       }

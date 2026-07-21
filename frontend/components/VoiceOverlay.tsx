@@ -3,6 +3,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import api from "../app/services/api";
+import { zodToJsonSchema } from "zod-to-json-schema";
+import { ALL_TOOLS } from "../lib/agent/tools";
 
 const SYSTEM_PROMPT = `Your name is Insurance AI Agent, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational since this is a voice interface. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
 
@@ -69,14 +71,17 @@ export default function VoiceOverlay({ onClose }: Props) {
   const handleEnd = () => { teardown(); onClose(); };
 
   useEffect(() => {
+    let mounted = true;
     const init = async () => {
       try {
         const r = await fetch("/api/agent-config");
+        if (!mounted) return;
         if (!r.ok) {
           const body = await r.json().catch(() => ({}));
           throw new Error(body.error || "Live voice is not configured.");
         }
         const { deepgramApiKey } = await r.json();
+        if (!mounted) return;
 
         // Auth via subprotocol for browser WebSockets
         const ws = new WebSocket(
@@ -87,11 +92,16 @@ export default function VoiceOverlay({ onClose }: Props) {
         wsRef.current = ws;
 
         ws.onopen = () => {
+          if (!mounted) {
+            ws.close();
+            return;
+          }
           // Don't send anything yet — wait for Welcome message
           console.log("[DG Agent] WS opened, waiting for Welcome…");
         };
 
         ws.onmessage = async (ev) => {
+          if (!mounted) return;
           // ── Binary: PCM audio from agent ──────────────────────────────
           if (ev.data instanceof ArrayBuffer) {
             const ctx = outCtxRef.current;
@@ -110,6 +120,7 @@ export default function VoiceOverlay({ onClose }: Props) {
             src.start(at);
             nextTimeRef.current = at + ab.duration;
             src.onended = () => {
+              if (!mounted) return;
               sourcesRef.current = sourcesRef.current.filter(s => s !== src);
               if (!sourcesRef.current.length) setStatus("listening");
             };
@@ -139,90 +150,11 @@ export default function VoiceOverlay({ onClose }: Props) {
                       model: "gpt-4o-mini"
                     },
                     prompt: SYSTEM_PROMPT,
-                    functions: [
-                      {
-                        name: "navigate_to_page",
-                        description: "Navigates the user to a specific section of the application.",
-                        parameters: {
-                          type: "object",
-                          properties: {
-                            page_name: {
-                              type: "string",
-                              enum: [
-                                "dashboard",
-                                "underwriting",
-                                "cases",
-                                "artifacts",
-                                "proposal",
-                                "live-evaluation",
-                                "case-summarizer",
-                                "assessments",
-                                "admin/customers",
-                                "admin/organizations",
-                                "super-admin/tenants",
-                                "super-admin/admins",
-                                "super-admin/branches",
-                                "super-admin/tokens",
-                                "admin/users",
-                                "profile"
-                              ],
-                              description: "The path of the page to navigate to (e.g. 'underwriting' for the Underwriting page, 'cases' for Cases, etc.)"
-                            }
-                          },
-                          required: ["page_name"]
-                        }
-                      },
-                      {
-                        name: "add_customer",
-                        description: "Adds a new customer to the system.",
-                        parameters: {
-                          type: "object",
-                          properties: {
-                            first_name: { type: "string" },
-                            last_name: { type: "string" },
-                            cnic: { type: "string", description: "Format: XXXXX-XXXXXXX-X" },
-                            date_of_birth: { type: "string", description: "YYYY-MM-DD" },
-                            gender: { type: "string", enum: ["Male", "Female", "Other"] },
-                            occupation: { type: "string" },
-                            declared_income: { type: "number" }
-                          },
-                          required: ["first_name", "last_name", "cnic", "date_of_birth", "gender", "occupation", "declared_income"]
-                        }
-                      },
-                      {
-                        name: "delete_customer",
-                        description: "Deletes a customer from the system.",
-                        parameters: {
-                          type: "object",
-                          properties: {
-                            cnic: { type: "string" },
-                            name: { type: "string" }
-                          }
-                        }
-                      },
-                      {
-                        name: "run_risk_assessment",
-                        description: "Runs the AI underwriting risk assessment for a specific case.",
-                        parameters: {
-                          type: "object",
-                          properties: {
-                            applicant_name: { type: "string" },
-                            case_number: { type: "string" }
-                          }
-                        }
-                      },
-                      {
-                        name: "get_case_details",
-                        description: "Fetches the status and details of a specific case or applicant.",
-                        parameters: {
-                          type: "object",
-                          properties: {
-                            applicant_name: { type: "string" },
-                            case_number: { type: "string" }
-                          }
-                        }
-                      }
-                    ]
+                    functions: ALL_TOOLS.map(t => ({
+                      name: t.name,
+                      description: t.description,
+                      parameters: zodToJsonSchema(t.schema)
+                    }))
                   },
                   speak: { provider: { type: "deepgram", model: "aura-asteria-en" } },
                 },
@@ -239,6 +171,10 @@ export default function VoiceOverlay({ onClose }: Props) {
                 const stream = await navigator.mediaDevices.getUserMedia({
                   audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
                 });
+                if (!mounted) {
+                  stream.getTracks().forEach(t => t.stop());
+                  return;
+                }
                 micRef.current = stream;
                 const inCtx = new AudioContext({ sampleRate: 16000 });
                 inCtxRef.current = inCtx;
@@ -246,7 +182,7 @@ export default function VoiceOverlay({ onClose }: Props) {
                 const proc = inCtx.createScriptProcessor(4096, 1, 1);
                 procRef.current = proc;
                 proc.onaudioprocess = (e) => {
-                  if (ws.readyState !== WebSocket.OPEN) return;
+                  if (!mounted || ws.readyState !== WebSocket.OPEN) return;
                   const raw = e.inputBuffer.getChannelData(0);
                   const pcm = new Int16Array(raw.length);
                   for (let i = 0; i < raw.length; i++) pcm[i] = Math.max(-32768, Math.min(32767, raw[i] * 32768));
@@ -256,6 +192,7 @@ export default function VoiceOverlay({ onClose }: Props) {
                 proc.connect(inCtx.destination);
                 setStatus("listening");
               } catch (micErr: any) {
+                if (!mounted) return;
                 setErrorMsg("Microphone access denied. Please allow microphone in browser settings.");
                 setStatus("error");
               }
@@ -297,11 +234,13 @@ export default function VoiceOverlay({ onClose }: Props) {
         };
 
         ws.onerror = () => {
+          if (!mounted) return;
           setErrorMsg("WebSocket connection failed. Please check your network.");
           setStatus("error");
         };
 
         ws.onclose = (ev) => {
+          if (!mounted) return;
           console.log("[DG Agent] closed", ev.code, ev.reason);
           if (ev.code !== 1000 && ev.code !== 1005) {
             setErrorMsg(`Connection closed (${ev.code})${ev.reason ? ": " + ev.reason : ""}`);
@@ -310,13 +249,17 @@ export default function VoiceOverlay({ onClose }: Props) {
         };
 
       } catch (err: any) {
+        if (!mounted) return;
         setErrorMsg(err?.message || "Initialization failed");
         setStatus("error");
       }
     };
 
     init();
-    return () => teardown();
+    return () => {
+      mounted = false;
+      teardown();
+    };
   }, []);
 
   const handleFunctionCall = async (msg: any, ws: WebSocket, router: any) => {
@@ -336,6 +279,93 @@ export default function VoiceOverlay({ onClose }: Props) {
         if (name === "navigate_to_page") {
           router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
           result = { success: true, message: `Navigating to ${args.page_name}` };
+        }
+        else if (name === "add_user") {
+          const rolesRes = await api.get(`/roles`);
+          const role = rolesRes.data.find((r: any) => r.name.toLowerCase() === args.role_name.toLowerCase());
+          if (!role) throw new Error(`Role ${args.role_name} not found`);
+
+          const res = await api.post(`/tenants/${tenantId}/users/`, {
+             full_name: args.full_name,
+             email: args.email,
+             role_id: role.id
+          });
+          result = { success: true, user_id: res.data.id, message: `System user ${args.full_name} added successfully as ${args.role_name}.` };
+        }
+        else if (name === "add_organization") {
+          const res = await api.post(`/tenants/${tenantId}/organizations`, {
+             name: args.name,
+             contact_person: args.contact_person,
+             contact_email: args.contact_email,
+             contact_phone: args.contact_phone
+          });
+          result = { success: true, organization_id: res.data.id, message: `Organization ${args.name} added successfully.` };
+        }
+        else if (name === "add_family_group") {
+          const res = await api.post(`/tenants/${tenantId}/families`, {
+             name: args.name,
+             contact_person: args.contact_person,
+             contact_email: args.contact_email,
+             contact_phone: args.contact_phone,
+             household_declared_income: args.household_declared_income
+          });
+          const familyId = res.data.id;
+          let message = `Family Group ${args.name} added successfully.`;
+
+          if (args.members && Array.isArray(args.members) && args.members.length > 0) {
+              const fpRes = await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies`, {
+                  total_sum_insured: 5000000,
+                  term_years: 1,
+                  effective_date: new Date().toISOString().split("T")[0]
+              });
+              const fpId = fpRes.data.id;
+
+              await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies/${fpId}/members/confirm`, {
+                  members: args.members
+             });
+              message += ` Enrolled ${args.members.length} members successfully.`;
+          }
+
+          result = { success: true, family_group_id: familyId, message };
+        }
+        else if (name === "bulk_add_customers") {
+          let customers = [];
+          try {
+            let jsonStr = args.customers_json || args.customers;
+            if (typeof jsonStr === "string") {
+              jsonStr = jsonStr.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
+              customers = JSON.parse(jsonStr);
+            } else {
+              customers = jsonStr;
+            }
+          } catch (e: any) {
+            throw new Error("Invalid customers JSON format provided by AI: " + e.message);
+          }
+          if (!Array.isArray(customers)) throw new Error("Expected an array of customers.");
+
+          const results = await Promise.allSettled(customers.map((c: any) => {
+            const genderNormalized = c.gender ? c.gender.charAt(0).toUpperCase() + c.gender.slice(1).toLowerCase() : "Other";
+            const income = typeof c.declared_income === "string" ? parseFloat(c.declared_income) : c.declared_income;
+            return api.post(`/tenants/${tenantId}/customers`, {
+               first_name: c.first_name,
+               last_name: c.last_name,
+               cnic: c.cnic,
+               date_of_birth: c.date_of_birth,
+               gender: genderNormalized,
+               occupation: c.occupation,
+               declared_income: income || 0,
+               is_smoker: c.is_smoker ?? false,
+               height_cm: c.height_cm ?? 170,
+               weight_kg: c.weight_kg ?? 70
+            });
+          }));
+          const successCount = results.filter(r => r.status === 'fulfilled').length;
+          const failCount = results.length - successCount;
+          if (successCount === 0 && failCount > 0) {
+            const firstErr = (results.find(r => r.status === 'rejected') as any)?.reason;
+            throw new Error("All customer additions failed. First error: " + (firstErr?.response?.data?.detail || firstErr?.message));
+          }
+          result = { success: true, message: `Successfully added ${successCount} customers. Failed: ${failCount}.` };
         }
         else if (name === "add_customer") {
           const res = await api.post(`/tenants/${tenantId}/customers`, {
@@ -553,8 +583,8 @@ export default function VoiceOverlay({ onClose }: Props) {
         {/* Status label */}
         <div className="text-center min-h-[40px] flex flex-col items-center justify-center gap-1">
           <p className={`text-[13px] font-medium tracking-wide transition-all duration-500 ${status === "speaking" ? "text-fuchsia-200 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]" :
-              status === "listening" ? "text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" :
-                status === "connecting" ? "text-indigo-200/80 animate-pulse" : "text-rose-300/80"
+            status === "listening" ? "text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" :
+              status === "connecting" ? "text-indigo-200/80 animate-pulse" : "text-rose-300/80"
             }`}>
             {status === "connecting" && "Connecting to AI Agent…"}
             {status === "listening" && "Listening — go ahead and speak"}
@@ -579,8 +609,8 @@ export default function VoiceOverlay({ onClose }: Props) {
             captions.map((c, i) => (
               <div key={i} className={`flex ${c.role === "user" ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
                 <div className={`max-w-[90%] px-3 py-2 rounded-xl text-[12px] leading-relaxed ${c.role === "user"
-                    ? "text-cyan-50 rounded-br-sm"
-                    : "text-fuchsia-50 rounded-bl-sm"
+                  ? "text-cyan-50 rounded-br-sm"
+                  : "text-fuchsia-50 rounded-bl-sm"
                   }`}
                   style={c.role === "user"
                     ? { background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.25)" }

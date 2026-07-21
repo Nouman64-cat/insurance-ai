@@ -7,7 +7,7 @@ export const SUMMARIZER_BASE_URL = process.env.NEXT_PUBLIC_SUMMARIZER_URL;
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
-  timeout: 30_000,
+  timeout: 120_000,
 });
 
 const getErrorMessage = (err: any, fallbackMessage: string): string => {
