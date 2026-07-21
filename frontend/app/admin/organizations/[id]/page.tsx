@@ -835,19 +835,6 @@ export default function OrganizationDetailPage() {
                           </td>
                           <td className="px-5 py-3 text-right space-x-3 whitespace-nowrap">
                             <button onClick={() => handleEditEmployee(emp)} className="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors">Edit</button>
-                            {empCase ? (
-                              <button
-                                onClick={() => router.push(`/case/${empCase.case_id}`)}
-                                className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                                title={`Case ${empCase.case_number} — ${empCase.case_status}`}
-                              >
-                                Proceed to Underwriting →
-                              </button>
-                            ) : (
-                              <span className="text-xs text-slate-300 italic" title="At/under the Free Cover Limit — guaranteed issue, no underwriting case.">
-                                Guaranteed Issue
-                              </span>
-                            )}
                             <button onClick={() => handleDeleteEmployee(emp.id, emp.name)} className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors">Delete</button>
                           </td>
                         </tr>

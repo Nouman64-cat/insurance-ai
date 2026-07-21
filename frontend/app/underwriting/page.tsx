@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } from "@/components/SegmentDropdown";
 import { fmtCoverage } from "@/lib/mock-data";
 import { listCases, CaseQueueItem } from "@/app/services/cases";
 import api from "@/app/services/api";
@@ -22,6 +23,7 @@ interface CustomerFolder {
   customer_id: string;
   customer_name: string;
   customer_cnic: string;
+  customer_segment: "individual" | "family" | "organization";
   cases: CaseQueueItem[];
 }
 
@@ -31,6 +33,7 @@ export default function UnderwritingPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [segment, setSegment] = useState<SegmentFilter>("all");
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -80,16 +83,31 @@ export default function UnderwritingPage() {
     }
   };
 
+  // The dropdown-selected segment scopes which cases count toward the stats
+  // and folder list; the search box then narrows within that scope.
+  const segmentCases = useMemo(() => {
+    if (segment === "all") return cases;
+    return cases.filter(c => (c.customer_segment ?? "individual") === segment);
+  }, [cases, segment]);
+
+  const segmentCounts = useMemo(() => {
+    const counts: Partial<Record<SegmentFilter, number>> = { all: cases.length };
+    for (const s of ["individual", "family", "organization"] as const) {
+      counts[s] = cases.filter(c => (c.customer_segment ?? "individual") === s).length;
+    }
+    return counts;
+  }, [cases]);
+
   // Group cases into one folder per customer — same pattern as the Quotations page.
   const folders = useMemo<CustomerFolder[]>(() => {
     const q = search.trim().toLowerCase();
     const filteredList = q
-      ? cases.filter(c =>
+      ? segmentCases.filter(c =>
           (c.customer_name ?? "").toLowerCase().includes(q) ||
           (c.customer_cnic ?? "").toLowerCase().includes(q) ||
           c.caseNumber.toLowerCase().includes(q),
         )
-      : cases;
+      : segmentCases;
 
     const grouped = new Map<string, CustomerFolder>();
     for (const c of filteredList) {
@@ -98,26 +116,27 @@ export default function UnderwritingPage() {
           customer_id: c.customer_id,
           customer_name: c.customer_name ?? "Unknown Customer",
           customer_cnic: c.customer_cnic ?? "—",
+          customer_segment: c.customer_segment ?? "individual",
           cases: [],
         });
       }
       grouped.get(c.customer_id)!.cases.push(c);
     }
     return Array.from(grouped.values());
-  }, [cases, search]);
+  }, [segmentCases, search]);
 
   const kpis = useMemo(() => {
-    const pendingDocs = cases.filter(c => c.caseStatus === "Pending Documents").length;
-    const underReview = cases.filter(c => c.caseStatus === "Under Review" || c.caseStatus === "New" || c.caseStatus === "InProgress").length;
-    const approved = cases.filter(c => c.caseStatus === "Approved").length;
-    const customerCount = new Set(cases.map(c => c.customer_id)).size;
+    const pendingDocs = segmentCases.filter(c => c.caseStatus === "Pending Documents").length;
+    const underReview = segmentCases.filter(c => c.caseStatus === "Under Review" || c.caseStatus === "New" || c.caseStatus === "InProgress").length;
+    const approved = segmentCases.filter(c => c.caseStatus === "Approved").length;
+    const customerCount = new Set(segmentCases.map(c => c.customer_id)).size;
     return [
       { title: "Customers", value: customerCount, subtitle: "open folders", accent: "blue" as const },
       { title: "Awaiting Documents", value: pendingDocs, subtitle: "checklist incomplete", accent: "amber" as const },
       { title: "In Underwriting", value: underReview, subtitle: "not yet decided", accent: "slate" as const },
       { title: "Approved", value: approved, subtitle: "ready to issue", accent: "emerald" as const },
     ];
-  }, [cases]);
+  }, [segmentCases]);
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
@@ -132,7 +151,7 @@ export default function UnderwritingPage() {
         {kpis.map(k => <MetricCard key={k.title} {...k} />)}
       </div>
 
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <input
           type="text"
           placeholder="Search by customer, CNIC, or case number…"
@@ -140,6 +159,7 @@ export default function UnderwritingPage() {
           onChange={e => setSearch(e.target.value)}
           className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
         />
+        <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
       </div>
 
       {error && (
@@ -157,11 +177,17 @@ export default function UnderwritingPage() {
               <span className="text-2xl">📁</span>
             </div>
             <p className="text-sm font-semibold text-slate-600">
-              {cases.length === 0 ? "No underwriting cases yet" : "No cases match your search"}
+              {cases.length === 0
+                ? "No underwriting cases yet"
+                : segmentCases.length === 0
+                ? `No ${SEGMENT_LABEL[segment as "individual" | "family" | "organization"] ?? ""} cases`
+                : "No cases match your search"}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {cases.length === 0
                 ? "A folder opens automatically the moment a customer proceeds with a quotation."
+                : segmentCases.length === 0
+                ? "Try switching the segment filter to All Customers."
                 : "Try a different customer name, CNIC, or case number."}
             </p>
           </div>
@@ -191,7 +217,14 @@ export default function UnderwritingPage() {
                         </svg>
                       </div>
                       <div>
-                        <h3 className="text-base font-bold text-slate-900">{folder.customer_name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-slate-900">{folder.customer_name}</h3>
+                          {segment === "all" && (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[folder.customer_segment]}`}>
+                              {SEGMENT_LABEL[folder.customer_segment]}
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-slate-500 font-mono mt-0.5">{folder.customer_cnic}</p>
                       </div>
                     </div>

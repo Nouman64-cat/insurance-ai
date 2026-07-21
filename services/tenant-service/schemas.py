@@ -773,6 +773,7 @@ class CaseRead(BaseModel):
     # None on create/update/get-single responses, which return the bare Case row.
     customer_name:        Optional[str] = None
     customer_cnic:        Optional[str] = None
+    customer_segment:     Optional[str] = None
     product_name:           Optional[str] = None
     coverage_amount:         Optional[float] = None
     latest_ai_decision:      Optional[str] = None

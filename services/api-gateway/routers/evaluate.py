@@ -16,13 +16,14 @@ POST /evaluate/stream is kept intact for synchronous dev/testing workflows.
 """
 
 import json
-from typing import List, Optional
+from typing import List, Literal, Optional
 from uuid import UUID, uuid4
 
 import httpx
 from aiokafka import AIOKafkaProducer
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -380,11 +381,36 @@ async def evaluate_stream(
 # GET /assessments — list stored evaluations for this tenant
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _customer_segment(customer: Optional[Customer]) -> str:
+    if customer and customer.organization_id:
+        return "organization"
+    if customer and customer.family_group_id:
+        return "family"
+    return "individual"
+
+
+def _apply_segment_filter(stmt, segment: Optional[str]):
+    """Join onto Customer and scope to the requested segment. Applied at the
+    SQL level (not post-fetch) because this endpoint paginates with
+    skip/limit — filtering after the fact would silently under-fill pages."""
+    if not segment:
+        return stmt
+    stmt = stmt.join(Customer, Customer.id == RiskAssessment.customer_id)
+    if segment == "individual":
+        return stmt.where(Customer.organization_id.is_(None), Customer.family_group_id.is_(None))
+    if segment == "family":
+        return stmt.where(Customer.family_group_id.is_not(None))
+    return stmt.where(Customer.organization_id.is_not(None))  # "organization"
+
+
 @router.get("/assessments", summary="List stored risk assessments for this tenant")
 async def list_assessments(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     case_id: Optional[UUID] = Query(None),
+    segment: Optional[Literal["individual", "family", "organization"]] = Query(
+        None, description="Filter by customer segment: individual | family | organization"
+    ),
     tenant_id: UUID = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
 ) -> List[dict]:
@@ -394,6 +420,7 @@ async def list_assessments(
     )
     if case_id:
         stmt = stmt.where(RiskAssessment.case_id == case_id)
+    stmt = _apply_segment_filter(stmt, segment)
     stmt = stmt.order_by(RiskAssessment.created_at.desc()).offset(skip).limit(limit)
     assessments = (await session.exec(stmt)).all()
 
@@ -423,6 +450,7 @@ async def list_assessments(
             "customer_name": customer.name if customer else "Unknown",
             "customer_cnic": customer.cnic if customer else "—",
             "customer_occupation": customer.occupation if customer else None,
+            "customer_segment": _customer_segment(customer),
             "case_id": str(a.case_id) if a.case_id else None,
             "product_name": policy.product_name if policy else None,
             "insurance_type": policy.insurance_type.value if policy else None,
@@ -437,6 +465,51 @@ async def list_assessments(
             "created_at": a.created_at.isoformat(),
         })
     return result
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GET /assessments/stats — aggregate counts for the Assessment History dashboard
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.get("/assessments/stats", summary="Decision + segment counts for the Assessment History dashboard")
+async def get_assessment_stats(
+    segment: Optional[Literal["individual", "family", "organization"]] = Query(
+        None, description="Scope the decision breakdown to a customer segment"
+    ),
+    tenant_id: UUID = Depends(get_tenant_id),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """Counts computed with SQL COUNT()/GROUP BY — never by paging through
+    every RiskAssessment row — so the stat tiles and the dropdown's per-segment
+    badges stay correct no matter how many assessments the tenant has."""
+    decision_stmt = (
+        select(RiskAssessment.ai_decision, func.count())
+        .where(RiskAssessment.tenant_id == tenant_id)
+    )
+    decision_stmt = _apply_segment_filter(decision_stmt, segment)
+    decision_stmt = decision_stmt.group_by(RiskAssessment.ai_decision)
+    decision_rows = (await session.execute(decision_stmt)).all()
+
+    by_decision = {d.value: 0 for d in AIDecision}
+    for decision, count in decision_rows:
+        by_decision[decision.value if hasattr(decision, "value") else decision] = count
+    total = sum(by_decision.values())
+
+    segment_counts: dict = {}
+    for seg in ("individual", "family", "organization"):
+        seg_stmt = (
+            select(func.count())
+            .select_from(RiskAssessment)
+            .where(RiskAssessment.tenant_id == tenant_id)
+        )
+        seg_stmt = _apply_segment_filter(seg_stmt, seg)
+        segment_counts[seg] = (await session.execute(seg_stmt)).scalar_one()
+
+    return {
+        "total": total,
+        "by_decision": by_decision,
+        "segment_counts": segment_counts,
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -460,6 +533,7 @@ async def get_assessment(
         "customer_id": str(a.customer_id),
         "customer_name": customer.name if customer else "Unknown",
         "customer_cnic": customer.cnic if customer else "—",
+        "customer_segment": _customer_segment(customer),
         "case_id": str(a.case_id) if a.case_id else None,
         "medical_score": a.medical_score,
         "financial_score": a.financial_score,
