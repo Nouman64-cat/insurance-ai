@@ -178,7 +178,26 @@ export function Chatbot() {
            contact_phone: args.contact_phone,
            household_declared_income: args.household_declared_income
         });
-        result = { success: true, family_group_id: res.data.id, message: `Family Group ${args.name} added successfully.` };
+        const familyId = res.data.id;
+        let message = `Family Group ${args.name} added successfully.`;
+
+        if (args.members && Array.isArray(args.members) && args.members.length > 0) {
+            // 1. Create a default floater policy
+            const fpRes = await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies`, {
+                total_sum_insured: 5000000,
+                term_years: 1,
+                effective_date: new Date().toISOString().split("T")[0]
+            });
+            const fpId = fpRes.data.id;
+
+            // 2. Add members
+            await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies/${fpId}/members/confirm`, {
+                members: args.members
+            });
+            message += ` Enrolled ${args.members.length} members successfully.`;
+        }
+
+        result = { success: true, family_group_id: familyId, message };
       }
       else if (name === "bulk_add_customers") {
         let customers = [];

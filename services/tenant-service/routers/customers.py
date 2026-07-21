@@ -4,7 +4,7 @@ from typing import Literal, Optional
 from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, cast, String
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -27,7 +27,7 @@ def _active_policy_exists(tenant_id: UUID):
         .where(
             Policy.tenant_id == tenant_id,
             Policy.customer_id == Customer.id,
-            Policy.status.in_(ACTIVE_POLICY_STATUSES),
+            cast(Policy.status, String).in_([status.value for status in ACTIVE_POLICY_STATUSES]),
         )
         .exists()
     )
@@ -189,12 +189,12 @@ async def list_customers(
     elif category == "not_interested":
         # An active policyholder always wins the "active" bucket even if flagged
         # NOT_INTERESTED at some earlier point — keeps the four categories disjoint.
-        query = query.where(Customer.profile_status == ProfileStatusEnum.NOT_INTERESTED, ~active_exists)
+        query = query.where(cast(Customer.profile_status, String) == ProfileStatusEnum.NOT_INTERESTED.value, ~active_exists)
     elif category == "quick_lead":
-        query = query.where(Customer.profile_status == ProfileStatusEnum.LEAD, ~active_exists)
+        query = query.where(cast(Customer.profile_status, String) == ProfileStatusEnum.LEAD.value, ~active_exists)
     elif category == "full_details":
         query = query.where(
-            Customer.profile_status.in_([ProfileStatusEnum.PROSPECT, ProfileStatusEnum.UNDERWRITING_READY]),
+            cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value]),
             ~active_exists,
         )
 
@@ -222,10 +222,10 @@ async def get_customer_stats(
 
     total = await _count()
     active = await _count(active_exists)
-    not_interested = await _count(Customer.profile_status == ProfileStatusEnum.NOT_INTERESTED, ~active_exists)
-    quick_leads = await _count(Customer.profile_status == ProfileStatusEnum.LEAD, ~active_exists)
+    not_interested = await _count(cast(Customer.profile_status, String) == ProfileStatusEnum.NOT_INTERESTED.value, ~active_exists)
+    quick_leads = await _count(cast(Customer.profile_status, String) == ProfileStatusEnum.LEAD.value, ~active_exists)
     full_details = await _count(
-        Customer.profile_status.in_([ProfileStatusEnum.PROSPECT, ProfileStatusEnum.UNDERWRITING_READY]),
+        cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value]),
         ~active_exists,
     )
 

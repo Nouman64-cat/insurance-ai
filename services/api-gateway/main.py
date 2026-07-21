@@ -129,7 +129,7 @@ async def _proxy_to_tenant(request: Request, url: str) -> Response:
                 headers=headers,
                 params=request.query_params,
                 content=body,
-                timeout=30.0,
+                timeout=120.0,
             )
             return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
         except httpx.HTTPError as exc:
