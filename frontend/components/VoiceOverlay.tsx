@@ -150,11 +150,15 @@ export default function VoiceOverlay({ onClose }: Props) {
                       model: "gpt-4o-mini"
                     },
                     prompt: SYSTEM_PROMPT,
-                    functions: ALL_TOOLS.map(t => ({
-                      name: t.name,
-                      description: t.description,
-                      parameters: zodToJsonSchema(t.schema)
-                    }))
+                    functions: ALL_TOOLS.map(t => {
+                      const s = (t.schema as any).toJSONSchema ? (t.schema as any).toJSONSchema() : zodToJsonSchema(t.schema);
+                      const { $schema, ...params } = s;
+                      return {
+                        name: t.name,
+                        description: t.description,
+                        parameters: params
+                      };
+                    })
                   },
                   speak: { provider: { type: "deepgram", model: "aura-asteria-en" } },
                 },
