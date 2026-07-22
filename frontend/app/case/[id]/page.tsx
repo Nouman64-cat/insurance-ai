@@ -1106,7 +1106,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
         </div>
 
         {/* Action buttons */}
-        {/* <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
           <button
             onClick={() => overrideStatus("Pending Documents")}
             disabled={overriding !== null}
@@ -1128,7 +1128,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
           >
             {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
           </button>
-        </div> */}
+        </div>
 
         {/* Final step after underwriting — generate the full application dossier */}
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">

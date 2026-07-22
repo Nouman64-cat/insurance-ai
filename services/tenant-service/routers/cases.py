@@ -453,6 +453,32 @@ async def update_case_status(
     )
     session.add(history)
     session.add(case)
+    
+    if case.caseStatus == CaseStatusEnum.APPROVED:
+        if case.policy_id:
+            policy = await session.get(Policy, case.policy_id)
+            if policy:
+                policy.status = PolicyStatusEnum.APPROVED
+                session.add(policy)
+        
+        customer = await session.get(Customer, case.customer_id)
+        if customer:
+            from shared.models.core import ProfileStatusEnum, FamilyGroup, Organization
+            customer.profile_status = ProfileStatusEnum.POLICYHOLDER
+            session.add(customer)
+            
+            if customer.family_group_id:
+                fg = await session.get(FamilyGroup, customer.family_group_id)
+                if fg:
+                    fg.profile_status = ProfileStatusEnum.POLICYHOLDER
+                    session.add(fg)
+            
+            if customer.organization_id:
+                org = await session.get(Organization, customer.organization_id)
+                if org:
+                    org.profile_status = ProfileStatusEnum.POLICYHOLDER
+                    session.add(org)
+                    
     await session.commit()
     await session.refresh(case)
     

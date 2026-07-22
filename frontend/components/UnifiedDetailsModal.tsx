@@ -2,6 +2,9 @@
 
 import React, { useEffect, useState } from "react";
 import api from "@/app/services/api";
+import CustomerFormModal from "@/components/entities/CustomerFormModal";
+import FamilyFormModal from "@/components/entities/FamilyFormModal";
+import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
@@ -10,12 +13,14 @@ interface UnifiedDetailsModalProps {
   onClose: () => void;
   entityId: string;
   entityType: EntityType;
+  onSaved?: () => void;
 }
 
-export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityType }: UnifiedDetailsModalProps) {
+export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityType, onSaved }: UnifiedDetailsModalProps) {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [showEditModal, setShowEditModal] = useState(false);
 
   useEffect(() => {
     if (isOpen && entityId) {
@@ -89,15 +94,35 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {entityType === "INDIVIDUAL" && (
+              <button 
+                onClick={() => window.location.href = `/admin/customers/${entityId}/plans`}
+                className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                Manage Policies & Plans
+              </button>
+            )}
+            {entityType === "FAMILY" && (
+              <button 
+                onClick={() => window.location.href = `/admin/families/${entityId}`}
+                className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                Manage Family & Roster
+              </button>
+            )}
+            {entityType === "CORPORATE" && (
+              <button 
+                onClick={() => window.location.href = `/admin/organizations/${entityId}`}
+                className="text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                Manage Corporate & Census
+              </button>
+            )}
             <button 
-              onClick={() => {
-                if (entityType === "INDIVIDUAL") window.location.href = `/admin/customers?id=${entityId}`;
-                if (entityType === "FAMILY") window.location.href = `/admin/families?id=${entityId}`;
-                if (entityType === "CORPORATE") window.location.href = `/admin/organizations?id=${entityId}`;
-              }}
+              onClick={() => setShowEditModal(true)}
               className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors shadow-sm"
             >
-              Open Full Legacy Editor
+              Open Full Details Form
             </button>
             <button 
               onClick={onClose}
@@ -236,12 +261,43 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                     {entityType === 'INDIVIDUAL' ? 'Policy Portfolio' : entityType === 'FAMILY' ? 'Family Roster & Coverage' : 'Employee Census'}
                   </h3>
                   
-                  <div className="flex flex-col items-center justify-center h-48 text-center bg-slate-50/50 rounded-xl border border-slate-100 border-dashed">
+                  <div className="flex flex-col items-center justify-center h-48 text-center bg-slate-50/50 rounded-xl border border-slate-100 border-dashed p-4">
                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12 text-slate-300 mb-3">
                       <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
                     </svg>
                     <p className="text-sm font-semibold text-slate-700">Detailed View Protected</p>
-                    <p className="text-xs text-slate-500 mt-1 max-w-sm">To view complex nested data like medical evaluations or policy documents, please click the "Open Full Legacy Editor" button in the header.</p>
+                    <p className="text-xs text-slate-500 mt-1 mb-4 max-w-sm">
+                      {entityType === 'INDIVIDUAL' 
+                        ? "To view and manage this customer's policies, coverage options, and plan evaluations, go to the plan details page."
+                        : entityType === 'FAMILY'
+                        ? "To view and manage this family's roster, members, relationships, and health floaters, go to the family management page."
+                        : "To view and manage this organization's employee census, departments, and master policy, go to the organization management page."
+                      }
+                    </p>
+                    {entityType === "INDIVIDUAL" && (
+                      <button 
+                        onClick={() => window.location.href = `/admin/customers/${entityId}/plans`}
+                        className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+                      >
+                        Manage Policies & Plans →
+                      </button>
+                    )}
+                    {entityType === "FAMILY" && (
+                      <button 
+                        onClick={() => window.location.href = `/admin/families/${entityId}`}
+                        className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+                      >
+                        Manage Family Roster →
+                      </button>
+                    )}
+                    {entityType === "CORPORATE" && (
+                      <button 
+                        onClick={() => window.location.href = `/admin/organizations/${entityId}`}
+                        className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors shadow-sm"
+                      >
+                        Manage Employee Census →
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -250,6 +306,50 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
           )}
         </div>
       </div>
+
+      {showEditModal && data && (
+        <>
+          {entityType === "INDIVIDUAL" && (
+            <CustomerFormModal
+              open={showEditModal}
+              mode="edit"
+              customer={data}
+              onClose={() => setShowEditModal(false)}
+              onSaved={(msg) => {
+                fetchDetails();
+                setShowEditModal(false);
+                if (onSaved) onSaved();
+              }}
+            />
+          )}
+          {entityType === "FAMILY" && (
+            <FamilyFormModal
+              open={showEditModal}
+              mode="full"
+              family={data}
+              onClose={() => setShowEditModal(false)}
+              onSaved={(msg) => {
+                fetchDetails();
+                setShowEditModal(false);
+                if (onSaved) onSaved();
+              }}
+            />
+          )}
+          {entityType === "CORPORATE" && (
+            <OrganizationFormModal
+              open={showEditModal}
+              mode="full"
+              organization={data}
+              onClose={() => setShowEditModal(false)}
+              onSaved={(msg) => {
+                fetchDetails();
+                setShowEditModal(false);
+                if (onSaved) onSaved();
+              }}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

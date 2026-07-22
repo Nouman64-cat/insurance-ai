@@ -587,6 +587,7 @@ async def confirm_employee_census(
     audit_user = (await session.exec(select(User).where(User.tenant_id == tenant_id))).first()
 
     outcomes: List[CensusEmployeeOutcome] = []
+    customers_to_promote: List[Customer] = []
     for row in parsed_rows:
         is_smoker = bool(row.get("is_smoker", False))
         height_cm = float(row.get("height_cm", 170))
@@ -606,6 +607,7 @@ async def confirm_employee_census(
             weight_kg=weight_kg,
         )
         session.add(customer)
+        customers_to_promote.append(customer)
         await session.flush()
 
         coverage_amount = row["_coverage_amount"]
@@ -721,6 +723,16 @@ async def confirm_employee_census(
     if master_policy.free_cover_limit is None:
         master_policy.free_cover_limit = free_cover_limit
     session.add(master_policy)
+
+    from shared.models.core import ProfileStatusEnum, Organization
+    org = await session.get(Organization, org_id)
+    if org:
+        org.profile_status = ProfileStatusEnum.POLICYHOLDER
+        session.add(org)
+        
+    for cust in customers_to_promote:
+        cust.profile_status = ProfileStatusEnum.POLICYHOLDER
+        session.add(cust)
 
     await session.commit()
 
