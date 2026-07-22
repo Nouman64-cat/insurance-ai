@@ -821,6 +821,13 @@ async def confirm_floater_members(
     family_policy.status = "Active"
     session.add(family_policy)
 
+    from shared.models.core import ProfileStatusEnum
+    family_group.profile_status = ProfileStatusEnum.POLICYHOLDER
+    session.add(family_group)
+    for cust in created_customers.values():
+        cust.profile_status = ProfileStatusEnum.POLICYHOLDER
+        session.add(cust)
+
     await session.commit()
 
     return FamilyConfirmResponse(
@@ -955,6 +962,7 @@ async def confirm_life_bundle_members(
     audit_user = (await session.exec(select(User).where(User.tenant_id == tenant_id))).first()
 
     outcomes: List[FamilyMemberOutcome] = []
+    customers_to_promote: List[Customer] = []
     for row in parsed_rows:
         plan: InsurancePlan = row["_plan"]
         is_smoker = bool(row.get("is_smoker", False))
@@ -964,6 +972,7 @@ async def confirm_life_bundle_members(
         customer = await _get_or_create_member_customer(
             session, tenant_id, family_id, row, row["_dob"], row["_declared_income"],
         )
+        customers_to_promote.append(customer)
 
         if row["relationship"] == "Self":
             family_group.primary_member_customer_id = customer.id
@@ -1073,6 +1082,13 @@ async def confirm_life_bundle_members(
 
     family_policy.status = "Active"
     session.add(family_policy)
+
+    from shared.models.core import ProfileStatusEnum
+    family_group.profile_status = ProfileStatusEnum.POLICYHOLDER
+    session.add(family_group)
+    for cust in customers_to_promote:
+        cust.profile_status = ProfileStatusEnum.POLICYHOLDER
+        session.add(cust)
 
     await session.commit()
 

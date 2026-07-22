@@ -362,6 +362,21 @@ async def evaluate_stream(
                         case.caseStatus = new_case_status
                         db.add(case)
 
+                if new_policy_status == PolicyStatusEnum.APPROVED or (case is not None and case.caseStatus == CaseStatusEnum.APPROVED):
+                    from shared.models.core import ProfileStatusEnum, FamilyGroup, Organization
+                    customer.profile_status = ProfileStatusEnum.POLICYHOLDER
+                    db.add(customer)
+                    if customer.family_group_id:
+                        fg = await db.get(FamilyGroup, customer.family_group_id)
+                        if fg:
+                            fg.profile_status = ProfileStatusEnum.POLICYHOLDER
+                            db.add(fg)
+                    if customer.organization_id:
+                        org = await db.get(Organization, customer.organization_id)
+                        if org:
+                            org.profile_status = ProfileStatusEnum.POLICYHOLDER
+                            db.add(org)
+
                 await db.commit()
                 await db.refresh(assessment)
 

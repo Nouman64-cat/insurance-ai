@@ -44,9 +44,9 @@ export default function PolicyholdersPage() {
 
     try {
       const [customersRes, familiesRes, orgsRes] = await Promise.all([
-        api.get(`/tenants/${tenantId}/customers`),
-        api.get(`/tenants/${tenantId}/families`),
-        api.get(`/tenants/${tenantId}/organizations`)
+        api.get(`/tenants/${tenantId}/customers?category=active`),
+        api.get(`/tenants/${tenantId}/families?category=active`),
+        api.get(`/tenants/${tenantId}/organizations?category=active`)
       ]);
 
       const unified: UnifiedPolicyholder[] = [];
@@ -54,45 +54,39 @@ export default function PolicyholdersPage() {
       // Process Individual Customers
       const customers = customersRes.data || [];
       customers.forEach((c: any) => {
-        if (c.profile_status === "POLICYHOLDER") {
-          unified.push({
-            id: c.id,
-            type: "INDIVIDUAL",
-            name: c.name,
-            contact_info: c.details?.phone || "No phone",
-            created_at: c.created_at,
-            primaryIdentifier: c.cnic,
-          });
-        }
+        unified.push({
+          id: c.id,
+          type: "INDIVIDUAL",
+          name: c.name,
+          contact_info: c.details?.phone || "No phone",
+          created_at: c.created_at,
+          primaryIdentifier: c.cnic,
+        });
       });
 
       // Process Family Groups
       const families = familiesRes.data || [];
       families.forEach((f: any) => {
-        if (f.profile_status === "POLICYHOLDER") {
-          unified.push({
-            id: f.id,
-            type: "FAMILY",
-            name: f.name,
-            contact_info: f.contact_phone || f.contact_email || "No contact",
-            created_at: f.created_at,
-          });
-        }
+        unified.push({
+          id: f.id,
+          type: "FAMILY",
+          name: f.name,
+          contact_info: f.contact_phone || f.contact_email || "No contact",
+          created_at: f.created_at,
+        });
       });
 
       // Process Organizations
       const orgs = orgsRes.data || [];
       orgs.forEach((o: any) => {
-        if (o.profile_status === "POLICYHOLDER") {
-          unified.push({
-            id: o.id,
-            type: "CORPORATE",
-            name: o.name,
-            contact_info: o.contact_phone || o.contact_email || "No contact",
-            created_at: o.created_at,
-            primaryIdentifier: o.registration_number,
-          });
-        }
+        unified.push({
+          id: o.id,
+          type: "CORPORATE",
+          name: o.name,
+          contact_info: o.contact_phone || o.contact_email || "No contact",
+          created_at: o.created_at,
+          primaryIdentifier: o.registration_number,
+        });
       });
 
       unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
@@ -143,24 +137,6 @@ export default function PolicyholdersPage() {
               <line x1="9" y1="17" x2="13" y2="17" />
             </svg>
             Insurance Plans
-          </button>
-          <button
-            onClick={() => router.push("/admin/customers")}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
-          >
-            + Add Individual
-          </button>
-          <button
-            onClick={() => router.push("/admin/families")}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow active:scale-95"
-          >
-            + Add Family
-          </button>
-          <button
-            onClick={() => router.push("/admin/organizations")}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
-          >
-            + Add Corporate
           </button>
         </div>
       </div>
@@ -290,6 +266,7 @@ export default function PolicyholdersPage() {
           onClose={() => setSelectedEntity(null)} 
           entityId={selectedEntity.id} 
           entityType={selectedEntity.type} 
+          onSaved={fetchPolicyholders}
         />
       )}
     </div>
