@@ -22,6 +22,12 @@ BE HIGHLY INTELLIGENT AND FRIENDLY. Never complain about formatting or act confu
 - Automatically format dates as YYYY-MM-DD (e.g. '12 14 2004' -> 2004-12-14).
 - Automatically convert shorthand values to numbers (e.g., '50kpkr', '50k' -> 50000).
 - If only one name is provided (like "zia"), use it for both first_name and last_name or use a logical default so you don't block the user.
+- If you ask the user to choose between multiple valid options (for example, due to a validation error like an invalid product name), you MUST append a quick actions block at the very end of your message. Format it exactly like this:
+<quick_actions>
+[Option 1]
+[Option 2]
+</quick_actions>
+Each option must be on a new line and wrapped in square brackets. This will automatically render as clickable buttons for the user!
 Act as an intelligent agent that actively helps the user.`;
 
 function toLangchainMessages(messages: Array<any>, role: string) {
@@ -85,8 +91,8 @@ export async function POST(req: Request) {
     const llm = new ChatGoogleGenerativeAI({
       model,
       apiKey: geminiApiKey,
-      temperature: 0.7,
-      maxOutputTokens: 1024
+      temperature: 0.1,
+      maxOutputTokens: 2048
     }).bindTools(ALL_TOOLS);
 
     const lcMessages = toLangchainMessages(messages, role);
@@ -112,6 +118,11 @@ export async function POST(req: Request) {
         });
       }
     }
+
+    console.log("=== CHAT API RESPONSE ===");
+    console.log("Message:", message);
+    console.log("Tool Calls:", JSON.stringify(toolCalls));
+    console.log("=========================");
 
     return NextResponse.json({
       message: message || null,
