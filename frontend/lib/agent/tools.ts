@@ -7,7 +7,24 @@ export const navigateToPageTool = tool(
   },
   {
     name: "navigate_to_page",
-    description: "Navigates the user to a specific section of the application. If the user asks to go to 'applications', map it to 'cases'.",
+    description: `Navigates the user to a specific section of the application. Use this tool IMMEDIATELY when the user says any navigation-related phrase.
+
+NATURAL LANGUAGE TO PAGE MAPPINGS (use these EXACTLY):
+- "leads", "customers", "people", "applicants", "clients" → "admin/customers"
+- "cases", "applications", "underwriting cases" → "cases"
+- "dashboard", "home", "main" → "dashboard"
+- "artifacts", "documents" → "artifacts"
+- "proposals", "quotations", "quotes" → "proposal"
+- "live evaluation", "evaluate now" → "live-evaluation"
+- "case summarizer", "summarize" → "case-summarizer"
+- "assessments", "risk" → "assessments"
+- "organizations", "corporate", "companies" → "admin/organizations"
+- "users", "team", "staff", "agents" → "admin/users"
+- "profile", "my profile", "account" → "profile"
+- "tenants" → "super-admin/tenants"
+- "underwriting" → "underwriting"
+
+Always resolve the user's intent to the closest page path from the enum.`,
     schema: z.object({
       page_name: z.enum([
         "dashboard",
@@ -26,7 +43,7 @@ export const navigateToPageTool = tool(
         "super-admin/tokens",
         "admin/users",
         "profile"
-      ]).describe("The path of the page to navigate to. Use 'cases' for applications.")
+      ]).describe("The exact page path. Map user intent using the descriptions above.")
     }),
   }
 );
@@ -165,6 +182,23 @@ export const createCaseTool = tool(
   }
 );
 
+export const createProposalTool = tool(
+  async (args) => { return JSON.stringify({ success: true, dummy: true }); },
+  {
+    name: "create_proposal",
+    description: "Creates an insurance proposal (quote/policy) for a customer. Used when a customer has no policy and needs one to proceed with an underwriting case or risk assessment.",
+    schema: z.object({
+      customer_id: z.string().optional().describe("The ID of the customer. Optional if cnic or applicant_name is provided."),
+      cnic: z.string().optional().describe("CNIC of the customer. Prefer this if provided."),
+      applicant_name: z.string().optional().describe("Name of the applicant."),
+      product_name: z.string().optional().describe("Name of the insurance product (e.g., 'Term Life Plus'). Defaults to Term Life Plus."),
+      insurance_type: z.enum(["Life", "Health", "Auto", "Property"]).optional().describe("Type of insurance. Defaults to Life."),
+      coverage_amount: z.number().optional().describe("The total coverage or sum assured amount. Defaults to 5000000."),
+      term_years: z.number().optional().describe("The term of the policy in years. Defaults to 10.")
+    }),
+  }
+);
+
 export const uploadDocumentTool = tool(
   async (args) => { return JSON.stringify({ success: true, dummy: true }); },
   {
@@ -189,5 +223,6 @@ export const ALL_TOOLS = [
   addFamilyGroupTool,
   bulkAddCustomersTool,
   createCaseTool,
+  createProposalTool,
   uploadDocumentTool
 ];
