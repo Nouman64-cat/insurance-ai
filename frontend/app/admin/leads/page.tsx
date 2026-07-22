@@ -266,7 +266,7 @@ export default function LeadsHubPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads Hub</h1>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads</h1>
             <p className="text-sm text-slate-500 mt-0.5">
               Manage and track your prospects across all segments.
             </p>
