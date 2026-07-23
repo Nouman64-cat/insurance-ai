@@ -1,13 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { listBranches, Branch } from "@/app/services/branches";
-import { listAcquisitionSources, AcquisitionSource } from "@/app/services/acquisitionSources";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
-import FiltersPanel from "@/components/FiltersPanel";
 import AddEntryChooser, { EntryEntityType } from "@/components/entities/AddEntryChooser";
 import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import CustomerQuickLeadModal from "@/components/entities/CustomerQuickLeadModal";
@@ -39,68 +36,6 @@ export default function LeadsHubPage() {
   const [filterType, setFilterType] = useState<FilterType>("ALL");
   const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: EntityType } | null>(null);
 
-  const [search, setSearch] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [cityInput, setCityInput] = useState("");
-  const [cityFilter, setCityFilter] = useState("");
-  const [provinceFilter, setProvinceFilter] = useState("");
-  const [branchFilter, setBranchFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState("");
-  const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
-  const [sourceOptions, setSourceOptions] = useState<AcquisitionSource[]>([]);
-
-  useEffect(() => {
-    const t = setTimeout(() => setCityFilter(cityInput.trim()), 400);
-    return () => clearTimeout(t);
-  }, [cityInput]);
-
-  useEffect(() => {
-    const tenantId = localStorage.getItem("tenant_id");
-    if (!tenantId) return;
-    listBranches(tenantId).then(setBranchOptions).catch(() => setBranchOptions([]));
-    listAcquisitionSources(tenantId).then(setSourceOptions).catch(() => setSourceOptions([]));
-  }, []);
-
-  const clearFilters = () => {
-    setSearch("");
-    setFilterType("ALL");
-    setDateFrom("");
-    setDateTo("");
-    setCityInput("");
-    setCityFilter("");
-    setProvinceFilter("");
-    setBranchFilter("");
-    setSourceFilter("");
-  };
-
-  const structuredFilterCount = [dateFrom || dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter].filter(Boolean).length;
-
-  const activeFilterChips: { key: string; label: string; onRemove: () => void }[] = [];
-  if (search) activeFilterChips.push({ key: "search", label: `"${search}"`, onRemove: () => setSearch("") });
-  if (filterType !== "ALL") {
-    const typeLabel = filterType === "INDIVIDUAL" ? "Individuals" : filterType === "FAMILY" ? "Families" : "Corporates";
-    activeFilterChips.push({ key: "type", label: typeLabel, onRemove: () => setFilterType("ALL") });
-  }
-  if (dateFrom || dateTo) {
-    const label = dateFrom && dateTo
-      ? (dateFrom === dateTo ? `On ${dateFrom}` : `${dateFrom} → ${dateTo}`)
-      : dateFrom
-      ? `From ${dateFrom}`
-      : `Until ${dateTo}`;
-    activeFilterChips.push({ key: "date", label, onRemove: () => { setDateFrom(""); setDateTo(""); } });
-  }
-  if (cityFilter) activeFilterChips.push({ key: "city", label: `City: ${cityFilter}`, onRemove: () => { setCityInput(""); setCityFilter(""); } });
-  if (provinceFilter) activeFilterChips.push({ key: "province", label: `Province: ${provinceFilter}`, onRemove: () => setProvinceFilter("") });
-  if (branchFilter) {
-    const label = branchOptions.find(b => b.id === branchFilter)?.name ?? "Branch";
-    activeFilterChips.push({ key: "branch", label, onRemove: () => setBranchFilter("") });
-  }
-  if (sourceFilter) {
-    const label = sourceOptions.find(a => a.id === sourceFilter)?.name ?? "Source";
-    activeFilterChips.push({ key: "source", label, onRemove: () => setSourceFilter("") });
-  }
-
   // Inline "Add" flows — replaces navigation to separate customer/family/organization pages.
   const [chooserType, setChooserType] = useState<EntryEntityType | null>(null);
   const [activeAdd, setActiveAdd] = useState<{ type: EntryEntityType; mode: "quick" | "full" } | null>(null);
@@ -130,7 +65,7 @@ export default function LeadsHubPage() {
 
   useEffect(() => {
     fetchLeads();
-  }, [dateFrom, dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter]);
+  }, []);
 
   useEffect(() => {
     if (cnicQuery && leads.length > 0) {
@@ -162,14 +97,6 @@ export default function LeadsHubPage() {
     }
 
     try {
-      const structuredParams: Record<string, string> = {};
-      if (branchFilter) structuredParams.branch_id = branchFilter;
-      if (sourceFilter) structuredParams.acquisition_source_id = sourceFilter;
-      if (cityFilter) structuredParams.city = cityFilter;
-      if (provinceFilter) structuredParams.province = provinceFilter;
-      if (dateFrom) structuredParams.created_from = dateFrom;
-      if (dateTo) structuredParams.created_to = dateTo;
-
       // Parallel fetch to gather all entity types, excluding active policyholders using category queries
       const [
         custFullRes,
@@ -180,13 +107,13 @@ export default function LeadsHubPage() {
         orgInProgressRes,
         orgNewRes
       ] = await Promise.all([
-        api.get(`/tenants/${tenantId}/customers`, { params: { category: "full_details", ...structuredParams } }),
-        api.get(`/tenants/${tenantId}/customers`, { params: { category: "quick_lead", ...structuredParams } }),
-        api.get(`/tenants/${tenantId}/customers`, { params: { category: "not_interested", ...structuredParams } }),
-        api.get(`/tenants/${tenantId}/families`, { params: { category: "in_progress", ...structuredParams } }),
-        api.get(`/tenants/${tenantId}/families`, { params: { category: "new", ...structuredParams } }),
-        api.get(`/tenants/${tenantId}/organizations`, { params: { category: "in_progress", ...structuredParams } }),
-        api.get(`/tenants/${tenantId}/organizations`, { params: { category: "new", ...structuredParams } })
+        api.get(`/tenants/${tenantId}/customers?category=full_details`),
+        api.get(`/tenants/${tenantId}/customers?category=quick_lead`),
+        api.get(`/tenants/${tenantId}/customers?category=not_interested`),
+        api.get(`/tenants/${tenantId}/families?category=in_progress`),
+        api.get(`/tenants/${tenantId}/families?category=new`),
+        api.get(`/tenants/${tenantId}/organizations?category=in_progress`),
+        api.get(`/tenants/${tenantId}/organizations?category=new`)
       ]);
 
       const unified: UnifiedLead[] = [];
@@ -259,15 +186,7 @@ export default function LeadsHubPage() {
   };
 
   const getFilteredLeads = () => {
-    const q = search.trim().toLowerCase();
-    return leads.filter(l => {
-      if (filterType !== "ALL" && l.type !== filterType) return false;
-      if (q) {
-        const haystack = `${l.name} ${l.contact_info} ${l.primaryIdentifier ?? ""}`.toLowerCase();
-        if (!haystack.includes(q)) return false;
-      }
-      return true;
-    });
+    return leads.filter(l => filterType === "ALL" || l.type === filterType);
   };
 
   const leadsByColumn = {
@@ -426,89 +345,23 @@ export default function LeadsHubPage() {
           </div>
         </div>
 
-        {/* Filters, search */}
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3 w-full">
-            <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner backdrop-blur-md border border-slate-200/60 shrink-0">
-              {["ALL", "INDIVIDUAL", "FAMILY", "CORPORATE"].map((ft) => (
-                  <button
-                    key={ft}
-                    onClick={() => setFilterType(ft as FilterType)}
-                    className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${
-                      filterType === ft
-                        ? "bg-white text-indigo-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
-                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                    }`}
-                  >
-                    {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individuals" : ft === "FAMILY" ? "Families" : "Corporates"}
-                  </button>
-                ))}
-            </div>
-            
-            <div className="relative w-full max-w-[320px] shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
-              </svg>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, contact, identifier..."
-                className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-shadow"
-              />
-              {search && (
-                <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            <div className="shrink-0">
-              <FiltersPanel
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-                onDateFromChange={setDateFrom}
-                onDateToChange={setDateTo}
-                cityInput={cityInput}
-                onCityInputChange={setCityInput}
-                provinceFilter={provinceFilter}
-                onProvinceChange={setProvinceFilter}
-                branchFilter={branchFilter}
-                onBranchChange={setBranchFilter}
-                branchOptions={branchOptions}
-                sourceFilter={sourceFilter}
-                onSourceChange={setSourceFilter}
-                sourceOptions={sourceOptions}
-                activeCount={structuredFilterCount}
-                onClearAll={clearFilters}
-              />
-            </div>
-          </div>
-
-          {activeFilterChips.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {activeFilterChips.map((chip) => (
-                <span
-                  key={chip.key}
-                  className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium"
-                >
-                  {chip.label}
-                  <button
-                    onClick={chip.onRemove}
-                    className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-indigo-100 text-indigo-400 hover:text-indigo-700"
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-              <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-indigo-600 hover:underline ml-1">
-                Clear all
+        {/* Filters */}
+        <div className="flex items-center">
+        <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner backdrop-blur-md border border-slate-200/60">
+          {["ALL", "INDIVIDUAL", "FAMILY", "CORPORATE"].map((ft) => (
+              <button
+                key={ft}
+                onClick={() => setFilterType(ft as FilterType)}
+                className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${
+                  filterType === ft
+                    ? "bg-white text-indigo-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
+                    : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                }`}
+              >
+                {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individuals" : ft === "FAMILY" ? "Families" : "Corporates"}
               </button>
-            </div>
-          )}
+            ))}
+          </div>
         </div>
 
         {notice && (

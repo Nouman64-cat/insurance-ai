@@ -302,6 +302,29 @@ async def list_users(
     return [to_user_read(u, u.profile) for u in users]
 
 
+@router.get("/{tenant_id}/users/directory", response_model=List[UserRead])
+async def list_directory_users(
+    tenant_id: UUID,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> List[UserRead]:
+    try:
+        payload = decode_access_token(token)
+        req_user_id = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    req_user = await session.get(User, req_user_id)
+    if not req_user or req_user.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
+
+    result = await session.exec(
+        select(User).where(User.tenant_id == tenant_id, User.is_active == True).options(selectinload(User.profile))
+    )
+    users = result.all()
+    return [to_user_read(u, u.profile) for u in users]
+
+
 @router.get("/{tenant_id}/users/{user_id}", response_model=UserRead)
 async def get_user(
     tenant_id: UUID,

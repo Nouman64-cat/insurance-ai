@@ -8,6 +8,10 @@ import { MetricCard } from "@/components/MetricCard";
 import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
 import { fmtCoverage } from "@/lib/mock-data";
 
+import { updateQuote } from "../services/quotes";
+import { listUnderwriters, Agent } from "../services/agents";
+import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
+
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
@@ -47,6 +51,20 @@ function quoteSegment(q: QuoteListItem): "individual" | "family" | "organization
   if (q.family_group_id && q.family_policy_id) return "family";
   return "individual";
 }
+
+
+const STATUS_TABS = [
+  { id: "ALL", label: "All Proposals" },
+  { id: "Quoted", label: "Draft" },
+  { id: "Proposed", label: "Submitted" },
+  { id: "UnderReview", label: "Under Review" },
+  { id: "InformationRequested", label: "Info Requested" },
+  { id: "Approved", label: "Approved" },
+  { id: "Declined", label: "Rejected" },
+  { id: "Issued", label: "Issued" },
+];
+
+const STORAGE_KEY = "proposal_view_state";
 
 // ── Grouping types ───────────────────────────────────────────────────────────
 // Corporate/group-life quotes (Policy.master_policy_id set) nest three levels
@@ -101,6 +119,40 @@ export default function QuotePage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<SegmentFilter>("all");
+
+  // Sticky State
+  const [activeTab, setActiveTab] = useState("ALL");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [agentFilter, setAgentFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [underwriters, setUnderwriters] = useState<Agent[]>([]);
+  const [sources, setSources] = useState<AcquisitionSource[]>([]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.activeTab) setActiveTab(parsed.activeTab);
+        if (parsed.dateFrom) setDateFrom(parsed.dateFrom);
+        if (parsed.dateTo) setDateTo(parsed.dateTo);
+        if (parsed.agentFilter) setAgentFilter(parsed.agentFilter);
+        if (parsed.sourceFilter) setSourceFilter(parsed.sourceFilter);
+      } catch (e) {}
+    }
+    const tenantId = localStorage.getItem("tenant_id");
+    if (tenantId) {
+      listUnderwriters(tenantId).then(setUnderwriters).catch(console.error);
+      listAcquisitionSources(tenantId).then(setSources).catch(console.error);
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeTab, dateFrom, dateTo, agentFilter, sourceFilter }));
+  }, [activeTab, dateFrom, dateTo, agentFilter, sourceFilter]);
+
 
   const [selectedQuoteId, setSelectedProposalId] = useState<string | null>(null);
   const [detail, setDetail] = useState<QuoteDetail | null>(null);
@@ -252,15 +304,23 @@ export default function QuotePage() {
 
   const fetchQuotes = useCallback(async () => {
     setError(null);
+    setLoading(true);
     try {
-      const data = await listQuotes();
+      const filters: any = {};
+      if (activeTab !== "ALL") filters.status = activeTab;
+      if (dateFrom) filters.created_from = dateFrom;
+      if (dateTo) filters.created_to = dateTo;
+      if (agentFilter) filters.assigned_underwriter_id = agentFilter;
+      if (sourceFilter) filters.acquisition_source_id = sourceFilter;
+      
+      const data = await listQuotes(filters);
       setQuotes(data);
     } catch (err: any) {
       setError(err.message ?? "Failed to load quotations.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeTab, dateFrom, dateTo, agentFilter, sourceFilter]);
 
   useEffect(() => {
     fetchQuotes();
@@ -417,6 +477,40 @@ export default function QuotePage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {kpis.map((k) => <MetricCard key={k.title} {...k} />)}
+      </div>
+
+      
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-1 border-b border-slate-200">
+          {STATUS_TABS.map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-3 items-center">
+          <button onClick={() => setFiltersOpen(!filtersOpen)} className="px-3 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50">
+            {filtersOpen ? 'Hide Filters' : 'Show Advanced Filters'}
+          </button>
+          {filtersOpen && (
+            <div className="flex flex-wrap gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl w-full">
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1" title="Created From" />
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1" title="Created To" />
+              <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1">
+                <option value="">All Underwriters</option>
+                {underwriters.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
+              </select>
+              <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1">
+                <option value="">All Sources</option>
+                {sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -580,6 +674,7 @@ export default function QuotePage() {
           loading={detailLoading}
           error={detailError}
           onClose={closeQuote}
+          onRefresh={fetchQuotes}
           onStartUnderwriting={async () => {
             if (!detail) return;
             const tenantId = localStorage.getItem("tenant_id");
@@ -1113,14 +1208,37 @@ function CustomerFolder({
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
 function QuoteDetailModal({
-  detail, loading, error, onClose, onStartUnderwriting,
+  detail, loading, error, onClose, onStartUnderwriting, onRefresh
 }: {
   detail: QuoteDetail | null;
   loading: boolean;
   error: string | null;
   onClose: () => void;
   onStartUnderwriting: () => Promise<void>;
+  onRefresh: () => void;
 }) {
+  const [underwriters, setUnderwriters] = useState<Agent[]>([]);
+  const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (tenantId) listUnderwriters(tenantId).then(setUnderwriters).catch(console.error);
+  }, []);
+
+  const handleUpdate = async (updates: { status?: string; assigned_underwriter_id?: string | null }) => {
+    if (!detail) return;
+    setUpdating(true);
+    try {
+      await updateQuote(detail.quote_id, updates);
+      onRefresh();
+      onClose(); // Alternatively just refresh details, but close is simpler.
+    } catch (err: any) {
+      alert(err.message || "Update failed");
+    } finally {
+      setUpdating(false);
+    }
+  };
+
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
@@ -1219,6 +1337,38 @@ function QuoteDetailModal({
             <p className="text-[11px] text-slate-500 mt-1 mb-2 text-center italic">
               Opens an Underwriting case for this customer on this exact proposal — documents, AI risk scoring, and the final decision all happen there.
             </p>
+
+            
+            {/* Status and Underwriter Update */}
+            <div className="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Status</label>
+                <select 
+                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white"
+                  value={detail.status}
+                  onChange={e => handleUpdate({ status: e.target.value })}
+                  disabled={updating}
+                >
+                  {STATUS_TABS.slice(1).map(tab => (
+                    <option key={tab.id} value={tab.id}>{tab.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Assigned Underwriter</label>
+                <select 
+                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white"
+                  value={detail.assigned_underwriter_id || ""}
+                  onChange={e => handleUpdate({ assigned_underwriter_id: e.target.value || null })}
+                  disabled={updating}
+                >
+                  <option value="">Unassigned</option>
+                  {underwriters.map(u => (
+                    <option key={u.id} value={u.id}>{u.full_name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
 
             {/* Headline */}
             <div className="flex items-start justify-between">

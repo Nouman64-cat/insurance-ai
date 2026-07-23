@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
+import { listBranches, Branch } from "@/app/services/branches";
+import { listAgents, Agent } from "@/app/services/agents";
+import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 
 export interface FamilyFormValue {
   id: string;
@@ -10,6 +13,10 @@ export interface FamilyFormValue {
   contact_email: string | null;
   contact_phone: string | null;
   household_declared_income: number | null;
+  branch_id?: string | null;
+  assigned_agent_id?: string | null;
+  city?: string | null;
+  province?: string | null;
 }
 
 interface Props {
@@ -37,8 +44,22 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
   const [contactEmail, setContactEmail] = useState("");
   const [contactPhone, setContactPhone] = useState("");
   const [householdIncome, setHouseholdIncome] = useState("");
+  const [city, setCity] = useState("");
+  const [province, setProvince] = useState("");
+  const [branchId, setBranchId] = useState("");
+  const [assignedAgentId, setAssignedAgentId] = useState("");
+  const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
+  const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
 
   const editingId = family?.id ?? null;
+
+  useEffect(() => {
+    if (!open || mode !== "full") return;
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    listBranches(tenantId).then(setBranchOptions).catch(() => setBranchOptions([]));
+    listAgents(tenantId).then(setAgentOptions).catch(() => setAgentOptions([]));
+  }, [open, mode]);
 
   useEffect(() => {
     if (!open) return;
@@ -49,12 +70,20 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
       setContactEmail(family.contact_email || "");
       setContactPhone(family.contact_phone || "");
       setHouseholdIncome(family.household_declared_income?.toString() || "");
+      setCity(family.city || "");
+      setProvince(family.province || "");
+      setBranchId(family.branch_id || "");
+      setAssignedAgentId(family.assigned_agent_id || "");
     } else {
       setName("");
       setContactPerson("");
       setContactEmail("");
       setContactPhone("");
       setHouseholdIncome("");
+      setCity("");
+      setProvince("");
+      setBranchId("");
+      setAssignedAgentId("");
     }
   }, [open, mode, family]);
 
@@ -96,6 +125,10 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
         contact_email: contactEmail || null,
         contact_phone: contactPhone || null,
         household_declared_income: householdIncome ? parseFloat(householdIncome) : null,
+        city: city || null,
+        province: province || null,
+        branch_id: branchId || null,
+        assigned_agent_id: assignedAgentId || null,
       };
       if (editingId) {
         await api.patch(`/tenants/${tenantId}/families/${editingId}`, payload);
@@ -235,6 +268,56 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
             <p className="text-[11px] text-slate-400">
               Used for the floater's income-eligibility check — children and non-earning members don't have their own income.
             </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-600">City</label>
+              <input
+                type="text" value={city} onChange={(e) => setCity(e.target.value)}
+                placeholder="e.g. Lahore"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-600">Province</label>
+              <select
+                value={province} onChange={(e) => setProvince(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              >
+                <option value="">Select province</option>
+                {PAKISTAN_PROVINCES.map((p) => (
+                  <option key={p} value={p}>{p}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-600">Branch</label>
+              <select
+                value={branchId} onChange={(e) => setBranchId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              >
+                <option value="">Unassigned</option>
+                {branchOptions.map((b) => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-600">Assigned Agent</label>
+              <select
+                value={assignedAgentId} onChange={(e) => setAssignedAgentId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              >
+                <option value="">Unassigned</option>
+                {agentOptions.map((a) => (
+                  <option key={a.id} value={a.id}>{a.full_name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">

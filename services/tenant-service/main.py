@@ -1,6 +1,36 @@
 import asyncio
 import os
 import logging
+
+import subprocess
+import sys
+
+# ── Pre-import check for pgvector support in database ──────────────────────────
+def _check_pgvector_support() -> bool:
+    code = """
+import asyncio
+import os
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+async def check():
+    db_url = os.environ.get("DATABASE_URL", "postgresql+asyncpg://postgres:1122@host.docker.internal:5432/insurance_ai")
+    engine = create_async_engine(db_url)
+    async with engine.begin() as conn:
+        await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+    await engine.dispose()
+
+asyncio.run(check())
+"""
+    try:
+        res = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=5)
+        return res.returncode == 0
+    except Exception:
+        return False
+
+if not _check_pgvector_support():
+    os.environ["DISABLE_PGVECTOR"] = "true"
+
 from contextlib import asynccontextmanager
 
 from aiokafka import AIOKafkaProducer

@@ -95,9 +95,15 @@ app.add_middleware(
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    origin = request.headers.get("origin")
+    headers = {}
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={"detail": "An unexpected error occurred. Check the service logs."},
+        headers=headers,
     )
 
 
@@ -209,6 +215,16 @@ async def create_user(tenant_id: UUID, body: UserCreate, request: Request, token
 )
 async def list_users(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/")
+
+
+@app.get(
+    "/tenants/{tenant_id}/users/directory",
+    tags=["Users"],
+    response_model=List[UserRead],
+    summary="List active users in directory",
+)
+async def list_directory_users(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users/directory")
 
 
 @app.get(

@@ -593,6 +593,70 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v23b — add location to acquisition_sources",
         "ALTER TABLE acquisition_sources ADD COLUMN IF NOT EXISTS location VARCHAR(255)",
     ),
+    (
+        "v24a — add branch_id to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+    ),
+    (
+        "v24b — add assigned_agent_id to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id)",
+    ),
+    (
+        "v24c — add city to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+    ),
+    (
+        "v24d — add province to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS province VARCHAR(100)",
+    ),
+    (
+        "v24e — add branch_id to family_groups",
+        "ALTER TABLE family_groups ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+    ),
+    (
+        "v24f — add assigned_agent_id to family_groups",
+        "ALTER TABLE family_groups ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id)",
+    ),
+    (
+        "v24g — add city to family_groups",
+        "ALTER TABLE family_groups ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+    ),
+    (
+        "v24h — add province to family_groups",
+        "ALTER TABLE family_groups ADD COLUMN IF NOT EXISTS province VARCHAR(100)",
+    ),
+    (
+        "v24i — add branch_id to organizations",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
+    ),
+    (
+        "v24j — add assigned_agent_id to organizations",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id)",
+    ),
+    (
+        "v24k — add city to organizations",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS city VARCHAR(100)",
+    ),
+    (
+        "v24l — add province to organizations",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS province VARCHAR(100)",
+    ),
+    (
+        "v25a — ALTER TABLE policies ADD COLUMN IF NOT EXISTS effective_date DATE",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS effective_date DATE",
+    ),
+    (
+        "v25b — ALTER TABLE policies ADD COLUMN IF NOT EXISTS assigned_underwriter_id UUID REFERENCES users(id)",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS assigned_underwriter_id UUID REFERENCES users(id)",
+    ),
+    (
+        "v25c — ALTER TABLE policies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()",
+    ),
+    (
+        "v25d-enum — ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'INFORMATION_REQUESTED'",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'INFORMATION_REQUESTED'",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
@@ -702,6 +766,15 @@ async def _rename_applicant_to_customer(conn) -> None:
 
 
 async def run_migrations() -> None:
+    # Check if database supports pgvector extension before registering models
+    try:
+        async with _engine.begin() as conn:
+            await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector;"))
+        log.info("pgvector extension created/verified in database.")
+    except Exception as e:
+        log.warning("pgvector extension is not supported by the database: %s. Disabling vector features.", e)
+        os.environ["DISABLE_PGVECTOR"] = "true"
+
     import shared.models.core  # noqa: F401 — registers all SQLModel metadata
 
     async with _engine.begin() as conn:
@@ -712,9 +785,6 @@ async def run_migrations() -> None:
         # 1. Create enum types idempotently before create_all so that restarts
         #    with an existing volume do not raise UniqueViolationError.
         await _create_enums_idempotent(conn)
-
-        # 1.5 Create vector extension for pgvector BEFORE create_all so AgentKnowledgeBase succeeds
-        await _create_vector_extension(conn)
 
         # 2. Tell SQLAlchemy the enum types already exist so create_all only
         #    issues CREATE TABLE statements (never CREATE TYPE).

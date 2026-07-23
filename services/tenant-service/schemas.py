@@ -325,6 +325,10 @@ class CustomerCreate(BaseModel):
     weight_kg:        Optional[float] = 70.0
     profile_status:   Optional[ProfileStatusEnum] = None
     acquisition_source_id: Optional[UUID] = None
+    branch_id:        Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city:             Optional[str] = None
+    province:         Optional[str] = None
     details:          Optional[dict] = None
 
     @field_validator("cnic")
@@ -433,6 +437,11 @@ class CustomerRead(BaseModel):
     acquisition_source_id: Optional[UUID] = None
     acquisition_source:    Optional[AcquisitionSourceRead] = None
 
+    branch_id:        Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city:             Optional[str] = None
+    province:         Optional[str] = None
+
     model_config = {"from_attributes": True}
 
 class CustomerStatsRead(BaseModel):
@@ -458,6 +467,10 @@ class CustomerUpdate(BaseModel):
     weight_kg:        Optional[float] = None
     profile_status:   Optional[ProfileStatusEnum] = None
     acquisition_source_id: Optional[UUID] = None
+    branch_id:        Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city:             Optional[str] = None
+    province:         Optional[str] = None
     details:          Optional[dict] = None
 
     @field_validator("height_cm")
@@ -516,6 +529,10 @@ class OrganizationCreate(BaseModel):
     contact_person: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -532,6 +549,10 @@ class OrganizationUpdate(BaseModel):
     contact_person: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
     profile_status: Optional[ProfileStatusEnum] = None
 
 class OrganizationRead(BaseModel):
@@ -543,6 +564,10 @@ class OrganizationRead(BaseModel):
     contact_person: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
     profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD
     created_at: datetime
 
@@ -627,6 +652,10 @@ class FamilyGroupCreate(BaseModel):
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
     household_declared_income: Optional[float] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -642,6 +671,10 @@ class FamilyGroupUpdate(BaseModel):
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
     household_declared_income: Optional[float] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
     profile_status: Optional[ProfileStatusEnum] = None
 
     @field_validator("name")
@@ -663,6 +696,10 @@ class FamilyGroupRead(BaseModel):
     contact_phone: Optional[str] = None
     household_declared_income: Optional[float] = None
     primary_member_customer_id: Optional[UUID] = None
+    branch_id: Optional[UUID] = None
+    assigned_agent_id: Optional[UUID] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
     profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD
     created_at: datetime
 

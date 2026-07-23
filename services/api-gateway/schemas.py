@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from shared.models.core import Gender, InsuranceTypeEnum, UserStatus, MaritalStatus
+from shared.models.core import Gender, InsuranceTypeEnum, UserStatus, MaritalStatus, PolicyStatusEnum
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -271,6 +271,14 @@ class QuoteListItem(BaseModel):
     rate_version: str
     created_at: datetime
 
+    status: PolicyStatusEnum
+    effective_date: Optional[date] = None
+    updated_at: datetime
+    assigned_underwriter_id: Optional[UUID] = None
+    assigned_underwriter_name: Optional[str] = None
+    sla_status: Optional[Literal["within_sla", "approaching_breach", "breached"]] = None
+    sla_days_remaining: Optional[float] = None
+
     # Who brought the customer in — flattened for easy display on the quotation
     # folder header. Null when the customer has no recorded source.
     acquisition_source_id: Optional[UUID] = None
@@ -322,6 +330,12 @@ class QuoteDetail(QuoteListItem):
     nominee_relationship: Optional[str] = None
     dependent_name: Optional[str] = None
     dependent_dob: Optional[date] = None
+
+
+class QuoteUpdate(BaseModel):
+    status: Optional[PolicyStatusEnum] = None
+    assigned_underwriter_id: Optional[UUID] = None
+    effective_date: Optional[date] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
