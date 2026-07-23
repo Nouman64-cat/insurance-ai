@@ -1,4 +1,5 @@
 "use client";
+import { useState, useEffect } from "react";
 import { useCopilot } from "@/components/CopilotContext";
 
 function BellIcon() {
@@ -46,6 +47,23 @@ interface TopBarProps {
 
 export function TopBar({ title = "Management Intelligence Dashboard", subtitle }: TopBarProps) {
   const { isAutomationMode, setAutomationMode } = useCopilot();
+  const [tenantName, setTenantName] = useState("Adamjee Life");
+
+  useEffect(() => {
+    const savedName = localStorage.getItem("tenant_name");
+    if (savedName) {
+      setTenantName(savedName);
+    }
+    // Always refresh in background
+    import("@/app/services/api").then(({ default: api }) => {
+      api.get("/auth/me").then(res => {
+        if (res.data.tenant_name) {
+          setTenantName(res.data.tenant_name);
+          localStorage.setItem("tenant_name", res.data.tenant_name);
+        }
+      }).catch(() => {});
+    });
+  }, []);
 
   return (
     <header className="sticky top-0 z-30 h-14 flex-shrink-0 flex items-center justify-between gap-4 px-6 bg-white/80 backdrop-blur-md border-b border-slate-200 shadow-sm">
@@ -58,7 +76,7 @@ export function TopBar({ title = "Management Intelligence Dashboard", subtitle }
               {title}
             </h1>
             <span className="hidden sm:inline-flex items-center text-[9px] font-bold uppercase tracking-[0.12em] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
-              Adamjee Life
+              {tenantName}
             </span>
           </div>
           {subtitle && (
@@ -84,6 +102,24 @@ export function TopBar({ title = "Management Intelligence Dashboard", subtitle }
       {/* Right: Actions */}
       <div className="flex items-center gap-3 flex-shrink-0">
         
+        {/* Theme Toggle */}
+        <button
+          onClick={() => {
+            if (document.documentElement.classList.contains("dark")) {
+              document.documentElement.classList.remove("dark");
+              localStorage.setItem("theme", "light");
+            } else {
+              document.documentElement.classList.add("dark");
+              localStorage.setItem("theme", "dark");
+            }
+          }}
+          className="p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+          title="Toggle Dark Mode"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" />
+          </svg>
+        </button>
         {/* Automation Mode Toggle */}
         <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-full border border-slate-200">
           <button

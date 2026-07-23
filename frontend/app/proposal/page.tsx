@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import api from "../services/api";
 import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
@@ -120,7 +120,6 @@ export default function QuotePage() {
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<SegmentFilter>("all");
 
-  // Sticky State
   const [activeTab, setActiveTab] = useState("ALL");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -129,6 +128,7 @@ export default function QuotePage() {
   const [underwriters, setUnderwriters] = useState<Agent[]>([]);
   const [sources, setSources] = useState<AcquisitionSource[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -136,10 +136,6 @@ export default function QuotePage() {
       try {
         const parsed = JSON.parse(saved);
         if (parsed.activeTab) setActiveTab(parsed.activeTab);
-        if (parsed.dateFrom) setDateFrom(parsed.dateFrom);
-        if (parsed.dateTo) setDateTo(parsed.dateTo);
-        if (parsed.agentFilter) setAgentFilter(parsed.agentFilter);
-        if (parsed.sourceFilter) setSourceFilter(parsed.sourceFilter);
       } catch (e) {}
     }
     const tenantId = localStorage.getItem("tenant_id");
@@ -147,11 +143,17 @@ export default function QuotePage() {
       listUnderwriters(tenantId).then(setUnderwriters).catch(console.error);
       listAcquisitionSources(tenantId).then(setSources).catch(console.error);
     }
+    setIsHydrated(true);
   }, []);
 
+  const isMounted = useRef(false);
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeTab, dateFrom, dateTo, agentFilter, sourceFilter }));
-  }, [activeTab, dateFrom, dateTo, agentFilter, sourceFilter]);
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeTab }));
+  }, [activeTab]);
 
 
   const [selectedQuoteId, setSelectedProposalId] = useState<string | null>(null);
@@ -314,7 +316,7 @@ export default function QuotePage() {
       if (sourceFilter) filters.acquisition_source_id = sourceFilter;
       
       const data = await listQuotes(filters);
-      setQuotes(data);
+      setQuotes(data || []);
     } catch (err: any) {
       setError(err.message ?? "Failed to load quotations.");
     } finally {
@@ -323,8 +325,9 @@ export default function QuotePage() {
   }, [activeTab, dateFrom, dateTo, agentFilter, sourceFilter]);
 
   useEffect(() => {
+    if (!isHydrated) return;
     fetchQuotes();
-  }, [fetchQuotes]);
+  }, [fetchQuotes, isHydrated]);
 
   // The dropdown-selected segment scopes which quotes count toward the stats
   // and folder list; the search box then narrows within that scope.
@@ -1062,10 +1065,10 @@ function CustomerFolder({
     <div className="flex flex-col">
       <div
         onClick={onToggle}
-        className={`flex items-center justify-between cursor-pointer ${compact ? "p-3" : "p-5"} ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}
+        className={`flex items-start justify-between cursor-pointer select-none ${compact ? "p-3" : "p-5"} ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}
       >
-        <div className="flex items-center gap-3">
-          <div onClick={(e) => e.stopPropagation()} className="flex items-center mr-1">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div onClick={(e) => e.stopPropagation()} className="flex items-center mr-1 pt-1.5">
             <input
               type="checkbox"
               className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
@@ -1073,8 +1076,8 @@ function CustomerFolder({
               onChange={() => toggleAllInFolder(customer.quotes.map((q) => q.quote_id))}
             />
           </div>
-          <div className={`flex items-center justify-center rounded-lg ${compact ? "w-9 h-9" : "w-12 h-12 rounded-xl"} ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={compact ? "w-4 h-4" : "w-6 h-6"}>
+          <div className={`flex-shrink-0 flex items-center justify-center rounded-lg ${compact ? "w-8 h-8" : "w-10 h-10 rounded-xl"} ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors mt-0.5`}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={compact ? "w-4 h-4" : "w-5 h-5"}>
               {isExpanded ? (
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
               ) : (
@@ -1082,25 +1085,27 @@ function CustomerFolder({
               )}
             </svg>
           </div>
-          <div>
-            <h3 className={`font-bold text-slate-900 ${compact ? "text-sm" : "text-base"}`}>{customer.customer_name}</h3>
+          <div className="min-w-0 flex-1">
+            <h3 className={`font-bold text-slate-900 truncate leading-tight ${compact ? "text-sm" : "text-base"}`} title={customer.customer_name}>
+              {customer.customer_name}
+            </h3>
             <p className="text-xs text-slate-500 font-mono mt-0.5">{customer.customer_cnic}</p>
             {customer.quotes[0]?.acquisition_source_name && (
-              <p className="text-[11px] text-slate-400 mt-1">
-                Lead Generated by{" "}
-                <span className="font-semibold text-slate-600">{customer.quotes[0].acquisition_source_name}</span>
-                <span className="ml-1.5 inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+              <div className="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-1">
+                <span>Lead by</span>
+                <span className="font-semibold text-slate-600 truncate max-w-[120px]">{customer.quotes[0].acquisition_source_name}</span>
+                <span className="inline-flex px-1.5 py-0.2 rounded-[3px] text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
                   {SOURCE_TYPE_LABELS[customer.quotes[0].acquisition_source_type ?? ""] ?? customer.quotes[0].acquisition_source_type}
                 </span>
                 {customer.quotes[0].acquisition_source_partner && (
-                  <span className="ml-1 text-slate-400">· {customer.quotes[0].acquisition_source_partner}</span>
+                  <span className="text-slate-400 truncate max-w-[100px]">· {customer.quotes[0].acquisition_source_partner}</span>
                 )}
-              </p>
+              </div>
             )}
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+        <div className="flex items-center gap-2 ml-2 pt-1">
+          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${isExpanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
             {customer.quotes.length} {customer.quotes.length === 1 ? "Plan" : "Plans"}
           </span>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform duration-200 ${compact ? "w-4 h-4" : "w-5 h-5"} ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
