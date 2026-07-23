@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEv
 import { useRouter } from "next/navigation";
 import { workflowStore } from "../case-summarizer/workflowStore";
 import api from "@/app/services/api";
+import { useNotify } from "@/components/NotificationContext";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -884,38 +885,6 @@ function caseFolderColor(status: string): { color: string; accent: string } {
   }
 }
 
-// ── Toast ─────────────────────────────────────────────────────────────────────
-
-interface ToastMsg { id: number; text: string; ok: boolean }
-
-function ToastBanner({ toasts, onDismiss }: { toasts: ToastMsg[]; onDismiss: (id: number) => void }) {
-  return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
-      {toasts.map(t => (
-        <div
-          key={t.id}
-          onClick={() => onDismiss(t.id)}
-          className={`pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold border cursor-pointer select-none transition-all
-            ${t.ok
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-amber-50 border-amber-200 text-amber-800"}`}
-        >
-          {t.ok ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
-              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-          )}
-          {t.text}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CasesPage() {
@@ -947,13 +916,7 @@ export default function CasesPage() {
   const [deletingArtifact, setDeletingArtifact] = useState<Artifact | null>(null);
   const [deletingArtifactInProgress, setDeletingArtifactInProgress] = useState(false);
 
-  const [toasts, setToasts] = useState<ToastMsg[]>([]);
-  const toastId = useRef(0);
-  const showToast = useCallback((text: string, ok: boolean) => {
-    const id = ++toastId.current;
-    setToasts(prev => [...prev, { id, text, ok }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000);
-  }, []);
+  const { notify: showToast } = useNotify();
 
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
@@ -1124,8 +1087,6 @@ export default function CasesPage() {
 
   return (
     <div className="flex flex-col h-full bg-slate-50">
-
-      <ToastBanner toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
 
       {/* ── Toolbar ──────────────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between gap-4 px-5 py-3 bg-white border-b border-slate-200 flex-shrink-0">

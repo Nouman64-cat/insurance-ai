@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
+import { useHighlightTarget } from "@/lib/useHighlightTarget";
 
 interface User {
   id: string;
@@ -270,6 +271,7 @@ export default function UserManagementPage() {
   }
 
   const visibleUsers = users.filter((u) => u.email !== currentUserEmail);
+  useHighlightTarget("userId", !loading && visibleUsers.length > 0);
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
@@ -347,7 +349,7 @@ export default function UserManagementPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {visibleUsers.map((user) => (
-                  <tr key={user.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={user.id} data-entity-id={user.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3.5 font-medium text-slate-700">{user.username}</td>
                     <td className="px-5 py-3.5 font-semibold text-slate-800">{user.full_name}</td>
                     <td className="px-5 py-3.5 text-slate-600">{user.email}</td>

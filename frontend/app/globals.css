@@ -57,6 +57,54 @@
     @apply flex h-screen overflow-hidden;
   }
 
+  /* ── Agent record highlight — scroll-to row "pop" ─────────────────────── */
+  /* Applied by lib/useHighlightTarget when the chatbot lands the user on a
+     specific record: spotlight ring flares out, row lifts, then settles. */
+  .record-pop {
+    animation: record-pop 3.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+    position: relative;
+    z-index: 10;
+  }
+
+  /* ── Copilot chat markdown ────────────────────────────────────────────── */
+  /* Full formatting for assistant bubbles (react-markdown output). Sized for
+     a narrow chat column; no typography plugin installed, so styled by hand. */
+  .copilot-markdown {
+    @apply text-[14px] leading-relaxed text-slate-700;
+    word-break: break-word;
+  }
+  .copilot-markdown > *:first-child { margin-top: 0; }
+  .copilot-markdown > *:last-child { margin-bottom: 0; }
+  .copilot-markdown p { @apply my-1.5; }
+  .copilot-markdown strong { @apply font-bold text-slate-900; }
+  .copilot-markdown em { @apply italic; }
+  .copilot-markdown a { @apply text-violet-600 font-semibold underline underline-offset-2 hover:text-fuchsia-600; }
+  .copilot-markdown h1,
+  .copilot-markdown h2,
+  .copilot-markdown h3,
+  .copilot-markdown h4 { @apply font-bold text-slate-900 mt-3 mb-1.5 leading-snug; }
+  .copilot-markdown h1 { @apply text-[16px]; }
+  .copilot-markdown h2 { @apply text-[15px]; }
+  .copilot-markdown h3, .copilot-markdown h4 { @apply text-[14px]; }
+  .copilot-markdown ul { @apply my-1.5 pl-5 list-disc space-y-1; }
+  .copilot-markdown ol { @apply my-1.5 pl-5 list-decimal space-y-1; }
+  .copilot-markdown li > ul, .copilot-markdown li > ol { @apply my-1; }
+  .copilot-markdown li::marker { @apply text-violet-400; }
+  .copilot-markdown code {
+    @apply bg-violet-50 text-violet-700 border border-violet-100 rounded px-1 py-0.5 text-[12px] font-semibold;
+  }
+  .copilot-markdown pre {
+    @apply bg-slate-900 text-slate-100 rounded-lg p-3 my-2 overflow-x-auto text-[12px] leading-relaxed;
+  }
+  .copilot-markdown pre code { @apply bg-transparent border-0 text-inherit p-0 font-normal; }
+  .copilot-markdown blockquote {
+    @apply border-l-2 border-violet-300 pl-3 my-2 text-slate-500 italic;
+  }
+  .copilot-markdown hr { @apply my-3 border-slate-200; }
+  .copilot-markdown table { @apply w-full my-2 text-[12px] border-collapse; }
+  .copilot-markdown th { @apply text-left font-bold text-slate-900 border-b border-slate-200 px-2 py-1; }
+  .copilot-markdown td { @apply border-b border-slate-100 px-2 py-1 align-top; }
+
   /* Sidebar active link glow effect */
   .sidebar-link {
     position: relative;
@@ -67,5 +115,32 @@
   }
   .sidebar-link:hover::before {
     @apply h-4;
+  }
+}
+
+/* Keyframes live outside @layer so Tailwind never purges them. */
+@keyframes record-pop {
+  0% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0);
+    transform: scale(1);
+  }
+  12% {
+    box-shadow: 0 0 0 6px rgba(139, 92, 246, 0.45), 0 12px 32px -8px rgba(139, 92, 246, 0.5);
+    transform: scale(1.02);
+    background-color: rgba(237, 233, 254, 0.9);
+  }
+  30% {
+    box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.35), 0 8px 24px -8px rgba(139, 92, 246, 0.4);
+    transform: scale(1);
+    background-color: rgba(237, 233, 254, 0.7);
+  }
+  80% {
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+    background-color: rgba(237, 233, 254, 0.4);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(139, 92, 246, 0);
+    transform: scale(1);
+    background-color: transparent;
   }
 }

@@ -122,10 +122,13 @@ services:
     environment:
       PYTHONPATH: /app
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CHAT_AGENT_URL: http://chat-agent:8006
     depends_on:
       kafka:
         condition: service_healthy
       risk-engine:
+        condition: service_healthy
+      chat-agent:
         condition: service_healthy
 
   tenant-service:
@@ -174,6 +177,31 @@ services:
         condition: service_healthy
     healthcheck:
       test: [ "CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8002/health'')"' ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s # allow time for pip install on first cold start
+
+  chat-agent:
+    <<: *fastapi-defaults
+    build:
+      context: ./services/chat-agent
+      dockerfile: Dockerfile
+    container_name: insurance-chat-agent
+    ports:
+      - "8016:8006"
+    volumes:
+      - ./services/chat-agent:/app
+      - ./shared:/app/shared
+    environment:
+      PYTHONPATH: /app
+      DATABASE_URL: ${DATABASE_URL}
+      TENANT_SERVICE_URL: http://tenant-service:8001
+      API_GATEWAY_URL: http://api-gateway:8000
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      GEMINI_MODEL: ${GEMINI_MODEL}
+    healthcheck:
+      test: [ "CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8006/health'')"' ]
       interval: 15s
       timeout: 5s
       retries: 5
@@ -255,4 +283,5 @@ services:
       NEXT_PUBLIC_API_URL: http://localhost:8010 # browser-side; host port that maps to gateway container port 8000
       NEXT_PUBLIC_OCR_URL: http://localhost:8014 # browser-side; host port mapping to ocr-engine
       NEXT_PUBLIC_SUMMARIZER_URL: http://localhost:8015 # browser-side; host port mapping to text-summarizer
+      API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side (Next.js API routes); internal docker network
       CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: FSEvents don't reach chokidar via inotify

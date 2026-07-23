@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from database import create_db_and_tables
 from kafka_producer import create_producer
 from quote_worker import start_quote_worker
+from routers.chat import router as chat_router
 from routers.evaluate import router as evaluate_router
 from routers.quote import router as quote_router
 from routers.suggest import router as suggest_router
@@ -114,6 +115,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(evaluate_router)
 app.include_router(quote_router)
 app.include_router(suggest_router)
+app.include_router(chat_router)
 
 
 # ── Proxy routing to tenant-service ───────────────────────────────────────────
