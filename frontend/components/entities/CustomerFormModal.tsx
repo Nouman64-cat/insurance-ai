@@ -148,6 +148,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         declaredIncome: customer.declared_income ?? undefined,
         maritalStatus: customer.details?.marital_status || "Single",
         nationality: customer.details?.nationality || "Pakistani",
+        selectedPlanId: "",
+        policyCoverage: undefined,
+        policyTerm: undefined,
+        policyDependentName: "",
+        policyDependentDob: "",
       });
       const importedDetails = customer.details
         ? {
@@ -1468,7 +1473,28 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
                       const textClass = PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
                       return (
-                        <div key={pol.id} className={`border-l-4 rounded-xl p-4 ${colorClass}`}>
+                        <div key={pol.id} className={`border-l-4 rounded-xl p-4 ${colorClass} relative`}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              const tenantId = localStorage.getItem("tenant_id");
+                              if (!tenantId || !customer) return;
+                              if (confirm("Are you sure you want to remove this policy?")) {
+                                try {
+                                  await api.delete(`/tenants/${tenantId}/customers/${customer.id}/policies/${pol.id}`);
+                                  const res = await api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`);
+                                  setCustomerPolicies(res.data ?? []);
+                                  setSuccess("Policy removed successfully.");
+                                } catch (err: any) {
+                                  setError(err.response?.data?.detail ?? "Failed to remove policy.");
+                                }
+                              }
+                            }}
+                            className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
+                            title="Remove Policy"
+                          >
+                            ✕
+                          </button>
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className={`text-sm font-bold ${textClass}`}>{pol.product_name}</p>
@@ -1512,7 +1538,21 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                   <div className="border border-slate-200 rounded-xl p-5 space-y-5 bg-slate-50">
                     <div className="flex items-center justify-between">
                       <h5 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Assign New Plan</h5>
-                      <button type="button" onClick={() => { setEditAddingPolicy(false); setEditSelectedPlanId(""); }} className="text-xs text-slate-400 hover:text-slate-600">Cancel</button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditAddingPolicy(false);
+                          setEditSelectedPlanId("");
+                          setValue("selectedPlanId", "");
+                          setValue("policyCoverage", undefined);
+                          setValue("policyTerm", undefined);
+                          setValue("policyDependentName", "");
+                          setValue("policyDependentDob", "");
+                        }}
+                        className="text-xs text-slate-400 hover:text-slate-600"
+                      >
+                        Cancel
+                      </button>
                     </div>
 
                     {availablePlans.length === 0 ? (
@@ -1546,7 +1586,25 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                 }`}
                             >
                               {isSelected && (
-                                <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500 text-white text-[9px] font-bold">✓</span>
+                                <>
+                                  <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500 text-white text-[9px] font-bold">✓</span>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditSelectedPlanId("");
+                                      setValue("selectedPlanId", "");
+                                      setEditPolicyCoverage("");
+                                      setEditPolicyTerm("");
+                                      setValue("policyCoverage", "");
+                                      setValue("policyTerm", "");
+                                    }}
+                                    className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
+                                    title="Deselect Plan"
+                                  >
+                                    ✕
+                                  </button>
+                                </>
                               )}
                               <p className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}>{plan.label}</p>
                               <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
@@ -1712,6 +1770,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                 setEditPolicyTerm("");
                                 setEditPolicyDependentName("");
                                 setEditPolicyDependentDob("");
+                                setValue("selectedPlanId", "");
+                                setValue("policyCoverage", undefined);
+                                setValue("policyTerm", undefined);
+                                setValue("policyDependentName", "");
+                                setValue("policyDependentDob", "");
                                 setSuccess("Policy assigned successfully!");
                               } catch (err: any) {
                                 setError(err.response?.data?.detail ?? "Failed to assign policy.");
@@ -1808,7 +1871,22 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                             }`}
                         >
                           {isSelected && (
-                            <span className="absolute top-3 right-3 flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">✓</span>
+                            <>
+                              <span className="absolute top-3 right-3 flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">✓</span>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setValue("selectedPlanId", "");
+                                  setValue("policyCoverage", undefined);
+                                  setValue("policyTerm", undefined);
+                                }}
+                                className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
+                                title="Deselect Plan"
+                              >
+                                ✕
+                              </button>
+                            </>
                           )}
                           <p className={`text-sm font-bold ${isSelected ? textClass : "text-slate-800"}`}>{plan.label}</p>
                           <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">

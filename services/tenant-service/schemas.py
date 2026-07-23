@@ -520,6 +520,19 @@ class PolicyRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PolicyUpdate(BaseModel):
+    product_name:         Optional[str] = None
+    insurance_type:       Optional[InsuranceTypeEnum] = None
+    coverage_amount:      Optional[float] = None
+    term_years:           Optional[int] = None
+    dependent_name:       Optional[str] = None
+    dependent_dob:        Optional[date] = None
+    nominee_name:          Optional[str] = None
+    nominee_relationship: Optional[str] = None
+    status:               Optional[PolicyStatusEnum] = None
+
+
+
 # ── Organization / Group insurance ─────────────────────────────────────────────
 
 class OrganizationCreate(BaseModel):
