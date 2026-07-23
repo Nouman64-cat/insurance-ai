@@ -357,7 +357,7 @@ export function CopilotInterface() {
             <div className="flex-shrink-0 bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 pb-3 pt-1 flex items-center justify-between text-white shadow-lg">
               <div className="flex items-center gap-3">
                 <div className="relative">
-                  <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shadow-md overflow-hidden ring-2 ring-white/40">
+                  <div className="w-10 h-10 rounded-full bg-white logo-white flex items-center justify-center shadow-md overflow-hidden ring-2 ring-white/40">
                     <img src="/rizvi.png" alt="Rizviz" className="w-7 h-7 object-contain" />
                   </div>
                   <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-violet-600" />
@@ -383,7 +383,7 @@ export function CopilotInterface() {
                 {messages.map((msg) => (
                   <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} items-end gap-2 group animate-in slide-in-from-bottom-2 duration-300`}>
                     {msg.role === "assistant" && (
-                      <div className="w-7 h-7 rounded-full bg-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
+                      <div className="w-7 h-7 rounded-full bg-white logo-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                         <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                       </div>
                     )}
@@ -434,7 +434,7 @@ export function CopilotInterface() {
                     machine, node by node, while (and after) it works. */}
                 {steps.length > 0 && (
                   <div className="flex justify-start items-start gap-2">
-                    <div className="w-7 h-7 rounded-full bg-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
+                    <div className="w-7 h-7 rounded-full bg-white logo-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                     </div>
                     <div className="max-w-[82%] flex-1">
@@ -444,7 +444,7 @@ export function CopilotInterface() {
                 )}
                 {isLoading && (
                   <div className="flex justify-start items-end gap-2">
-                    <div className="w-7 h-7 rounded-full bg-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
+                    <div className="w-7 h-7 rounded-full bg-white logo-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                     </div>
                     <div className="flex items-center gap-1.5 bg-white rounded-2xl rounded-bl-md px-4 py-3 shadow-sm border border-slate-100">

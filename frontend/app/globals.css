@@ -144,3 +144,223 @@
     background-color: transparent;
   }
 }
+
+/* ── Global Dark Mode Interceptors ────────────────────────────────────────── */
+/* These rules seamlessly map Tailwind light mode utility classes to beautiful 
+   dark mode equivalents whenever the <html class="dark"> toggle is active, 
+   saving the need to rewrite the entire portal with "dark:" variants. */
+html.dark {
+  background-color: #0f172a !important; /* slate-950 */
+  color: #f8fafc !important; /* slate-50 */
+  color-scheme: dark;
+}
+
+html.dark body {
+  background-color: #0f172a !important;
+  color: #f8fafc !important;
+}
+
+/* Base Surfaces & Elevations */
+html.dark .bg-slate-50 { background-color: #0f172a !important; } /* The absolute bottom layer (page bg) */
+html.dark .bg-white, html.dark .card { background-color: #1e293b !important; } /* Cards (Level 1) */
+
+/* Inset / Overlay Elements (Circles, inactive tabs, table stripes) */
+html.dark .bg-slate-100 { background-color: rgba(255, 255, 255, 0.06) !important; } 
+html.dark .bg-slate-200 { background-color: rgba(255, 255, 255, 0.12) !important; } 
+html.dark .bg-slate-300 { background-color: rgba(255, 255, 255, 0.18) !important; } 
+
+/* Primary Dark Buttons & Active Tabs (Level 2 Elevation) */
+/* In light mode these are 800/900. In dark mode, they must be LIGHTER than the 800 card to stand out! */
+html.dark .bg-slate-800,
+html.dark .bg-slate-900 { background-color: #475569 !important; } /* slate-600 */
+
+/* Subtle Glass Borders for Cards */
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-b-slate-100,
+html.dark .border-b-slate-200,
+html.dark .border-t-slate-100,
+html.dark .border-t-slate-200,
+html.dark .border-slate-300,
+html.dark .card,
+html.dark .data-row { 
+  border-color: rgba(255, 255, 255, 0.1) !important; 
+}
+html.dark .border-slate-800,
+html.dark .border-slate-900 {
+  border-color: #64748b !important;
+}
+html.dark .ring-slate-100,
+html.dark .ring-slate-200 { --tw-ring-color: rgba(255, 255, 255, 0.15) !important; }
+
+/* Text color mappings */
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .data-val { color: #f8fafc !important; } /* slate-50 */
+html.dark .text-slate-700 { color: #e2e8f0 !important; } /* slate-200 */
+html.dark .text-slate-600 { color: #cbd5e1 !important; } /* slate-300 */
+html.dark .text-slate-500,
+html.dark .text-slate-400,
+html.dark .data-key,
+html.dark .section-label { color: #94a3b8 !important; } /* slate-400 */
+
+/* Semantic Badge Backgrounds (Transparent neon) */
+html.dark .bg-blue-50, html.dark .bg-blue-100 { background-color: rgba(59, 130, 246, 0.15) !important; }
+html.dark .bg-emerald-50, html.dark .bg-emerald-100 { background-color: rgba(16, 185, 129, 0.15) !important; }
+html.dark .bg-purple-50, html.dark .bg-purple-100 { background-color: rgba(168, 85, 247, 0.15) !important; }
+html.dark .bg-violet-50, html.dark .bg-violet-100 { background-color: rgba(139, 92, 246, 0.15) !important; }
+html.dark .bg-indigo-50, html.dark .bg-indigo-100 { background-color: rgba(99, 102, 241, 0.15) !important; }
+html.dark .bg-amber-50, html.dark .bg-amber-100 { background-color: rgba(245, 158, 11, 0.15) !important; }
+html.dark .bg-red-50, html.dark .bg-rose-50 { background-color: rgba(239, 68, 68, 0.15) !important; }
+
+/* Semantic Badge Text (Pastel/Neon for readability) */
+/* Covers the deep 800/900 tints too — those are authored for light badge fills */
+html.dark .text-blue-800, html.dark .text-blue-700, html.dark .text-blue-600 { color: #93c5fd !important; }
+html.dark .text-emerald-800, html.dark .text-emerald-700, html.dark .text-emerald-600 { color: #6ee7b7 !important; }
+html.dark .text-purple-800, html.dark .text-purple-700, html.dark .text-purple-600 { color: #d8b4fe !important; }
+html.dark .text-violet-800, html.dark .text-violet-700, html.dark .text-violet-600 { color: #c4b5fd !important; }
+html.dark .text-indigo-800, html.dark .text-indigo-700, html.dark .text-indigo-600 { color: #a5b4fc !important; }
+html.dark .text-amber-800, html.dark .text-amber-700, html.dark .text-amber-600 { color: #fcd34d !important; }
+html.dark .text-red-800, html.dark .text-red-700, html.dark .text-red-600, html.dark .text-rose-600 { color: #fca5a5 !important; }
+
+/* Global Override Exceptions */
+html.dark .logo-white { background-color: #ffffff !important; }
+
+/* Semantic Badge Borders */
+html.dark .border-blue-100, html.dark .border-blue-200 { border-color: rgba(59, 130, 246, 0.3) !important; }
+html.dark .border-emerald-100, html.dark .border-emerald-200 { border-color: rgba(16, 185, 129, 0.3) !important; }
+html.dark .border-purple-100, html.dark .border-purple-200 { border-color: rgba(168, 85, 247, 0.3) !important; }
+html.dark .border-violet-100, html.dark .border-violet-200 { border-color: rgba(139, 92, 246, 0.3) !important; }
+html.dark .border-indigo-100, html.dark .border-indigo-200 { border-color: rgba(99, 102, 241, 0.3) !important; }
+html.dark .border-amber-100, html.dark .border-amber-200 { border-color: rgba(245, 158, 11, 0.3) !important; }
+html.dark .border-red-100, html.dark .border-red-200, html.dark .border-rose-100, html.dark .border-rose-200 { border-color: rgba(239, 68, 68, 0.3) !important; }
+
+/* Shadow mappings */
+html.dark .shadow-sm,
+html.dark .shadow-md,
+html.dark .shadow-lg,
+html.dark .shadow-card {
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Inputs and interactive elements */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: rgba(15, 23, 42, 0.5) !important; /* slate-950 semi-transparent */
+  color: #f8fafc !important;
+  border-color: rgba(255, 255, 255, 0.1) !important; 
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #64748b !important; /* slate-500 */
+}
+
+/* Top bar frosted glass effect adjustment for dark mode */
+html.dark header.bg-white\/80 {
+  background-color: rgba(15, 23, 42, 0.85) !important; /* slate-950 with opacity */
+  border-bottom-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Hover state overrides */
+html.dark .hover\:bg-slate-50:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
+html.dark .hover\:bg-slate-100:hover { background-color: rgba(255, 255, 255, 0.08) !important; }
+
+/* Scrollbars — pseudo-elements carry no class, so the base @apply rules can't be
+   remapped by the class interceptors above; restyle them explicitly for dark. */
+html.dark ::-webkit-scrollbar-track { background-color: #1e293b !important; }
+html.dark ::-webkit-scrollbar-thumb { background-color: #475569 !important; }
+html.dark ::-webkit-scrollbar-thumb:hover { background-color: #64748b !important; }
+
+/* ── Opacity-modified surfaces ────────────────────────────────────────────── */
+/* Tailwind's alpha syntax (e.g. bg-slate-50/40) emits a *different* class name
+   than bg-slate-50, so the base mappings above never catch it. These are used
+   heavily as subtle inset tints, table stripes, expanded-row fills and hover
+   states — without these rules they render as bright boxes on the dark canvas. */
+
+/* Neutral inset surfaces — mirror the solid bg-slate-50/100/200 mappings. */
+html.dark .bg-slate-50\/30,
+html.dark .bg-slate-50\/40,
+html.dark .bg-slate-50\/50,
+html.dark .bg-slate-50\/60,
+html.dark .bg-slate-50\/70,
+html.dark .bg-slate-50\/80,
+html.dark .bg-slate-50\/90 { background-color: rgba(255, 255, 255, 0.03) !important; }
+html.dark .bg-slate-100\/80 { background-color: rgba(255, 255, 255, 0.06) !important; }
+html.dark .bg-slate-200\/50 { background-color: rgba(255, 255, 255, 0.12) !important; }
+
+/* Tinted highlight surfaces (selected rows, info panels). */
+html.dark .bg-blue-50\/20,
+html.dark .bg-blue-50\/40,
+html.dark .bg-blue-50\/50,
+html.dark .bg-blue-50\/60 { background-color: rgba(59, 130, 246, 0.12) !important; }
+html.dark .bg-rose-50\/40,
+html.dark .bg-rose-50\/50 { background-color: rgba(239, 68, 68, 0.12) !important; }
+html.dark .bg-red-50\/20 { background-color: rgba(239, 68, 68, 0.1) !important; }
+html.dark .bg-emerald-50\/40 { background-color: rgba(16, 185, 129, 0.12) !important; }
+
+/* Opacity-modified hover states. */
+html.dark .hover\:bg-slate-50\/50:hover,
+html.dark .hover\:bg-slate-50\/70:hover,
+html.dark .hover\:bg-slate-50\/80:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
+html.dark .hover\:bg-slate-200\/50:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
+html.dark .hover\:bg-blue-50\/20:hover,
+html.dark .hover\:bg-blue-50\/40:hover,
+html.dark .hover\:bg-blue-50\/50:hover { background-color: rgba(59, 130, 246, 0.15) !important; }
+html.dark .hover\:bg-emerald-50\/40:hover { background-color: rgba(16, 185, 129, 0.15) !important; }
+
+/* ── Row dividers ─────────────────────────────────────────────────────────── */
+/* divide-* sets border-color on adjacent children via a compound selector the
+   flat .border-slate-* rules can't reach, so light dividers stay visible. */
+html.dark .divide-slate-50 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* ── Badge / card borders at the -100 tint ────────────────────────────────── */
+/* Base mappings only cover the -200 borders; these -100 variants sit on badges
+   and tinted cards and would otherwise glow bright against dark surfaces. */
+html.dark .border-blue-100 { border-color: rgba(59, 130, 246, 0.25) !important; }
+html.dark .border-indigo-100 { border-color: rgba(99, 102, 241, 0.25) !important; }
+html.dark .border-violet-100 { border-color: rgba(139, 92, 246, 0.25) !important; }
+html.dark .border-emerald-100 { border-color: rgba(16, 185, 129, 0.25) !important; }
+html.dark .border-amber-100 { border-color: rgba(245, 158, 11, 0.25) !important; }
+html.dark .border-red-100,
+html.dark .border-rose-100 { border-color: rgba(239, 68, 68, 0.25) !important; }
+html.dark .border-slate-200\/60,
+html.dark .border-slate-200\/80 { border-color: rgba(255, 255, 255, 0.1) !important; }
+html.dark .ring-black\/5 { --tw-ring-color: rgba(255, 255, 255, 0.08) !important; }
+
+/* ── Light decorative gradients → dark surfaces ───────────────────────────── */
+/* Remaps the light gradient stops (from/via/to at the 50 tint or white) so
+   banner/header/chat gradients don't wash out to bright panels in dark mode.
+   Overrides Tailwind's gradient custom properties in place. */
+html.dark .from-white,
+html.dark .from-slate-50,
+html.dark .from-slate-100 {
+  --tw-gradient-from: #1e293b var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(30 41 59 / 0) var(--tw-gradient-to-position) !important;
+}
+html.dark .from-indigo-50 {
+  --tw-gradient-from: rgba(99, 102, 241, 0.12) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(99 102 241 / 0) var(--tw-gradient-to-position) !important;
+}
+html.dark .from-blue-50 {
+  --tw-gradient-from: rgba(59, 130, 246, 0.12) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(59 130 246 / 0) var(--tw-gradient-to-position) !important;
+}
+html.dark .from-violet-50 {
+  --tw-gradient-from: rgba(139, 92, 246, 0.12) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgb(139 92 246 / 0) var(--tw-gradient-to-position) !important;
+}
+html.dark .via-white {
+  --tw-gradient-stops: var(--tw-gradient-from), #1e293b var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+html.dark .via-blue-50 {
+  --tw-gradient-stops: var(--tw-gradient-from), rgba(59, 130, 246, 0.1) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+html.dark .to-slate-50 { --tw-gradient-to: #1e293b var(--tw-gradient-to-position) !important; }
+html.dark .to-blue-50 { --tw-gradient-to: rgba(59, 130, 246, 0.12) var(--tw-gradient-to-position) !important; }
+html.dark .to-indigo-50 { --tw-gradient-to: rgba(99, 102, 241, 0.12) var(--tw-gradient-to-position) !important; }
+html.dark .to-fuchsia-50 { --tw-gradient-to: rgba(217, 70, 239, 0.12) var(--tw-gradient-to-position) !important; }

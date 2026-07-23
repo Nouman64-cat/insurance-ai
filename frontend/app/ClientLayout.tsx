@@ -21,6 +21,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const isLoginPage = pathname === "/login";
   const [authChecked, setAuthChecked] = useState(false);
+  const [tenantName, setTenantName] = useState("Adamjee Life");
   const { isAutomationMode } = useCopilot();
   const { notify: showToast } = useNotify();
 
@@ -28,9 +29,53 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   // need any wiring beyond rendering the data the row contains.
   useRecordHighlighter();
 
+  const [copilotWidth, setCopilotWidth] = useState(40); // percentage
+  const [isResizing, setIsResizing] = useState(false);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const widthPct = ((window.innerWidth - e.clientX) / window.innerWidth) * 100;
+      if (widthPct >= 15 && widthPct <= 85) {
+        setCopilotWidth(widthPct);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 0) return;
+      const clientX = e.touches[0].clientX;
+      const widthPct = ((window.innerWidth - clientX) / window.innerWidth) * 100;
+      if (widthPct >= 15 && widthPct <= 85) {
+        setCopilotWidth(widthPct);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("touchmove", handleTouchMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("touchend", handleMouseUp);
+
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("touchmove", handleTouchMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("touchend", handleMouseUp);
+    };
+  }, [isResizing]);
+
   useEffect(() => {
     const token = localStorage.getItem("jwt_token");
     const tenantId = localStorage.getItem("tenant_id");
+    const tName = localStorage.getItem("tenant_name");
+    
+    if (tName) {
+      setTenantName(tName);
+    }
 
     if (token && tenantId) {
       api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
@@ -225,12 +270,40 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             <main className="flex-1 overflow-hidden relative flex">
               {isAutomationMode ? (
                 <>
-                  <div className="flex-1 overflow-auto bg-slate-50 relative">
+                  <div 
+                    className="overflow-auto bg-slate-50 relative"
+                    style={{ width: `${100 - copilotWidth}%` }}
+                  >
                     {children}
                   </div>
-                  <div className="w-[45%] lg:w-[40%] flex-shrink-0 bg-slate-50 h-full relative z-30">
+                  
+                  {/* Resizable Divider (Draggable handle) */}
+                  <div
+                    onMouseDown={() => setIsResizing(true)}
+                    onTouchStart={() => setIsResizing(true)}
+                    className={`w-1.5 h-full cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors flex items-center justify-center relative z-40 select-none ${
+                      isResizing ? "bg-blue-600" : "bg-slate-200"
+                    }`}
+                  >
+                    {/* Visual Grabber Decorator */}
+                    <div className="w-1 h-8 rounded-full bg-slate-400/80 flex flex-col gap-0.5 items-center justify-center py-1">
+                      <div className="w-0.5 h-0.5 rounded-full bg-white"></div>
+                      <div className="w-0.5 h-0.5 rounded-full bg-white"></div>
+                      <div className="w-0.5 h-0.5 rounded-full bg-white"></div>
+                    </div>
+                  </div>
+
+                  <div 
+                    className="flex-shrink-0 bg-slate-50 h-full relative z-30 overflow-hidden"
+                    style={{ width: `${copilotWidth}%` }}
+                  >
                     <CopilotInterface />
                   </div>
+
+                  {/* Resizing full-page overlay to capture all mousemove events cleanly */}
+                  {isResizing && (
+                    <div className="fixed inset-0 z-50 cursor-col-resize bg-transparent" />
+                  )}
                 </>
               ) : (
                 <div className="flex-1 overflow-auto bg-slate-50 relative h-full">
@@ -242,7 +315,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             {/* ── Footer ────────────────────────────────────────────────────── */}
             <footer className="border-t border-slate-200 bg-white py-2.5 px-6">
               <p className="text-center text-[10px] text-slate-400">
-                insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; Adamjee Life Assurance Co. Ltd.
+                insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; {tenantName}
               </p>
             </footer>
           </div>

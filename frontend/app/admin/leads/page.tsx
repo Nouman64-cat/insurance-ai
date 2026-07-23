@@ -38,6 +38,8 @@ export default function LeadsHubPage() {
   const [error, setError] = useState("");
   const [filterType, setFilterType] = useState<FilterType>("ALL");
   const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: EntityType } | null>(null);
+  const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -54,6 +56,10 @@ export default function LeadsHubPage() {
     const t = setTimeout(() => setCityFilter(cityInput.trim()), 400);
     return () => clearTimeout(t);
   }, [cityInput]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterType, dateFrom, dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter]);
 
   useEffect(() => {
     const tenantId = localStorage.getItem("tenant_id");
@@ -86,8 +92,8 @@ export default function LeadsHubPage() {
     const label = dateFrom && dateTo
       ? (dateFrom === dateTo ? `On ${dateFrom}` : `${dateFrom} → ${dateTo}`)
       : dateFrom
-      ? `From ${dateFrom}`
-      : `Until ${dateTo}`;
+        ? `From ${dateFrom}`
+        : `Until ${dateTo}`;
     activeFilterChips.push({ key: "date", label, onRemove: () => { setDateFrom(""); setDateTo(""); } });
   }
   if (cityFilter) activeFilterChips.push({ key: "city", label: `City: ${cityFilter}`, onRemove: () => { setCityInput(""); setCityFilter(""); } });
@@ -154,7 +160,7 @@ export default function LeadsHubPage() {
     setLoading(true);
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
-    
+
     if (!tenantId) {
       setError("No active tenant found.");
       setLoading(false);
@@ -343,259 +349,458 @@ export default function LeadsHubPage() {
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
-      
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads/Customers</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Manage and track your prospects across all segments.
+          </p>
+        </div>
+        <div className="flex items-center gap-2 self-start">
+          <button
+            onClick={() => router.push("/plans")}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="9" y1="13" x2="15" y2="13" />
+              <line x1="9" y1="17" x2="13" y2="17" />
+            </svg>
+            Insurance Plans
+          </button>
+          <button
+            onClick={() => setChooserType("INDIVIDUAL")}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
+          >
+            + Add Individual
+          </button>
+          <button
+            onClick={() => setChooserType("FAMILY")}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow active:scale-95"
+          >
+            + Add Family
+          </button>
+          <button
+            onClick={() => setChooserType("CORPORATE")}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
+          >
+            + Add Corporate
+          </button>
+        </div>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads</h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Manage and track your prospects across all segments.
-            </p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Leads</p>
+            <div className="text-2xl font-bold text-slate-900">{leads.length}</div>
           </div>
-          <div className="flex items-center gap-2 self-start">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-700">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Individuals</p>
+            <div className="text-2xl font-bold text-blue-700">{leads.filter(l => l.type === "INDIVIDUAL").length}</div>
+          </div>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-700">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Families</p>
+            <div className="text-2xl font-bold text-purple-700">{leads.filter(l => l.type === "FAMILY").length}</div>
+          </div>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-purple-100 text-purple-700">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z" /><circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" /><path d="M8 15v-2a4 4 0 018 0v2" /></svg>
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
+          <div>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Corporates</p>
+            <div className="text-2xl font-bold text-emerald-700">{leads.filter(l => l.type === "CORPORATE").length}</div>
+          </div>
+          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" /><path d="M6 12H4a2 2 0 00-2 2v8h4" /><path d="M18 9h2a2 2 0 012 2v11h-4" /></svg>
+          </div>
+        </div>
+      </div>
+
+      {/* Filters, search */}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center gap-3 w-full">
+          <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner backdrop-blur-md border border-slate-200/60 shrink-0">
+            {["ALL", "INDIVIDUAL", "FAMILY", "CORPORATE"].map((ft) => (
+              <button
+                key={ft}
+                onClick={() => setFilterType(ft as FilterType)}
+                className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${filterType === ft
+                  ? "bg-white text-indigo-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
+                  : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
+                  }`}
+              >
+                {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individuals" : ft === "FAMILY" ? "Families" : "Corporates"}
+              </button>
+            ))}
+          </div>
+
+          <div className="relative w-full max-w-[320px] shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+            </svg>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search by name, contact, identifier..."
+              className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-shadow"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
+          <div className="shrink-0">
+            <FiltersPanel
+              dateFrom={dateFrom}
+              dateTo={dateTo}
+              onDateFromChange={setDateFrom}
+              onDateToChange={setDateTo}
+              cityInput={cityInput}
+              onCityInputChange={setCityInput}
+              provinceFilter={provinceFilter}
+              onProvinceChange={setProvinceFilter}
+              branchFilter={branchFilter}
+              onBranchChange={setBranchFilter}
+              branchOptions={branchOptions}
+              sourceFilter={sourceFilter}
+              onSourceChange={setSourceFilter}
+              sourceOptions={sourceOptions}
+              activeCount={structuredFilterCount}
+              onClearAll={clearFilters}
+            />
+          </div>
+
+          {/* View Mode Toggle */}
+          <div className="ml-auto shrink-0 inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner border border-slate-200/60">
             <button
-              onClick={() => router.push("/plans")}
-              className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
+              type="button"
+              onClick={() => setViewMode("kanban")}
+              title="Kanban Board"
+              className={`p-2 rounded-lg transition-all ${viewMode === "kanban"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+                }`}
             >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-                <polyline points="14 2 14 8 20 8" />
-                <line x1="9" y1="13" x2="15" y2="13" />
-                <line x1="9" y1="17" x2="13" y2="17" />
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <rect x="3" y="3" width="7" height="9" />
+                <rect x="14" y="3" width="7" height="5" />
+                <rect x="14" y="12" width="7" height="9" />
+                <rect x="3" y="16" width="7" height="5" />
               </svg>
-              Insurance Plans
             </button>
             <button
-              onClick={() => setChooserType("INDIVIDUAL")}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
+              type="button"
+              onClick={() => setViewMode("table")}
+              title="Tabular View"
+              className={`p-2 rounded-lg transition-all ${viewMode === "table"
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+                }`}
             >
-              + Add Individual
-            </button>
-            <button
-              onClick={() => setChooserType("FAMILY")}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow active:scale-95"
-            >
-              + Add Family
-            </button>
-            <button
-              onClick={() => setChooserType("CORPORATE")}
-              className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
-            >
-              + Add Corporate
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+                <line x1="3" y1="6" x2="3.01" y2="6" />
+                <line x1="3" y1="12" x2="3.01" y2="12" />
+                <line x1="3" y1="18" x2="3.01" y2="18" />
+              </svg>
             </button>
           </div>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Leads</p>
-              <div className="text-2xl font-bold text-slate-900">{leads.length}</div>
-            </div>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-700">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-            </div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Individuals</p>
-              <div className="text-2xl font-bold text-blue-700">{leads.filter(l => l.type === "INDIVIDUAL").length}</div>
-            </div>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-700">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            </div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Families</p>
-              <div className="text-2xl font-bold text-purple-700">{leads.filter(l => l.type === "FAMILY").length}</div>
-            </div>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-purple-100 text-purple-700">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M8 15v-2a4 4 0 018 0v2"/></svg>
-            </div>
-          </div>
-          <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Corporates</p>
-              <div className="text-2xl font-bold text-emerald-700">{leads.filter(l => l.type === "CORPORATE").length}</div>
-            </div>
-            <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z"/><path d="M6 12H4a2 2 0 00-2 2v8h4"/><path d="M18 9h2a2 2 0 012 2v11h-4"/></svg>
-            </div>
-          </div>
-        </div>
-
-        {/* Filters, search */}
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3 w-full">
-            <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner backdrop-blur-md border border-slate-200/60 shrink-0">
-              {["ALL", "INDIVIDUAL", "FAMILY", "CORPORATE"].map((ft) => (
-                  <button
-                    key={ft}
-                    onClick={() => setFilterType(ft as FilterType)}
-                    className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${
-                      filterType === ft
-                        ? "bg-white text-indigo-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
-                        : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
-                    }`}
-                  >
-                    {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individuals" : ft === "FAMILY" ? "Families" : "Corporates"}
-                  </button>
-                ))}
-            </div>
-            
-            <div className="relative w-full max-w-[320px] shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
-              </svg>
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search by name, contact, identifier..."
-                className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-shadow"
-              />
-              {search && (
+        {activeFilterChips.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {activeFilterChips.map((chip) => (
+              <span
+                key={chip.key}
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium"
+              >
+                {chip.label}
                 <button
-                  onClick={() => setSearch("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  onClick={chip.onRemove}
+                  className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-indigo-100 text-indigo-400 hover:text-indigo-700"
                 >
                   ✕
                 </button>
+              </span>
+            ))}
+            <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-indigo-600 hover:underline ml-1">
+              Clear all
+            </button>
+          </div>
+        )}
+      </div>
+
+      {notice && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm font-medium flex justify-between items-center">
+          <span>{notice}</span>
+          <button onClick={() => setNotice("")} className="text-emerald-400 hover:text-emerald-700 font-bold ml-3">✕</button>
+        </div>
+      )}
+
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-medium">
+          {error}
+        </div>
+      )}
+
+      {/* Scrollable Container Wrapper to enforce viewport/split-pane boundaries */}
+      <div className="w-full max-w-full overflow-hidden">
+        {(() => {
+          const filtered = getFilteredLeads();
+          const itemsPerPage = 12;
+          const totalItems = filtered.length;
+          const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+          const paginated = filtered.slice(
+            (currentPage - 1) * itemsPerPage,
+            currentPage * itemsPerPage
+          );
+
+          return (
+            <div className="flex flex-col gap-4 w-full">
+              {viewMode === "kanban" ? (
+                /* Kanban Board */
+                <div className="flex flex-col md:flex-row gap-6 items-start overflow-x-auto pb-4 w-full">
+                  {/* LEAD COLUMN */}
+                  <div className="flex flex-col gap-3 flex-1 min-w-[280px] w-full">
+                    <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-amber-300">
+                      <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                        Leads
+                      </h3>
+                      <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "LEAD").length} of ${filtered.filter(l => l.status === "LEAD").length}`}>
+                        {filtered.filter(l => l.status === "LEAD").length}
+                      </span>
+                    </div>
+                    {paginated.filter(l => l.status === "LEAD").map(lead => (
+                      <LeadCard
+                        key={lead.id}
+                        lead={lead}
+                        busy={actionBusyId === lead.id}
+                        onClick={() => handleCardClick(lead)}
+                        onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onMarkNotInterested={() => handleMarkNotInterested(lead)}
+                        onReactivate={() => handleReactivate(lead)}
+                        onDelete={() => handleDeleteLead(lead)}
+                      />
+                    ))}
+                  </div>
+
+                  {/* IN PROGRESS COLUMN */}
+                  <div className="flex flex-col gap-3 flex-1 min-w-[280px] w-full">
+                    <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-indigo-400">
+                      <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                        In Progress
+                      </h3>
+                      <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").length} of ${filtered.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").length}`}>
+                        {filtered.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").length}
+                      </span>
+                    </div>
+                    {paginated.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").map(lead => (
+                      <LeadCard
+                        key={lead.id}
+                        lead={lead}
+                        busy={actionBusyId === lead.id}
+                        onClick={() => handleCardClick(lead)}
+                        onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onMarkNotInterested={() => handleMarkNotInterested(lead)}
+                        onReactivate={() => handleReactivate(lead)}
+                        onDelete={() => handleDeleteLead(lead)}
+                      />
+                    ))}
+                  </div>
+
+                  {/* DEAD LEADS COLUMN */}
+                  <div className="flex flex-col gap-3 flex-1 min-w-[280px] w-full">
+                    <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-slate-300">
+                      <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
+                        Dead Leads
+                      </h3>
+                      <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "NOT_INTERESTED").length} of ${filtered.filter(l => l.status === "NOT_INTERESTED").length}`}>
+                        {filtered.filter(l => l.status === "NOT_INTERESTED").length}
+                      </span>
+                    </div>
+                    {paginated.filter(l => l.status === "NOT_INTERESTED").map(lead => (
+                      <LeadCard
+                        key={lead.id}
+                        lead={lead}
+                        busy={actionBusyId === lead.id}
+                        onClick={() => handleCardClick(lead)}
+                        onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onMarkNotInterested={() => handleMarkNotInterested(lead)}
+                        onReactivate={() => handleReactivate(lead)}
+                        onDelete={() => handleDeleteLead(lead)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                /* Tabular View */
+                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
+                  {totalItems === 0 ? (
+                    <div className="p-12 text-center text-slate-500">
+                      <svg className="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                      </svg>
+                      <p>No leads or customers found.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto w-full">
+                      <table className="w-full min-w-[1000px] text-left text-sm whitespace-nowrap">
+                        <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                          <tr>
+                            <th className="px-6 py-4">Name</th>
+                            <th className="px-6 py-4">Type</th>
+                            <th className="px-6 py-4">Contact</th>
+                            <th className="px-6 py-4">Identifier</th>
+                            <th className="px-6 py-4">Date Added</th>
+                            <th className="px-6 py-4">Status</th>
+                            <th className="px-6 py-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {paginated.map(lead => {
+                            const busy = actionBusyId === lead.id;
+                            const isDead = lead.status === "NOT_INTERESTED";
+                            const isLead = lead.status === "LEAD";
+                            const typeStyles = {
+                              INDIVIDUAL: "bg-blue-50 text-blue-700 border-blue-200",
+                              FAMILY: "bg-purple-50 text-purple-700 border-purple-200",
+                              CORPORATE: "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            };
+                            const statusStyles = {
+                              LEAD: "bg-amber-50 text-amber-700 border-amber-200",
+                              PROSPECT: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                              UNDERWRITING_READY: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                              NOT_INTERESTED: "bg-slate-100 text-slate-600 border-slate-200",
+                              POLICYHOLDER: "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            };
+                            return (
+                              <tr
+                                key={lead.id}
+                                onClick={() => handleCardClick(lead)}
+                                className="hover:bg-slate-50/80 transition-colors cursor-pointer"
+                              >
+                                <td className="px-6 py-4 font-semibold text-slate-900">{lead.name}</td>
+                                <td className="px-6 py-4">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeStyles[lead.type]}`}>
+                                    {lead.type}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-slate-600 text-xs">{lead.contact_info}</td>
+                                <td className="px-6 py-4 text-slate-500 font-mono text-xs">{lead.primaryIdentifier || "-"}</td>
+                                <td className="px-6 py-4 text-slate-500 text-xs">{new Date(lead.created_at).toLocaleDateString()}</td>
+                                <td className="px-6 py-4">
+                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[lead.status]}`}>
+                                    {lead.status === "LEAD" ? "Lead" : (lead.status === "NOT_INTERESTED" ? "Dead Lead" : "In Progress")}
+                                  </span>
+                                </td>
+                                <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {isDead ? (
+                                      <button
+                                        disabled={busy}
+                                        onClick={() => handleReactivate(lead)}
+                                        className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+                                      >
+                                        Reactivate
+                                      </button>
+                                    ) : (
+                                      <>
+                                        {isLead && (
+                                          <button
+                                            disabled={busy}
+                                            onClick={() => handleMoveInProgress(lead)}
+                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                                          >
+                                            In Progress
+                                          </button>
+                                        )}
+                                        <button
+                                          disabled={busy}
+                                          onClick={() => handleMarkNotInterested(lead)}
+                                          className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
+                                        >
+                                          Not Interested
+                                        </button>
+                                      </>
+                                    )}
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => handleDeleteLead(lead)}
+                                      className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-white border border-red-100 text-red-600 hover:bg-red-50 transition-colors"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Shared Pagination Footer */}
+              {totalItems > 0 && (
+                <div className="bg-slate-50 px-6 py-4 border border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 w-full">
+                  <div className="text-xs text-slate-500">
+                    Showing <span className="font-semibold text-slate-700">{Math.min(totalItems, (currentPage - 1) * itemsPerPage + 1)}-{Math.min(totalItems, currentPage * itemsPerPage)}</span> of <span className="font-semibold text-slate-700">{totalItems}</span> leads
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                    >
+                      Previous
+                    </button>
+                    <div className="text-xs font-semibold text-slate-700 px-2">
+                      Page {currentPage} of {totalPages}
+                    </div>
+                    <button
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
+          );
+        })()}
+      </div>
 
-            <div className="shrink-0">
-              <FiltersPanel
-                dateFrom={dateFrom}
-                dateTo={dateTo}
-                onDateFromChange={setDateFrom}
-                onDateToChange={setDateTo}
-                cityInput={cityInput}
-                onCityInputChange={setCityInput}
-                provinceFilter={provinceFilter}
-                onProvinceChange={setProvinceFilter}
-                branchFilter={branchFilter}
-                onBranchChange={setBranchFilter}
-                branchOptions={branchOptions}
-                sourceFilter={sourceFilter}
-                onSourceChange={setSourceFilter}
-                sourceOptions={sourceOptions}
-                activeCount={structuredFilterCount}
-                onClearAll={clearFilters}
-              />
-            </div>
-          </div>
-
-          {activeFilterChips.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5">
-              {activeFilterChips.map((chip) => (
-                <span
-                  key={chip.key}
-                  className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium"
-                >
-                  {chip.label}
-                  <button
-                    onClick={chip.onRemove}
-                    className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-indigo-100 text-indigo-400 hover:text-indigo-700"
-                  >
-                    ✕
-                  </button>
-                </span>
-              ))}
-              <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-indigo-600 hover:underline ml-1">
-                Clear all
-              </button>
-            </div>
-          )}
-        </div>
-
-        {notice && (
-          <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm font-medium flex justify-between items-center">
-            <span>{notice}</span>
-            <button onClick={() => setNotice("")} className="text-emerald-400 hover:text-emerald-700 font-bold ml-3">✕</button>
-          </div>
-        )}
-
-        {error && (
-          <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-medium">
-            {error}
-          </div>
-        )}
-
-        {/* Kanban Board */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {/* LEAD COLUMN */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-amber-300">
-              <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                Leads
-              </h3>
-              <span className="bg-amber-100 text-amber-700 text-xs font-bold px-2 py-0.5 rounded-full">{leadsByColumn.lead.length}</span>
-            </div>
-            {leadsByColumn.lead.map(lead => (
-              <LeadCard
-                key={lead.id}
-                lead={lead}
-                busy={actionBusyId === lead.id}
-                onClick={() => handleCardClick(lead)}
-                onMoveInProgress={() => handleMoveInProgress(lead)}
-                onMarkNotInterested={() => handleMarkNotInterested(lead)}
-                onReactivate={() => handleReactivate(lead)}
-                onDelete={() => handleDeleteLead(lead)}
-              />
-            ))}
-          </div>
-
-          {/* IN PROGRESS COLUMN */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-indigo-400">
-              <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
-                In Progress
-              </h3>
-              <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full">{leadsByColumn.in_progress.length}</span>
-            </div>
-            {leadsByColumn.in_progress.map(lead => (
-              <LeadCard
-                key={lead.id}
-                lead={lead}
-                busy={actionBusyId === lead.id}
-                onClick={() => handleCardClick(lead)}
-                onMoveInProgress={() => handleMoveInProgress(lead)}
-                onMarkNotInterested={() => handleMarkNotInterested(lead)}
-                onReactivate={() => handleReactivate(lead)}
-                onDelete={() => handleDeleteLead(lead)}
-              />
-            ))}
-          </div>
-
-          {/* DEAD LEADS COLUMN */}
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-slate-300">
-              <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-slate-400"></span>
-                Dead Leads
-              </h3>
-              <span className="bg-slate-200 text-slate-600 text-xs font-bold px-2 py-0.5 rounded-full">{leadsByColumn.dead_leads.length}</span>
-            </div>
-            {leadsByColumn.dead_leads.map(lead => (
-              <LeadCard
-                key={lead.id}
-                lead={lead}
-                busy={actionBusyId === lead.id}
-                onClick={() => handleCardClick(lead)}
-                onMoveInProgress={() => handleMoveInProgress(lead)}
-                onMarkNotInterested={() => handleMarkNotInterested(lead)}
-                onReactivate={() => handleReactivate(lead)}
-                onDelete={() => handleDeleteLead(lead)}
-              />
-            ))}
-          </div>
-        </div>
-      
 
       {selectedEntity && (
         <UnifiedDetailsModal

@@ -62,7 +62,7 @@ export interface QuoteDetail extends QuoteListItem {
 export async function listQuotes(filters?: Record<string, string | number | undefined>): Promise<QuoteListItem[]> {
   const tenantId = localStorage.getItem("tenant_id");
   const resp = await api.get<QuoteListItem[]>("/quotes", {
-    params: filters,
+    params: { ...filters, _t: Date.now() },
     headers: { "X-Tenant-Id": tenantId }
   });
   return resp.data;

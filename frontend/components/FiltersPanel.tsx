@@ -46,6 +46,7 @@ export default function FiltersPanel({
 }) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 
   useEffect(() => {
     if (!open) return;
@@ -60,6 +61,56 @@ export default function FiltersPanel({
     return () => {
       document.removeEventListener("mousedown", handleClick);
       document.removeEventListener("keydown", handleKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !containerRef.current) return;
+
+    const updatePosition = () => {
+      if (!containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      
+      // Look up the closest parent container that controls/clips the page flow
+      const scrollParent = containerRef.current.closest(".overflow-auto") || containerRef.current.closest("main");
+      const limitLeft = scrollParent ? scrollParent.getBoundingClientRect().left : 0;
+      const limitRight = scrollParent ? scrollParent.getBoundingClientRect().right : window.innerWidth;
+      const maxAvailableWidth = limitRight - limitLeft - 24; // 12px margin on both sides
+
+      // The desired width of the dropdown (normally 384px, or 320px on small viewports)
+      const idealWidth = window.innerWidth < 640 ? 320 : 384;
+      const dropdownWidth = Math.min(idealWidth, maxAvailableWidth);
+
+      let leftOffset = 0; // offset relative to the button container's left edge
+      const viewportLeft = rect.left;
+      const viewportRight = rect.left + dropdownWidth;
+
+      // Adjust to fit within right limit
+      if (viewportRight > limitRight - 12) {
+        leftOffset = (limitRight - 12) - viewportRight;
+      }
+
+      // Adjust to fit within left limit
+      if (viewportLeft + leftOffset < limitLeft + 12) {
+        leftOffset = (limitLeft + 12) - viewportLeft;
+      }
+
+      setDropdownStyle({
+        left: `${leftOffset}px`,
+        right: "auto",
+        maxWidth: `${maxAvailableWidth}px`,
+      });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    // Also update when scrolling parent container to keep absolute position aligned
+    const scrollParent = containerRef.current.closest(".overflow-auto");
+    if (scrollParent) scrollParent.addEventListener("scroll", updatePosition);
+
+    return () => {
+      window.removeEventListener("resize", updatePosition);
+      if (scrollParent) scrollParent.removeEventListener("scroll", updatePosition);
     };
   }, [open]);
 
@@ -88,7 +139,10 @@ export default function FiltersPanel({
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-xl shadow-lg p-4 space-y-4">
+        <div 
+          style={dropdownStyle}
+          className="absolute z-30 mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-xl shadow-lg p-4 space-y-4"
+        >
           <div>
             <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Date Added</p>
             <div className="grid grid-cols-2 gap-3">
