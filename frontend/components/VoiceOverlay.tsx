@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import api from "../app/services/api";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import { ALL_TOOLS } from "../lib/agent/tools";
+import { useNotify } from "./NotificationContext";
 
 const SYSTEM_PROMPT = `Your name is Insurance AI Agent, a helpful, expert AI voice assistant for the "insurance-ai" platform — an AI-powered insurance underwriting system. Keep responses brief and conversational since this is a voice interface. Cover: Underwriting (risk scores, OCR, AI recommendations), Live Evaluation, Score Engine, Organizations, Fraud Detection, Claims. Expert in: premiums, sum assured, riders, BMI underwriting, reinsurance, Term/Whole/Endowment/Group Life. Be warm, concise, professional.
 
@@ -15,7 +16,9 @@ CRITICAL INSTRUCTION: You have access to system tools (functions) to perform rea
 4. Get details about a case or applicant (use get_case_details)
 5. Run an underwriting risk assessment (use run_risk_assessment)
 
-DO NOT hallucinate or pretend to perform these actions. If you need more information to execute a tool (like a CNIC, Date of Birth, etc.), ask the user for it first, and once you have it, EXECUTE the tool call. Never just output text saying you updated it without calling the function!`;
+DO NOT hallucinate or pretend to perform these actions, and DO NOT invent missing required information (a CNIC, a Date of Birth, an email) yourself. If you need more information to execute a tool, ask the user for it first — out loud, since this is a voice call — and only call the function once you actually have it. Never just say you did something without calling the function.
+
+Before performing anything that creates, changes, or deletes data, briefly confirm with the user out loud that you're about to do it (e.g. "Adding customer John Doe now — is that right?") and only call the function after they agree.`;
 
 type Status = "connecting" | "listening" | "speaking" | "error";
 
@@ -25,6 +28,7 @@ interface Props { onClose: () => void; }
 
 export default function VoiceOverlay({ onClose }: Props) {
   const router = useRouter();
+  const { notify } = useNotify();
   const [status, setStatus] = useState<Status>("connecting");
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
@@ -266,6 +270,14 @@ export default function VoiceOverlay({ onClose }: Props) {
     };
   }, []);
 
+  // Every REST call a tool makes now lives in exactly one place —
+  // services/chat-agent/tool_executor.py, reused here via the non-streaming
+  // /chat/execute-tool endpoint instead of a third copy of the same REST
+  // logic. Deepgram's hosted agent drives its own tool-call decisions and
+  // expects a synchronous response, so this can't join the interrupt/resume
+  // protocol the text/copilot surfaces use — but it still gets the same
+  // RBAC hard block (role is checked server-side) and the same
+  // action-completed toast/navigate wiring.
   const handleFunctionCall = async (msg: any, ws: WebSocket, router: any) => {
     if (!msg.functions || !Array.isArray(msg.functions)) return;
 
@@ -274,163 +286,29 @@ export default function VoiceOverlay({ onClose }: Props) {
       let args: any = {};
       try { args = typeof argsString === "string" ? JSON.parse(argsString) : argsString; } catch { }
 
-      let result: any = { success: false, message: "Unknown function" };
-      const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
-
       console.log(`Executing tool: ${name}`, args);
 
-      try {
-        if (name === "navigate_to_page") {
-          router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
-          result = { success: true, message: `Navigating to ${args.page_name}` };
+      let result: any;
+      if (name === "navigate_to_page") {
+        router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
+        result = { success: true, message: `Navigating to ${args.page_name}` };
+      } else if (name === "upload_document") {
+        // No attach-a-file affordance on this surface either.
+        result = { success: false, error: "Document upload isn't supported over voice — try the Copilot panel instead." };
+      } else {
+        const role = localStorage.getItem("user_role") || "Agent";
+        try {
+          const res = await api.post("/chat/execute-tool", { name, args, role });
+          result = res.data;
+        } catch (e: any) {
+          result = { success: false, error: e.response?.data?.detail || e.message || "Failed to execute function." };
         }
-        else if (name === "add_user") {
-          const rolesRes = await api.get(`/roles`);
-          const role = rolesRes.data.find((r: any) => r.name.toLowerCase() === args.role_name.toLowerCase());
-          if (!role) throw new Error(`Role ${args.role_name} not found`);
+      }
 
-          const res = await api.post(`/tenants/${tenantId}/users/`, {
-             full_name: args.full_name,
-             email: args.email,
-             role_id: role.id
-          });
-          result = { success: true, user_id: res.data.id, message: `System user ${args.full_name} added successfully as ${args.role_name}.` };
-        }
-        else if (name === "add_organization") {
-          const res = await api.post(`/tenants/${tenantId}/organizations`, {
-             name: args.name,
-             contact_person: args.contact_person,
-             contact_email: args.contact_email,
-             contact_phone: args.contact_phone
-          });
-          result = { success: true, organization_id: res.data.id, message: `Organization ${args.name} added successfully.` };
-        }
-        else if (name === "add_family_group") {
-          const res = await api.post(`/tenants/${tenantId}/families`, {
-             name: args.name,
-             contact_person: args.contact_person,
-             contact_email: args.contact_email,
-             contact_phone: args.contact_phone,
-             household_declared_income: args.household_declared_income
-          });
-          const familyId = res.data.id;
-          let message = `Family Group ${args.name} added successfully.`;
-
-          if (args.members && Array.isArray(args.members) && args.members.length > 0) {
-              const fpRes = await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies`, {
-                  total_sum_insured: 5000000,
-                  term_years: 1,
-                  effective_date: new Date().toISOString().split("T")[0]
-              });
-              const fpId = fpRes.data.id;
-
-              await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies/${fpId}/members/confirm`, {
-                  members: args.members
-             });
-              message += ` Enrolled ${args.members.length} members successfully.`;
-          }
-
-          result = { success: true, family_group_id: familyId, message };
-        }
-        else if (name === "bulk_add_customers") {
-          let customers = [];
-          try {
-            let jsonStr = args.customers_json || args.customers;
-            if (typeof jsonStr === "string") {
-              jsonStr = jsonStr.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
-              customers = JSON.parse(jsonStr);
-            } else {
-              customers = jsonStr;
-            }
-          } catch (e: any) {
-            throw new Error("Invalid customers JSON format provided by AI: " + e.message);
-          }
-          if (!Array.isArray(customers)) throw new Error("Expected an array of customers.");
-
-          const results = await Promise.allSettled(customers.map((c: any) => {
-            const genderNormalized = c.gender ? c.gender.charAt(0).toUpperCase() + c.gender.slice(1).toLowerCase() : "Other";
-            const income = typeof c.declared_income === "string" ? parseFloat(c.declared_income) : c.declared_income;
-            return api.post(`/tenants/${tenantId}/customers`, {
-               first_name: c.first_name,
-               last_name: c.last_name,
-               cnic: c.cnic,
-               date_of_birth: c.date_of_birth,
-               gender: genderNormalized,
-               occupation: c.occupation,
-               declared_income: income || 0,
-               is_smoker: c.is_smoker ?? false,
-               height_cm: c.height_cm ?? 170,
-               weight_kg: c.weight_kg ?? 70
-            });
-          }));
-          const successCount = results.filter(r => r.status === 'fulfilled').length;
-          const failCount = results.length - successCount;
-          if (successCount === 0 && failCount > 0) {
-            const firstErr = (results.find(r => r.status === 'rejected') as any)?.reason;
-            throw new Error("All customer additions failed. First error: " + (firstErr?.response?.data?.detail || firstErr?.message));
-          }
-          result = { success: true, message: `Successfully added ${successCount} customers. Failed: ${failCount}.` };
-        }
-        else if (name === "add_customer") {
-          const res = await api.post(`/tenants/${tenantId}/customers`, {
-            first_name: args.first_name,
-            last_name: args.last_name,
-            cnic: args.cnic,
-            date_of_birth: args.date_of_birth,
-            gender: args.gender,
-            occupation: args.occupation,
-            declared_income: args.declared_income,
-            is_smoker: false,
-            height_cm: 170,
-            weight_kg: 70,
-            details: {}
-          });
-          result = { success: true, customer_id: res.data.id, message: "Customer added successfully." };
-        }
-        else if (name === "delete_customer") {
-          const list = await api.get(`/tenants/${tenantId}/customers`);
-          const c = list.data.find((a: any) =>
-            (args.cnic && a.cnic === args.cnic) ||
-            (args.name && a.name.toLowerCase().includes(args.name.toLowerCase()))
-          );
-          if (!c) throw new Error("Customer not found");
-          await api.delete(`/tenants/${tenantId}/customers/${c.id}`);
-          result = { success: true, message: `Customer ${c.name} deleted.` };
-        }
-        else if (name === "get_case_details") {
-          const list = await api.get(`/tenants/${tenantId}/cases`);
-          const c = list.data.find((c: any) =>
-            (args.case_number && c.caseNumber === args.case_number) ||
-            (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
-          );
-          if (!c) throw new Error("Case not found");
-          result = {
-            success: true,
-            case_number: c.caseNumber,
-            status: c.caseStatus,
-            applicant: c.applicant_name,
-            ai_decision: c.latest_ai_decision || "Pending",
-            product: c.product_name
-          };
-        }
-        else if (name === "run_risk_assessment") {
-          const list = await api.get(`/tenants/${tenantId}/cases`);
-          const c = list.data.find((c: any) =>
-            (args.case_number && c.caseNumber === args.case_number) ||
-            (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
-          );
-          if (!c) throw new Error("Case not found");
-
-          const detailRes = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`);
-          const { applicant, policy } = detailRes.data;
-          if (!applicant || !policy) throw new Error("Missing applicant or policy details to run assessment.");
-
-          await api.post(`/evaluate`, { applicant, policy, case_id: c.caseld });
-          result = { success: true, message: "Underwriting evaluation triggered in the background. It will be ready in a few moments." };
-        }
-      } catch (e: any) {
-        console.error(`Tool execution error [${name}]:`, e);
-        result = { success: false, error: e.response?.data?.detail || e.message || "Failed to execute function." };
+      if (result?.last_action) {
+        notify(`✅ ${result.last_action.label}`, true, result.last_action.route);
+      } else if (result?.success === false) {
+        notify(`⚠️ ${result.error || result.message || "Action failed."}`, false);
       }
 
       if (ws.readyState === WebSocket.OPEN) {

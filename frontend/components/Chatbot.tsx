@@ -4,22 +4,17 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import VoiceOverlay from "./VoiceOverlay";
 import { useRouter } from "next/navigation";
-import api from "../app/services/api";
+import { useNotify } from "./NotificationContext";
+import { useAgentChat } from "@/lib/agent/useAgentChat";
+import type { AgentMessage, QuickAction } from "@/lib/agent/types";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface Message {
-  role: "user" | "assistant" | "tool";
-  content: string | null;
-  name?: string;
-  tool_call_id?: string;
-  tool_calls?: any[];
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-const WELCOME: Message = {
+const WELCOME: AgentMessage = {
+  id: "1",
   role: "assistant",
-  content: "Hello! I'm the **Insurance AI Agent**. I can help you navigate the platform or answer any insurance questions.\n\nChoose how you'd like to interact:",
+  text: "Hello! I'm the **Insurance AI Agent**. I can help you navigate the platform or answer any insurance questions.\n\nChoose how you'd like to interact:",
 };
+
+const STORAGE_KEY = "chat_messages";
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 function IconSend() {
@@ -77,7 +72,6 @@ function IconBot({ className = "w-5 h-5" }: { className?: string }) {
   );
 }
 
-// ─── Typing Indicator ────────────────────────────────────────────────────────
 function TypingIndicator() {
   return (
     <div className="flex justify-start">
@@ -93,226 +87,36 @@ function TypingIndicator() {
 // ─── Main Component ───────────────────────────────────────────────────────────
 export function Chatbot() {
   const router = useRouter();
+  const { notify } = useNotify();
+  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat } = useAgentChat({
+    storageKey: STORAGE_KEY,
+    welcomeMessage: WELCOME,
+  });
+
   const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState<Message[]>([WELCOME]);
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
 
-  // ── Load/Save Chat History ──────────────────────────────────────────────────
-  useEffect(() => {
-    const saved = localStorage.getItem("chat_messages");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setMessages(parsed);
-        }
-      } catch (e) {
-        // ignore
-      }
-    }
-    setIsLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (isLoaded) {
-      localStorage.setItem("chat_messages", JSON.stringify(messages));
-    }
-  }, [messages, isLoaded]);
-
   const handleNewChat = () => {
     if (window.confirm("Are you sure you want to start a new chat? This will clear your current history.")) {
-      setMessages([WELCOME]);
-      localStorage.removeItem("chat_messages");
+      clearChat();
     }
   };
 
-  // ── Tool Execution Helper ──────────────────────────────────────────────────
-  const executeLocalTool = async (name: string, argsString: string) => {
-    let args: any = {};
-    try { args = typeof argsString === "string" ? JSON.parse(argsString) : argsString; } catch {}
-    
-    let result: any = { success: false, message: "Unknown function" };
-    const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
-    console.log(`[Chatbot] Executing tool: ${name}`, args);
-
-    try {
-      if (name === "navigate_to_page") {
-        router.push(`/${args.page_name === "dashboard" ? "" : args.page_name}`);
-        result = { success: true, message: `Navigating to ${args.page_name}` };
-      } 
-      else if (name === "add_user") {
-        const rolesRes = await api.get(`/roles`);
-        const role = rolesRes.data.find((r: any) => r.name.toLowerCase() === args.role_name.toLowerCase());
-        if (!role) throw new Error(`Role ${args.role_name} not found`);
-
-        const res = await api.post(`/tenants/${tenantId}/users/`, {
-           full_name: args.full_name,
-           email: args.email,
-           role_id: role.id
-        });
-        result = { success: true, user_id: res.data.id, message: `System user ${args.full_name} added successfully as ${args.role_name}.` };
-      }
-      else if (name === "add_organization") {
-        const res = await api.post(`/tenants/${tenantId}/organizations`, {
-           name: args.name,
-           contact_person: args.contact_person,
-           contact_email: args.contact_email,
-           contact_phone: args.contact_phone
-        });
-        result = { success: true, organization_id: res.data.id, message: `Organization ${args.name} added successfully.` };
-      }
-      else if (name === "add_family_group") {
-        const res = await api.post(`/tenants/${tenantId}/families`, {
-           name: args.name,
-           contact_person: args.contact_person,
-           contact_email: args.contact_email,
-           contact_phone: args.contact_phone,
-           household_declared_income: args.household_declared_income
-        });
-        const familyId = res.data.id;
-        let message = `Family Group ${args.name} added successfully.`;
-
-        if (args.members && Array.isArray(args.members) && args.members.length > 0) {
-            // 1. Create a default floater policy
-            const fpRes = await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies`, {
-                total_sum_insured: 5000000,
-                term_years: 1,
-                effective_date: new Date().toISOString().split("T")[0]
-            });
-            const fpId = fpRes.data.id;
-
-            // 2. Add members
-            await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies/${fpId}/members/confirm`, {
-                members: args.members
-            });
-            message += ` Enrolled ${args.members.length} members successfully.`;
-        }
-
-        result = { success: true, family_group_id: familyId, message };
-      }
-      else if (name === "bulk_add_customers") {
-        let customers = [];
-        try {
-          let jsonStr = args.customers_json || args.customers;
-          if (typeof jsonStr === "string") {
-            jsonStr = jsonStr.replace(/^```[a-z]*\n/i, '').replace(/\n```$/i, '').trim();
-            customers = JSON.parse(jsonStr);
-          } else {
-            customers = jsonStr;
-          }
-        } catch (e: any) {
-          throw new Error("Invalid customers JSON format provided by AI: " + e.message);
-        }
-        
-        if (!Array.isArray(customers)) throw new Error("Expected an array of customers.");
-
-        const results = await Promise.allSettled(customers.map((c: any) => {
-          const genderNormalized = c.gender ? c.gender.charAt(0).toUpperCase() + c.gender.slice(1).toLowerCase() : "Other";
-          const income = typeof c.declared_income === "string" ? parseFloat(c.declared_income) : c.declared_income;
-          return api.post(`/tenants/${tenantId}/customers`, {
-             first_name: c.first_name,
-             last_name: c.last_name,
-             cnic: c.cnic,
-             date_of_birth: c.date_of_birth,
-             gender: genderNormalized,
-             occupation: c.occupation,
-             declared_income: income || 0,
-             is_smoker: c.is_smoker ?? false,
-             height_cm: c.height_cm ?? 170,
-             weight_kg: c.weight_kg ?? 70
-          });
-        }));
-        
-        const successCount = results.filter(r => r.status === 'fulfilled').length;
-        const failCount = results.length - successCount;
-        if (successCount === 0 && failCount > 0) {
-          const firstErr = (results.find(r => r.status === 'rejected') as any)?.reason;
-          throw new Error("All customer additions failed. First error: " + (firstErr?.response?.data?.detail || firstErr?.message));
-        }
-        result = { success: true, message: `Successfully added ${successCount} customers. Failed: ${failCount}.` };
-      }
-      else if (name === "add_customer") {
-        const genderNormalized = args.gender ? args.gender.charAt(0).toUpperCase() + args.gender.slice(1).toLowerCase() : "Other";
-        const income = typeof args.declared_income === "string" ? parseFloat(args.declared_income) : args.declared_income;
-        
-        let dob = args.date_of_birth;
-        if (dob && dob.length > 10) {
-           try { dob = new Date(dob).toISOString().split('T')[0]; } catch {}
-        }
-
-        const res = await api.post(`/tenants/${tenantId}/customers`, {
-           first_name: args.first_name,
-           last_name: args.last_name,
-           cnic: args.cnic,
-           date_of_birth: dob,
-           gender: genderNormalized,
-           occupation: args.occupation,
-           declared_income: income || 0,
-           is_smoker: false,
-           height_cm: 170,
-           weight_kg: 70,
-           details: {}
-        });
-        result = { success: true, customer_id: res.data.id, message: "Customer added successfully." };
-      }
-      else if (name === "delete_customer") {
-        const params = new URLSearchParams();
-        if (args.cnic) params.append("cnic", args.cnic);
-        if (args.name) params.append("name", args.name);
-        
-        const list = await api.get(`/tenants/${tenantId}/customers?${params.toString()}`);
-        if (!list.data || list.data.length === 0) throw new Error("Customer not found");
-        
-        const app = list.data[0];
-        await api.delete(`/tenants/${tenantId}/customers/${app.id}`);
-        result = { success: true, message: `Customer ${app.name} deleted.` };
-      }
-      else if (name === "get_case_details") {
-        const list = await api.get(`/tenants/${tenantId}/cases`);
-        const c = list.data.find((c: any) => 
-          (args.case_number && c.caseNumber === args.case_number) || 
-          (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
-        );
-        if (!c) throw new Error("Case not found");
-        result = { 
-          success: true, 
-          case_number: c.caseNumber, 
-          status: c.caseStatus, 
-          applicant: c.applicant_name,
-          ai_decision: c.latest_ai_decision || "Pending",
-          product: c.product_name
-        };
-      }
-      else if (name === "run_risk_assessment") {
-        const list = await api.get(`/tenants/${tenantId}/cases`);
-        const c = list.data.find((c: any) => 
-          (args.case_number && c.caseNumber === args.case_number) || 
-          (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
-        );
-        if (!c) throw new Error("Case not found");
-        
-        const detailRes = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`);
-        const { applicant, policy } = detailRes.data;
-        if (!applicant || !policy) throw new Error("Missing applicant or policy details to run assessment.");
-        
-        await api.post(`/evaluate`, { applicant, policy, case_id: c.caseld });
-        result = { success: true, message: "Underwriting evaluation triggered in the background. It will be ready in a few moments." };
-      }
-    } catch (e: any) {
-      console.error(`[Chatbot] Tool execution error [${name}]:`, e);
-      result = { success: false, error: e.response?.data?.detail || e.message || "Failed to execute function." };
+  // This surface has no document-attach affordance (unlike CopilotInterface),
+  // so an agent-initiated upload_document call can never be fulfilled here —
+  // resolve it immediately rather than leaving the conversation stuck waiting.
+  useEffect(() => {
+    if (pendingInterrupt?.kind === "client_execute") {
+      resolveInterrupt({ success: false, error: "Document upload isn't supported in this chat window." });
     }
-    return JSON.stringify(result);
-  };
+  }, [pendingInterrupt, resolveInterrupt]);
 
   // Auto-scroll
   useEffect(() => {
@@ -327,77 +131,42 @@ export function Chatbot() {
     }
   }, [input]);
 
-  // ── Scenario 1 & 2 Core Chat Loop ──────────────────────────────────────────
-  const sendText = useCallback(async (text: string) => {
+  const sendText = useCallback((text: string) => {
     if (!text.trim() || isLoading) return;
-    const userMsg: Message = { role: "user", content: text.trim() };
-    setMessages(prev => [...prev, userMsg]);
-    setInput("");
-    setIsLoading(true);
-
-    let currentMessages = [...messages, userMsg];
-
-    try {
-      while (true) {
-        const roleStr = typeof window !== 'undefined' ? localStorage.getItem("user_role") || "Agent" : "Agent";
-        
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            messages: currentMessages.slice(-20),
-            role: roleStr 
-          }),
-        });
-        if (!res.ok) throw new Error("Chat API failed");
-        const data = await res.json();
-        
-        const assistantMsg: Message = { 
-          role: "assistant", 
-          content: data.message, 
-          tool_calls: data.tool_calls 
-        };
-        currentMessages = [...currentMessages, assistantMsg];
-        setMessages(currentMessages);
-
-        // If no tools were called, the loop is finished.
-        if (!data.tool_calls || data.tool_calls.length === 0) {
-          break;
-        }
-
-        // Execute tools
-        for (const tc of data.tool_calls) {
-          const resultStr = await executeLocalTool(tc.function.name, tc.function.arguments);
-          const toolMsg: Message = {
-            role: "tool",
-            tool_call_id: tc.id,
-            name: tc.function.name,
-            content: resultStr
-          };
-          currentMessages = [...currentMessages, toolMsg];
-        }
-        setMessages(currentMessages);
-      }
-    } catch {
-      setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Error connecting to the server. Please try again." }]);
-    } finally {
-      setIsLoading(false);
+    if (pendingInterrupt?.kind === "clarify") {
+      resolveInterrupt(text.trim());
+    } else {
+      send(text.trim());
     }
-  }, [isLoading, messages]);
+  }, [isLoading, pendingInterrupt, send, resolveInterrupt]);
+
+  const handleQuickAction = useCallback((action: QuickAction) => {
+    if (action.actionType === "navigate") {
+      router.push(`/${action.payload}`);
+    } else if (action.actionType === "confirm") {
+      resolveInterrupt(action.payload === "Yes");
+    } else if (action.actionType === "upload") {
+      notify("Document upload isn't supported in this chat window — try the Copilot panel instead.", false);
+    } else {
+      sendText(action.payload);
+    }
+  }, [router, resolveInterrupt, sendText, notify]);
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault();
-    sendText(input);
+    const text = input;
+    setInput("");
+    sendText(text);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendText(input);
+      handleSubmit();
     }
   };
 
-  // ── Scenario 2: Voice → Deepgram STT → Groq → Text ─────────────────────────
+  // ── Voice → Deepgram STT → Text ─────────────────────────────────────────
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -409,21 +178,15 @@ export function Chatbot() {
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(chunksRef.current, { type: mr.mimeType });
-        setIsLoading(true);
         try {
           const fd = new FormData();
           fd.append("audio", blob, "recording.webm");
           const sttRes = await fetch("/api/stt", { method: "POST", body: fd });
           if (!sttRes.ok) throw new Error("STT failed");
           const { transcript } = await sttRes.json();
-          if (transcript?.trim()) {
-            await sendText(transcript);
-          } else {
-            setIsLoading(false);
-          }
+          if (transcript?.trim()) sendText(transcript);
         } catch {
-          setMessages(prev => [...prev, { role: "assistant", content: "⚠️ Could not transcribe audio. Please try again." }]);
-          setIsLoading(false);
+          notify("⚠️ Could not transcribe audio. Please try again.", false);
         }
       };
 
@@ -461,8 +224,7 @@ export function Chatbot() {
       {/* ── Chat Window ────────────────────────────────────────────────────── */}
       {isOpen && (
         <div className="fixed bottom-24 right-6 z-50 w-[360px] sm:w-[400px] h-[580px] max-h-[82vh] rounded-[1.75rem] shadow-[0_24px_64px_rgba(0,0,0,0.18)] border border-slate-200/60 flex flex-col overflow-hidden bg-white animate-in fade-in zoom-in-95 slide-in-from-bottom-4 duration-200 origin-bottom-right">
-          
-          {/* Voice Overlay (Scenario 3) rendered inside the window */}
+
           {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
 
           {/* ── Header ──────────────────────────────────────────────────── */}
@@ -489,24 +251,34 @@ export function Chatbot() {
 
           {/* ── Messages ────────────────────────────────────────────────── */}
           <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 bg-slate-50/60 scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent">
-            {messages.map((m, i) => {
-              if (m.role === "tool" || (m.role === "assistant" && !m.content)) return null;
-              return (
-                <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                  {m.role === "assistant" && (
-                    <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mr-2 mt-1 flex-shrink-0 text-white">
-                      <IconBot className="w-4 h-4" />
+            {messages.map((m) => (
+              <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                {m.role === "assistant" && (
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mr-2 mt-1 flex-shrink-0 text-white">
+                    <IconBot className="w-4 h-4" />
+                  </div>
+                )}
+                <div className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed rounded-2xl flex flex-col gap-2 ${m.role === "user" ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-sm" : "bg-white text-slate-800 rounded-bl-sm shadow-sm ring-1 ring-slate-100"}`}>
+                  {m.role === "user"
+                    ? <p className="whitespace-pre-wrap">{m.text}</p>
+                    : <div className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0"><ReactMarkdown>{m.text}</ReactMarkdown></div>
+                  }
+                  {m.quickActions && m.quickActions.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {m.quickActions.map((action, idx) => (
+                        <button
+                          key={`${action.actionType}-${action.label}-${idx}`}
+                          onClick={() => handleQuickAction(action)}
+                          className="px-3 py-1 text-[11px] font-semibold rounded-full border bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 transition-all active:scale-95"
+                        >
+                          {action.label}
+                        </button>
+                      ))}
                     </div>
                   )}
-                  <div className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed rounded-2xl ${m.role === "user" ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-sm" : "bg-white text-slate-800 rounded-bl-sm shadow-sm ring-1 ring-slate-100"}`}>
-                    {m.role === "user"
-                      ? <p className="whitespace-pre-wrap">{m.content}</p>
-                      : <div className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0"><ReactMarkdown>{m.content || ""}</ReactMarkdown></div>
-                    }
-                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
             {isLoading && <TypingIndicator />}
             <div ref={bottomRef} />
           </div>
@@ -514,7 +286,7 @@ export function Chatbot() {
           {/* ── Input Bar ───────────────────────────────────────────────── */}
           <div className="px-3 py-3 bg-white border-t border-slate-100 flex-shrink-0">
             <form onSubmit={handleSubmit} className="flex items-end gap-2">
-              
+
               {/* Live Voice Button */}
               <button
                 type="button"
@@ -532,13 +304,13 @@ export function Chatbot() {
                   value={isRecording ? "🎙 Listening…" : input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Type a message…"
+                  placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Type a message…"}
                   rows={1}
                   className="flex-1 bg-transparent text-sm text-slate-800 resize-none focus:outline-none placeholder:text-slate-400 min-h-[24px] max-h-[100px] leading-relaxed"
                 />
               </div>
 
-              {/* Mic Button (Scenario 2) */}
+              {/* Mic Button */}
               <button
                 type="button"
                 onClick={isRecording ? stopRecording : startRecording}
@@ -548,7 +320,7 @@ export function Chatbot() {
                 <IconMic active={isRecording} />
               </button>
 
-              {/* Send Button (Scenario 1) */}
+              {/* Send Button */}
               <button
                 type="submit"
                 disabled={!input.trim() || isLoading}

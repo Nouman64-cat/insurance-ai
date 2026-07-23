@@ -1,37 +1,115 @@
 "use client";
 
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
 import VoiceOverlay from "./VoiceOverlay";
 import { useRouter } from "next/navigation";
 import api from "../app/services/api";
+import { useNotify } from "./NotificationContext";
+import { ProcessGraph } from "./ProcessGraph";
+import { useAgentChat } from "@/lib/agent/useAgentChat";
+import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
+import type { AgentMessage, QuickAction } from "@/lib/agent/types";
 
-interface ChatMessage {
-  id: string;
-  role: "user" | "agent";
-  text: string;
-  rawText?: string;
-  quickActions?: { label: string; actionType: "navigate" | "submit" | "upload"; payload: string }[];
+const WELCOME: AgentMessage = {
+  id: "1",
+  role: "assistant",
+  text: "Hello! I am your AI Underwriting Copilot. I can help you onboard applicants, run risk assessments, or pull case details instantly. What would you like to automate today?",
+};
+
+const STORAGE_KEY = "copilot_history";
+const DEFAULT_TENANT_ID = "00000000-0000-0000-0000-000000000001";
+
+const actionIcons: Record<string, string> = {
+  navigate: "🔗",
+  submit: "▶️",
+  upload: "📤",
+  confirm: "✅",
+};
+
+function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickAction[] {
+  if (!lastMessage) {
+    return [
+      { label: "Add a new customer", actionType: "submit", payload: "Add a new customer" },
+      { label: "Test with demo data", actionType: "submit", payload: "Test the full workflow with demo data" },
+      { label: "View all cases", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+
+  const text = (lastMessage.text || "").toLowerCase();
+  if (text.includes("customer") && text.includes("added")) {
+    return [
+      { label: "Create case now", actionType: "submit", payload: "Create an underwriting case for the customer" },
+      { label: "Add another customer", actionType: "submit", payload: "Add another customer" },
+      { label: "View leads", actionType: "navigate", payload: "admin/customers" },
+    ];
+  }
+  if (text.includes("case") && text.includes("created")) {
+    return [
+      { label: "Create proposal now", actionType: "submit", payload: "Create a proposal for the customer" },
+      { label: "View case details", actionType: "navigate", payload: "cases" },
+      { label: "Create another case", actionType: "submit", payload: "Create a case" },
+    ];
+  }
+  if (text.includes("proposal") && text.includes("created")) {
+    return [
+      { label: "Run risk assessment", actionType: "submit", payload: "Run risk assessment" },
+      { label: "Upload documents first", actionType: "submit", payload: "What documents are needed?" },
+      { label: "View proposal", actionType: "navigate", payload: "proposal" },
+    ];
+  }
+  if (text.includes("assessment") && (text.includes("complete") || text.includes("triggered"))) {
+    return [
+      { label: "Move to review", actionType: "submit", payload: "Update case status to Under Review" },
+      { label: "Upload documents", actionType: "submit", payload: "Upload required documents" },
+      { label: "View results", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+  if (text.includes("review")) {
+    return [
+      { label: "Approve case", actionType: "submit", payload: "Approve the case" },
+      { label: "Decline case", actionType: "submit", payload: "Decline the case" },
+      { label: "Request documents", actionType: "submit", payload: "Request more documents" },
+    ];
+  }
+  if (text.includes("approved") || text.includes("rejected")) {
+    return [
+      { label: "Close the case", actionType: "submit", payload: "Close the case" },
+      { label: "Start new application", actionType: "submit", payload: "Add a new customer" },
+    ];
+  }
+  return [
+    { label: "What's next?", actionType: "submit", payload: "What should I do next?" },
+    { label: "View all cases", actionType: "navigate", payload: "underwriting" },
+    { label: "Add new customer", actionType: "submit", payload: "Add a new customer" },
+  ];
 }
-
-const LOCAL_STORAGE_HISTORY_KEY = "copilot_history";
 
 export function CopilotInterface() {
   const router = useRouter();
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    try {
-      const hist = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
-      if (hist) return JSON.parse(hist);
-    } catch {}
-    return [
-      {
-        id: "1",
-        role: "agent",
-        text: "Hello! I am your AI Underwriting Copilot. I can help you onboard applicants, run risk assessments, or pull case details instantly. What would you like to automate today?"
+  const { notify } = useNotify();
+
+  // Tools like show_record answer with an explicit navigate instruction:
+  // remember the target row, push the route, and the global record
+  // highlighter pops it once the destination list has rendered.
+  const handleAgentNavigate = useCallback(
+    (route: string, entityId: string, highlight: boolean) => {
+      if (highlight && entityId) {
+        requestHighlight(entityId); // consumed by the watcher after navigation
+        triggerHighlight(entityId); // covers the already-on-that-page case, where push() is a no-op
       }
-    ];
+      router.push(`/${route}`);
+    },
+    [router]
+  );
+
+  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, steps, turnActions } = useAgentChat({
+    storageKey: STORAGE_KEY,
+    welcomeMessage: WELCOME,
+    onNavigate: handleAgentNavigate,
   });
+
   const [input, setInput] = useState("");
-  const [isTyping, setIsTyping] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -39,7 +117,7 @@ export function CopilotInterface() {
   const [suggestedActions, setSuggestedActions] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
       try {
-        const saved = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY + "_suggestions");
+        const saved = localStorage.getItem(STORAGE_KEY + "_suggestions");
         if (saved) return JSON.parse(saved);
       } catch {}
     }
@@ -60,397 +138,161 @@ export function CopilotInterface() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chunksRef = useRef<Blob[]>([]);
   const selectedFileRef = useRef<File | null>(null);
-  const pendingUploadRef = useRef<{document_type: string, cnic: string} | null>(null);
+  // Args for a directly-triggered upload (from a quick-action "Upload {doc}"
+  // suggestion, which already knows document_type + cnic precisely) — as
+  // opposed to an agent-initiated upload_document tool call, which arrives via
+  // pendingInterrupt.kind === "client_execute" instead.
+  const pendingUploadRef = useRef<{ document_type: string; cnic: string } | null>(null);
 
   useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(messages));
-  }, [messages]);
+  }, [messages, steps]);
 
   useEffect(() => {
-    localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY + "_suggestions", JSON.stringify(suggestedActions));
+    localStorage.setItem(STORAGE_KEY + "_suggestions", JSON.stringify(suggestedActions));
   }, [suggestedActions]);
 
-  // ── Tool Executor (zero-click, runs automatically) ─────────────────────────
-  const executeLocalTool = useCallback(async (name: string, argsRaw: string) => {
-    let args: any = {};
-    try { args = typeof argsRaw === "string" ? JSON.parse(argsRaw) : argsRaw; } catch {}
+  // ── Document upload — the one tool the browser must execute itself, since
+  // it's the only place holding the attached File object (see graph.py's
+  // CLIENT_EXECUTED_TOOLS / permission_gate's "client_execute" interrupt kind).
+  const uploadDocument = useCallback(async (args: { document_type: string; cnic?: string; applicant_name?: string }, file: File) => {
+    const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
+    const list = await api.get(`/tenants/${tenantId}/cases`);
+    const c = list.data.find((c: any) => {
+      if (args.cnic && c.customer_cnic === args.cnic) return true;
+      if (!args.applicant_name) return false;
+      const n = args.applicant_name.toLowerCase();
+      const fullName = `${c.applicant_name || ""} ${c.customer_name || ""}`.trim().toLowerCase();
+      return fullName.includes(n) || c.applicant_name?.toLowerCase().includes(n) || c.customer_name?.toLowerCase().includes(n);
+    });
+    if (!c) throw new Error("No case found for this applicant.");
+    const form = new FormData();
+    form.append("document_type", args.document_type);
+    form.append("file", file);
+    await api.post(`/tenants/${tenantId}/cases/${c.caseld}/artifacts`, form, { headers: { "Content-Type": "multipart/form-data" } });
 
-    let result: any = { success: false, message: "Unknown tool" };
-    const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+    // Rich result: when this resumes the graph, the SSE pipeline re-emits
+    // last_action (toast + navigate + highlight) and quick_actions (the
+    // recommendation chips) exactly as if a server-side tool had run.
+    const caseRoute = `cases?case_id=${c.caseld}`;
+    const who = args.cnic || args.applicant_name || "";
+    return {
+      success: true,
+      message: `${args.document_type} (${file.name}) uploaded to case ${c.caseNumber || ""}.`,
+      last_action: {
+        tool_name: "upload_document",
+        entity_type: "case",
+        entity_id: c.caseld,
+        route: caseRoute,
+        label: `${args.document_type} uploaded`,
+      },
+      quick_actions: [
+        { label: "View Documents", actionType: "navigate", payload: caseRoute },
+        { label: "Check remaining documents", actionType: "submit", payload: `What documents are still needed for ${who}?` },
+        { label: "Run Risk Assessment", actionType: "submit", payload: `Run risk assessment for ${who}` },
+      ],
+    };
+  }, []);
 
-    try {
-      if (name === "navigate_to_page") {
-        const path = args.page_name === "dashboard" ? "" : args.page_name;
-        router.push(`/${path}`);
-        result = { success: true, message: `Navigated to ${args.page_name}` };
+  // Set while an agent-initiated upload (client_execute interrupt) is waiting
+  // for the user to choose a file — the file input's onChange completes it.
+  const interruptUploadRef = useRef<{ args: any } | null>(null);
 
-      } else if (name === "add_user") {
-        const rolesRes = await api.get(`/roles`);
-        const role = rolesRes.data.find((r: any) => r.name.toLowerCase() === args.role_name.toLowerCase());
-        if (!role) throw new Error(`Role ${args.role_name} not found`);
-        const res = await api.post(`/tenants/${tenantId}/users/`, {
-          full_name: args.full_name,
-          email: args.email,
-          role_id: role.id
-        });
-        result = { success: true, user_id: res.data.id, message: `User ${args.full_name} added as ${args.role_name}.` };
-
-      } else if (name === "add_organization") {
-        const res = await api.post(`/tenants/${tenantId}/organizations`, {
-          name: args.name,
-          contact_person: args.contact_person,
-          contact_email: args.contact_email,
-          contact_phone: args.contact_phone
-        });
-        result = { success: true, organization_id: res.data.id, message: `Organization "${args.name}" added.` };
-
-      } else if (name === "add_family_group") {
-        const res = await api.post(`/tenants/${tenantId}/families`, {
-          name: args.name,
-          contact_person: args.contact_person,
-          contact_email: args.contact_email,
-          contact_phone: args.contact_phone,
-          household_declared_income: args.household_declared_income
-        });
-        const familyId = res.data.id;
-        let message = `Family Group "${args.name}" added.`;
-        if (args.members && Array.isArray(args.members) && args.members.length > 0) {
-          const fpRes = await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies`, {
-            total_sum_insured: 5000000,
-            term_years: 1,
-            effective_date: new Date().toISOString().split("T")[0]
-          });
-          await api.post(`/tenants/${tenantId}/families/${familyId}/floater-policies/${fpRes.data.id}/members/confirm`, {
-            members: args.members
-          });
-          message += ` Enrolled ${args.members.length} members.`;
-        }
-        result = { success: true, family_group_id: familyId, message };
-
-      } else if (name === "bulk_add_customers") {
-        let customers: any[] = [];
-        try {
-          let jsonStr = args.customers_json || args.customers;
-          if (typeof jsonStr === "string") {
-            jsonStr = jsonStr.replace(/^```[a-z]*\n/i, "").replace(/\n```$/i, "").trim();
-            customers = JSON.parse(jsonStr);
-          } else {
-            customers = jsonStr;
-          }
-        } catch (e: any) {
-          throw new Error("Invalid customers JSON: " + e.message);
-        }
-        if (!Array.isArray(customers)) throw new Error("Expected an array of customers.");
-        const results = await Promise.allSettled(customers.map((c: any) => {
-          const gender = c.gender ? c.gender.charAt(0).toUpperCase() + c.gender.slice(1).toLowerCase() : "Other";
-          const income = typeof c.declared_income === "string" ? parseFloat(c.declared_income) : c.declared_income;
-          return api.post(`/tenants/${tenantId}/customers`, {
-            first_name: c.first_name, last_name: c.last_name, cnic: c.cnic,
-            date_of_birth: c.date_of_birth, gender, occupation: c.occupation,
-            declared_income: income || 0, is_smoker: c.is_smoker ?? false,
-            height_cm: c.height_cm ?? 170, weight_kg: c.weight_kg ?? 70
-          });
-        }));
-        const successCount = results.filter(r => r.status === "fulfilled").length;
-        const failCount = results.length - successCount;
-        if (successCount === 0 && failCount > 0) {
-          const firstErr = (results.find(r => r.status === "rejected") as any)?.reason;
-          throw new Error("All additions failed. " + (firstErr?.response?.data?.detail || firstErr?.message));
-        }
-        result = { 
-          success: true, 
-          message: `Added ${successCount} customers. Failed: ${failCount}.`,
-          quickActions: [
-            { label: "View Leads", actionType: "navigate", payload: "admin/leads" }
-          ]
-        };
-
-      } else if (name === "add_customer") {
-        const gender = args.gender ? args.gender.charAt(0).toUpperCase() + args.gender.slice(1).toLowerCase() : "Other";
-        const income = typeof args.declared_income === "string" ? parseFloat(args.declared_income) : args.declared_income;
-        let dob = args.date_of_birth;
-        if (dob && dob.length > 10) { try { dob = new Date(dob).toISOString().split("T")[0]; } catch {} }
-        const res = await api.post(`/tenants/${tenantId}/customers`, {
-          first_name: args.first_name, last_name: args.last_name, cnic: args.cnic,
-          date_of_birth: dob, gender, occupation: args.occupation,
-          declared_income: income || 0, is_smoker: false, height_cm: 170, weight_kg: 70, details: {}
-        });
-        result = { 
-          success: true, 
-          customer_id: res.data.id, 
-          message: "Customer added successfully.",
-          quickActions: [
-            { label: "View Lead", actionType: "navigate", payload: args.cnic ? `admin/leads?cnic=${args.cnic}` : "admin/leads" },
-            { label: "Create Case", actionType: "submit", payload: args.cnic ? `Create a case for CNIC ${args.cnic}` : `Create a case for ${args.first_name} ${args.last_name}` }
-          ]
-        };
-
-      } else if (name === "delete_customer") {
-        const params = new URLSearchParams();
-        if (args.cnic) params.append("cnic", args.cnic);
-        if (args.name) params.append("name", args.name);
-        const list = await api.get(`/tenants/${tenantId}/customers?${params.toString()}`);
-        if (!list.data || list.data.length === 0) throw new Error("Customer not found");
-        const customer = list.data[0];
-        await api.delete(`/tenants/${tenantId}/customers/${customer.id}`);
-        result = { success: true, message: `Customer ${customer.name || args.name} deleted.` };
-
-      } else if (name === "get_case_details") {
-        const list = await api.get(`/tenants/${tenantId}/cases`);
-        const c = list.data.find((c: any) =>
-          (args.case_number && c.caseNumber === args.case_number) ||
-          (args.applicant_name && c.applicant_name?.toLowerCase().includes(args.applicant_name.toLowerCase()))
-        );
-        if (!c) throw new Error("Case not found");
-        result = { success: true, case_number: c.caseNumber, status: c.caseStatus, applicant: c.applicant_name, ai_decision: c.latest_ai_decision || "Pending" };
-
-      } else if (name === "create_case") {
-        const list = await api.get(`/tenants/${tenantId}/customers`);
-        const customer = list.data.find((c: any) => {
-          if (args.cnic && c.cnic === args.cnic) return true;
-          if (!args.applicant_name) return false;
-          const n = args.applicant_name.toLowerCase();
-          const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase();
-          return c.name?.toLowerCase().includes(n) || fullName.includes(n) || c.first_name?.toLowerCase().includes(n) || c.last_name?.toLowerCase().includes(n);
-        });
-        if (!customer) throw new Error(`No customer found for "${args.applicant_name || args.cnic}". Add them first.`);
-        const res = await api.post(`/tenants/${tenantId}/cases`, {
-          customer_id: customer.id,
-          caseType: args.case_type || "Underwriting",
-          priorityLevel: args.priority_level || "Normal",
-          sourceChannel: "Online"
-        });
-        result = { 
-          success: true, 
-          case_id: res.data?.caseld, 
-          message: `Case created for ${customer.first_name || customer.name}.`,
-          quickActions: [
-            { label: "View Case", actionType: "navigate", payload: res.data?.caseld ? `cases?case_id=${res.data.caseld}` : "cases" },
-            { label: "Run Risk Assessment", actionType: "submit", payload: `Run risk assessment for case ${res.data?.caseld}` }
-          ]
-        };
-
-      } else if (name === "run_risk_assessment") {
-        const list = await api.get(`/tenants/${tenantId}/cases`);
-        const c = list.data.find((c: any) => {
-          if (args.case_number && c.caseNumber === args.case_number) return true;
-          if (args.cnic && c.customer_cnic === args.cnic) return true;
-          if (!args.applicant_name) return false;
-          const n = args.applicant_name.toLowerCase();
-          const fullName = `${c.applicant_name || ''} ${c.customer_name || ''}`.trim().toLowerCase();
-          return fullName.includes(n) || c.applicant_name?.toLowerCase().includes(n) || c.customer_name?.toLowerCase().includes(n);
-        });
-        if (!c) throw new Error(`No case found for "${args.applicant_name || args.cnic}". Create a case first.`);
-        const detailRes = await api.get(`/tenants/${tenantId}/cases/${c.caseld}/detail`);
-        const { customer, policy, document_checklist } = detailRes.data;
-        if (!customer) throw new Error("Missing applicant details.");
-        
-        if (!policy) {
-          result = {
-            success: false,
-            message: `Cannot run risk assessment. No insurance policy or proposal is associated with this case yet.`,
-            quickActions: [
-              { label: "Create Proposal", actionType: "submit", payload: `Create a standard Term Life proposal for CNIC ${c.customer_cnic || args.cnic}` }
-            ]
-          };
-        } else if (document_checklist && document_checklist.missing && document_checklist.missing.length > 0) {
-          result = {
-            success: false,
-            message: `Cannot run risk assessment yet. Missing documents: ${document_checklist.missing.join(", ")}.`,
-            quickActions: document_checklist.missing.map((doc: string) => ({
-              label: `Upload ${doc}`,
-              actionType: "upload",
-              payload: JSON.stringify({ document_type: doc, cnic: c.customer_cnic || args.cnic })
-            }))
-          };
-        } else {
-          await api.post(`/evaluate`, { applicant: customer, policy, case_id: c.caseld });
-          result = { 
-            success: true, 
-            message: "Risk assessment triggered. Results will be ready shortly.",
-            quickActions: [
-              { label: "View Case", actionType: "navigate", payload: c.caseld ? `cases?case_id=${c.caseld}` : "cases" }
-            ]
-          };
-        }
-
-      } else if (name === "create_proposal") {
-        const list = await api.get(`/tenants/${tenantId}/customers`);
-        const customer = list.data.find((c: any) => {
-          if (args.customer_id && c.id === args.customer_id) return true;
-          if (args.cnic && c.cnic === args.cnic) return true;
-          if (!args.applicant_name) return false;
-          const n = args.applicant_name.toLowerCase();
-          const fullName = `${c.first_name || ''} ${c.last_name || ''}`.trim().toLowerCase();
-          return c.name?.toLowerCase().includes(n) || fullName.includes(n) || c.first_name?.toLowerCase().includes(n) || c.last_name?.toLowerCase().includes(n);
-        });
-        if (!customer) throw new Error(`No customer found for "${args.applicant_name || args.cnic}". Add them first.`);
-        
-        const res = await api.post(`/tenants/${tenantId}/customers/${customer.id}/policies`, {
-          product_name: args.product_name || "Term Life Plus",
-          insurance_type: args.insurance_type || "Life",
-          coverage_amount: args.coverage_amount || 5000000,
-          term_years: args.term_years || 10
-        });
-        
-        result = { 
-          success: true, 
-          policy_id: res.data.id, 
-          message: `Proposal created successfully for ${customer.name || customer.first_name}.`,
-          quickActions: [
-            { label: "Run Risk Assessment", actionType: "submit", payload: `Run risk assessment for CNIC ${customer.cnic}` }
-          ]
-        };
-
-      } else if (name === "upload_document") {
-        const file = selectedFileRef.current;
-        if (!file) throw new Error("No file attached. Please attach a document using the paperclip icon first.");
-        const list = await api.get(`/tenants/${tenantId}/cases`);
-        const c = list.data.find((c: any) => {
-          if (args.cnic && c.customer_cnic === args.cnic) return true;
-          if (!args.applicant_name) return false;
-          const n = args.applicant_name.toLowerCase();
-          const fullName = `${c.applicant_name || ''} ${c.customer_name || ''}`.trim().toLowerCase();
-          return fullName.includes(n) || c.applicant_name?.toLowerCase().includes(n) || c.customer_name?.toLowerCase().includes(n);
-        });
-        if (!c) throw new Error("No case found for this applicant.");
-        const form = new FormData();
-        form.append("document_type", args.document_type);
-        form.append("file", file);
-        await api.post(`/tenants/${tenantId}/cases/${c.caseld}/artifacts`, form, { headers: { "Content-Type": "multipart/form-data" } });
-        setSelectedFile(null);
-        result = { success: true, message: `${args.document_type} uploaded successfully.` };
-      }
-    } catch (e: any) {
-      console.error(`[Copilot] Tool error [${name}]:`, e);
-      result = { success: false, error: e.response?.data?.detail || e.message || "Tool execution failed." };
+  // An agent-initiated upload_document call arrives as a "client_execute"
+  // interrupt once the user has confirmed it. If a file is already attached,
+  // upload straight away; otherwise pop the browser's file picker so the user
+  // can hand one over without leaving the chat — the whole upload then runs
+  // automatically and the graph resumes with the result.
+  useEffect(() => {
+    if (pendingInterrupt?.kind !== "client_execute") return;
+    if (pendingInterrupt.toolCall.name !== "upload_document") return;
+    const file = selectedFileRef.current;
+    if (!file) {
+      interruptUploadRef.current = { args: pendingInterrupt.toolCall.args };
+      notify("📎 Choose the file to upload — I'll handle the rest.", true);
+      fileInputRef.current?.click();
+      return;
     }
-    return JSON.stringify(result);
-  }, [router]);
+    (async () => {
+      try {
+        const result = await uploadDocument(pendingInterrupt.toolCall.args as any, file);
+        setSelectedFile(null);
+        resolveInterrupt(result);
+      } catch (e: any) {
+        resolveInterrupt({ success: false, error: e.message || "Upload failed." });
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingInterrupt]);
 
-  // ── Agentic Submit — while(true) loop, zero confirmation clicks ────────────
-  const handleSubmit = useCallback(async (e?: React.FormEvent, overrideText?: string) => {
+  // ── Submit — a plain new turn, or the answer to a pending "clarify" question
+  const handleSubmit = useCallback((e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
-    const text = overrideText || input;
-    if (!text.trim() || isTyping) return;
-
-    const userMsg: ChatMessage = { id: Date.now().toString(), role: "user", text };
-    setMessages(prev => [...prev, userMsg]);
+    const text = overrideText ?? input;
+    if (!text.trim() || isLoading) return;
     if (!overrideText) setInput("");
-    setIsTyping(true);
 
-    // Build conversation history for the API (OpenAI-compatible format)
-    const buildApiMessages = (msgs: ChatMessage[]) =>
-      msgs.map(m => ({ role: m.role === "agent" ? "assistant" : "user", content: m.rawText || m.text || "" }));
-
-    let currentMessages = buildApiMessages([...messages, userMsg]);
-    let allQuickActions: any[] = [];
-
-    try {
-      const roleStr = typeof window !== "undefined" ? localStorage.getItem("user_role") || "Admin" : "Admin";
-
-      while (true) {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: currentMessages.slice(-20), role: roleStr })
-        });
-        if (!res.ok) throw new Error("Chat API failed");
-        const data = await res.json();
-
-        // Add AI text response to chat (if any)
-        if (data.message) {
-          let finalText = data.message;
-          const match = finalText.match(/<quick_actions>([\s\S]*?)<\/quick_actions>/i);
-          if (match) {
-            finalText = finalText.replace(match[0], '').trim();
-            const options = match[1].split('\n').map((l: string) => l.trim()).filter((l: string) => l.startsWith('[') && l.endsWith(']'));
-            options.forEach((opt: string) => {
-              const val = opt.slice(1, -1).trim();
-              allQuickActions.push({ label: val, actionType: 'submit', payload: val });
-            });
-          }
-
-          const agentMsg: ChatMessage = { id: Date.now().toString(), role: "agent", text: finalText, rawText: data.message };
-          setMessages(prev => [...prev, agentMsg]);
-          currentMessages = [...currentMessages, { role: "assistant", content: data.message }];
-        }
-
-        const toolResults: any[] = [];
-        
-        // No tool calls → done
-        if (!data.tool_calls || data.tool_calls.length === 0) {
-          if (!data.message && toolResults.length === 0) {
-            setMessages(prev => [...prev, { id: Date.now().toString(), role: "agent", text: "I'm having trouble processing that request. Please try again or rephrase." }]);
-          }
-          break;
-        }
-
-        // Execute ALL tools automatically — no user confirmation needed
-        for (const tc of data.tool_calls) {
-          const resultStr = await executeLocalTool(tc.function.name, tc.function.arguments);
-          toolResults.push({ role: "tool", tool_call_id: tc.id, name: tc.function.name, content: resultStr });
-          try {
-             const parsed = JSON.parse(resultStr);
-             if (parsed.quickActions) allQuickActions.push(...parsed.quickActions);
-          } catch {}
-        }
-
-        // Feed results back so AI can summarize
-        currentMessages = [
-          ...currentMessages,
-          { role: "assistant", content: data.message || "", tool_calls: data.tool_calls },
-          ...toolResults
-        ];
+    if (pendingInterrupt?.kind === "clarify") {
+      resolveInterrupt(text.trim());
+    } else if (pendingInterrupt?.kind === "confirm") {
+      const lowerText = text.trim().toLowerCase();
+      if (lowerText === "yes" || lowerText === "y") {
+        resolveInterrupt(true);
+      } else if (lowerText === "no" || lowerText === "n" || lowerText === "cancel") {
+        resolveInterrupt(false);
+      } else {
+        send(text.trim());
       }
+    } else {
+      send(text.trim());
+    }
+  }, [input, isLoading, pendingInterrupt, send, resolveInterrupt]);
 
-      if (allQuickActions.length > 0) {
-        setMessages(prev => {
-          const copy = [...prev];
-          for (let i = copy.length - 1; i >= 0; i--) {
-            if (copy[i].role === "agent") {
-              const existingLabels = new Set(copy[i].quickActions?.map(a => a.label) || []);
-              const newActions = allQuickActions.filter(a => !existingLabels.has(a.label));
-              copy[i] = { ...copy[i], quickActions: [...(copy[i].quickActions || []), ...newActions] };
-              break;
-            }
-          }
-          return copy;
-        });
+  const handleQuickAction = useCallback((action: QuickAction) => {
+    if (action.actionType === "navigate") {
+      // Payloads carry the destination page's own self-select param
+      // ("cases?case_id=…", "admin/leads?cnic=…") — mirror it into the
+      // highlighter so the row pops, not just loads.
+      const query = action.payload.split("?")[1];
+      const entityId = query ? new URLSearchParams(query).values().next().value : undefined;
+      if (entityId) {
+        requestHighlight(entityId);
+        triggerHighlight(entityId); // same-URL pushes don't re-fire the nav watcher
       }
-    } catch {
-      setMessages(prev => [...prev, { id: Date.now().toString(), role: "agent", text: "⚠️ Error connecting to the server. Please try again." }]);
-    } finally {
-      setIsTyping(false);
+      router.push(`/${action.payload}`);
+    } else if (action.actionType === "upload") {
+      const data = JSON.parse(action.payload);
+      pendingUploadRef.current = data;
+      fileInputRef.current?.click();
+    } else if (action.actionType === "confirm") {
+      resolveInterrupt(action.payload === "Yes");
+    } else {
+      handleSubmit(undefined, action.payload);
+    }
+  }, [router, resolveInterrupt, handleSubmit]);
 
-      // Fire-and-forget RAG suggestions — completely off the critical path
+  // Fire RAG "next best action" suggestions once a turn finishes — fire-and-
+  // forget, completely off the critical path.
+  const wasLoadingRef = useRef(false);
+  useEffect(() => {
+    if (wasLoadingRef.current && !isLoading) {
       const tenantId = localStorage.getItem("tenant_id");
       if (tenantId) {
-        setMessages(latest => {
-          const ctx = latest.slice(-4).map(m => `${m.role}: ${m.text}`).join("\n");
-          api.post("/agent/suggest-actions", { context: ctx, tenant_id: tenantId })
-            .then(r => {
-              if (r.data?.suggested_actions?.length > 0) {
-                setSuggestedActions(r.data.suggested_actions);
-              } else {
-                setSuggestedActions([]);
-              }
-            })
-            .catch(() => {});
-          return latest;
-        });
+        const ctx = messages.slice(-4).map((m) => `${m.role}: ${m.text}`).join("\n");
+        api.post("/agent/suggest-actions", { context: ctx, tenant_id: tenantId })
+          .then((r) => setSuggestedActions(r.data?.suggested_actions?.length > 0 ? r.data.suggested_actions : []))
+          .catch(() => {});
       }
     }
-  }, [input, isTyping, messages, executeLocalTool]);
+    wasLoadingRef.current = isLoading;
+  }, [isLoading, messages]);
 
-  const clearChat = () => {
-    setMessages([{ id: "1", role: "agent", text: "Hello! I am your AI Underwriting Copilot. What would you like to automate today?" }]);
+  const handleClearChat = () => {
+    clearChat();
     setSuggestedActions([]);
-    localStorage.removeItem(LOCAL_STORAGE_HISTORY_KEY);
-    localStorage.removeItem(LOCAL_STORAGE_HISTORY_KEY + "_suggestions");
+    localStorage.removeItem(STORAGE_KEY + "_suggestions");
   };
 
   const startRecording = async () => {
@@ -463,7 +305,6 @@ export function CopilotInterface() {
       mr.onstop = async () => {
         stream.getTracks().forEach(t => t.stop());
         const blob = new Blob(chunksRef.current, { type: mr.mimeType });
-        setIsTyping(true);
         try {
           const fd = new FormData();
           fd.append("audio", blob, "recording.webm");
@@ -471,10 +312,8 @@ export function CopilotInterface() {
           if (!sttRes.ok) throw new Error("STT failed");
           const { transcript } = await sttRes.json();
           if (transcript?.trim()) await handleSubmit(undefined, transcript);
-          else setIsTyping(false);
         } catch {
-          setMessages(prev => [...prev, { id: Date.now().toString(), role: "agent", text: "⚠️ Could not transcribe audio. Please try again." }]);
-          setIsTyping(false);
+          notify("⚠️ Could not transcribe audio. Please try again.", false);
         }
       };
       mr.start();
@@ -530,7 +369,7 @@ export function CopilotInterface() {
                   </span>
                 </div>
               </div>
-              <button onClick={clearChat} title="Clear chat" className="p-2 rounded-full hover:bg-white/15 transition-colors">
+              <button onClick={handleClearChat} title="Clear chat" className="p-2 rounded-full hover:bg-white/15 transition-colors">
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
               </button>
             </div>
@@ -543,36 +382,36 @@ export function CopilotInterface() {
               <div className="relative z-10 space-y-4 pb-2">
                 {messages.map((msg) => (
                   <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} items-end gap-2 group animate-in slide-in-from-bottom-2 duration-300`}>
-                    {msg.role === "agent" && (
+                    {msg.role === "assistant" && (
                       <div className="w-7 h-7 rounded-full bg-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                         <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                       </div>
                     )}
-                    <div className={`max-w-[82%] px-4 py-2.5 text-[14px] leading-relaxed shadow-sm whitespace-pre-wrap flex flex-col gap-3 ${
+                    <div className={`max-w-[82%] px-4 py-2.5 text-[14px] leading-relaxed shadow-sm flex flex-col gap-3 ${
                       msg.role === "user"
                         ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white rounded-2xl rounded-br-md"
                         : "bg-white border border-slate-100 text-slate-700 rounded-2xl rounded-bl-md"
                     }`}>
-                      <div>{msg.text}</div>
+                      {msg.role === "user" ? (
+                        <div className="whitespace-pre-wrap">{msg.text}</div>
+                      ) : (
+                        <div className="copilot-markdown">
+                          <ReactMarkdown>{msg.text}</ReactMarkdown>
+                        </div>
+                      )}
                       {msg.quickActions && msg.quickActions.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-1">
                           {msg.quickActions.map((action, idx) => (
                             <button
                               key={`${action.actionType}-${action.label}-${idx}`}
-                              onClick={() => {
-                                if (action.actionType === "navigate") router.push(`/${action.payload}`);
-                                else if (action.actionType === "upload") {
-                                  const data = JSON.parse(action.payload);
-                                  pendingUploadRef.current = data;
-                                  fileInputRef.current?.click();
-                                }
-                                else handleSubmit(undefined, action.payload);
-                              }}
+                              onClick={() => handleQuickAction(action)}
                               className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
                                 action.actionType === "navigate"
                                   ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
                                   : action.actionType === "upload"
                                   ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                                  : action.actionType === "confirm"
+                                  ? "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200"
                                   : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
                               }`}
                             >
@@ -581,7 +420,7 @@ export function CopilotInterface() {
                               ) : action.actionType === "upload" ? (
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                               ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/></svg>
                               )}
                               {action.label}
                             </button>
@@ -591,7 +430,19 @@ export function CopilotInterface() {
                     </div>
                   </div>
                 ))}
-                {isTyping && (
+                {/* Live process graph — the agent narrating its own state
+                    machine, node by node, while (and after) it works. */}
+                {steps.length > 0 && (
+                  <div className="flex justify-start items-start gap-2">
+                    <div className="w-7 h-7 rounded-full bg-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
+                      <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
+                    </div>
+                    <div className="max-w-[82%] flex-1">
+                      <ProcessGraph steps={steps} />
+                    </div>
+                  </div>
+                )}
+                {isLoading && (
                   <div className="flex justify-start items-end gap-2">
                     <div className="w-7 h-7 rounded-full bg-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
@@ -624,19 +475,44 @@ export function CopilotInterface() {
                 <input
                   type="file"
                   ref={fileInputRef}
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      const file = e.target.files[0];
-                      setSelectedFile(file);
-                      selectedFileRef.current = file;
-                      if (pendingUploadRef.current) {
-                        const { document_type, cnic } = pendingUploadRef.current;
-                        pendingUploadRef.current = null;
-                        handleSubmit(undefined, `Upload ${document_type} for CNIC ${cnic}`);
-                      } else if (autoSubmitPrompt) {
-                        handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
-                        setAutoSubmitPrompt("");
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setSelectedFile(file);
+                    selectedFileRef.current = file;
+
+                    if (interruptUploadRef.current) {
+                      // Agent-initiated upload: picker was auto-opened by the
+                      // client_execute interrupt — upload now and resume the
+                      // graph so the agent narrates the result + next steps.
+                      const { args } = interruptUploadRef.current;
+                      interruptUploadRef.current = null;
+                      try {
+                        const result = await uploadDocument(args, file);
+                        setSelectedFile(null);
+                        resolveInterrupt(result);
+                      } catch (err: any) {
+                        setSelectedFile(null);
+                        resolveInterrupt({ success: false, error: err.message || "Upload failed." });
                       }
+                    } else if (pendingUploadRef.current) {
+                      // Quick-action upload ("Upload Salary Slip" chip): upload
+                      // directly, then hand the outcome to the agent so the
+                      // conversation moves forward with fresh recommendations.
+                      const args = pendingUploadRef.current;
+                      pendingUploadRef.current = null;
+                      try {
+                        const result = await uploadDocument(args, file);
+                        notify(`✅ ${result.message}`, true);
+                        send(`I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`);
+                      } catch (err: any) {
+                        notify(`⚠️ ${err.message || "Upload failed."}`, false);
+                      } finally {
+                        setSelectedFile(null);
+                      }
+                    } else if (autoSubmitPrompt) {
+                      handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
+                      setAutoSubmitPrompt("");
                     }
                   }}
                   className="hidden"
@@ -652,7 +528,7 @@ export function CopilotInterface() {
                     type="text"
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
-                    placeholder="Message…"
+                    placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Message…"}
                     className="flex-1 bg-transparent text-slate-900 py-1.5 focus:outline-none text-[14px] placeholder:text-slate-400 min-w-0"
                   />
                   <button type="button" onClick={() => setShowVoice(true)} title="Live Voice Agent"
@@ -668,18 +544,37 @@ export function CopilotInterface() {
                     }
                   </button>
                 </div>
-                <button type="submit" disabled={!input.trim() || isTyping}
+                <button type="submit" disabled={!input.trim() || isLoading}
                   className="p-3 bg-gradient-to-br from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-full transition-all shadow-lg shadow-fuchsia-500/30 active:scale-90 shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
                 </button>
               </form>
-              {/* Quick prompt chips */}
+              {/* Recommended Next Steps — backend quick_actions are the source
+                  of truth (each tool result ships context-aware suggestions);
+                  the text heuristic only covers turns with no tool involved. */}
               <div className="flex items-center justify-center gap-1.5 mt-2 flex-wrap">
-                {["Add a new individual applicant", "Evaluate risk profile", "Find high risk policies"].map((q) => (
-                  <button key={q} onClick={() => setInput(q)} className="text-[10px] text-violet-500 hover:text-white hover:bg-violet-500 border border-violet-200 px-2.5 py-1 rounded-full font-medium transition-all">
-                    {q}
-                  </button>
-                ))}
+                {(turnActions.length > 0
+                  ? turnActions
+                  : getRecommendedActions(messages.length > 0 ? messages[messages.length - 1] : undefined)
+                )
+                  .slice(0, 3)
+                  .map((action, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleQuickAction(action)}
+                      className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${
+                        action.actionType === "navigate"
+                          ? "text-emerald-600 hover:text-white hover:bg-emerald-600 border-emerald-200"
+                          : action.actionType === "upload"
+                          ? "text-amber-600 hover:text-white hover:bg-amber-600 border-amber-200"
+                          : action.actionType === "confirm"
+                          ? "text-violet-600 hover:text-white hover:bg-violet-600 border-violet-200"
+                          : "text-indigo-600 hover:text-white hover:bg-indigo-600 border-indigo-200"
+                      }`}
+                    >
+                      {action.label}
+                    </button>
+                  ))}
               </div>
             </div>
 
@@ -688,7 +583,7 @@ export function CopilotInterface() {
       </div>
 
       {/* ── Floating Suggestions Panel ─────────────────────────────────── */}
-      {suggestedActions.length > 0 && !isTyping && (
+      {suggestedActions.length > 0 && !isLoading && (
         <div className="absolute bottom-[100px] right-full mr-6 w-[280px] z-50 animate-in slide-in-from-right-8 fade-in duration-500 pointer-events-auto">
           <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_15px_50px_-12px_rgba(0,0,0,0.15)] border border-slate-200 p-4 flex flex-col gap-3">
             <div className="flex items-center gap-2 px-1">
@@ -714,4 +609,3 @@ export function CopilotInterface() {
     </div>
   );
 }
-

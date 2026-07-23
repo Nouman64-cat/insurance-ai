@@ -3,61 +3,30 @@
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
 import { PENDING_QUOTES_STORAGE_KEY, PENDING_QUOTES_EVENT, PendingQuoteWatch } from "@/lib/pendingQuotes";
 import { useCopilot } from "@/components/CopilotContext";
 import { CopilotInterface } from "@/components/CopilotInterface";
+import { NotificationProvider, useNotify } from "@/components/NotificationContext";
+import { useRecordHighlighter } from "@/lib/useHighlightTarget";
 
 // Give up watching an customer after this many polls (~2 min at 4s/poll) —
 // they simply didn't qualify for any active plan, so no quote will ever land.
 const MAX_QUOTE_POLL_ATTEMPTS = 30;
-
-interface ToastMsg { id: number; text: string; ok: boolean }
-
-function ToastBanner({ toasts, onDismiss }: { toasts: ToastMsg[]; onDismiss: (id: number) => void }) {
-  return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none">
-      {toasts.map(t => (
-        <div
-          key={t.id}
-          onClick={() => onDismiss(t.id)}
-          className={`pointer-events-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl shadow-lg text-sm font-semibold border cursor-pointer select-none transition-all
-            ${t.ok
-              ? "bg-emerald-50 border-emerald-200 text-emerald-800"
-              : "bg-amber-50 border-amber-200 text-amber-800"}`}
-        >
-          {t.ok ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
-              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-          )}
-          {t.text}
-        </div>
-      ))}
-    </div>
-  );
-}
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isLoginPage = pathname === "/login";
   const [authChecked, setAuthChecked] = useState(false);
-  const [toasts, setToasts] = useState<ToastMsg[]>([]);
-  const toastIdRef = useRef(0);
   const { isAutomationMode } = useCopilot();
+  const { notify: showToast } = useNotify();
 
-  const showToast = useCallback((text: string, ok: boolean) => {
-    const id = ++toastIdRef.current;
-    setToasts(prev => [...prev, { id, text, ok }]);
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000);
-  }, []);
+  // Global "pop the record the agent just navigated to" watcher — pages don't
+  // need any wiring beyond rendering the data the row contains.
+  useRecordHighlighter();
 
   useEffect(() => {
     const token = localStorage.getItem("jwt_token");
@@ -277,9 +246,9 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
               </p>
             </footer>
           </div>
+
         </>
       )}
-      <ToastBanner toasts={toasts} onDismiss={id => setToasts(prev => prev.filter(t => t.id !== id))} />
     </body>
   );
 }
