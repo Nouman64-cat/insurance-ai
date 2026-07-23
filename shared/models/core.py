@@ -6,9 +6,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import Column, Integer, JSON, String, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
+import os
+
 try:
     from pgvector.sqlalchemy import Vector
-    HAS_PGVECTOR = True
+    HAS_PGVECTOR = os.environ.get("DISABLE_PGVECTOR", "false").lower() != "true"
 except ImportError:
     HAS_PGVECTOR = False
 
@@ -92,19 +94,22 @@ class PlanStatusEnum(str, Enum):
 class PolicyStatusEnum(str, Enum):
     """Lifecycle of a single Policy row, from indicative quote to bound cover.
 
-    Quoted     — auto-priced or /quote-priced, no case opened yet (non-binding).
-    Proposed   — customer selected this quote; an Underwriting Case is open.
-    UnderReview— AI returned Human Review / Approve with Loading; awaiting an
-                 underwriter decision (or the aggregation node hasn't run yet).
-    Approved   — AI Auto Approve, or an underwriter approved the case.
-    Declined   — AI hard-declined, or an underwriter rejected the case.
-    Issued     — approved policy accepted + first premium paid (not yet wired
-                 to a payment flow — set manually until that exists).
-    Lapsed     — issued policy that later lapsed (non-payment, cancellation).
+    Quoted             — auto-priced or /quote-priced, no case opened yet (non-binding).
+    Proposed           — customer selected this quote; an Underwriting Case is open.
+    UnderReview        — AI returned Human Review / Approve with Loading; awaiting an
+                          underwriter decision (or the aggregation node hasn't run yet).
+    InformationRequested — paused, waiting on the customer for documents/medical
+                          reports before underwriting can continue.
+    Approved           — AI Auto Approve, or an underwriter approved the case.
+    Declined           — AI hard-declined, or an underwriter rejected the case.
+    Issued             — approved policy accepted + first premium paid (not yet wired
+                          to a payment flow — set manually until that exists).
+    Lapsed             — issued policy that later lapsed (non-payment, cancellation).
     """
     QUOTED = "Quoted"
     PROPOSED = "Proposed"
     UNDER_REVIEW = "UnderReview"
+    INFORMATION_REQUESTED = "InformationRequested"
     APPROVED = "Approved"
     DECLINED = "Declined"
     ISSUED = "Issued"
@@ -341,6 +346,11 @@ class Organization(SQLModel, table=True):
     contact_email: Optional[str] = Field(default=None, max_length=255)
     contact_phone: Optional[str] = Field(default=None, max_length=50)
 
+    branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", index=True, nullable=True)
+    assigned_agent_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+    city: Optional[str] = Field(default=None, max_length=100)
+    province: Optional[str] = Field(default=None, max_length=100)
+
     profile_status: ProfileStatusEnum = Field(default=ProfileStatusEnum.LEAD, max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -436,6 +446,12 @@ class Customer(SQLModel, table=True):
     # Who brought this customer in — the crediting agent/broker/bank/etc.
     # NULL for legacy rows and any customer created before this was tracked.
     acquisition_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", index=True, nullable=True)
+
+    # Branch handling this lead, and the internal user (Agent role) assigned to work it.
+    branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", index=True, nullable=True)
+    assigned_agent_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+    city: Optional[str] = Field(default=None, max_length=100)
+    province: Optional[str] = Field(default=None, max_length=100)
 
     # Identity
     cnic: Optional[str] = Field(default=None, index=True, max_length=15, nullable=True)        # Pakistani National Identity Card
@@ -554,6 +570,11 @@ class FamilyGroup(SQLModel, table=True):
     # used on the single shared Policy row for a FLOATER FamilyPolicy.
     primary_member_customer_id: Optional[UUID] = Field(default=None, foreign_key="customers.id", nullable=True)
 
+    branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", index=True, nullable=True)
+    assigned_agent_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+    city: Optional[str] = Field(default=None, max_length=100)
+    province: Optional[str] = Field(default=None, max_length=100)
+
     profile_status: ProfileStatusEnum = Field(default=ProfileStatusEnum.LEAD, max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -656,6 +677,10 @@ class Policy(SQLModel, table=True):
     # rows (and every row created by the quote worker / POST /quote) stay
     # correct without a backfill.
     status: PolicyStatusEnum = Field(default=PolicyStatusEnum.QUOTED, max_length=50)
+
+    effective_date: Optional[date] = Field(default=None)
+    assigned_underwriter_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

@@ -5,6 +5,9 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import api from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
+import { listBranches, Branch } from "@/app/services/branches";
+import { listAgents, Agent } from "@/app/services/agents";
+import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { registerPendingQuote } from "@/lib/pendingQuotes";
 import {
   customerCoreSchema,
@@ -80,6 +83,15 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   const [editAddingPolicy, setEditAddingPolicy] = useState(false);
   const [editPolicyLoading, setEditPolicyLoading] = useState(false);
 
+  // Assignment/location — real top-level columns (Customer.city/province/branch_id/assigned_agent_id),
+  // kept separate from the `details` JSON blob so they're filterable server-side.
+  const [city, setCity] = useState("");
+  const [province, setProvince] = useState("");
+  const [branchId, setBranchId] = useState("");
+  const [assignedAgentId, setAssignedAgentId] = useState("");
+  const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
+  const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
+
   // Initialize whenever the modal opens.
   useEffect(() => {
     if (!open) return;
@@ -89,6 +101,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     setSuggestedReasoning("");
 
     const tenantId = localStorage.getItem("tenant_id");
+
+    if (tenantId) {
+      listBranches(tenantId).then(setBranchOptions).catch(() => setBranchOptions([]));
+      listAgents(tenantId).then(setAgentOptions).catch(() => setAgentOptions([]));
+    }
 
     if (isCreate) {
       reset({
@@ -108,6 +125,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         policyDependentDob: "",
       });
       setDetails(cloneDefaultDetails());
+      setCity("");
+      setProvince("");
+      setBranchId("");
+      setAssignedAgentId("");
       if (tenantId) {
         setPlansLoading(true);
         listInsurancePlans(tenantId)
@@ -144,6 +165,13 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
           }
         : cloneDefaultDetails();
       setDetails(importedDetails);
+
+      // Fall back to the legacy details.address location for records saved before
+      // city/province were promoted to top-level columns.
+      setCity(customer.city ?? customer.details?.address?.city ?? "");
+      setProvince(customer.province ?? customer.details?.address?.province ?? "");
+      setBranchId(customer.branch_id || "");
+      setAssignedAgentId(customer.assigned_agent_id || "");
 
       setEditSelectedPlanId("");
       setEditPolicyCoverage("");
@@ -283,6 +311,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         is_smoker: !!payloadDetails.medical_history.is_smoker,
         height_cm: parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
         weight_kg: parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
+        city: city.trim() || null,
+        province: province || null,
+        branch_id: branchId || null,
+        assigned_agent_id: assignedAgentId || null,
         details: payloadDetails,
       });
 
@@ -376,6 +408,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         is_smoker: !!payloadDetails.medical_history.is_smoker,
         height_cm: parseFloat(payloadDetails.lifestyle.height_cm as any) || 170.0,
         weight_kg: parseFloat(payloadDetails.lifestyle.weight_kg as any) || 70.0,
+        city: city.trim() || null,
+        province: province || null,
+        branch_id: branchId || null,
+        assigned_agent_id: assignedAgentId || null,
         details: payloadDetails,
       });
 
@@ -602,19 +638,24 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     <label className="text-xs font-semibold text-slate-600">City</label>
                     <input
                       type="text"
-                      value={details.address.city}
-                      onChange={(e) => updateField("address", "city", e.target.value)}
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="e.g. Lahore"
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-600">Province</label>
-                    <input
-                      type="text"
-                      value={details.address.province}
-                      onChange={(e) => updateField("address", "province", e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
-                    />
+                    <select
+                      value={province}
+                      onChange={(e) => setProvince(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                    >
+                      <option value="">Select province</option>
+                      {PAKISTAN_PROVINCES.map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-600">Postal Code</label>
@@ -624,6 +665,40 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       onChange={(e) => updateField("address", "postal_code", e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
+                  </div>
+                </div>
+              </div>
+
+              <hr className="border-slate-100" />
+
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Assignment</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-600">Branch</label>
+                    <select
+                      value={branchId}
+                      onChange={(e) => setBranchId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                    >
+                      <option value="">Unassigned</option>
+                      {branchOptions.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-semibold text-slate-600">Assigned Agent</label>
+                    <select
+                      value={assignedAgentId}
+                      onChange={(e) => setAssignedAgentId(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                    >
+                      <option value="">Unassigned</option>
+                      {agentOptions.map((a) => (
+                        <option key={a.id} value={a.id}>{a.full_name}</option>
+                      ))}
+                    </select>
                   </div>
                 </div>
               </div>

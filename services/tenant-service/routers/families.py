@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import date
+from datetime import date, timedelta
 from typing import Any, Dict, List, Literal, Optional
 from uuid import UUID
 
@@ -259,6 +259,12 @@ async def list_family_groups(
     tenant_id: UUID,
     search: Optional[str] = Query(None, description="Matches name or contact person"),
     category: Optional[FamilyCategory] = Query(None, description="active | in_progress | new"),
+    branch_id: Optional[UUID] = None,
+    assigned_agent_id: Optional[UUID] = None,
+    city: Optional[str] = None,
+    province: Optional[str] = None,
+    created_from: Optional[date] = None,
+    created_to: Optional[date] = None,
     session: AsyncSession = Depends(get_session),
 ):
     query = select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id)
@@ -266,6 +272,18 @@ async def list_family_groups(
     if term:
         like = f"%{term}%"
         query = query.where(or_(FamilyGroup.name.ilike(like), FamilyGroup.contact_person.ilike(like)))
+    if branch_id:
+        query = query.where(FamilyGroup.branch_id == branch_id)
+    if assigned_agent_id:
+        query = query.where(FamilyGroup.assigned_agent_id == assigned_agent_id)
+    if city:
+        query = query.where(FamilyGroup.city.ilike(f"%{city}%"))
+    if province:
+        query = query.where(FamilyGroup.province.ilike(f"%{province}%"))
+    if created_from:
+        query = query.where(FamilyGroup.created_at >= created_from)
+    if created_to:
+        query = query.where(FamilyGroup.created_at < created_to + timedelta(days=1))
     query = query.order_by(FamilyGroup.created_at.desc())
     groups = list((await session.exec(query)).all())
 

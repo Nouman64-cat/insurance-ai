@@ -1,5 +1,6 @@
 import logging
 import re
+from datetime import date, timedelta
 from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
@@ -137,6 +138,10 @@ async def create_customer(
         weight_kg       = body.weight_kg if body.weight_kg is not None else 70.0,
         profile_status  = status_val,
         acquisition_source_id = body.acquisition_source_id,
+        branch_id       = body.branch_id,
+        assigned_agent_id = body.assigned_agent_id,
+        city            = body.city,
+        province        = body.province,
         details         = body.details,
     )
     session.add(customer)
@@ -161,6 +166,12 @@ async def list_customers(
     search: Optional[str] = Query(None, description="Matches name, CNIC, or acquisition source name"),
     category: Optional[CustomerCategory] = Query(None, description="active | full_details | quick_lead | not_interested"),
     acquisition_source_id: Optional[UUID] = None,
+    branch_id: Optional[UUID] = None,
+    assigned_agent_id: Optional[UUID] = None,
+    city: Optional[str] = None,
+    province: Optional[str] = None,
+    created_from: Optional[date] = None,
+    created_to: Optional[date] = None,
     session: AsyncSession = Depends(get_session),
 ):
     query = (
@@ -183,6 +194,18 @@ async def list_customers(
 
     if acquisition_source_id:
         query = query.where(Customer.acquisition_source_id == acquisition_source_id)
+    if branch_id:
+        query = query.where(Customer.branch_id == branch_id)
+    if assigned_agent_id:
+        query = query.where(Customer.assigned_agent_id == assigned_agent_id)
+    if city:
+        query = query.where(Customer.city.ilike(f"%{city}%"))
+    if province:
+        query = query.where(Customer.province.ilike(f"%{province}%"))
+    if created_from:
+        query = query.where(Customer.created_at >= created_from)
+    if created_to:
+        query = query.where(Customer.created_at < created_to + timedelta(days=1))
 
     active_exists = _active_policy_exists(tenant_id)
     if category == "active":
@@ -533,6 +556,14 @@ async def update_customer(
         customer.weight_kg = body.weight_kg
     if body.acquisition_source_id is not None:
         customer.acquisition_source_id = body.acquisition_source_id
+    if body.branch_id is not None:
+        customer.branch_id = body.branch_id
+    if body.assigned_agent_id is not None:
+        customer.assigned_agent_id = body.assigned_agent_id
+    if body.city is not None:
+        customer.city = body.city
+    if body.province is not None:
+        customer.province = body.province
     if body.details is not None:
         customer.details = body.details
 

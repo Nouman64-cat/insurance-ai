@@ -93,6 +93,10 @@ export interface Customer {
   details?: any;
   acquisition_source_id?: string | null;
   acquisition_source?: AcquisitionSource | null;
+  branch_id?: string | null;
+  assigned_agent_id?: string | null;
+  city?: string | null;
+  province?: string | null;
 }
 
 export interface Policy {

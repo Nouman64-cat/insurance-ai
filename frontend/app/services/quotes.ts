@@ -15,6 +15,15 @@ export interface QuoteListItem {
   total_premium: number;
   rate_version: string;
   created_at: string;
+  
+  status: string;
+  effective_date: string | null;
+  updated_at: string;
+  assigned_underwriter_id: string | null;
+  assigned_underwriter_name: string | null;
+  sla_status: "within_sla" | "approaching_breach" | "breached" | null;
+  sla_days_remaining: number | null;
+
   acquisition_source_id?: string | null;
   acquisition_source_name?: string | null;
   acquisition_source_type?: string | null;
@@ -50,9 +59,10 @@ export interface QuoteDetail extends QuoteListItem {
   dependent_dob: string | null;
 }
 
-export async function listQuotes(): Promise<QuoteListItem[]> {
+export async function listQuotes(filters?: Record<string, string | number | undefined>): Promise<QuoteListItem[]> {
   const tenantId = localStorage.getItem("tenant_id");
   const resp = await api.get<QuoteListItem[]>("/quotes", {
+    params: filters,
     headers: { "X-Tenant-Id": tenantId }
   });
   return resp.data;
@@ -61,6 +71,21 @@ export async function listQuotes(): Promise<QuoteListItem[]> {
 export async function getQuote(quoteId: string): Promise<QuoteDetail> {
   const tenantId = localStorage.getItem("tenant_id");
   const resp = await api.get<QuoteDetail>(`/quotes/${quoteId}`, {
+    headers: { "X-Tenant-Id": tenantId }
+  });
+  return resp.data;
+}
+
+export async function updateQuote(
+  quoteId: string,
+  body: {
+    status?: string;
+    assigned_underwriter_id?: string | null;
+    effective_date?: string | null;
+  }
+): Promise<QuoteDetail> {
+  const tenantId = localStorage.getItem("tenant_id");
+  const resp = await api.patch<QuoteDetail>(`/quotes/${quoteId}`, body, {
     headers: { "X-Tenant-Id": tenantId }
   });
   return resp.data;

@@ -26,6 +26,12 @@ async def suggest_actions(req: SuggestActionRequest, db: AsyncSession = Depends(
     """
     RAG-powered endpoint that retrieves SOPs and generates 3-4 next best actions.
     """
+    if os.environ.get("DISABLE_PGVECTOR", "false").lower() == "true":
+        return SuggestActionResponse(
+            suggested_actions=[],
+            rationale="Agent Copilot suggestions are disabled because pgvector is not supported by the database."
+        )
+
     try:
         # 1. Embed the context
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))

@@ -5,7 +5,11 @@ from google import genai
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text
-from shared.models.core import AgentKnowledgeBase
+try:
+    from shared.models.core import AgentKnowledgeBase
+    HAS_KB = True
+except (ImportError, AttributeError):
+    HAS_KB = False
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL",
@@ -18,6 +22,10 @@ AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=F
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 async def seed():
+    if not HAS_KB:
+        print("AgentKnowledgeBase model is not defined (pgvector might be disabled or not installed). Skipping seeding.")
+        return
+
     docs_dir = "/app/docs/agent-scenarios/*.md" # since it runs inside container mapped to root... wait, tenant-service is mapped to /app. The docs are at ../../docs. 
     # Let's just use a relative path if running from insurance-ai
     
