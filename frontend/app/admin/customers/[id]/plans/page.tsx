@@ -58,6 +58,13 @@ export default function CustomerPlansPage() {
   const [authorized, setAuthorized] = useState(true);
   const [error, setError] = useState("");
 
+  const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
+  const [editCoverage, setEditCoverage] = useState("");
+  const [editTerm, setEditTerm] = useState("");
+  const [editDepName, setEditDepName] = useState("");
+  const [editDepDob, setEditDepDob] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
   useEffect(() => {
     const role = localStorage.getItem("user_role");
     if (role !== "Admin") {
@@ -89,6 +96,46 @@ export default function CustomerPlansPage() {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to load plan details.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeletePolicy = async (policyId: string) => {
+    if (!confirm("Are you sure you want to delete this policy?")) return;
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    try {
+      await api.delete(`/tenants/${tenantId}/customers/${customerId}/policies/${policyId}`);
+      // Refresh list
+      const res = await api.get<Policy[]>(`/tenants/${tenantId}/customers/${customerId}/policies`);
+      setPolicies(res.data);
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete policy.");
+    }
+  };
+
+  const handleSaveEdit = async (policy: Policy) => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setSubmitting(true);
+    setError("");
+    try {
+      const payload: any = {
+        coverage_amount: parseFloat(editCoverage),
+        term_years: parseInt(editTerm),
+      };
+      if (policy.insurance_type === "CHILD_EDUCATION_MARRIAGE") {
+        payload.dependent_name = editDepName || null;
+        payload.dependent_dob = editDepDob || null;
+      }
+      await api.put(`/tenants/${tenantId}/customers/${customerId}/policies/${policy.id}`, payload);
+      setEditingPolicyId(null);
+      // Refresh list
+      const res = await api.get<Policy[]>(`/tenants/${tenantId}/customers/${customerId}/policies`);
+      setPolicies(res.data);
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to update policy.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -157,38 +204,133 @@ export default function CustomerPlansPage() {
                 </div>
               </div>
 
-              <div className="p-5 grid grid-cols-2 gap-y-4 gap-x-6">
-                <div>
-                  <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Coverage Amount</span>
-                  <span className="text-sm font-bold text-slate-800">PKR {policy.coverage_amount.toLocaleString()}</span>
-                </div>
-                <div>
-                  <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Term</span>
-                  <span className="text-sm font-medium text-slate-800">{policy.term_years} years</span>
-                </div>
-
-                {policy.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
-                  <>
+              {editingPolicyId === policy.id ? (
+                <div className="p-5 space-y-4 bg-slate-50 border-t border-slate-100">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Dependent Name</span>
-                      <span className="text-sm font-medium text-slate-800">{policy.dependent_name || "—"}</span>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Coverage Amount (PKR)</label>
+                      <input
+                        type="number"
+                        value={editCoverage}
+                        onChange={(e) => setEditCoverage(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-800 font-medium"
+                        placeholder="e.g. 500000"
+                        required
+                      />
                     </div>
                     <div>
-                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Dependent Date of Birth</span>
-                      <span className="text-sm font-medium text-slate-800">{policy.dependent_dob || "—"}</span>
+                      <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Term (Years)</label>
+                      <input
+                        type="number"
+                        value={editTerm}
+                        onChange={(e) => setEditTerm(e.target.value)}
+                        className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-800 font-medium"
+                        placeholder="e.g. 10"
+                        required
+                      />
                     </div>
-                  </>
-                )}
 
-                <div className="col-span-2">
-                  <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Evaluated On</span>
-                  <span className="text-sm font-medium text-slate-600">
-                    {new Date(policy.created_at).toLocaleString(undefined, {
-                      year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
-                    })}
-                  </span>
+                    {policy.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
+                      <>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dependent Name</label>
+                          <input
+                            type="text"
+                            value={editDepName}
+                            onChange={(e) => setEditDepName(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-800 font-medium"
+                            placeholder="Dependent Full Name"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Dependent Date of Birth</label>
+                          <input
+                            type="date"
+                            value={editDepDob}
+                            onChange={(e) => setEditDepDob(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white text-slate-800 font-medium"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => setEditingPolicyId(null)}
+                      className="px-3.5 py-2 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      disabled={submitting}
+                      onClick={() => handleSaveEdit(policy)}
+                      className="px-3.5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 rounded-lg transition-colors"
+                    >
+                      {submitting ? "Saving..." : "Save Changes"}
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <>
+                  <div className="p-5 grid grid-cols-2 gap-y-4 gap-x-6">
+                    <div>
+                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Coverage Amount</span>
+                      <span className="text-sm font-bold text-slate-800">PKR {policy.coverage_amount.toLocaleString()}</span>
+                    </div>
+                    <div>
+                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Term</span>
+                      <span className="text-sm font-medium text-slate-800">{policy.term_years} years</span>
+                    </div>
+
+                    {policy.insurance_type === "CHILD_EDUCATION_MARRIAGE" && (
+                      <>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Dependent Name</span>
+                          <span className="text-sm font-medium text-slate-800">{policy.dependent_name || "—"}</span>
+                        </div>
+                        <div>
+                          <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Dependent Date of Birth</span>
+                          <span className="text-sm font-medium text-slate-800">{policy.dependent_dob || "—"}</span>
+                        </div>
+                      </>
+                    )}
+
+                    <div className="col-span-2">
+                      <span className="block text-xs font-semibold text-slate-400 uppercase mb-1">Evaluated On</span>
+                      <span className="text-sm font-medium text-slate-600">
+                        {new Date(policy.created_at).toLocaleString(undefined, {
+                          year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingPolicyId(policy.id);
+                        setEditCoverage(String(policy.coverage_amount));
+                        setEditTerm(String(policy.term_years));
+                        setEditDepName(policy.dependent_name || "");
+                        setEditDepDob(policy.dependent_dob || "");
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg transition-colors"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDeletePolicy(policy.id)}
+                      className="px-3 py-1.5 text-xs font-bold text-red-600 hover:bg-red-50 border border-red-200 rounded-lg transition-colors"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           ))}
         </div>

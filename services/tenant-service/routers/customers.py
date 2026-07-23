@@ -1,7 +1,7 @@
 import logging
 import re
+from datetime import date
 from typing import Literal, Optional
-from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, or_, cast, String
@@ -10,9 +10,10 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from schemas import CustomerCreate, CustomerRead, CustomerStatsRead, CustomerUpdate, PolicyCreate, PolicyRead
+from schemas import CustomerCreate, CustomerRead, CustomerStatsRead, CustomerUpdate, PolicyCreate, PolicyRead, PolicyUpdate
 from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent, CustomerCreatedPayload
-from shared.models.core import AcquisitionSource, Customer, Policy, Tenant, ProfileStatusEnum, PolicyStatusEnum
+from shared.models.core import AcquisitionSource, Customer, Policy, Tenant, ProfileStatusEnum, PolicyStatusEnum, PremiumQuote, InsurancePlan
+from shared.pricing.calculator import calculate_premium
 from routers.users import verify_admin   # reuse existing Admin guard
 
 # A customer counts as "taking insurance" once a policy has cleared underwriting.
@@ -285,6 +286,68 @@ async def list_customer_policies(
     return list(result.all())
 
 
+async def sync_policy_premium_quote(policy: Policy, customer: Customer, session: AsyncSession):
+    if not customer.dob:
+        return
+    
+    today = date.today()
+    age = (today - customer.dob).days // 365
+    
+    plan_stmt = select(InsurancePlan).where(
+        InsurancePlan.tenant_id == policy.tenant_id,
+        InsurancePlan.label == policy.product_name
+    )
+    plan = (await session.exec(plan_stmt)).first()
+    
+    if not plan:
+        plan_stmt = select(InsurancePlan).where(
+            InsurancePlan.tenant_id == policy.tenant_id,
+            InsurancePlan.insurance_type == policy.insurance_type
+        )
+        plan = (await session.exec(plan_stmt)).first()
+        
+    if not plan:
+        base_premium = policy.coverage_amount * 0.01
+        total_premium = base_premium
+        loading_applied = 0.0
+        rate_version = "v1"
+    else:
+        breakdown = calculate_premium(
+            coverage_amount=policy.coverage_amount,
+            base_premium_rate=plan.base_premium_rate,
+            smoker_factor=plan.smoker_factor,
+            age=age,
+            is_smoker=customer.is_smoker or False,
+            height_cm=customer.height_cm or 170.0,
+            weight_kg=customer.weight_kg or 70.0,
+        )
+        base_premium = breakdown.base_premium
+        total_premium = breakdown.total_premium
+        loading_applied = breakdown.loading_applied
+        rate_version = plan.rate_version
+
+    quote_stmt = select(PremiumQuote).where(PremiumQuote.policy_id == policy.id)
+    quote = (await session.exec(quote_stmt)).first()
+    
+    if quote:
+        quote.base_premium = base_premium
+        quote.total_premium = total_premium
+        quote.loading_applied = loading_applied
+        quote.rate_version = rate_version
+        session.add(quote)
+    else:
+        quote = PremiumQuote(
+            tenant_id=policy.tenant_id,
+            policy_id=policy.id,
+            base_premium=base_premium,
+            total_premium=total_premium,
+            loading_applied=loading_applied,
+            rate_version=rate_version
+        )
+        session.add(quote)
+
+
+
 @router.post(
     "/{tenant_id}/customers/{customer_id}/policies",
     response_model=PolicyRead,
@@ -318,9 +381,12 @@ async def create_customer_policy(
         status=PolicyStatusEnum.QUOTED,
     )
     session.add(policy)
+    await session.flush()
+    await sync_policy_premium_quote(policy, customer, session)
     await session.commit()
     await session.refresh(policy)
     return policy
+
 
 
 @router.delete(
@@ -342,6 +408,65 @@ async def delete_customer(
     await session.delete(customer)
     await session.commit()
     return None
+
+
+@router.delete(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_customer_policy(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    policy = await session.get(Policy, policy_id)
+    if not policy or policy.tenant_id != tenant_id or policy.customer_id != customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Policy not found"
+        )
+    await session.delete(policy)
+    await session.commit()
+    return None
+
+
+@router.put(
+    "/{tenant_id}/customers/{customer_id}/policies/{policy_id}",
+    response_model=PolicyRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_customer_policy(
+    tenant_id: UUID,
+    customer_id: UUID,
+    policy_id: UUID,
+    payload: PolicyUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    policy = await session.get(Policy, policy_id)
+    if not policy or policy.tenant_id != tenant_id or policy.customer_id != customer_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Policy not found"
+        )
+    
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(policy, key, value)
+        
+    session.add(policy)
+    await session.flush()
+    
+    customer = await session.get(Customer, customer_id)
+    if customer:
+        await sync_policy_premium_quote(policy, customer, session)
+        
+    await session.commit()
+    await session.refresh(policy)
+    return policy
+
+
 
 @router.put(
     "/{tenant_id}/customers/{customer_id}",

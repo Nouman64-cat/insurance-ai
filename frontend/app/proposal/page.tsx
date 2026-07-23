@@ -466,15 +466,15 @@ export default function QuotePage() {
               {quotes.length === 0
                 ? "No proposals yet"
                 : segmentQuotes.length === 0
-                ? `No ${segment === "all" ? "" : segment} proposals`
-                : "No proposals match your search"}
+                  ? `No ${segment === "all" ? "" : segment} proposals`
+                  : "No proposals match your search"}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
                 ? "Register a customer and a proposal will be generated automatically in the background."
                 : segmentQuotes.length === 0
-                ? "Try switching the segment filter to All Customers."
-                : "Try a different customer name, CNIC, organization, or plan."}
+                  ? "Try switching the segment filter to All Customers."
+                  : "Try a different customer name, CNIC, organization, or plan."}
             </p>
           </div>
         ) : (
@@ -546,11 +546,10 @@ export default function QuotePage() {
                   {individualGroups.map((group) => (
                     <div
                       key={group.customer_id}
-                      className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${
-                        expandedCustomerId === group.customer_id
+                      className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${expandedCustomerId === group.customer_id
                           ? "col-span-full border-blue-200 shadow-md ring-1 ring-blue-500/20"
                           : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"
-                      }`}
+                        }`}
                     >
                       <CustomerFolder
                         customer={group}
@@ -636,9 +635,8 @@ function OrganizationFolder({
 
   return (
     <div
-      className={`border rounded-xl overflow-hidden transition-all duration-200 ${
-        isExpanded ? "border-blue-200 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"
-      }`}
+      className={`border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "border-blue-200 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"
+        }`}
     >
       <div onClick={onToggle} className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}>
         <div className="flex items-center gap-4">
@@ -735,7 +733,7 @@ function PolicyFolder({
             const allQuotesInPolicy = policy.customers.flatMap(c => c.quotes);
             const selectedInPolicyCount = allQuotesInPolicy.filter(q => handlers.selectedQuoteIds.has(q.quote_id)).length;
             const allSelected = allQuotesInPolicy.length > 0 && selectedInPolicyCount === allQuotesInPolicy.length;
-            
+
             return (
               <div className="px-4 py-3 flex items-center justify-between border border-slate-200 bg-white rounded-lg shadow-sm">
                 <div className="flex items-center gap-3">
@@ -803,9 +801,8 @@ function FamilyGroupFolder({
 
   return (
     <div
-      className={`border rounded-xl overflow-hidden transition-all duration-200 ${
-        isExpanded ? "border-rose-200 shadow-md ring-1 ring-rose-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-rose-200 bg-white"
-      }`}
+      className={`border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "border-rose-200 shadow-md ring-1 ring-rose-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-rose-200 bg-white"
+        }`}
     >
       <div onClick={onToggle} className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? "bg-rose-50/50" : "bg-white"}`}>
         <div className="flex items-center gap-4">
@@ -900,7 +897,7 @@ function FamilyPolicyFolder({
             const allQuotesInPolicy = policy.customers.flatMap(c => c.quotes);
             const selectedInPolicyCount = allQuotesInPolicy.filter(q => handlers.selectedQuoteIds.has(q.quote_id)).length;
             const allSelected = allQuotesInPolicy.length > 0 && selectedInPolicyCount === allQuotesInPolicy.length;
-            
+
             return (
               <div className="px-4 py-3 flex items-center justify-between border border-slate-200 bg-white rounded-lg shadow-sm">
                 <div className="flex items-center gap-3">
