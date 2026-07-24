@@ -170,37 +170,9 @@ export default function QuotePage() {
   // flat Set per level is enough; no need to scope by parent. The Family tree
   // reuses expandedCustomerId at its leaf (same reasoning: customer IDs are
   // globally unique whether the customer sits under an org or a family).
-  const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
-  const [expandedPolicyId, setExpandedPolicyId] = useState<string | null>(null);
-  const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
-  const [expandedFamilyGroupId, setExpandedFamilyGroupId] = useState<string | null>(null);
-  const [expandedFamilyPolicyId, setExpandedFamilyPolicyId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
 
-  const toggleOrgFolder = (orgId: string) => {
-    setExpandedOrgId((prev) => (prev === orgId ? null : orgId));
-    setExpandedPolicyId(null);
-    setExpandedCustomerId(null);
-  };
 
-  const togglePolicyFolder = (policyId: string) => {
-    setExpandedPolicyId((prev) => (prev === policyId ? null : policyId));
-    setExpandedCustomerId(null);
-  };
-
-  const toggleFamilyGroupFolder = (familyGroupId: string) => {
-    setExpandedFamilyGroupId((prev) => (prev === familyGroupId ? null : familyGroupId));
-    setExpandedFamilyPolicyId(null);
-    setExpandedCustomerId(null);
-  };
-
-  const toggleFamilyPolicyFolder = (familyPolicyId: string) => {
-    setExpandedFamilyPolicyId((prev) => (prev === familyPolicyId ? null : familyPolicyId));
-    setExpandedCustomerId(null);
-  };
-
-  const toggleFolder = (customerId: string) => {
-    setExpandedCustomerId((prev) => (prev === customerId ? null : customerId));
-  };
 
   const toggleSelection = (quoteId: string) => {
     setSelectedProposalIds((prev) => {
@@ -345,11 +317,9 @@ export default function QuotePage() {
   }, [quotes]);
 
   const kpis = useMemo(() => {
-    const customerCount = new Set(segmentQuotes.map((q) => q.customer_id)).size;
     const totalCoverage = segmentQuotes.reduce((sum, q) => sum + q.coverage_amount, 0);
     const totalPremium = segmentQuotes.reduce((sum, q) => sum + q.total_premium, 0);
     return [
-      { title: "Customers", value: customerCount, subtitle: "in this view", accent: "blue" as const },
       { title: "Proposals", value: segmentQuotes.length, subtitle: "plans generated", accent: "slate" as const },
       { title: "Total Coverage", value: segmentQuotes.length ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "amber" as const },
       { title: "Total Premium", value: segmentQuotes.length ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "emerald" as const },
@@ -527,18 +497,36 @@ export default function QuotePage() {
           />
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
         </div>
-        <button
-          onClick={fetchQuotes}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50"
-        >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}>
-            <polyline points="23 4 23 10 17 10" />
-            <polyline points="1 20 1 14 7 14" />
-            <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-          </svg>
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner border border-slate-200/60 shrink-0">
+            <button
+              onClick={() => setViewMode("list")}
+              title="List View"
+              className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+            </button>
+            <button
+              onClick={() => setViewMode("grid")}
+              title="Grid View"
+              className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+            </button>
+          </div>
+          <button
+            onClick={fetchQuotes}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 h-[36px]"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`}>
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+            </svg>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -581,26 +569,54 @@ export default function QuotePage() {
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">
                   Corporate / Group Life
                 </p>
-                {organizationGroups.map((org) => (
-                  <OrganizationFolder
-                    key={org.organization_id}
-                    org={org}
-                    isExpanded={expandedOrgId === org.organization_id}
-                    onToggle={() => toggleOrgFolder(org.organization_id)}
-                    expandedPolicyId={expandedPolicyId}
-                    onTogglePolicy={togglePolicyFolder}
-                    expandedCustomerId={expandedCustomerId}
-                    onToggleCustomer={toggleFolder}
-                    selectedQuoteIds={selectedQuoteIds}
-                    toggleSelection={toggleSelection}
-                    toggleAllInFolder={toggleAllInFolder}
-                    handleBulkProceed={handleBulkProceed}
-                    isBulkProceeding={isBulkProceeding}
-                    bulkProceedError={bulkProceedError}
-                    bulkProceedSuccess={bulkProceedSuccess}
-                    openQuote={openQuote}
-                  />
-                ))}
+                {(() => {
+                  const allOrgQuotes = organizationGroups.flatMap(org => org.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
+                  const selectedOrgCount = allOrgQuotes.filter(q => selectedQuoteIds.has(q.quote_id)).length;
+                  const allSelected = allOrgQuotes.length > 0 && selectedOrgCount === allOrgQuotes.length;
+                  return (
+                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            checked={allSelected}
+                            onChange={() => toggleAllInFolder(allOrgQuotes.map(q => q.quote_id))}
+                          />
+                          <p className="text-xs font-semibold text-slate-500">
+                            {selectedOrgCount} of {allOrgQuotes.length} plan(s) selected
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleBulkProceed(allOrgQuotes)}
+                          disabled={isBulkProceeding || selectedOrgCount === 0}
+                          className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+                        >
+                          {isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
+                        </button>
+                      </div>
+                      {viewMode === 'grid' ? (
+                        <div className="p-4 bg-slate-50/30">
+                          <ProposalsGrid
+                            quotes={allOrgQuotes}
+                            selectedQuoteIds={selectedQuoteIds}
+                            toggleSelection={toggleSelection}
+                            toggleAllInFolder={toggleAllInFolder}
+                            openQuote={openQuote}
+                          />
+                        </div>
+                      ) : (
+                        <ProposalsTable
+                          quotes={allOrgQuotes}
+                          selectedQuoteIds={selectedQuoteIds}
+                          toggleSelection={toggleSelection}
+                          toggleAllInFolder={toggleAllInFolder}
+                          openQuote={openQuote}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -609,26 +625,54 @@ export default function QuotePage() {
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">
                   Family Insurance
                 </p>
-                {familyGroups.map((family) => (
-                  <FamilyGroupFolder
-                    key={family.family_group_id}
-                    family={family}
-                    isExpanded={expandedFamilyGroupId === family.family_group_id}
-                    onToggle={() => toggleFamilyGroupFolder(family.family_group_id)}
-                    expandedFamilyPolicyId={expandedFamilyPolicyId}
-                    onToggleFamilyPolicy={toggleFamilyPolicyFolder}
-                    expandedCustomerId={expandedCustomerId}
-                    onToggleCustomer={toggleFolder}
-                    selectedQuoteIds={selectedQuoteIds}
-                    toggleSelection={toggleSelection}
-                    toggleAllInFolder={toggleAllInFolder}
-                    handleBulkProceed={handleBulkProceed}
-                    isBulkProceeding={isBulkProceeding}
-                    bulkProceedError={bulkProceedError}
-                    bulkProceedSuccess={bulkProceedSuccess}
-                    openQuote={openQuote}
-                  />
-                ))}
+                {(() => {
+                  const allFamQuotes = familyGroups.flatMap(family => family.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
+                  const selectedFamCount = allFamQuotes.filter(q => selectedQuoteIds.has(q.quote_id)).length;
+                  const allSelected = allFamQuotes.length > 0 && selectedFamCount === allFamQuotes.length;
+                  return (
+                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
+                      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                            checked={allSelected}
+                            onChange={() => toggleAllInFolder(allFamQuotes.map(q => q.quote_id))}
+                          />
+                          <p className="text-xs font-semibold text-slate-500">
+                            {selectedFamCount} of {allFamQuotes.length} plan(s) selected
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleBulkProceed(allFamQuotes)}
+                          disabled={isBulkProceeding || selectedFamCount === 0}
+                          className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+                        >
+                          {isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
+                        </button>
+                      </div>
+                      {viewMode === 'grid' ? (
+                        <div className="p-4 bg-slate-50/30">
+                          <ProposalsGrid
+                            quotes={allFamQuotes}
+                            selectedQuoteIds={selectedQuoteIds}
+                            toggleSelection={toggleSelection}
+                            toggleAllInFolder={toggleAllInFolder}
+                            openQuote={openQuote}
+                          />
+                        </div>
+                      ) : (
+                        <ProposalsTable
+                          quotes={allFamQuotes}
+                          selectedQuoteIds={selectedQuoteIds}
+                          toggleSelection={toggleSelection}
+                          toggleAllInFolder={toggleAllInFolder}
+                          openQuote={openQuote}
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
@@ -639,30 +683,68 @@ export default function QuotePage() {
                     Individual
                   </p>
                 )}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {individualGroups.map((group) => (
-                    <div
-                      key={group.customer_id}
-                      className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${expandedCustomerId === group.customer_id
-                          ? "col-span-full border-blue-200 shadow-md ring-1 ring-blue-500/20"
-                          : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"
-                        }`}
-                    >
-                      <CustomerFolder
-                        customer={group}
-                        isExpanded={expandedCustomerId === group.customer_id}
-                        onToggle={() => toggleFolder(group.customer_id)}
-                        selectedQuoteIds={selectedQuoteIds}
-                        toggleSelection={toggleSelection}
-                        toggleAllInFolder={toggleAllInFolder}
-                        handleBulkProceed={handleBulkProceed}
-                        isBulkProceeding={isBulkProceeding}
-                        bulkProceedError={bulkProceedError}
-                        bulkProceedSuccess={bulkProceedSuccess}
-                        openQuote={openQuote}
-                      />
-                    </div>
-                  ))}
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  {(() => {
+                    const allIndividualQuotes = individualGroups.flatMap(g => g.quotes);
+                    const selectedIndividualCount = allIndividualQuotes.filter(q => selectedQuoteIds.has(q.quote_id)).length;
+                    const allSelected = allIndividualQuotes.length > 0 && selectedIndividualCount === allIndividualQuotes.length;
+                    return (
+                      <div className="flex flex-col">
+                        <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="checkbox"
+                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                              checked={allSelected}
+                              onChange={() => toggleAllInFolder(allIndividualQuotes.map(q => q.quote_id))}
+                            />
+                            <p className="text-xs font-semibold text-slate-500">
+                              {selectedIndividualCount} of {allIndividualQuotes.length} plan(s) selected
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => handleBulkProceed(allIndividualQuotes)}
+                            disabled={isBulkProceeding || selectedIndividualCount === 0}
+                            className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+                          >
+                            {isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
+                          </button>
+                        </div>
+                        {bulkProceedError && (
+                          <div className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
+                            <p className="text-xs text-red-600">{bulkProceedError}</p>
+                          </div>
+                        )}
+                        {bulkProceedSuccess && (
+                          <div className="mx-4 mt-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+                            <p className="text-xs text-emerald-700 font-semibold">Success</p>
+                            <p className="text-xs text-emerald-600">{bulkProceedSuccess}</p>
+                          </div>
+                        )}
+                        {viewMode === 'grid' ? (
+                          <div className="p-4 bg-slate-50/30">
+                            <ProposalsGrid
+                              quotes={allIndividualQuotes}
+                              selectedQuoteIds={selectedQuoteIds}
+                              toggleSelection={toggleSelection}
+                              toggleAllInFolder={toggleAllInFolder}
+                              openQuote={openQuote}
+                        viewMode={viewMode}
+                            />
+                          </div>
+                        ) : (
+                          <ProposalsTable
+                            quotes={allIndividualQuotes}
+                            selectedQuoteIds={selectedQuoteIds}
+                            toggleSelection={toggleSelection}
+                            toggleAllInFolder={toggleAllInFolder}
+                            openQuote={openQuote}
+                        viewMode={viewMode}
+                          />
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -696,516 +778,159 @@ export default function QuotePage() {
   );
 }
 
-// ── Shared props for the two lower folder levels ────────────────────────────
+// ── Level 3: Proposals Views ───────────────────────────────────────────────────
 
-interface CustomerFolderHandlers {
-  selectedQuoteIds: Set<string>;
-  toggleSelection: (quoteId: string) => void;
-  toggleAllInFolder: (quoteIds: string[]) => void;
-  handleBulkProceed: (quotes: QuoteListItem[]) => void;
-  isBulkProceeding: boolean;
-  bulkProceedError: string | null;
-  bulkProceedSuccess: string | null;
-  openQuote: (quoteId: string) => void;
-}
-
-// ── Level 1: Organization folder ────────────────────────────────────────────
-
-function OrganizationFolder({
-  org,
-  isExpanded,
-  onToggle,
-  expandedPolicyId,
-  onTogglePolicy,
-  expandedCustomerId,
-  onToggleCustomer,
-  ...handlers
-}: {
-  org: OrganizationFolderData;
-  isExpanded: boolean;
-  onToggle: () => void;
-  expandedPolicyId: string | null;
-  onTogglePolicy: (policyId: string) => void;
-  expandedCustomerId: string | null;
-  onToggleCustomer: (customerId: string) => void;
-} & CustomerFolderHandlers) {
-  const totalEmployees = org.policies.reduce((sum, p) => sum + p.customers.length, 0);
-
-  return (
-    <div
-      className={`border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "border-blue-200 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"
-        }`}
-    >
-      <div onClick={onToggle} className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}>
-        <div className="flex items-center gap-4">
-          <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-              <path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" />
-              <path d="M6 12H4a2 2 0 00-2 2v8h4" />
-              <path d="M18 9h2a2 2 0 012 2v11h-4" />
-              <line x1="10" y1="6" x2="14" y2="6" /><line x1="10" y1="10" x2="14" y2="10" />
-              <line x1="10" y1="14" x2="14" y2="14" /><line x1="10" y1="18" x2="14" y2="18" />
-            </svg>
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-slate-900">{org.organization_name}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {org.policies.length} master {org.policies.length === 1 ? "policy" : "policies"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
-            {totalEmployees} {totalEmployees === 1 ? "employee" : "employees"}
-          </span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="border-t border-slate-100 bg-slate-50/40 p-4 space-y-3">
-          {org.policies.map((policy) => (
-            <PolicyFolder
-              key={policy.master_policy_id}
-              policy={policy}
-              isExpanded={expandedPolicyId === policy.master_policy_id}
-              onToggle={() => onTogglePolicy(policy.master_policy_id)}
-              expandedCustomerId={expandedCustomerId}
-              onToggleCustomer={onToggleCustomer}
-              {...handlers}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Level 2: Master Policy folder ───────────────────────────────────────────
-
-function PolicyFolder({
-  policy,
-  isExpanded,
-  onToggle,
-  expandedCustomerId,
-  onToggleCustomer,
-  ...handlers
-}: {
-  policy: PolicyFolderData;
-  isExpanded: boolean;
-  onToggle: () => void;
-  expandedCustomerId: string | null;
-  onToggleCustomer: (customerId: string) => void;
-} & CustomerFolderHandlers) {
-  return (
-    <div className={`border rounded-lg overflow-hidden bg-white ${isExpanded ? "border-blue-200" : "border-slate-200"}`}>
-      <div onClick={onToggle} className={`flex items-center justify-between px-4 py-3 cursor-pointer ${isExpanded ? "bg-blue-50/40" : "hover:bg-slate-50"}`}>
-        <div className="flex items-center gap-3">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400">
-            {isExpanded ? (
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            ) : (
-              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
-            )}
-          </svg>
-          <div>
-            <p className="text-sm font-semibold text-slate-800">Master Policy</p>
-            <p className="text-[11px] text-slate-500">{policy.master_policy_label}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-            {policy.customers.length} {policy.customers.length === 1 ? "employee" : "employees"}
-          </span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="border-t border-slate-100 p-3 space-y-2.5 bg-slate-50/30">
-          {(() => {
-            const allQuotesInPolicy = policy.customers.flatMap(c => c.quotes);
-            const selectedInPolicyCount = allQuotesInPolicy.filter(q => handlers.selectedQuoteIds.has(q.quote_id)).length;
-            const allSelected = allQuotesInPolicy.length > 0 && selectedInPolicyCount === allQuotesInPolicy.length;
-
-            return (
-              <div className="px-4 py-3 flex items-center justify-between border border-slate-200 bg-white rounded-lg shadow-sm">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    checked={allSelected}
-                    onChange={() => handlers.toggleAllInFolder(allQuotesInPolicy.map(q => q.quote_id))}
-                  />
-                  <p className="text-xs font-semibold text-slate-500">
-                    {selectedInPolicyCount} of {allQuotesInPolicy.length} plan(s) selected
-                  </p>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handlers.handleBulkProceed(allQuotesInPolicy); }}
-                  disabled={handlers.isBulkProceeding || selectedInPolicyCount === 0}
-                  className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                >
-                  {handlers.isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
-                </button>
-              </div>
-            );
-          })()}
-          {policy.customers.map((customer) => (
-            <div
-              key={customer.customer_id}
-              className={`border rounded-lg overflow-hidden ${expandedCustomerId === customer.customer_id ? "border-blue-200 ring-1 ring-blue-500/10" : "border-slate-200"}`}
-            >
-              <CustomerFolder
-                customer={customer}
-                isExpanded={expandedCustomerId === customer.customer_id}
-                onToggle={() => onToggleCustomer(customer.customer_id)}
-                compact
-                {...handlers}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Level 1: Family Group folder ────────────────────────────────────────────
-
-function FamilyGroupFolder({
-  family,
-  isExpanded,
-  onToggle,
-  expandedFamilyPolicyId,
-  onToggleFamilyPolicy,
-  expandedCustomerId,
-  onToggleCustomer,
-  ...handlers
-}: {
-  family: FamilyGroupFolderData;
-  isExpanded: boolean;
-  onToggle: () => void;
-  expandedFamilyPolicyId: string | null;
-  onToggleFamilyPolicy: (familyPolicyId: string) => void;
-  expandedCustomerId: string | null;
-  onToggleCustomer: (customerId: string) => void;
-} & CustomerFolderHandlers) {
-  const totalMembers = family.policies.reduce((sum, p) => sum + p.customers.length, 0);
-
-  return (
-    <div
-      className={`border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "border-rose-200 shadow-md ring-1 ring-rose-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-rose-200 bg-white"
-        }`}
-    >
-      <div onClick={onToggle} className={`flex items-center justify-between p-5 cursor-pointer ${isExpanded ? "bg-rose-50/50" : "bg-white"}`}>
-        <div className="flex items-center gap-4">
-          <div className={`flex items-center justify-center w-12 h-12 rounded-xl ${isExpanded ? "bg-rose-100 text-rose-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
-              <path d="M12 3l9 7-9 7-9-7 9-7z" />
-              <circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" />
-              <path d="M8 15v-2a4 4 0 018 0v2" />
-            </svg>
-          </div>
-          <div>
-            <h3 className="text-base font-bold text-slate-900">{family.family_group_name}</h3>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {family.policies.length} family {family.policies.length === 1 ? "policy" : "policies"}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${isExpanded ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"}`}>
-            {totalMembers} {totalMembers === 1 ? "member" : "members"}
-          </span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-rose-500" : ""}`}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="border-t border-slate-100 bg-slate-50/40 p-4 space-y-3">
-          {family.policies.map((policy) => (
-            <FamilyPolicyFolder
-              key={policy.family_policy_id}
-              policy={policy}
-              isExpanded={expandedFamilyPolicyId === policy.family_policy_id}
-              onToggle={() => onToggleFamilyPolicy(policy.family_policy_id)}
-              expandedCustomerId={expandedCustomerId}
-              onToggleCustomer={onToggleCustomer}
-              {...handlers}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Level 2: Family Policy folder (Floater or Life Bundle) ─────────────────
-
-function FamilyPolicyFolder({
-  policy,
-  isExpanded,
-  onToggle,
-  expandedCustomerId,
-  onToggleCustomer,
-  ...handlers
-}: {
-  policy: FamilyPolicyFolderData;
-  isExpanded: boolean;
-  onToggle: () => void;
-  expandedCustomerId: string | null;
-  onToggleCustomer: (customerId: string) => void;
-} & CustomerFolderHandlers) {
-  return (
-    <div className={`border rounded-lg overflow-hidden bg-white ${isExpanded ? "border-rose-200" : "border-slate-200"}`}>
-      <div onClick={onToggle} className={`flex items-center justify-between px-4 py-3 cursor-pointer ${isExpanded ? "bg-rose-50/40" : "hover:bg-slate-50"}`}>
-        <div className="flex items-center gap-3">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400">
-            {isExpanded ? (
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            ) : (
-              <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
-            )}
-          </svg>
-          <div>
-            <p className="text-sm font-semibold text-slate-800">Family Policy</p>
-            <p className="text-[11px] text-slate-500">{policy.family_policy_label}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <span className="text-[11px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-            {policy.customers.length} {policy.customers.length === 1 ? "member" : "members"}
-          </span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? "rotate-180 text-rose-500" : ""}`}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="border-t border-slate-100 p-3 space-y-2.5 bg-slate-50/30">
-          {(() => {
-            const allQuotesInPolicy = policy.customers.flatMap(c => c.quotes);
-            const selectedInPolicyCount = allQuotesInPolicy.filter(q => handlers.selectedQuoteIds.has(q.quote_id)).length;
-            const allSelected = allQuotesInPolicy.length > 0 && selectedInPolicyCount === allQuotesInPolicy.length;
-
-            return (
-              <div className="px-4 py-3 flex items-center justify-between border border-slate-200 bg-white rounded-lg shadow-sm">
-                <div className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                    checked={allSelected}
-                    onChange={() => handlers.toggleAllInFolder(allQuotesInPolicy.map(q => q.quote_id))}
-                  />
-                  <p className="text-xs font-semibold text-slate-500">
-                    {selectedInPolicyCount} of {allQuotesInPolicy.length} plan(s) selected
-                  </p>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handlers.handleBulkProceed(allQuotesInPolicy); }}
-                  disabled={handlers.isBulkProceeding || selectedInPolicyCount === 0}
-                  className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                >
-                  {handlers.isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
-                </button>
-              </div>
-            );
-          })()}
-          {policy.customers.map((customer) => (
-            <div
-              key={customer.customer_id}
-              className={`border rounded-lg overflow-hidden ${expandedCustomerId === customer.customer_id ? "border-rose-200 ring-1 ring-rose-500/10" : "border-slate-200"}`}
-            >
-              <CustomerFolder
-                customer={customer}
-                isExpanded={expandedCustomerId === customer.customer_id}
-                onToggle={() => onToggleCustomer(customer.customer_id)}
-                compact
-                {...handlers}
-              />
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Level 3: Customer folder — the shared leaf, used both standalone
-// (retail quotes) and nested under a Policy folder (corporate quotes) ──────
-
-function CustomerFolder({
-  customer,
-  isExpanded,
-  onToggle,
-  compact,
+function ProposalsTable({
+  quotes,
   selectedQuoteIds,
   toggleSelection,
   toggleAllInFolder,
-  handleBulkProceed,
-  isBulkProceeding,
-  bulkProceedError,
-  bulkProceedSuccess,
   openQuote,
 }: {
-  customer: CustomerFolderData;
-  isExpanded: boolean;
-  onToggle: () => void;
-  compact?: boolean;
-} & CustomerFolderHandlers) {
+  quotes: QuoteListItem[];
+  selectedQuoteIds: Set<string>;
+  toggleSelection: (quoteId: string) => void;
+  toggleAllInFolder: (quoteIds: string[]) => void;
+  openQuote: (quoteId: string) => void;
+}) {
+  if (quotes.length === 0) return null;
+  const allSelected = quotes.length > 0 && quotes.every(q => selectedQuoteIds.has(q.quote_id));
+
   return (
-    <div className="flex flex-col">
-      <div
-        onClick={onToggle}
-        className={`flex items-start justify-between cursor-pointer select-none ${compact ? "p-3" : "p-5"} ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}
-      >
-        <div className="flex items-start gap-3 flex-1 min-w-0">
-          <div onClick={(e) => e.stopPropagation()} className="flex items-center mr-1 pt-1.5">
-            <input
-              type="checkbox"
-              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-              checked={customer.quotes.length > 0 && customer.quotes.every((q) => selectedQuoteIds.has(q.quote_id))}
-              onChange={() => toggleAllInFolder(customer.quotes.map((q) => q.quote_id))}
-            />
-          </div>
-          <div className={`flex-shrink-0 flex items-center justify-center rounded-lg ${compact ? "w-8 h-8" : "w-10 h-10 rounded-xl"} ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors mt-0.5`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={compact ? "w-4 h-4" : "w-5 h-5"}>
-              {isExpanded ? (
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              ) : (
-                <path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"></path>
-              )}
-            </svg>
-          </div>
-          <div className="min-w-0 flex-1">
-            <h3 className={`font-bold text-slate-900 truncate leading-tight ${compact ? "text-sm" : "text-base"}`} title={customer.customer_name}>
-              {customer.customer_name}
-            </h3>
-            <p className="text-xs text-slate-500 font-mono mt-0.5">{customer.customer_cnic}</p>
-            {customer.quotes[0]?.acquisition_source_name && (
-              <div className="text-[10px] text-slate-400 mt-1 flex flex-wrap items-center gap-1">
-                <span>Lead by</span>
-                <span className="font-semibold text-slate-600 truncate max-w-[120px]">{customer.quotes[0].acquisition_source_name}</span>
-                <span className="inline-flex px-1.5 py-0.2 rounded-[3px] text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
-                  {SOURCE_TYPE_LABELS[customer.quotes[0].acquisition_source_type ?? ""] ?? customer.quotes[0].acquisition_source_type}
-                </span>
-                {customer.quotes[0].acquisition_source_partner && (
-                  <span className="text-slate-400 truncate max-w-[100px]">· {customer.quotes[0].acquisition_source_partner}</span>
-                )}
+    <div className="overflow-x-auto bg-white w-full border-t border-slate-100">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <th className="px-5 py-3 text-left w-12">
+              <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
+                <input
+                  type="checkbox"
+                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  checked={allSelected}
+                  onChange={() => toggleAllInFolder(quotes.map(q => q.quote_id))}
+                />
               </div>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 ml-2 pt-1">
-          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold ${isExpanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
-            {customer.quotes.length} {customer.quotes.length === 1 ? "Plan" : "Plans"}
-          </span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`text-slate-400 transition-transform duration-200 ${compact ? "w-4 h-4" : "w-5 h-5"} ${isExpanded ? "rotate-180 text-blue-500" : ""}`}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </div>
-      </div>
-
-      {isExpanded && (
-        <div className="border-t border-slate-100 bg-white">
-          {bulkProceedError && (
-            <div className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
-              <p className="text-xs text-red-600">{bulkProceedError}</p>
-            </div>
-          )}
-          {bulkProceedSuccess && (
-            <div className="mx-4 mt-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-              <p className="text-xs text-emerald-700 font-semibold">Success</p>
-              <p className="text-xs text-emerald-600">{bulkProceedSuccess}</p>
-            </div>
-          )}
-
-          <div className="px-5 py-3 flex items-center justify-between border-b border-slate-100 bg-slate-50/50">
-            <p className="text-xs font-semibold text-slate-500">
-              {customer.quotes.filter((q) => selectedQuoteIds.has(q.quote_id)).length} plan(s) selected
-            </p>
-            <button
-              onClick={(e) => { e.stopPropagation(); handleBulkProceed(customer.quotes); }}
-              disabled={isBulkProceeding || customer.quotes.filter((q) => selectedQuoteIds.has(q.quote_id)).length === 0}
-              className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+            </th>
+            <th className="px-5 py-3 text-left">Customer</th>
+            <th className="px-2 py-3 text-left">Plan</th>
+            <th className="px-5 py-3 text-right">Coverage</th>
+            <th className="px-5 py-3 text-center">Term</th>
+            <th className="px-5 py-3 text-right">Premium</th>
+            <th className="px-5 py-3 text-right">Risk</th>
+            <th className="px-5 py-3 text-right">Total</th>
+            <th className="px-5 py-3 text-left">Generated</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {quotes.map((row) => (
+            <tr
+              key={row.quote_id}
+              onClick={() => openQuote(row.quote_id)}
+              className={`transition-colors cursor-pointer ${selectedQuoteIds.has(row.quote_id) ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
             >
-              {isBulkProceeding && <span className="animate-spin h-3 w-3 rounded-full border-2 border-white/30 border-t-white" />}
-              {isBulkProceeding ? "Processing..." : "Proceed to Underwriting"}
-            </button>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3 text-left w-12">
-                    <div className="flex items-center" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                        checked={customer.quotes.length > 0 && customer.quotes.every((q) => selectedQuoteIds.has(q.quote_id))}
-                        onChange={() => toggleAllInFolder(customer.quotes.map((q) => q.quote_id))}
-                      />
-                    </div>
-                  </th>
-                  <th className="px-2 py-3 text-left">Plan</th>
-                  <th className="px-5 py-3 text-right">Coverage</th>
-                  <th className="px-5 py-3 text-center">Term</th>
-                  <th className="px-5 py-3 text-right">Expected Premium</th>
-                  <th className="px-5 py-3 text-right">Risk</th>
-                  <th className="px-5 py-3 text-right">Total payable</th>
-                  <th className="px-5 py-3 text-left">Generated</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {customer.quotes.map((row) => (
-                  <tr
-                    key={row.quote_id}
-                    onClick={() => openQuote(row.quote_id)}
-                    className={`transition-colors cursor-pointer ${selectedQuoteIds.has(row.quote_id) ? "bg-blue-50/40" : "hover:bg-slate-50"}`}
-                  >
-                    <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                          checked={selectedQuoteIds.has(row.quote_id)}
-                          onChange={() => toggleSelection(row.quote_id)}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-2 py-3.5">
-                      <p className="text-slate-700 font-medium">{row.plan_label}</p>
-                      <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
-                        {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
-                    <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
-                    <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
-                    <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td>
-                    <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
-                    <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
-                      {new Date(row.created_at).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+              <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center">
+                  <input
+                    type="checkbox"
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                    checked={selectedQuoteIds.has(row.quote_id)}
+                    onChange={() => toggleSelection(row.quote_id)}
+                  />
+                </div>
+              </td>
+              <td className="px-5 py-3.5">
+                <p className="text-slate-900 font-bold truncate max-w-[150px]" title={row.customer_name}>{row.customer_name}</p>
+                <p className="text-slate-500 text-[10px] font-mono">{row.customer_cnic}</p>
+                {row.acquisition_source_name && (
+                  <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={row.acquisition_source_name}>
+                    {row.acquisition_source_name}
+                  </p>
+                )}
+              </td>
+              <td className="px-2 py-3.5">
+                <p className="text-slate-700 font-medium">{row.plan_label}</p>
+                <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                  {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
+                </span>
+              </td>
+              <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
+              <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
+              <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
+              <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td>
+              <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
+              <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
+                {new Date(row.created_at).toLocaleDateString()}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
+
+function ProposalsGrid({
+  quotes,
+  selectedQuoteIds,
+  toggleSelection,
+  openQuote,
+}: {
+  quotes: QuoteListItem[];
+  selectedQuoteIds: Set<string>;
+  toggleSelection: (quoteId: string) => void;
+  toggleAllInFolder: (quoteIds: string[]) => void;
+  openQuote: (quoteId: string) => void;
+}) {
+  if (quotes.length === 0) return null;
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4">
+      {quotes.map((row) => (
+        <div
+          key={row.quote_id}
+          onClick={() => openQuote(row.quote_id)}
+          className={`relative border rounded-xl p-4 flex flex-col gap-3 cursor-pointer transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg bg-white ${selectedQuoteIds.has(row.quote_id) ? "border-blue-300 ring-1 ring-blue-400/20 shadow-md" : "border-slate-200 shadow-sm"}`}
+        >
+          <div className="absolute top-3 right-3 z-10" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+              checked={selectedQuoteIds.has(row.quote_id)}
+              onChange={() => toggleSelection(row.quote_id)}
+            />
+          </div>
+          
+          <div className="pr-6">
+            <h4 className="font-bold text-slate-900 truncate">{row.customer_name}</h4>
+            <p className="text-xs text-slate-500 font-mono mt-0.5">{row.customer_cnic}</p>
+          </div>
+          
+          <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100 flex items-center justify-between">
+            <div className="min-w-0 pr-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Plan</p>
+              <p className="text-xs font-semibold text-slate-700 truncate">{row.plan_label}</p>
+            </div>
+            <span className="flex-shrink-0 inline-flex px-1.5 py-0.5 rounded-[4px] text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+              {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 mt-auto pt-2 border-t border-slate-100">
+            <div>
+              <p className="text-[10px] font-medium text-slate-500">Coverage</p>
+              <p className="text-sm font-semibold text-slate-800">{formatPKR(row.coverage_amount)}</p>
+            </div>
+            <div className="text-right">
+              <p className="text-[10px] font-medium text-slate-500">Premium</p>
+              <p className="text-sm font-bold text-emerald-600">{formatPKR(row.total_premium)}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
