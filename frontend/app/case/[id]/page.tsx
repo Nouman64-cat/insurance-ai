@@ -219,6 +219,34 @@ function SectionCard({ title, children, className = "" }: { title: string; child
   );
 }
 
+function Accordion({ title, defaultOpen = false, action, children }: { title: string; defaultOpen?: boolean; action?: React.ReactNode; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-b border-slate-100 last:border-b-0">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="flex-1 flex items-center justify-between py-3 text-left"
+        >
+          <span className="section-label">{title}</span>
+          <svg
+            className={`w-4 h-4 text-slate-400 transition-transform ${open ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        {action && <div className="ml-3 flex-shrink-0">{action}</div>}
+      </div>
+      {open && <div className="pb-4">{children}</div>}
+    </div>
+  );
+}
+
 function InitialsAvatar({ name }: { name: string }) {
   const initials = name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
   return (
@@ -1220,7 +1248,6 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <p className="text-xs text-blue-600 font-mono mt-0.5">{(!detail?.principal_participant_name || detail?.is_principal_participant) ? customer.cnic : "Family Group Owner"}</p>
                 </div>
               </div>
-              <p className="section-label mb-3">Customer Details</p>
               {!detail?.is_principal_participant && detail?.principal_participant_name && (
                 <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-3">
                   <p className="text-xs font-semibold text-blue-800">Dependent Member</p>
@@ -1257,20 +1284,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   )}
                 </div>
               )}
-              {detail?.principal_participant_name && (
-                  <DataRow label="Member Name" value={customer.name} />
-              )}
-              {detail?.is_principal_participant && (
-                  <DataRow label="Family Role" value="Principal Participant" />
-              )}
-              <DataRow label="Date of Birth" value={fmtDob(customer.dob)} />
-              <DataRow label="Gender" value={customer.gender} />
-              <DataRow label="Marital Status" value={customer.marital_status || <span className="text-slate-400 italic">Missing</span>} />
-              <DataRow label="Occupation" value={customer.occupation || <span className="text-slate-400 italic">Missing</span>} />
-              <DataRow label="Declared Annual Income" value={customer.declared_income ? fmtIncome(customer.declared_income) : <span className="text-slate-400 italic">Missing</span>} />
 
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <p className="section-label mb-3">Contact Information</p>
+              <Accordion title="Customer Details">
+                {detail?.principal_participant_name && (
+                    <DataRow label="Member Name" value={customer.name} />
+                )}
+                {detail?.is_principal_participant && (
+                    <DataRow label="Family Role" value="Principal Participant" />
+                )}
+                <DataRow label="Date of Birth" value={fmtDob(customer.dob)} />
+                <DataRow label="Gender" value={customer.gender} />
+                <DataRow label="Marital Status" value={customer.marital_status || <span className="text-slate-400 italic">Missing</span>} />
+                <DataRow label="Occupation" value={customer.occupation || <span className="text-slate-400 italic">Missing</span>} />
+                <DataRow label="Declared Annual Income" value={customer.declared_income ? fmtIncome(customer.declared_income) : <span className="text-slate-400 italic">Missing</span>} />
+              </Accordion>
+
+              <Accordion title="Contact Information">
                 <DataRow
                   label="Address"
                   value={
@@ -1286,17 +1315,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 <DataRow label="City" value={customer.details?.address?.city || customer.details?.city || <span className="text-slate-400 italic">Missing</span>} />
                 <DataRow label="Phone" value={customer.details?.phone || <span className="text-slate-400 italic">Missing</span>} />
                 <DataRow label="Email" value={customer.details?.email || <span className="text-slate-400 italic">Missing</span>} />
-              </div>
+              </Accordion>
 
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <p className="section-label mb-3">Medical & Lifestyle</p>
+              <Accordion title="Medical & Lifestyle">
                 <DataRow label="Smoker" value={customer.is_smoker ? "Yes" : "No"} />
                 <DataRow label="Height" value={customer.height_cm ? `${customer.height_cm} cm` : <span className="text-slate-400 italic">Missing</span>} />
                 <DataRow label="Weight" value={customer.weight_kg ? `${customer.weight_kg} kg` : <span className="text-slate-400 italic">Missing</span>} />
-              </div>
+              </Accordion>
 
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <p className="section-label mb-3">Lead Generated By</p>
+              <Accordion title="Lead Generated By">
                 {customer.acquisition_source ? (
                   <>
                     <DataRow label="Source" value={customer.acquisition_source.name} />
@@ -1316,37 +1343,37 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 ) : (
                   <p className="text-xs text-slate-400 italic">Not recorded</p>
                 )}
-              </div>
+              </Accordion>
             </div>
           )}
 
           {policy && (
             <div className="card p-5">
-              <p className="section-label mb-3">Policy Details</p>
-              <DataRow label="Product" value={INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name} />
-              <DataRow label="Coverage Amount" value={fmtCoverage(policy.coverage_amount)} />
-              <DataRow label="Policy Term" value={`${policy.term_years} years`} />
-              {customer && (
-                <DataRow label="Coverage-to-Income Ratio" value={`${(policy.coverage_amount / customer.declared_income).toFixed(1)}×`} />
-              )}
-              <DataRow label="Policy Status" value={policy.status} />
+              <Accordion title="Policy Details">
+                <DataRow label="Product" value={INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name} />
+                <DataRow label="Coverage Amount" value={fmtCoverage(policy.coverage_amount)} />
+                <DataRow label="Policy Term" value={`${policy.term_years} years`} />
+                {customer && (
+                  <DataRow label="Coverage-to-Income Ratio" value={`${(policy.coverage_amount / customer.declared_income).toFixed(1)}×`} />
+                )}
+                <DataRow label="Policy Status" value={policy.status} />
+              </Accordion>
 
-              <div className="mt-4 pt-4 border-t border-slate-100">
-                <p className="section-label mb-3">Case</p>
+              <Accordion title="Case">
                 <DataRow label="Case Number" value={c.caseNumber} />
                 <DataRow label="Type" value={c.caseType} />
                 <DataRow label="Priority" value={c.priorityLevel} />
                 <DataRow label="Channel" value={c.sourceChannel} />
-              </div>
+              </Accordion>
             </div>
           )}
 
           {/* Document checklist + upload */}
           <div className="card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="section-label">Documents</p>
-              <button onClick={() => setShowUpload(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">+ Upload</button>
-            </div>
+            <Accordion
+              title="Documents"
+              action={<button onClick={() => setShowUpload(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">+ Upload</button>}
+            >
             {docs.required.length === 0 ? (
               <p className="text-xs text-slate-400">No documents required for this plan type.</p>
             ) : (
@@ -1378,12 +1405,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 ))}
               </div>
             )}
+            </Accordion>
           </div>
 
           {/* Quick score summary */}
           {hasAny && (
             <div className="card p-5">
-              <p className="section-label mb-3">Score Summary</p>
+              <Accordion title="Score Summary">
               <div className="space-y-3">
                 <div className="flex justify-between items-center text-xs">
                   <span className="text-slate-500">Medical Risk</span>
@@ -1403,6 +1431,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <span className="font-extrabold text-slate-900">{compositeScore}%</span>
                 </div>
               </div>
+              </Accordion>
             </div>
           )}
         </div>

@@ -44,6 +44,14 @@ function formatDate(s: string): string {
   return new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
 }
 
+function formatLeadDisplayId(customerId: string, createdAt: string, segment: "individual" | "family" | "organization"): string {
+  const prefix = segment === "family" ? "FAM" : segment === "organization" ? "CORP" : "IND";
+  const dt = new Date(createdAt);
+  const yymm = `${dt.getFullYear().toString().slice(-2)}${(dt.getMonth() + 1).toString().padStart(2, "0")}`;
+  const seq = customerId.slice(-3).toUpperCase();
+  return `${prefix}-${yymm}-${seq}`;
+}
+
 // A quote only ever carries one of organization_id / family_group_id, never
 // both — same mutually-exclusive segmentation the grouping logic below relies on.
 function quoteSegment(q: QuoteListItem): "individual" | "family" | "organization" {
@@ -841,6 +849,9 @@ function ProposalsTable({
               <td className="px-5 py-3.5">
                 <p className="text-slate-900 font-bold truncate max-w-[150px]" title={row.customer_name}>{row.customer_name}</p>
                 <p className="text-slate-500 text-[10px] font-mono">{row.customer_cnic}</p>
+                <p className="text-[11px] font-medium text-slate-500 mt-1">
+                  Lead ID: {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
+                </p>
                 {row.acquisition_source_name && (
                   <p className="text-[10px] text-slate-400 mt-0.5 truncate max-w-[150px]" title={row.acquisition_source_name}>
                     {row.acquisition_source_name}
@@ -903,6 +914,9 @@ function ProposalsGrid({
           <div className="pr-6">
             <h4 className="font-bold text-slate-900 truncate">{row.customer_name}</h4>
             <p className="text-xs text-slate-500 font-mono mt-0.5">{row.customer_cnic}</p>
+            <p className="text-[11px] font-medium text-slate-500 mt-1">
+              Lead ID: {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
+            </p>
           </div>
           
           <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100 flex items-center justify-between">
