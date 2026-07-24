@@ -37,8 +37,9 @@ export default function LeadsHubPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filterType, setFilterType] = useState<FilterType>("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: EntityType } | null>(null);
-  const [viewMode, setViewMode] = useState<"kanban" | "table">("kanban");
+  const [viewMode, setViewMode] = useState<"kanban" | "table">("table");
   const [currentPage, setCurrentPage] = useState(1);
 
   const [search, setSearch] = useState("");
@@ -59,7 +60,7 @@ export default function LeadsHubPage() {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, filterType, dateFrom, dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter]);
+  }, [search, filterType, statusFilter, dateFrom, dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter]);
 
   useEffect(() => {
     const tenantId = localStorage.getItem("tenant_id");
@@ -110,6 +111,7 @@ export default function LeadsHubPage() {
   // Inline "Add" flows — replaces navigation to separate customer/family/organization pages.
   const [chooserType, setChooserType] = useState<EntryEntityType | null>(null);
   const [activeAdd, setActiveAdd] = useState<{ type: EntryEntityType; mode: "quick" | "full" } | null>(null);
+  const [editEntityData, setEditEntityData] = useState<{ type: EntityType; data: any } | null>(null);
   const [notice, setNotice] = useState("");
 
   const handleAddSaved = (message: string, entity?: { id: string; isNew: boolean }) => {
@@ -254,7 +256,35 @@ export default function LeadsHubPage() {
         }
       });
 
-      // Sort by newest first
+      // 1. Sort by OLD to NEW first so we can assign sequence numbers chronologically
+      unified.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+      let indCount = 0;
+      let famCount = 0;
+      let corpCount = 0;
+
+      unified.forEach((lead) => {
+        let seq = 0;
+        let prefix = "";
+        if (lead.type === "INDIVIDUAL") {
+          indCount++;
+          seq = indCount;
+          prefix = "IND";
+        } else if (lead.type === "FAMILY") {
+          famCount++;
+          seq = famCount;
+          prefix = "FAM";
+        } else if (lead.type === "CORPORATE") {
+          corpCount++;
+          seq = corpCount;
+          prefix = "CORP";
+        }
+        const dt = new Date(lead.created_at);
+        const yymm = `${dt.getFullYear().toString().slice(-2)}${(dt.getMonth() + 1).toString().padStart(2, "0")}`;
+        lead.displayId = `${prefix}-${yymm}-${seq.toString().padStart(3, "0")}`;
+      });
+
+      // 2. Sort by newest first
       unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setLeads(unified);
     } catch (err: any) {
@@ -268,6 +298,12 @@ export default function LeadsHubPage() {
     const q = search.trim().toLowerCase();
     return leads.filter(l => {
       if (filterType !== "ALL" && l.type !== filterType) return false;
+      if (statusFilter !== "ALL") {
+        if (statusFilter === "IN_PROGRESS" && (l.status !== "PROSPECT" && l.status !== "UNDERWRITING_READY")) return false;
+        if (statusFilter === "LEAD" && l.status !== "LEAD") return false;
+        if (statusFilter === "DEAD" && l.status !== "NOT_INTERESTED") return false;
+        if (statusFilter === "POLICYHOLDER" && l.status !== "POLICYHOLDER") return false;
+      }
       if (q) {
         const haystack = `${l.name} ${l.contact_info} ${l.primaryIdentifier ?? ""}`.toLowerCase();
         if (!haystack.includes(q)) return false;
@@ -280,6 +316,25 @@ export default function LeadsHubPage() {
     lead: getFilteredLeads().filter(l => l.status === "LEAD"),
     in_progress: getFilteredLeads().filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY"),
     dead_leads: getFilteredLeads().filter(l => l.status === "NOT_INTERESTED"),
+  };
+
+  const handleOpenEditForm = async (lead: UnifiedLead) => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    try {
+      if (lead.type === "INDIVIDUAL") {
+        const res = await api.get(`/tenants/${tenantId}/customers/${lead.id}`);
+        setEditEntityData({ type: "INDIVIDUAL", data: res.data });
+      } else if (lead.type === "FAMILY") {
+        const res = await api.get(`/tenants/${tenantId}/families/${lead.id}`);
+        setEditEntityData({ type: "FAMILY", data: res.data });
+      } else if (lead.type === "CORPORATE") {
+        const res = await api.get(`/tenants/${tenantId}/organizations/${lead.id}`);
+        setEditEntityData({ type: "CORPORATE", data: res.data });
+      }
+    } catch (err) {
+      console.error("Failed to load entity details for editing", err);
+    }
   };
 
   const handleCardClick = (lead: UnifiedLead) => {
@@ -353,7 +408,7 @@ export default function LeadsHubPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads/Customers</h1>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads</h1>
           <p className="text-sm text-slate-500 mt-0.5">
             Manage and track your prospects across all segments.
           </p>
@@ -405,7 +460,7 @@ export default function LeadsHubPage() {
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Individuals</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Individual</p>
             <div className="text-2xl font-bold text-blue-700">{leads.filter(l => l.type === "INDIVIDUAL").length}</div>
           </div>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-700">
@@ -414,7 +469,7 @@ export default function LeadsHubPage() {
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Families</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Family</p>
             <div className="text-2xl font-bold text-purple-700">{leads.filter(l => l.type === "FAMILY").length}</div>
           </div>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-purple-100 text-purple-700">
@@ -423,7 +478,7 @@ export default function LeadsHubPage() {
         </div>
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Corporates</p>
+            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Corporate</p>
             <div className="text-2xl font-bold text-emerald-700">{leads.filter(l => l.type === "CORPORATE").length}</div>
           </div>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700">
@@ -445,7 +500,7 @@ export default function LeadsHubPage() {
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                   }`}
               >
-                {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individuals" : ft === "FAMILY" ? "Families" : "Corporates"}
+                {ft === "ALL" ? "All" : ft === "INDIVIDUAL" ? "Individual" : ft === "FAMILY" ? "Family" : "Corporate"}
               </button>
             ))}
           </div>
@@ -492,6 +547,19 @@ export default function LeadsHubPage() {
             />
           </div>
 
+          <div className="shrink-0">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className={`appearance-none px-4 py-2 pr-10 h-[38px] text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 shadow-sm bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22none%22%20stroke%3D%22%2364748b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%224%206%208%2010%2012%206%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[right_16px_center] bg-no-repeat ${statusFilter === 'ALL' ? 'bg-slate-100' : 'bg-white'}`}
+            >
+              <option value="ALL">All</option>
+              <option value="LEAD">Leads</option>
+              <option value="IN_PROGRESS">In Progress</option>
+              <option value="DEAD">Dead</option>
+            </select>
+          </div>
+
           {/* View Mode Toggle */}
           <div className="ml-auto shrink-0 inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner border border-slate-200/60">
             <button
@@ -499,8 +567,8 @@ export default function LeadsHubPage() {
               onClick={() => setViewMode("kanban")}
               title="Kanban Board"
               className={`p-2 rounded-lg transition-all ${viewMode === "kanban"
-                  ? "bg-white text-indigo-600 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
                 }`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -515,8 +583,8 @@ export default function LeadsHubPage() {
               onClick={() => setViewMode("table")}
               title="Tabular View"
               className={`p-2 rounded-lg transition-all ${viewMode === "table"
-                  ? "bg-white text-indigo-600 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
+                ? "bg-white text-indigo-600 shadow-sm"
+                : "text-slate-500 hover:text-slate-700"
                 }`}
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
@@ -674,12 +742,19 @@ export default function LeadsHubPage() {
                       <table className="w-full min-w-[1000px] text-left text-sm whitespace-nowrap">
                         <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
                           <tr>
-                            <th className="px-6 py-4">Name</th>
+                            <th className="px-6 py-4">Lead ID</th>
+                            <th className="px-6 py-4">
+                              {filterType === "INDIVIDUAL" ? "Lead/Individual Name" :
+                                filterType === "FAMILY" ? "Lead/Family Member Name" :
+                                  filterType === "CORPORATE" ? "Lead/Corporate Name" :
+                                    "All Leads"}
+                            </th>
                             <th className="px-6 py-4">Type</th>
                             <th className="px-6 py-4">Contact</th>
-                            <th className="px-6 py-4">Identifier</th>
+                            <th className="px-6 py-4">CNIC</th>
                             <th className="px-6 py-4">Date Added</th>
                             <th className="px-6 py-4">Status</th>
+                            <th className="px-4 py-4 w-10"></th>
                             <th className="px-6 py-4 text-right">Actions</th>
                           </tr>
                         </thead>
@@ -706,6 +781,9 @@ export default function LeadsHubPage() {
                                 onClick={() => handleCardClick(lead)}
                                 className="hover:bg-slate-50/80 transition-colors cursor-pointer"
                               >
+                                <td className="px-6 py-4 font-mono text-slate-500 font-medium text-[11px] whitespace-nowrap bg-slate-50 border-r border-slate-100">
+                                  {lead.displayId || "-"}
+                                </td>
                                 <td className="px-6 py-4 font-semibold text-slate-900">{lead.name}</td>
                                 <td className="px-6 py-4">
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeStyles[lead.type]}`}>
@@ -719,6 +797,15 @@ export default function LeadsHubPage() {
                                   <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[lead.status]}`}>
                                     {lead.status === "LEAD" ? "Lead" : (lead.status === "NOT_INTERESTED" ? "Dead Lead" : "In Progress")}
                                   </span>
+                                </td>
+                                <td className="px-4 py-4 text-center">
+                                  <button
+                                    onClick={(e) => { e.stopPropagation(); handleOpenEditForm(lead); }}
+                                    className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                                    title="View Applicant Form"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><circle cx="12" cy="12" r="1.5" /><circle cx="19" cy="12" r="1.5" /><circle cx="5" cy="12" r="1.5" /></svg>
+                                  </button>
                                 </td>
                                 <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                                   <div className="flex items-center justify-end gap-1.5">
@@ -834,18 +921,54 @@ export default function LeadsHubPage() {
         onClose={() => setActiveAdd(null)}
         onSaved={handleAddSaved}
       />
+      {editEntityData?.type === "INDIVIDUAL" && (
+        <CustomerFormModal
+          open={true}
+          mode="edit"
+          customer={editEntityData.data}
+          onClose={() => setEditEntityData(null)}
+          onSaved={(msg, ent) => {
+            handleAddSaved(msg, ent);
+            setEditEntityData(null);
+          }}
+        />
+      )}
       <FamilyFormModal
         open={activeAdd?.type === "FAMILY"}
         mode={activeAdd?.type === "FAMILY" ? activeAdd.mode : "quick"}
         onClose={() => setActiveAdd(null)}
         onSaved={handleAddSaved}
       />
+      {editEntityData?.type === "FAMILY" && (
+        <FamilyFormModal
+          open={true}
+          mode="full"
+          family={editEntityData.data}
+          onClose={() => setEditEntityData(null)}
+          onSaved={(msg, ent) => {
+            handleAddSaved(msg, ent);
+            setEditEntityData(null);
+          }}
+        />
+      )}
       <OrganizationFormModal
         open={activeAdd?.type === "CORPORATE"}
         mode={activeAdd?.type === "CORPORATE" ? activeAdd.mode : "quick"}
         onClose={() => setActiveAdd(null)}
         onSaved={handleAddSaved}
       />
+      {editEntityData?.type === "CORPORATE" && (
+        <OrganizationFormModal
+          open={true}
+          mode="full"
+          organization={editEntityData.data}
+          onClose={() => setEditEntityData(null)}
+          onSaved={(msg, ent) => {
+            handleAddSaved(msg, ent);
+            setEditEntityData(null);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -892,7 +1015,10 @@ function LeadCard({
       <div className="absolute top-0 left-0 w-1 h-full bg-slate-200 group-hover:bg-indigo-500 transition-colors"></div>
 
       <div className="flex justify-between items-start mb-2">
-        <h4 className="font-bold text-slate-800 text-sm truncate pr-2">{lead.name}</h4>
+        <div>
+          <div className="text-[10px] font-mono font-medium text-slate-500 mb-0.5">{lead.displayId || "-"}</div>
+          <h4 className="font-bold text-slate-800 text-sm truncate pr-2">{lead.name}</h4>
+        </div>
         <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${typeStyles[lead.type]}`}>
           {lead.type}
         </span>
@@ -907,7 +1033,7 @@ function LeadCard({
 
       {lead.primaryIdentifier && (
         <div className="text-[11px] text-slate-400 font-mono mt-1">
-          ID: {lead.primaryIdentifier}
+          CNIC: {lead.primaryIdentifier}
         </div>
       )}
 
