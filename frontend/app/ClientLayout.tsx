@@ -260,51 +260,18 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       ) : (
         <>
           {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-          <Sidebar />
+          {!isAutomationMode && <Sidebar />}
 
           {/* ── Main column ─────────────────────────────────────────────────── */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            <TopBar />
+            {!isAutomationMode && <TopBar />}
 
             {/* ── Page content ──────────────────────────────────────────────── */}
             <main className="flex-1 overflow-hidden relative flex">
               {isAutomationMode ? (
-                <>
-                  <div 
-                    className="overflow-auto bg-slate-50 relative"
-                    style={{ width: `${100 - copilotWidth}%` }}
-                  >
-                    {children}
-                  </div>
-                  
-                  {/* Resizable Divider (Draggable handle) */}
-                  <div
-                    onMouseDown={() => setIsResizing(true)}
-                    onTouchStart={() => setIsResizing(true)}
-                    className={`w-1.5 h-full cursor-col-resize hover:bg-blue-500 active:bg-blue-600 transition-colors flex items-center justify-center relative z-40 select-none ${
-                      isResizing ? "bg-blue-600" : "bg-slate-200"
-                    }`}
-                  >
-                    {/* Visual Grabber Decorator */}
-                    <div className="w-1 h-8 rounded-full bg-slate-400/80 flex flex-col gap-0.5 items-center justify-center py-1">
-                      <div className="w-0.5 h-0.5 rounded-full bg-white"></div>
-                      <div className="w-0.5 h-0.5 rounded-full bg-white"></div>
-                      <div className="w-0.5 h-0.5 rounded-full bg-white"></div>
-                    </div>
-                  </div>
-
-                  <div 
-                    className="flex-shrink-0 bg-slate-50 h-full relative z-30 overflow-hidden"
-                    style={{ width: `${copilotWidth}%` }}
-                  >
-                    <CopilotInterface />
-                  </div>
-
-                  {/* Resizing full-page overlay to capture all mousemove events cleanly */}
-                  {isResizing && (
-                    <div className="fixed inset-0 z-50 cursor-col-resize bg-transparent" />
-                  )}
-                </>
+                <div className="flex-1 h-full relative z-30 overflow-hidden bg-slate-50">
+                  <CopilotInterface />
+                </div>
               ) : (
                 <div className="flex-1 overflow-auto bg-slate-50 relative h-full">
                   {children}
@@ -313,11 +280,13 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             </main>
 
             {/* ── Footer ────────────────────────────────────────────────────── */}
-            <footer className="border-t border-slate-200 bg-white py-2.5 px-6">
-              <p className="text-center text-[10px] text-slate-400">
-                insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; {tenantName}
-              </p>
-            </footer>
+            {!isAutomationMode && (
+              <footer className="border-t border-slate-200 bg-white py-2.5 px-6">
+                <p className="text-center text-[10px] text-slate-400">
+                  insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; {tenantName}
+                </p>
+              </footer>
+            )}
           </div>
 
         </>

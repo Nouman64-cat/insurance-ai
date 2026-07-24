@@ -175,7 +175,7 @@ export default function ApplicationsPage() {
               {cases.length === 0
                 ? "Applications appear here once a case is sent to underwriting."
                 : segmentCases.length === 0
-                ? "Try switching the segment filter to All Customers."
+                ? "Try switching the segment filter to All Cases."
                 : "Try a different customer name, CNIC, or case number."}
             </p>
           </div>

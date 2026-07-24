@@ -27,7 +27,7 @@ const ICON_PROPS = {
 const OPTIONS: SegmentOption[] = [
   {
     value: "all",
-    label: "All Customers",
+    label: "All Cases",
     description: "Every record, no filter",
     dot: "bg-slate-400",
     icon: (
