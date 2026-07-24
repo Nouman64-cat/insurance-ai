@@ -131,7 +131,7 @@ export default function UnderwritingPage() {
     const approved = segmentCases.filter(c => c.caseStatus === "Approved").length;
     const customerCount = new Set(segmentCases.map(c => c.customer_id)).size;
     return [
-      { title: "Customers", value: customerCount, subtitle: "open folders", accent: "blue" as const },
+      { title: "Cases", value: segmentCases.length, subtitle: "total cases", accent: "blue" as const },
       { title: "Awaiting Documents", value: pendingDocs, subtitle: "checklist incomplete", accent: "amber" as const },
       { title: "In Underwriting", value: underReview, subtitle: "not yet decided", accent: "slate" as const },
       { title: "Approved", value: approved, subtitle: "ready to issue", accent: "emerald" as const },
@@ -187,7 +187,7 @@ export default function UnderwritingPage() {
               {cases.length === 0
                 ? "A folder opens automatically the moment a customer proceeds with a quotation."
                 : segmentCases.length === 0
-                ? "Try switching the segment filter to All Customers."
+                ? "Try switching the segment filter to All Cases."
                 : "Try a different customer name, CNIC, or case number."}
             </p>
           </div>

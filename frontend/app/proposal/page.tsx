@@ -558,7 +558,7 @@ export default function QuotePage() {
               {quotes.length === 0
                 ? "Register a customer and a proposal will be generated automatically in the background."
                 : segmentQuotes.length === 0
-                  ? "Try switching the segment filter to All Customers."
+                  ? "Try switching the segment filter to All Cases."
                   : "Try a different customer name, CNIC, organization, or plan."}
             </p>
           </div>

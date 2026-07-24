@@ -10,6 +10,7 @@ import { ProcessGraph } from "./ProcessGraph";
 import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import type { AgentMessage, QuickAction } from "@/lib/agent/types";
+import { useCopilot } from "./CopilotContext";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -88,6 +89,7 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
 export function CopilotInterface() {
   const router = useRouter();
   const { notify } = useNotify();
+  const { isAutomationMode, setAutomationMode } = useCopilot();
 
   // Tools like show_record answer with an explicit navigate instruction:
   // remember the target row, push the route, and the global record
@@ -119,7 +121,7 @@ export function CopilotInterface() {
       try {
         const saved = localStorage.getItem(STORAGE_KEY + "_suggestions");
         if (saved) return JSON.parse(saved);
-      } catch {}
+      } catch { }
     }
     return [];
   });
@@ -283,7 +285,7 @@ export function CopilotInterface() {
         const ctx = messages.slice(-4).map((m) => `${m.role}: ${m.text}`).join("\n");
         api.post("/agent/suggest-actions", { context: ctx, tenant_id: tenantId })
           .then((r) => setSuggestedActions(r.data?.suggested_actions?.length > 0 ? r.data.suggested_actions : []))
-          .catch(() => {});
+          .catch(() => { });
       }
     }
     wasLoadingRef.current = isLoading;
@@ -328,6 +330,298 @@ export function CopilotInterface() {
     setIsRecording(false);
   };
 
+  if (isAutomationMode) {
+    return (
+      <div className="flex h-full w-full bg-white text-slate-900 font-sans">
+        {/* Hidden File Input */}
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            setSelectedFile(file);
+            selectedFileRef.current = file;
+
+            if (interruptUploadRef.current) {
+              const { args } = interruptUploadRef.current;
+              interruptUploadRef.current = null;
+              try {
+                const result = await uploadDocument(args, file);
+                setSelectedFile(null);
+                resolveInterrupt(result);
+              } catch (err: any) {
+                setSelectedFile(null);
+                resolveInterrupt({ success: false, error: err.message || "Upload failed." });
+              }
+            } else if (pendingUploadRef.current) {
+              const args = pendingUploadRef.current;
+              pendingUploadRef.current = null;
+              try {
+                const result = await uploadDocument(args, file);
+                notify(`✅ ${result.message}`, true);
+                send(`I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`);
+              } catch (err: any) {
+                notify(`⚠️ ${err.message || "Upload failed."}`, false);
+              } finally {
+                setSelectedFile(null);
+              }
+            } else if (autoSubmitPrompt) {
+              handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
+              setAutoSubmitPrompt("");
+            }
+          }}
+          className="hidden"
+          accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
+        />
+
+        {/* Sidebar */}
+        <div className="w-[260px] flex-shrink-0 bg-[#f9f9f9] border-r border-slate-100 flex-col hidden md:flex">
+          <div className="p-4 flex items-center gap-2 font-semibold text-lg text-slate-800">
+             <div className="w-8 h-8 flex items-center justify-center">
+               <img src="/rizvi.png" alt="Rizviz" className="w-6 h-6 object-contain" />
+             </div>
+             Rizviz
+          </div>
+          <div className="px-3 pb-3">
+            <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200/50 rounded-lg transition-colors">
+              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+              New chat
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3">
+          </div>
+          <div className="p-4 mt-auto border-t border-slate-200">
+            <button onClick={() => setAutomationMode(false)} className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium hover:bg-slate-200/50 rounded-lg transition-colors text-slate-600">
+              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+              Back to Dashboard
+            </button>
+          </div>
+        </div>
+        
+        {/* Main Chat Area */}
+        <div className="flex-1 flex flex-col relative h-full min-w-0">
+           {/* Top bar for mobile only */}
+           <div className="md:hidden flex items-center justify-between p-3 border-b border-slate-100 bg-white">
+             <button onClick={() => setAutomationMode(false)} className="p-2 -ml-2 text-slate-600">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+             </button>
+             <span className="font-semibold text-sm">Rizviz AI</span>
+             <button onClick={handleClearChat} className="p-2 -mr-2 text-slate-600">
+               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+             </button>
+           </div>
+           
+           {/* Messages */}
+           <div className="flex-1 overflow-y-auto custom-scrollbar">
+             <div className="w-full">
+               {messages.length === 1 && messages[0].id === "1" && messages[0].role === "assistant" ? (
+                 <div className="flex flex-col items-center justify-center h-full min-h-[60vh] px-4">
+                   <div className="w-full max-w-3xl flex flex-col items-center mt-10">
+                     <div className="text-slate-400 font-medium text-sm mb-2">Rizviz AI Copilot</div>
+                     <h2 className="text-3xl md:text-[40px] font-semibold text-slate-900 tracking-tight text-center mb-10">
+                       How can I help you today?
+                     </h2>
+                     
+                     {/* Input Box - Perplexity style */}
+                     <div className="w-full relative shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-2xl bg-white border border-slate-200 focus-within:border-slate-300 transition-all duration-200">
+                       {selectedFile && (
+                         <div className="px-4 pt-4 pb-1 flex items-center gap-2">
+                           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
+                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                             {selectedFile.name}
+                             <button type="button" onClick={() => setSelectedFile(null)} className="ml-1 text-slate-400 hover:text-slate-700 transition-colors">
+                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                             </button>
+                           </div>
+                         </div>
+                       )}
+                       <form onSubmit={handleSubmit} className="flex flex-col w-full">
+                         <textarea 
+                           rows={1}
+                           value={input}
+                           onChange={(e) => setInput(e.target.value)}
+                           onKeyDown={(e) => {
+                             if (e.key === 'Enter' && !e.shiftKey) {
+                               e.preventDefault();
+                               handleSubmit();
+                             }
+                           }}
+                           placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Ask anything..."}
+                           className="w-full max-h-48 px-5 pt-4 pb-2 bg-transparent border-none focus:outline-none focus:ring-0 resize-none text-[16px] text-slate-900 placeholder:text-slate-400"
+                           style={{ minHeight: "60px" }}
+                         />
+                         
+                         <div className="flex items-center justify-between px-3 pb-3">
+                           <div className="flex items-center gap-2">
+                             <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors">
+                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4M4 12h16"/></svg>
+                               Attach
+                             </button>
+                           </div>
+                           <div className="flex items-center gap-2">
+                             <button type="submit" disabled={!input.trim() || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
+                               <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
+                             </button>
+                           </div>
+                         </div>
+                       </form>
+                     </div>
+
+                     {/* Action Cards */}
+                     <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                       {(turnActions.length > 0
+                         ? turnActions
+                         : getRecommendedActions(undefined)
+                       ).slice(0, 2).map((action, idx) => (
+                         <button
+                           key={idx}
+                           onClick={() => handleQuickAction(action)}
+                           className="flex flex-col items-start p-4 bg-slate-50/50 hover:bg-slate-100/50 border border-slate-100 rounded-xl transition-colors text-left"
+                         >
+                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1">
+                             {action.actionType === "navigate" ? (
+                               <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                             ) : (
+                               <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                             )}
+                             {action.label}
+                           </div>
+                           <div className="text-xs text-slate-500 font-medium w-full truncate">
+                             {action.payload}
+                           </div>
+                         </button>
+                       ))}
+                     </div>
+                     
+                   </div>
+                 </div>
+               ) : (
+                 <div className="flex flex-col pb-48 pt-8">
+                   {messages.map((msg) => (
+                     <div key={msg.id} className="w-full px-4 py-5 hover:bg-slate-50/50 transition-colors">
+                       <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
+                          <div className="flex-shrink-0 mt-1">
+                            {msg.role === "user" ? (
+                              <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-sm font-bold border border-slate-200">
+                                U
+                              </div>
+                            ) : (
+                              <div className="w-8 h-8 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center p-1.5">
+                                <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain" />
+                              </div>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-bold text-slate-800 mb-1 text-[15px]">
+                              {msg.role === "user" ? "You" : "Rizviz"}
+                            </div>
+                            <div className={`prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-700`}>
+                              {msg.role === "user" ? (
+                                <div className="whitespace-pre-wrap">{msg.text}</div>
+                              ) : (
+                                <div className="copilot-markdown">
+                                  <ReactMarkdown>{msg.text}</ReactMarkdown>
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Quick Actions */}
+                            {msg.quickActions && msg.quickActions.length > 0 && (
+                              <div className="flex flex-wrap gap-2 mt-4">
+                                {msg.quickActions.map((action, idx) => (
+                                  <button
+                                    key={`${action.actionType}-${action.label}-${idx}`}
+                                    onClick={() => handleQuickAction(action)}
+                                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors flex items-center gap-1.5"
+                                  >
+                                    {action.label}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                       </div>
+                     </div>
+                   ))}
+                   
+                   {isLoading && (
+                     <div className="w-full px-4 py-6">
+                       <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
+                         <div className="flex-shrink-0 mt-1">
+                           <div className="w-8 h-8 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center p-1.5">
+                              <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain" />
+                           </div>
+                         </div>
+                         <div className="flex items-center gap-2 pt-2">
+                           <span className="w-2 h-2 rounded-full bg-slate-300 animate-pulse" style={{ animationDelay: "0ms" }} />
+                           <span className="w-2 h-2 rounded-full bg-slate-300 animate-pulse" style={{ animationDelay: "150ms" }} />
+                           <span className="w-2 h-2 rounded-full bg-slate-300 animate-pulse" style={{ animationDelay: "300ms" }} />
+                         </div>
+                       </div>
+                     </div>
+                   )}
+                   <div ref={messagesEndRef} />
+                 </div>
+               )}
+             </div>
+           </div>
+           
+           {/* Bottom Input Area for ongoing chat (when not empty state) */}
+           {messages.length > 1 || (messages.length === 1 && messages[0].role !== "assistant") ? (
+             <div className="absolute bottom-0 left-0 w-full bg-white border-t border-slate-100 pt-4 pb-6 px-4">
+               <div className="max-w-3xl mx-auto relative">
+                 <div className="w-full relative shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-2xl bg-white border border-slate-200 focus-within:border-slate-300 transition-all duration-200">
+                   {selectedFile && (
+                     <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                       <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
+                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                         {selectedFile.name}
+                         <button type="button" onClick={() => setSelectedFile(null)} className="ml-1 text-slate-400 hover:text-slate-700 transition-colors">
+                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                         </button>
+                       </div>
+                     </div>
+                   )}
+                   <form onSubmit={handleSubmit} className="flex flex-col w-full">
+                     <textarea 
+                       rows={1}
+                       value={input}
+                       onChange={(e) => setInput(e.target.value)}
+                       onKeyDown={(e) => {
+                         if (e.key === 'Enter' && !e.shiftKey) {
+                           e.preventDefault();
+                           handleSubmit();
+                         }
+                       }}
+                       placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Ask anything..."}
+                       className="w-full max-h-48 px-5 pt-4 pb-2 bg-transparent border-none focus:outline-none focus:ring-0 resize-none text-[16px] text-slate-900 placeholder:text-slate-400"
+                       style={{ minHeight: "60px" }}
+                     />
+                     
+                     <div className="flex items-center justify-between px-3 pb-3">
+                       <div className="flex items-center gap-1">
+                         <button type="button" onClick={() => fileInputRef.current?.click()} className="flex items-center gap-1.5 px-2.5 py-1.5 text-slate-500 hover:bg-slate-100 rounded-lg text-sm font-medium transition-colors">
+                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4M4 12h16"/></svg>
+                           Attach
+                         </button>
+                       </div>
+                       <div className="flex items-center">
+                         <button type="submit" disabled={!input.trim() || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
+                           <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
+                         </button>
+                       </div>
+                     </div>
+                   </form>
+                 </div>
+               </div>
+             </div>
+           ) : null}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full relative overflow-hidden">
       {/* ── Clean white backdrop ───────────────────────────────────────── */}
@@ -335,23 +629,25 @@ export function CopilotInterface() {
 
       {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
 
-      {/* ── Phone Frame ────────────────────────────────────────────────── */}
-      <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-3 sm:p-5 min-h-0">
-        <div className="w-full max-w-[420px] flex-1 flex flex-col bg-slate-900 rounded-[2.75rem] p-2.5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.6)] ring-1 ring-white/20 min-h-0 animate-in fade-in zoom-in-95 duration-500">
+      {/* ── Phone Frame / Desktop Frame ────────────────────────────────────────────────── */}
+      <div className={`relative z-10 flex-1 flex flex-col ${isAutomationMode ? "max-w-4xl mx-auto w-full pt-8 pb-4" : "items-center justify-center p-3 sm:p-5"} min-h-0`}>
+        <div className={`w-full flex-1 flex flex-col ${isAutomationMode ? "bg-white rounded-2xl shadow-xl border border-slate-200" : "max-w-[420px] bg-slate-900 rounded-[2.75rem] p-2.5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.6)] ring-1 ring-white/20"} min-h-0 animate-in fade-in zoom-in-95 duration-500`}>
           {/* Screen */}
-          <div className="relative flex-1 flex flex-col bg-white rounded-[2.25rem] overflow-hidden min-h-0">
+          <div className={`relative flex-1 flex flex-col bg-white overflow-hidden min-h-0 ${isAutomationMode ? "rounded-2xl" : "rounded-[2.25rem]"}`}>
 
             {/* ── Status Bar ─────────────────────────────────────────── */}
-            <div className="flex-shrink-0 relative bg-gradient-to-r from-violet-600 to-fuchsia-600 pt-2 pb-1 px-6 flex items-center justify-between text-white text-[11px] font-semibold">
-              <span className="tabular-nums">{clock || "9:41"}</span>
-              {/* Notch */}
-              <div className="absolute left-1/2 -translate-x-1/2 top-1.5 w-24 h-5 bg-slate-900 rounded-full" />
-              <div className="flex items-center gap-1.5">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="14" width="3" height="6" rx="1"/><rect x="7" y="10" width="3" height="10" rx="1"/><rect x="12" y="6" width="3" height="14" rx="1"/><rect x="17" y="2" width="3" height="18" rx="1"/></svg>
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 18a2 2 0 100 4 2 2 0 000-4zm0-5c1.7 0 3.3.66 4.5 1.8l-1.4 1.4A4.5 4.5 0 009 16.2l-1.4-1.4A6.4 6.4 0 0112 13zm0-4.5c2.9 0 5.6 1.15 7.6 3.1l-1.4 1.4A9 9 0 006 13.1l-1.4-1.4A10.7 10.7 0 0112 8.5z"/></svg>
-                <svg className="w-6 h-3.5" viewBox="0 0 28 14" fill="none"><rect x="1" y="1" width="22" height="12" rx="3" stroke="currentColor" strokeWidth="1.5"/><rect x="3" y="3" width="16" height="8" rx="1.5" fill="currentColor"/><rect x="24.5" y="4.5" width="2" height="5" rx="1" fill="currentColor"/></svg>
+            {!isAutomationMode && (
+              <div className="flex-shrink-0 relative bg-gradient-to-r from-violet-600 to-fuchsia-600 pt-2 pb-1 px-6 flex items-center justify-between text-white text-[11px] font-semibold">
+                <span className="tabular-nums">{clock || "9:41"}</span>
+                {/* Notch */}
+                <div className="absolute left-1/2 -translate-x-1/2 top-1.5 w-24 h-5 bg-slate-900 rounded-full" />
+                <div className="flex items-center gap-1.5">
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="14" width="3" height="6" rx="1" /><rect x="7" y="10" width="3" height="10" rx="1" /><rect x="12" y="6" width="3" height="14" rx="1" /><rect x="17" y="2" width="3" height="18" rx="1" /></svg>
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 18a2 2 0 100 4 2 2 0 000-4zm0-5c1.7 0 3.3.66 4.5 1.8l-1.4 1.4A4.5 4.5 0 009 16.2l-1.4-1.4A6.4 6.4 0 0112 13zm0-4.5c2.9 0 5.6 1.15 7.6 3.1l-1.4 1.4A9 9 0 006 13.1l-1.4-1.4A10.7 10.7 0 0112 8.5z" /></svg>
+                  <svg className="w-6 h-3.5" viewBox="0 0 28 14" fill="none"><rect x="1" y="1" width="22" height="12" rx="3" stroke="currentColor" strokeWidth="1.5" /><rect x="3" y="3" width="16" height="8" rx="1.5" fill="currentColor" /><rect x="24.5" y="4.5" width="2" height="5" rx="1" fill="currentColor" /></svg>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* ── Chat Header ────────────────────────────────────────── */}
             <div className="flex-shrink-0 bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 pb-3 pt-1 flex items-center justify-between text-white shadow-lg">
@@ -387,11 +683,10 @@ export function CopilotInterface() {
                         <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                       </div>
                     )}
-                    <div className={`max-w-[82%] px-4 py-2.5 text-[14px] leading-relaxed shadow-sm flex flex-col gap-3 ${
-                      msg.role === "user"
+                    <div className={`max-w-[82%] px-4 py-2.5 text-[14px] leading-relaxed shadow-sm flex flex-col gap-3 ${msg.role === "user"
                         ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white rounded-2xl rounded-br-md"
                         : "bg-white border border-slate-100 text-slate-700 rounded-2xl rounded-bl-md"
-                    }`}>
+                      }`}>
                       {msg.role === "user" ? (
                         <div className="whitespace-pre-wrap">{msg.text}</div>
                       ) : (
@@ -405,22 +700,21 @@ export function CopilotInterface() {
                             <button
                               key={`${action.actionType}-${action.label}-${idx}`}
                               onClick={() => handleQuickAction(action)}
-                              className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                                action.actionType === "navigate"
+                              className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${action.actionType === "navigate"
                                   ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
                                   : action.actionType === "upload"
-                                  ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
-                                  : action.actionType === "confirm"
-                                  ? "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200"
-                                  : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
-                              }`}
+                                    ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                                    : action.actionType === "confirm"
+                                      ? "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200"
+                                      : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
+                                }`}
                             >
                               {action.actionType === "navigate" ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
                               ) : action.actionType === "upload" ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                               ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><circle cx="12" cy="12" r="10"/><path d="M12 8v8"/></svg>
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><circle cx="12" cy="12" r="10" /><path d="M12 8v8" /></svg>
                               )}
                               {action.label}
                             </button>
@@ -546,7 +840,7 @@ export function CopilotInterface() {
                 </div>
                 <button type="submit" disabled={!input.trim() || isLoading}
                   className="p-3 bg-gradient-to-br from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-full transition-all shadow-lg shadow-fuchsia-500/30 active:scale-90 shrink-0">
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                 </button>
               </form>
               {/* Recommended Next Steps — backend quick_actions are the source
@@ -562,15 +856,14 @@ export function CopilotInterface() {
                     <button
                       key={idx}
                       onClick={() => handleQuickAction(action)}
-                      className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${
-                        action.actionType === "navigate"
+                      className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${action.actionType === "navigate"
                           ? "text-emerald-600 hover:text-white hover:bg-emerald-600 border-emerald-200"
                           : action.actionType === "upload"
-                          ? "text-amber-600 hover:text-white hover:bg-amber-600 border-amber-200"
-                          : action.actionType === "confirm"
-                          ? "text-violet-600 hover:text-white hover:bg-violet-600 border-violet-200"
-                          : "text-indigo-600 hover:text-white hover:bg-indigo-600 border-indigo-200"
-                      }`}
+                            ? "text-amber-600 hover:text-white hover:bg-amber-600 border-amber-200"
+                            : action.actionType === "confirm"
+                              ? "text-violet-600 hover:text-white hover:bg-violet-600 border-violet-200"
+                              : "text-indigo-600 hover:text-white hover:bg-indigo-600 border-indigo-200"
+                        }`}
                     >
                       {action.label}
                     </button>
