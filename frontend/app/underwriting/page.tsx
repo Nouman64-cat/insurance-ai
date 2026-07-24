@@ -35,6 +35,7 @@ export default function UnderwritingPage() {
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<SegmentFilter>("all");
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
 
   useEffect(() => {
     const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
@@ -125,6 +126,30 @@ export default function UnderwritingPage() {
     return Array.from(grouped.values());
   }, [segmentCases, search]);
 
+  const leadDisplayIds = useMemo(() => {
+    const groupedBySegment = new Map<string, Array<{ customerId: string; createdAt: string }>>();
+    for (const c of cases) {
+      const segment = (c.customer_segment ?? "individual") as "individual" | "family" | "organization";
+      if (!groupedBySegment.has(segment)) groupedBySegment.set(segment, []);
+      if (!groupedBySegment.get(segment)!.some(item => item.customerId === c.customer_id)) {
+        groupedBySegment.get(segment)!.push({ customerId: c.customer_id, createdAt: c.createdAt });
+      }
+    }
+
+    const displayIds: Record<string, string> = {};
+    for (const [segment, items] of groupedBySegment.entries()) {
+      const sorted = [...items].sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const prefix = segment === "family" ? "FAM" : segment === "organization" ? "CORP" : "IND";
+      sorted.forEach((item, index) => {
+        const dt = new Date(item.createdAt);
+        const yymm = `${dt.getFullYear().toString().slice(-2)}${(dt.getMonth() + 1).toString().padStart(2, "0")}`;
+        const seq = (index + 1).toString().padStart(3, "0");
+        displayIds[item.customerId] = `${prefix}-${yymm}-${seq}`;
+      });
+    }
+    return displayIds;
+  }, [cases]);
+
   const kpis = useMemo(() => {
     const pendingDocs = segmentCases.filter(c => c.caseStatus === "Pending Documents").length;
     const underReview = segmentCases.filter(c => c.caseStatus === "Under Review" || c.caseStatus === "New" || c.caseStatus === "InProgress").length;
@@ -152,14 +177,32 @@ export default function UnderwritingPage() {
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <input
-          type="text"
-          placeholder="Search by customer, CNIC, or case number…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-        />
-        <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
+        <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+          <input
+            type="text"
+            placeholder="Search by customer, CNIC, or case number…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+          />
+          <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
+        </div>
+        <div className="inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner border border-slate-200/60 shrink-0">
+          <button
+            onClick={() => setViewMode("list")}
+            title="List View"
+            className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
+          </button>
+          <button
+            onClick={() => setViewMode("grid")}
+            title="Grid View"
+            className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -192,23 +235,23 @@ export default function UnderwritingPage() {
             </p>
           </div>
         ) : (
-          <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className={viewMode === "grid" ? "p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "p-4 flex flex-col gap-3"}>
             {folders.map((folder) => {
               const isExpanded = expandedCustomerId === folder.customer_id;
               const decidedCount = folder.cases.filter(c => c.latest_ai_decision).length;
               return (
                 <div
                   key={folder.customer_id}
-                  className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "col-span-full border-blue-200 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"}`}
+                  className={`flex flex-col border rounded-xl overflow-hidden transition-all duration-200 ${isExpanded ? "border-blue-200 shadow-md ring-1 ring-blue-500/20" : "border-slate-200 shadow-sm hover:shadow-md hover:border-blue-200 bg-white"} ${viewMode === "grid" ? "" : "w-full"}`}
                 >
                   {/* Folder Header */}
                   <div
                     onClick={() => toggleFolder(folder.customer_id)}
-                    className={`flex items-start justify-between p-5 cursor-pointer select-none ${isExpanded ? "bg-blue-50/50" : "bg-white"}`}
+                    className={`flex items-start justify-between cursor-pointer select-none ${isExpanded ? "bg-blue-50/50" : "bg-white"} ${viewMode === "grid" ? "p-5" : "p-4"}`}
                   >
                     <div className="flex items-start gap-3 flex-1 min-w-0">
-                      <div className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors`}>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <div className={`flex-shrink-0 flex items-center justify-center rounded-xl ${isExpanded ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"} transition-colors ${viewMode === "grid" ? "w-10 h-10" : "w-9 h-9"}`}>
+                        <svg xmlns="http://www.w3.org/2000/svg" width={viewMode === "grid" ? 20 : 18} height={viewMode === "grid" ? 20 : 18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           {isExpanded ? (
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
                           ) : (
@@ -221,8 +264,10 @@ export default function UnderwritingPage() {
                           {folder.customer_name}
                         </h3>
                         <p className="text-[11px] text-slate-500 font-mono mt-0.5">{folder.customer_cnic}</p>
-                        
-                        {/* Badges container on its own row to avoid horizontal overlapping */}
+                        {leadDisplayIds[folder.customer_id] && (
+                          <p className="text-[11px] font-medium text-slate-500 mt-1">Lead ID: {leadDisplayIds[folder.customer_id]}</p>
+                        )}
+
                         <div className="flex flex-wrap gap-1.5 mt-2">
                           {segment === "all" && (
                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold border uppercase tracking-wide ${SEGMENT_BADGE_STYLE[folder.customer_segment]}`}>
@@ -247,7 +292,6 @@ export default function UnderwritingPage() {
                     </div>
                   </div>
 
-                  {/* Expanded Content */}
                   {isExpanded && (
                     <div className="border-t border-slate-100 bg-white overflow-x-auto">
                       <table className="w-full text-sm">
