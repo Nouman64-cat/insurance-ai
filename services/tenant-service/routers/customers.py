@@ -224,7 +224,30 @@ async def list_customers(
 
     query = query.order_by(Customer.created_at.desc())
     result = await session.exec(query)
-    return list(result.all())
+    customers = list(result.all())
+
+    if category == "active" and customers:
+        from schemas import CustomerRead
+        c_ids = [c.id for c in customers]
+        policy_res = await session.exec(
+            select(Policy)
+            .where(Policy.customer_id.in_(c_ids))
+            .where(func.upper(cast(Policy.status, String)).in_([s.value.upper() for s in ACTIVE_POLICY_STATUSES]))
+            .order_by(Policy.created_at.desc())
+        )
+        policy_map = {}
+        for p in policy_res.all():
+            if p.policy_number and p.customer_id not in policy_map:
+                policy_map[p.customer_id] = p.policy_number
+                
+        out = []
+        for c in customers:
+            dto = CustomerRead.model_validate(c)
+            dto.active_policy_number = policy_map.get(c.id)
+            out.append(dto)
+        return out
+
+    return customers
 
 
 @router.get(

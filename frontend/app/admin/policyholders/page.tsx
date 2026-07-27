@@ -19,6 +19,7 @@ interface UnifiedPolicyholder {
   contact_info: string;
   created_at: string;
   primaryIdentifier?: string; // CNIC or Registration No
+  policy_number?: string;
 }
 
 type FilterType = "ALL" | "INDIVIDUAL" | "FAMILY" | "CORPORATE";
@@ -136,6 +137,7 @@ export default function PolicyholdersPage() {
           contact_info: c.details?.phone || "No phone",
           created_at: c.created_at,
           primaryIdentifier: c.cnic,
+          policy_number: c.active_policy_number,
         });
       });
 
