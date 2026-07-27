@@ -102,13 +102,13 @@ async def policy_stats(tenant_id: UUID, session: AsyncSession = Depends(get_sess
     today = date.today()
     return {
         "total": len(all_policies),
-        "pending_issuance": sum(1 for p in all_policies if _st(p) in ("Approved", "AcceptedWithLoadings", "PendingPayment")),
-        "active": sum(1 for p in all_policies if _st(p) == "Active"),
-        "grace_period": sum(1 for p in all_policies if _st(p) == "GracePeriod"),
-        "lapsed": sum(1 for p in all_policies if _st(p) == "Lapsed"),
+        "pending_issuance": sum(1 for p in all_policies if _st(p).upper() in ("APPROVED", "ACCEPTEDWITHLOADINGS", "PENDINGPAYMENT")),
+        "active": sum(1 for p in all_policies if _st(p).upper() == "ACTIVE"),
+        "grace_period": sum(1 for p in all_policies if _st(p).upper() == "GRACEPERIOD"),
+        "lapsed": sum(1 for p in all_policies if _st(p).upper() == "LAPSED"),
         "expiring_30d": sum(
             1 for p in all_policies
-            if _st(p) == "Active" and p.expiry_date and 0 <= (p.expiry_date - today).days <= 30
+            if _st(p).upper() == "ACTIVE" and p.expiry_date and 0 <= (p.expiry_date - today).days <= 30
         ),
     }
 
@@ -374,19 +374,56 @@ async def issue_policy(
         policy.updated_at = datetime.utcnow()
         session.add(policy)
 
-        # Step 6: Promote Customer to POLICYHOLDER
+        # Step 6: Close ALL associated Underwriting Cases for this policy.
+        # We search by policy_id first (the properly linked cases), then fall back
+        # to customer_id for any APPROVED cases that have no policy_id FK set
+        # (edge case from cases created before the policy_id FK existed).
+        from shared.models.core import Case, CaseStatusEnum
+        closed_case_ids: set = set()
+
+        # 6a: Cases directly linked to this policy
+        cases_by_policy = (await session.exec(select(Case).where(Case.policy_id == policy_id))).all()
+        for case in cases_by_policy:
+            if case.caseStatus == CaseStatusEnum.APPROVED:
+                case.caseStatus = CaseStatusEnum.CLOSED
+                case.updatedAt = datetime.utcnow()
+                session.add(case)
+                closed_case_ids.add(case.caseld)
+
+        # 6b: Cases for this customer with no policy_id (orphan approved cases)
+        from sqlalchemy import cast, String as SAString
+        cases_by_customer = (await session.exec(
+            select(Case).where(
+                Case.tenant_id == policy.tenant_id,
+                Case.customer_id == policy.customer_id,
+                cast(Case.caseStatus, SAString) == CaseStatusEnum.APPROVED.value,
+            )
+        )).all()
+        for case in cases_by_customer:
+            if case.caseld not in closed_case_ids:
+                case.caseStatus = CaseStatusEnum.CLOSED
+                case.updatedAt = datetime.utcnow()
+                session.add(case)
+
+        # Step 7: Promote Customer (and their family/org group) to POLICYHOLDER
+        from shared.models.core import FamilyGroup, Organization
         customer = await session.get(Customer, policy.customer_id)
-        if customer and customer.profile_status != ProfileStatusEnum.POLICYHOLDER:
+        if customer:
             customer.profile_status = ProfileStatusEnum.POLICYHOLDER
             session.add(customer)
-
-
-        # Step 6: Promote customer to POLICYHOLDER
-        if cust:
-            cust.profile_status = ProfileStatusEnum.POLICYHOLDER
-            session.add(cust)
+            if customer.family_group_id:
+                fg = await session.get(FamilyGroup, customer.family_group_id)
+                if fg:
+                    fg.profile_status = ProfileStatusEnum.POLICYHOLDER
+                    session.add(fg)
+            if customer.organization_id:
+                org = await session.get(Organization, customer.organization_id)
+                if org:
+                    org.profile_status = ProfileStatusEnum.POLICYHOLDER
+                    session.add(org)
 
         await session.commit()
+
 
     except Exception as exc:
         await session.rollback()
