@@ -415,10 +415,10 @@ export default function PolicyIssuancePage() {
                             e.stopPropagation();
                             setSelectedPolicy(p);
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 transition-colors shadow-sm"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
                         >
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3.5 h-3.5">
-                            <polyline points="20 6 9 17 4 12" />
+                          <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
+                            <polygon points="5 3 19 12 5 21" />
                           </svg>
                           Issue Policy
                         </button>
