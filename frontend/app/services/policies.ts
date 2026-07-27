@@ -38,6 +38,21 @@ export interface PremiumBreakdown {
   total_premium: number;
 }
 
+export interface PaymentIntent {
+  reference: string;
+  method: string;
+  amount: number;
+  status: string;
+  gateway: string;
+  initiated_at: string;
+  realized_at: string | null;
+}
+
+export interface PaymentMethod {
+  code: string;
+  label: string;
+}
+
 export interface IssuanceResult {
   policy_number: string;
   status: string;
@@ -47,6 +62,19 @@ export interface IssuanceResult {
   premium_breakdown: PremiumBreakdown;
   version: string;
   documents_generated: number;
+  amount_due?: number;
+  payment?: PaymentIntent;
+  available_payment_methods?: PaymentMethod[];
+}
+
+export interface PaymentConfirmResult {
+  policy_id: string;
+  policy_number: string;
+  status: string;
+  effective_date: string | null;
+  expiry_date: string | null;
+  grace_period_end_date: string | null;
+  payment: PaymentIntent;
 }
 
 export interface UpcomingRenewal {
@@ -86,6 +114,16 @@ export interface PolicyDocument {
   is_stub: boolean;
   stub_content: string | null;
   generated_at: string;
+}
+
+export interface PolicyEvent {
+  id: string;
+  event_type: string;
+  from_status: string | null;
+  to_status: string | null;
+  actor: string;
+  detail: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface PolicyDetail extends PolicyListItem {
@@ -150,6 +188,32 @@ export async function issuePolicy(policyId: string): Promise<IssuanceResult> {
   return res.data;
 }
 
+export async function initiatePayment(
+  policyId: string,
+  method?: string
+): Promise<{ policy_id: string; amount_due: number; payment: PaymentIntent; available_payment_methods: PaymentMethod[] }> {
+  const tid = tenantId();
+  const res = await api.post(
+    `/tenants/${tid}/policies/${policyId}/payments/initiate`,
+    { method },
+    { headers: { "X-Tenant-Id": tid } }
+  );
+  return res.data;
+}
+
+export async function confirmPayment(
+  policyId: string,
+  opts: { method?: string; reference?: string; amount?: number; realize?: boolean } = {}
+): Promise<PaymentConfirmResult> {
+  const tid = tenantId();
+  const res = await api.post(
+    `/tenants/${tid}/policies/${policyId}/payments/confirm`,
+    { realize: true, ...opts },
+    { headers: { "X-Tenant-Id": tid } }
+  );
+  return res.data;
+}
+
 export async function renewPolicy(policyId: string): Promise<unknown> {
   const tid = tenantId();
   const res = await api.post(
@@ -167,6 +231,14 @@ export async function lapsePolicy(policyId: string): Promise<void> {
     {},
     { headers: { "X-Tenant-Id": tid } }
   );
+}
+
+export async function getPolicyEvents(policyId: string): Promise<PolicyEvent[]> {
+  const tid = tenantId();
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/events`, {
+    headers: { "X-Tenant-Id": tid },
+  });
+  return res.data;
 }
 
 export async function listPolicyDocuments(policyId: string): Promise<PolicyDocument[]> {
