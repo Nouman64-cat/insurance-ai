@@ -60,6 +60,25 @@ function quoteSegment(q: QuoteListItem): "individual" | "family" | "organization
   return "individual";
 }
 
+function dedupeQuotesByCustomer(quotes: QuoteListItem[]): QuoteListItem[] {
+  const latestByCustomer = new Map<string, QuoteListItem>();
+
+  for (const quote of quotes) {
+    const current = latestByCustomer.get(quote.customer_id);
+    const quoteTime = new Date(quote.created_at || 0).getTime();
+    const currentTime = current ? new Date(current.created_at || 0).getTime() : -Infinity;
+
+    if (!current || quoteTime > currentTime) {
+      latestByCustomer.set(quote.customer_id, quote);
+    }
+  }
+
+  return Array.from(latestByCustomer.values()).sort((a, b) => {
+    const aTime = new Date(a.created_at || 0).getTime();
+    const bTime = new Date(b.created_at || 0).getTime();
+    return bTime - aTime;
+  });
+}
 
 const STATUS_TABS = [
   { id: "ALL", label: "All Proposals" },
@@ -312,14 +331,15 @@ export default function QuotePage() {
   // The dropdown-selected segment scopes which quotes count toward the stats
   // and folder list; the search box then narrows within that scope.
   const segmentQuotes = useMemo(() => {
-    if (segment === "all") return quotes;
-    return quotes.filter((q) => quoteSegment(q) === segment);
+    const filtered = segment === "all" ? quotes : quotes.filter((q) => quoteSegment(q) === segment);
+    return dedupeQuotesByCustomer(filtered);
   }, [quotes, segment]);
 
   const segmentCounts = useMemo(() => {
-    const counts: Partial<Record<SegmentFilter, number>> = { all: quotes.length };
+    const counts: Partial<Record<SegmentFilter, number>> = { all: dedupeQuotesByCustomer(quotes).length };
     for (const s of ["individual", "family", "organization"] as const) {
-      counts[s] = quotes.filter((q) => quoteSegment(q) === s).length;
+      const filtered = quotes.filter((q) => quoteSegment(q) === s);
+      counts[s] = dedupeQuotesByCustomer(filtered).length;
     }
     return counts;
   }, [quotes]);
@@ -860,7 +880,7 @@ function ProposalsTable({
               </td>
               <td className="px-2 py-3.5">
                 <p className="text-slate-700 font-medium">{row.plan_label}</p>
-                <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
                   {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
                 </span>
               </td>
@@ -924,7 +944,7 @@ function ProposalsGrid({
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Plan</p>
               <p className="text-xs font-semibold text-slate-700 truncate">{row.plan_label}</p>
             </div>
-            <span className="flex-shrink-0 inline-flex px-1.5 py-0.5 rounded-[4px] text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+            <span className="flex-shrink-0 inline-flex px-1.5 py-0.5 rounded-[4px] text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
               {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
             </span>
           </div>
