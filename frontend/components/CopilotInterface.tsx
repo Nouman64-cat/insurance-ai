@@ -105,7 +105,7 @@ export function CopilotInterface() {
     [router]
   );
 
-  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, steps, turnActions } = useAgentChat({
+  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions } = useAgentChat({
     storageKey: STORAGE_KEY,
     welcomeMessage: WELCOME,
     onNavigate: handleAgentNavigate,
@@ -135,6 +135,7 @@ export function CopilotInterface() {
     return () => clearInterval(id);
   }, []);
 
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,7 +150,14 @@ export function CopilotInterface() {
   useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: "smooth"
+      });
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
   }, [messages, steps]);
 
   useEffect(() => {
@@ -291,11 +299,61 @@ export function CopilotInterface() {
     wasLoadingRef.current = isLoading;
   }, [isLoading, messages]);
 
+  const [sessions, setSessions] = useState<{id: string, date: number, title: string, messages: any[], actions: any[]}[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY + "_sessions");
+        if (saved) return JSON.parse(saved);
+      } catch {}
+    }
+    return [];
+  });
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(STORAGE_KEY + "_sessions", JSON.stringify(sessions));
+    }
+  }, [sessions]);
+
+  const saveCurrentSession = () => {
+    if (messages.length <= 1) return;
+    const title = messages.find(m => m.role === 'user')?.text || "New Conversation";
+    const sessionId = activeSessionId || Date.now().toString();
+    setSessions(prev => {
+      const filtered = prev.filter(s => s.id !== sessionId);
+      return [{
+        id: sessionId,
+        date: Date.now(),
+        title: title.length > 35 ? title.slice(0, 35) + "..." : title,
+        messages: [...messages],
+        actions: [...turnActions]
+      }, ...filtered];
+    });
+  };
+
   const handleClearChat = () => {
+    saveCurrentSession();
+    setActiveSessionId(null);
     clearChat();
     setSuggestedActions([]);
     localStorage.removeItem(STORAGE_KEY + "_suggestions");
   };
+
+  const handleLoadSession = (session: any) => {
+    saveCurrentSession();
+    setActiveSessionId(session.id);
+    loadChat(session.messages, session.actions || []);
+  };
+
+  const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSessions(prev => prev.filter(s => s.id !== id));
+    if (activeSessionId === id) {
+      handleClearChat();
+    }
+  };
+
 
   const startRecording = async () => {
     try {
@@ -330,9 +388,23 @@ export function CopilotInterface() {
     setIsRecording(false);
   };
 
+  // Force disable global dark mode while in automation mode so the chat retains its designed theme
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (isAutomationMode) {
+      const wasDark = document.documentElement.classList.contains("dark");
+      if (wasDark) {
+        document.documentElement.classList.remove("dark");
+        return () => {
+          document.documentElement.classList.add("dark");
+        };
+      }
+    }
+  }, [isAutomationMode]);
+
   if (isAutomationMode) {
     return (
-      <div className="flex h-full w-full bg-white text-slate-900 font-sans">
+      <div className="flex h-full w-full bg-white text-slate-900 font-sans overflow-hidden">
         {/* Hidden File Input */}
         <input
           type="file"
@@ -376,55 +448,93 @@ export function CopilotInterface() {
         />
 
         {/* Sidebar */}
-        <div className="w-[260px] flex-shrink-0 bg-[#f9f9f9] border-r border-slate-100 flex-col hidden md:flex">
-          <div className="p-4 flex items-center gap-2 font-semibold text-lg text-slate-800">
-             <div className="w-8 h-8 flex items-center justify-center">
-               <img src="/rizvi.png" alt="Rizviz" className="w-6 h-6 object-contain" />
+        <div className="w-[260px] flex-shrink-0 bg-[#0f1115] border-r border-slate-800 flex-col hidden md:flex relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-48 bg-gradient-to-b from-indigo-500/10 to-transparent pointer-events-none" />
+          
+          <div className="p-5 flex items-center gap-3 font-bold text-lg text-white relative z-10">
+             <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_15px_rgba(99,102,241,0.4)]">
+               <img src="/rizvi.png" alt="Rizviz" className="w-5 h-5 object-contain brightness-0 invert" />
              </div>
-             Rizviz
+             <span className="tracking-wide">Rizviz<span className="text-indigo-400">.ai</span></span>
           </div>
-          <div className="px-3 pb-3">
-            <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-3 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200/50 rounded-lg transition-colors">
-              <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg>
+          <div className="px-4 pb-4 mt-2 relative z-10">
+            <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-200 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 shadow-sm">
+              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
               New chat
             </button>
           </div>
-          <div className="flex-1 overflow-y-auto p-3">
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            {sessions.length > 0 && (
+              <div className="space-y-1">
+                {sessions.map(session => (
+                  <button
+                    key={session.id}
+                    onClick={() => handleLoadSession(session)}
+                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors group flex items-center justify-between ${activeSessionId === session.id ? 'bg-white/10' : 'hover:bg-white/5'}`}
+                  >
+                    <div className="flex-1 min-w-0 pr-2">
+                      <div className="text-[13px] font-medium text-slate-300 truncate group-hover:text-white transition-colors">
+                        {session.title}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        {new Date(session.date).toLocaleDateString()}
+                      </div>
+                    </div>
+                    <button onClick={(e) => handleDeleteSession(session.id, e)} className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1">
+                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="p-4 mt-auto border-t border-slate-200">
-            <button onClick={() => setAutomationMode(false)} className="flex items-center gap-3 w-full px-3 py-2 text-sm font-medium hover:bg-slate-200/50 rounded-lg transition-colors text-slate-600">
-              <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+          <div className="p-4 mt-auto border-t border-white/5 bg-black/20 relative z-10">
+            <button onClick={() => setAutomationMode(false)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
               Back to Dashboard
             </button>
           </div>
         </div>
         
         {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col relative h-full min-w-0">
-           {/* Top bar for mobile only */}
-           <div className="md:hidden flex items-center justify-between p-3 border-b border-slate-100 bg-white">
-             <button onClick={() => setAutomationMode(false)} className="p-2 -ml-2 text-slate-600">
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-             </button>
-             <span className="font-semibold text-sm">Rizviz AI</span>
-             <button onClick={handleClearChat} className="p-2 -mr-2 text-slate-600">
-               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-             </button>
+        <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0 bg-[#fdfdfe]">
+           {/* Subtle ambient glowing orbs */}
+           <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-indigo-400/10 rounded-full blur-[100px] pointer-events-none" />
+           <div className="absolute bottom-[-10%] right-[-5%] w-[400px] h-[400px] bg-fuchsia-400/10 rounded-full blur-[120px] pointer-events-none" />
+           
+           {/* Chat Header */}
+           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200/60 bg-white/40 backdrop-blur-md relative z-20">
+             <div className="flex items-center gap-3">
+               <button onClick={() => setAutomationMode(false)} className="md:hidden p-2 -ml-2 text-slate-600 hover:text-indigo-600 transition-colors">
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+               </button>
+               <div className="flex items-center gap-2">
+                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                 <span className="font-bold text-sm text-slate-800 tracking-tight">Rizviz Copilot</span>
+                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-widest ml-1 border border-indigo-100">Beta</span>
+               </div>
+             </div>
+             <div className="flex items-center gap-3">
+               <button onClick={handleClearChat} className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-100">
+                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                 <span className="hidden sm:inline">Clear</span>
+               </button>
+             </div>
            </div>
            
            {/* Messages */}
-           <div className="flex-1 overflow-y-auto custom-scrollbar">
+           <div className="flex-1 overflow-y-auto custom-scrollbar" ref={scrollContainerRef}>
              <div className="w-full">
                {messages.length === 1 && messages[0].id === "1" && messages[0].role === "assistant" ? (
                  <div className="flex flex-col items-center justify-center h-full min-h-[60vh] px-4">
                    <div className="w-full max-w-3xl flex flex-col items-center mt-10">
-                     <div className="text-slate-400 font-medium text-sm mb-2">Rizviz AI Copilot</div>
-                     <h2 className="text-3xl md:text-[40px] font-semibold text-slate-900 tracking-tight text-center mb-10">
+                     <div className="text-slate-400 font-bold text-xs uppercase tracking-[0.2em] mb-3">Rizviz AI Copilot</div>
+                     <h2 className="text-4xl md:text-[50px] font-bold tracking-tight text-center mb-10 bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 pb-2 leading-tight">
                        How can I help you today?
                      </h2>
                      
                      {/* Input Box - Perplexity style */}
-                     <div className="w-full relative shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-2xl bg-white border border-slate-200 focus-within:border-slate-300 transition-all duration-200">
+                     <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
                        {selectedFile && (
                          <div className="px-4 pt-4 pb-1 flex items-center gap-2">
                            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
@@ -477,9 +587,9 @@ export function CopilotInterface() {
                          <button
                            key={idx}
                            onClick={() => handleQuickAction(action)}
-                           className="flex flex-col items-start p-4 bg-slate-50/50 hover:bg-slate-100/50 border border-slate-100 rounded-xl transition-colors text-left"
+                           className="flex flex-col items-start p-4 bg-white/60 backdrop-blur-sm hover:bg-white border border-white/60 hover:border-indigo-100 hover:shadow-[0_8px_20px_rgb(99,102,241,0.08)] rounded-2xl transition-all text-left group"
                          >
-                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1">
+                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 group-hover:text-indigo-600 transition-colors">
                              {action.actionType === "navigate" ? (
                                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                              ) : (
@@ -499,48 +609,52 @@ export function CopilotInterface() {
                ) : (
                  <div className="flex flex-col pb-48 pt-8">
                    {messages.map((msg) => (
-                     <div key={msg.id} className="w-full px-4 py-5 hover:bg-slate-50/50 transition-colors">
-                       <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
-                          <div className="flex-shrink-0 mt-1">
-                            {msg.role === "user" ? (
-                              <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center text-sm font-bold border border-slate-200">
-                                U
-                              </div>
-                            ) : (
-                              <div className="w-8 h-8 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center p-1.5">
-                                <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain" />
-                              </div>
-                            )}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-bold text-slate-800 mb-1 text-[15px]">
-                              {msg.role === "user" ? "You" : "Rizviz"}
-                            </div>
-                            <div className={`prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-700`}>
-                              {msg.role === "user" ? (
-                                <div className="whitespace-pre-wrap">{msg.text}</div>
-                              ) : (
-                                <div className="copilot-markdown">
-                                  <ReactMarkdown>{msg.text}</ReactMarkdown>
-                                </div>
-                              )}
-                            </div>
-                            
-                            {/* Quick Actions */}
-                            {msg.quickActions && msg.quickActions.length > 0 && (
-                              <div className="flex flex-wrap gap-2 mt-4">
-                                {msg.quickActions.map((action, idx) => (
-                                  <button
-                                    key={`${action.actionType}-${action.label}-${idx}`}
-                                    onClick={() => handleQuickAction(action)}
-                                    className="px-3 py-1.5 text-xs font-medium rounded-full bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition-colors flex items-center gap-1.5"
-                                  >
-                                    {action.label}
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                     <div key={msg.id} className="w-full px-4 py-4 md:py-6">
+                       <div className={`max-w-3xl mx-auto flex gap-4 md:gap-5 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                         
+                         {/* Avatar (only for Agent) */}
+                         {msg.role !== "user" && (
+                           <div className="flex-shrink-0 mt-1">
+                             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_12px_rgba(99,102,241,0.3)] flex items-center justify-center p-1.5 ring-2 ring-white">
+                               <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain brightness-0 invert" />
+                             </div>
+                           </div>
+                         )}
+
+                         <div className={`flex-1 min-w-0 flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+                           {msg.role !== "user" && (
+                             <div className="font-bold text-slate-800 mb-1 text-[15px]">Rizviz Copilot</div>
+                           )}
+                           
+                           <div className={`${
+                             msg.role === "user" 
+                               ? "bg-slate-100 text-slate-800 border border-slate-200/60 px-5 py-3.5 rounded-[24px] rounded-tr-sm shadow-sm max-w-[85%] text-[15px] leading-relaxed whitespace-pre-wrap"
+                               : "prose prose-slate max-w-none text-[15px] leading-relaxed break-words text-slate-700 w-full"
+                           }`}>
+                             {msg.role === "user" ? (
+                               msg.text
+                             ) : (
+                               <div className="copilot-markdown">
+                                 <ReactMarkdown>{msg.text}</ReactMarkdown>
+                               </div>
+                             )}
+                           </div>
+                           
+                           {/* Quick Actions */}
+                           {msg.quickActions && msg.quickActions.length > 0 && (
+                             <div className={`flex flex-wrap gap-2 mt-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                               {msg.quickActions.map((action, idx) => (
+                                 <button
+                                   key={`${action.actionType}-${action.label}-${idx}`}
+                                   onClick={() => handleQuickAction(action)}
+                                   className="px-3 py-1.5 text-xs font-semibold rounded-full bg-white border border-slate-200 hover:bg-slate-50 hover:border-indigo-200 hover:text-indigo-700 shadow-sm transition-all flex items-center gap-1.5"
+                                 >
+                                   {action.label}
+                                 </button>
+                               ))}
+                             </div>
+                           )}
+                         </div>
                        </div>
                      </div>
                    ))}
@@ -549,8 +663,8 @@ export function CopilotInterface() {
                      <div className="w-full px-4 py-6">
                        <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
                          <div className="flex-shrink-0 mt-1">
-                           <div className="w-8 h-8 rounded-md bg-white border border-slate-200 shadow-sm flex items-center justify-center p-1.5">
-                              <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain" />
+                           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_12px_rgba(99,102,241,0.3)] flex items-center justify-center p-1.5 ring-2 ring-white">
+                              <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain brightness-0 invert" />
                            </div>
                          </div>
                          <div className="flex items-center gap-2 pt-2">
@@ -569,9 +683,9 @@ export function CopilotInterface() {
            
            {/* Bottom Input Area for ongoing chat (when not empty state) */}
            {messages.length > 1 || (messages.length === 1 && messages[0].role !== "assistant") ? (
-             <div className="absolute bottom-0 left-0 w-full bg-white border-t border-slate-100 pt-4 pb-6 px-4">
+             <div className="absolute bottom-4 left-0 w-full px-4 z-20">
                <div className="max-w-3xl mx-auto relative">
-                 <div className="w-full relative shadow-[0_2px_12px_rgba(0,0,0,0.06)] rounded-2xl bg-white border border-slate-200 focus-within:border-slate-300 transition-all duration-200">
+                 <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
                    {selectedFile && (
                      <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
@@ -671,7 +785,7 @@ export function CopilotInterface() {
             </div>
 
             {/* ── Chat Feed ──────────────────────────────────────────── */}
-            <div className="flex-1 overflow-y-auto px-3.5 py-4 relative bg-gradient-to-b from-violet-50 via-white to-fuchsia-50">
+            <div className="flex-1 overflow-y-auto px-3.5 py-4 relative bg-gradient-to-b from-violet-50 via-white to-fuchsia-50" ref={scrollContainerRef}>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.04] z-0">
                 <img src="/rizvi.png" alt="" className="w-1/2 max-w-[200px] object-contain" />
               </div>

@@ -272,6 +272,13 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
     [pendingInterrupt, consumeStream]
   );
 
+    const loadChat = useCallback((loadedMessages: AgentMessage[], loadedActions: QuickAction[]) => {
+    setMessages(loadedMessages);
+    setTurnActions(loadedActions);
+    setPendingInterrupt(null);
+    setSteps([]);
+  }, []);
+
   const clearChat = useCallback(() => {
     const tid = newId();
     localStorage.setItem(threadStorageKey, tid);
@@ -284,5 +291,5 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
     localStorage.removeItem(`${storageKey}_actions`);
   }, [storageKey, threadStorageKey, welcomeMessage]);
 
-  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, steps, turnActions };
+  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions };
 }
