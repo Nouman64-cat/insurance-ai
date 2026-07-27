@@ -11,6 +11,7 @@ import { fmtCoverage } from "@/lib/mock-data";
 import { updateQuote } from "../services/quotes";
 import { listUnderwriters, Agent } from "../services/agents";
 import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
+import { updateCustomer } from "../services/customers";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -280,6 +281,71 @@ export default function QuotePage() {
     } finally {
       setIsBulkProceeding(false);
     }
+  };
+
+  const handleBulkStatusUpdate = async (customerQuotes: QuoteListItem[], targetStatus: string) => {
+    const selectedQuotes = customerQuotes.filter((q) => selectedQuoteIds.has(q.quote_id));
+    if (selectedQuotes.length === 0) return;
+
+    setIsBulkProceeding(true);
+    setBulkProceedError(null);
+    setBulkProceedSuccess(null);
+    try {
+      await Promise.all(
+        selectedQuotes.map((q) => updateQuote(q.quote_id, { status: targetStatus }))
+      );
+      setBulkProceedSuccess("Successfully updated statuses.");
+      fetchQuotes();
+      setSelectedProposalIds(new Set());
+    } catch (err: any) {
+      setBulkProceedError(err.message ?? "Failed to update statuses.");
+    } finally {
+      setIsBulkProceeding(false);
+    }
+  };
+
+  const getBatchActionProps = (quotesToProcess: QuoteListItem[]) => {
+    const selectedQuotes = quotesToProcess.filter((q) => selectedQuoteIds.has(q.quote_id));
+    const count = selectedQuotes.length;
+
+    if (activeTab === "ALL" || activeTab === "Issued" || activeTab === "Declined") {
+      return null;
+    }
+
+    if (activeTab === "Approved") {
+      return {
+        label: "Batch Proceed to Underwriting",
+        onClick: () => handleBulkProceed(quotesToProcess),
+        disabled: isBulkProceeding || count === 0 || selectedQuotes.some(q => q.status !== "Approved"),
+        title: count > 0 && selectedQuotes.some(q => q.status !== "Approved") ? "Only approved proposals can proceed" : ""
+      };
+    }
+
+    let targetStatus = "";
+    let label = "";
+
+    if (activeTab === "Quoted") {
+      targetStatus = "Proposed";
+      label = "Batch Submit";
+    } else if (activeTab === "Proposed") {
+      targetStatus = "UnderReview";
+      label = "Batch Start Review";
+    } else if (activeTab === "UnderReview") {
+      targetStatus = "Approved";
+      label = "Batch Approve";
+    } else if (activeTab === "InformationRequested") {
+      targetStatus = "Proposed";
+      label = "Batch Re-Submit";
+    }
+
+    if (!targetStatus) return null;
+
+    return {
+      label,
+      onClick: () => handleBulkStatusUpdate(quotesToProcess, targetStatus),
+      disabled: isBulkProceeding || count === 0,
+      title: ""
+    };
   };
 
   const openQuote = useCallback(async (quoteId: string) => {
@@ -599,8 +665,10 @@ export default function QuotePage() {
                 </p>
                 {(() => {
                   const allOrgQuotes = organizationGroups.flatMap(org => org.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
-                  const selectedOrgCount = allOrgQuotes.filter(q => selectedQuoteIds.has(q.quote_id)).length;
+                  const selectedQuotes = allOrgQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
+                  const selectedOrgCount = selectedQuotes.length;
                   const allSelected = allOrgQuotes.length > 0 && selectedOrgCount === allOrgQuotes.length;
+                  const actionProps = getBatchActionProps(allOrgQuotes);
                   return (
                     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
                       <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
@@ -615,13 +683,16 @@ export default function QuotePage() {
                             {selectedOrgCount} of {allOrgQuotes.length} plan(s) selected
                           </p>
                         </div>
-                        <button
-                          onClick={() => handleBulkProceed(allOrgQuotes)}
-                          disabled={isBulkProceeding || selectedOrgCount === 0}
-                          className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                        >
-                          {isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
-                        </button>
+                        {actionProps && (
+                          <button
+                            onClick={actionProps.onClick}
+                            disabled={actionProps.disabled}
+                            title={actionProps.title}
+                            className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+                          >
+                            {isBulkProceeding ? "Processing..." : actionProps.label}
+                          </button>
+                        )}
                       </div>
                       {viewMode === 'grid' ? (
                         <div className="p-4 bg-slate-50/30">
@@ -655,8 +726,10 @@ export default function QuotePage() {
                 </p>
                 {(() => {
                   const allFamQuotes = familyGroups.flatMap(family => family.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
-                  const selectedFamCount = allFamQuotes.filter(q => selectedQuoteIds.has(q.quote_id)).length;
+                  const selectedQuotes = allFamQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
+                  const selectedFamCount = selectedQuotes.length;
                   const allSelected = allFamQuotes.length > 0 && selectedFamCount === allFamQuotes.length;
+                  const actionProps = getBatchActionProps(allFamQuotes);
                   return (
                     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
                       <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
@@ -671,13 +744,16 @@ export default function QuotePage() {
                             {selectedFamCount} of {allFamQuotes.length} plan(s) selected
                           </p>
                         </div>
-                        <button
-                          onClick={() => handleBulkProceed(allFamQuotes)}
-                          disabled={isBulkProceeding || selectedFamCount === 0}
-                          className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                        >
-                          {isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
-                        </button>
+                        {actionProps && (
+                          <button
+                            onClick={actionProps.onClick}
+                            disabled={actionProps.disabled}
+                            title={actionProps.title}
+                            className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+                          >
+                            {isBulkProceeding ? "Processing..." : actionProps.label}
+                          </button>
+                        )}
                       </div>
                       {viewMode === 'grid' ? (
                         <div className="p-4 bg-slate-50/30">
@@ -714,8 +790,10 @@ export default function QuotePage() {
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                   {(() => {
                     const allIndividualQuotes = individualGroups.flatMap(g => g.quotes);
-                    const selectedIndividualCount = allIndividualQuotes.filter(q => selectedQuoteIds.has(q.quote_id)).length;
+                    const selectedQuotes = allIndividualQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
+                    const selectedIndividualCount = selectedQuotes.length;
                     const allSelected = allIndividualQuotes.length > 0 && selectedIndividualCount === allIndividualQuotes.length;
+                    const actionProps = getBatchActionProps(allIndividualQuotes);
                     return (
                       <div className="flex flex-col">
                         <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
@@ -730,13 +808,16 @@ export default function QuotePage() {
                               {selectedIndividualCount} of {allIndividualQuotes.length} plan(s) selected
                             </p>
                           </div>
-                          <button
-                            onClick={() => handleBulkProceed(allIndividualQuotes)}
-                            disabled={isBulkProceeding || selectedIndividualCount === 0}
-                            className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                          >
-                            {isBulkProceeding ? "Processing..." : "Batch Proceed to Underwriting"}
-                          </button>
+                          {actionProps && (
+                            <button
+                              onClick={actionProps.onClick}
+                              disabled={actionProps.disabled}
+                              title={actionProps.title}
+                              className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
+                            >
+                              {isBulkProceeding ? "Processing..." : actionProps.label}
+                            </button>
+                          )}
                         </div>
                         {bulkProceedError && (
                           <div className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
@@ -1003,6 +1084,18 @@ function QuoteDetailModal({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
+  const missingFields = useMemo(() => {
+    if (!detail) return [];
+    const missing: { key: string; label: string; type: string }[] = [];
+    if (!detail.customer_dob) missing.push({ key: 'date_of_birth', label: 'Date of Birth', type: 'date' });
+    if (!detail.customer_gender) missing.push({ key: 'gender', label: 'Gender', type: 'select' });
+    if (!detail.customer_occupation) missing.push({ key: 'occupation', label: 'Occupation', type: 'text' });
+    if (!detail.customer_declared_income) missing.push({ key: 'declared_income', label: 'Annual Income', type: 'number' });
+    return missing;
+  }, [detail]);
+
+  const [missingFormData, setMissingFormData] = useState<Record<string, any>>({});
+
   const handleStart = async () => {
     setStarting(true);
     setStartError(null);
@@ -1013,6 +1106,75 @@ function QuoteDetailModal({
       setStarting(false);
     }
   };
+
+  const getModalActionProps = () => {
+    if (!detail) return null;
+    const status = detail.status;
+
+    if (status === "Approved") {
+      return {
+        label: starting ? "Opening case…" : "Proceed to Underwriting",
+        onClick: handleStart,
+        disabled: starting
+      };
+    }
+    
+    let targetStatus = "";
+    let label = "";
+    let isSaveInfo = false;
+    
+    if (status === "Quoted") {
+      if (missingFields.length > 0) {
+        targetStatus = "InformationRequested";
+        label = "Send to Info Requested";
+      } else {
+        targetStatus = "Proposed";
+        label = "Submit Proposal";
+      }
+    } else if (status === "Proposed") {
+      targetStatus = "UnderReview";
+      label = "Start Review";
+    } else if (status === "UnderReview") {
+      targetStatus = "Approved";
+      label = "Approve Proposal";
+    } else if (status === "InformationRequested") {
+      if (missingFields.length > 0) {
+        isSaveInfo = true;
+        label = "Save Information";
+      } else {
+        targetStatus = "Proposed";
+        label = "Re-Submit Proposal";
+      }
+    }
+    
+    if (!targetStatus && !isSaveInfo) return null;
+    
+    return {
+      label: starting ? "Processing..." : label,
+      disabled: starting || (isSaveInfo && Object.keys(missingFormData).length === 0),
+      onClick: async () => {
+        setStarting(true);
+        setStartError(null);
+        try {
+          if (isSaveInfo) {
+            const tenantId = localStorage.getItem("tenant_id");
+            if (tenantId && detail) {
+              await updateCustomer(tenantId, detail.customer_id, missingFormData);
+            }
+          } else {
+            await updateQuote(detail.quote_id, { status: targetStatus });
+          }
+          onRefresh();
+          onClose();
+        } catch (err: any) {
+          setStartError(err.message ?? "Failed to update.");
+          setStarting(false);
+        }
+      }
+    };
+  };
+
+  const modalActionProps = getModalActionProps();
 
   return (
     <div
@@ -1101,24 +1263,11 @@ function QuoteDetailModal({
 
             
             {/* Status and Underwriter Update */}
-            <div className="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200 p-4 rounded-xl">
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Status</label>
-                <select 
-                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white"
-                  value={detail.status}
-                  onChange={e => handleUpdate({ status: e.target.value })}
-                  disabled={updating}
-                >
-                  {STATUS_TABS.slice(1).map(tab => (
-                    <option key={tab.id} value={tab.id}>{tab.label}</option>
-                  ))}
-                </select>
-              </div>
+            <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Assigned Underwriter</label>
                 <select 
-                  className="w-full text-sm border border-slate-200 rounded-lg p-2 bg-white"
+                  className="w-full max-w-sm text-sm border border-slate-200 rounded-lg p-2 bg-white"
                   value={detail.assigned_underwriter_id || ""}
                   onChange={e => handleUpdate({ assigned_underwriter_id: e.target.value || null })}
                   disabled={updating}
@@ -1200,22 +1349,71 @@ function QuoteDetailModal({
               </div>
             </section>
 
-            {/* Proceed to underwriting */}
-            <section className="pt-1 border-t border-slate-100">
-              {startError && (
-                <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{startError}</p>
-              )}
-              <button
-                onClick={handleStart}
-                disabled={starting}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
-              >
-                {starting ? (
-                  <span className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white" />
-                ) : null}
-                {starting ? "Opening case…" : "Proceed to Underwriting"}
-              </button>
-            </section>
+            {/* Missing Information section */}
+            {missingFields.length > 0 && detail.status === "Quoted" && (
+              <div className="bg-amber-50 border border-amber-200 p-4 rounded-xl">
+                <p className="text-xs font-bold text-amber-700 uppercase tracking-widest mb-1">Missing Information</p>
+                <p className="text-sm text-amber-600 mb-2">The following information is missing and must be completed:</p>
+                <ul className="list-disc list-inside text-sm text-amber-700">
+                  {missingFields.map(f => <li key={f.key}>{f.label}</li>)}
+                </ul>
+              </div>
+            )}
+
+            {missingFields.length > 0 && detail.status === "InformationRequested" && (
+              <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl">
+                <p className="text-xs font-bold text-blue-700 uppercase tracking-widest mb-3">Provide Missing Information</p>
+                <div className="space-y-3">
+                  {missingFields.map(f => (
+                    <div key={f.key}>
+                      <label className="text-xs font-semibold text-slate-700 block mb-1">{f.label}</label>
+                      {f.type === 'select' ? (
+                        <select
+                          className="w-full text-sm border border-slate-300 rounded p-2"
+                          value={missingFormData[f.key] || ''}
+                          onChange={e => setMissingFormData({...missingFormData, [f.key]: e.target.value})}
+                        >
+                          <option value="">Select {f.label}</option>
+                          {f.key === 'gender' && (
+                            <>
+                              <option value="Male">Male</option>
+                              <option value="Female">Female</option>
+                            </>
+                          )}
+                        </select>
+                      ) : (
+                        <input
+                          type={f.type}
+                          className="w-full text-sm border border-slate-300 rounded p-2"
+                          value={missingFormData[f.key] || ''}
+                          onChange={e => setMissingFormData({...missingFormData, [f.key]: e.target.value})}
+                          placeholder={`Enter ${f.label}`}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Dynamic action button */}
+            {modalActionProps && (
+              <section className="pt-1 border-t border-slate-100">
+                {startError && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{startError}</p>
+                )}
+                <button
+                  onClick={modalActionProps.onClick}
+                  disabled={modalActionProps.disabled}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
+                >
+                  {starting ? (
+                    <span className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white" />
+                  ) : null}
+                  {modalActionProps.label}
+                </button>
+              </section>
+            )}
           </div>
         )}
       </div>

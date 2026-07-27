@@ -36,3 +36,7 @@ export async function listCustomers<T = any>(tenantId: string, params: CustomerL
 export async function setProfileStatus(tenantId: string, customerId: string, profile_status: ProfileStatus): Promise<void> {
   await api.put(`${base(tenantId)}/${customerId}`, { profile_status });
 }
+
+export async function updateCustomer(tenantId: string, customerId: string, data: any): Promise<void> {
+  await api.put(`${base(tenantId)}/${customerId}`, data);
+}
