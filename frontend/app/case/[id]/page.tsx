@@ -526,6 +526,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [noteSent, setNoteSent] = useState(false);
   const [generatingNote, setGeneratingNote] = useState(false);
   const [noteGenError, setNoteGenError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   // AI Analysis view mode — "table" (compact rows, default) or "list" (grouped bullets).
   const [analysisView, setAnalysisView] = useState<"list" | "table">("table");
@@ -928,6 +929,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
     try {
       await api.patch(`/tenants/${tenantId}/cases/${caseId}/status`, { status: newStatus });
       await fetchDetail();
+      if (newStatus === "Approved") {
+        setSuccessMessage("Case successfully approved and forwarded to Issuance Queue.");
+        setTimeout(() => setSuccessMessage(null), 4000);
+      }
     } catch (err: any) {
       setError(err.message ?? "Failed to update case status.");
     } finally {
@@ -1109,6 +1114,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   return (
     <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
+      {successMessage && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-in slide-in-from-top-5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5 text-emerald-100">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+          <div className="font-semibold text-sm">{successMessage}</div>
+        </div>
+      )}
 
       {/* ── Breadcrumb & case header ──────────────────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
