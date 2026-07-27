@@ -132,25 +132,25 @@ export const SOURCE_TYPE_LABELS: Record<string, string> = {
 };
 
 export const PLAN_TYPE_COLORS: Record<string, string> = {
-  TERM_LIFE: "border-blue-400 bg-blue-50",
-  WHOLE_LIFE: "border-violet-400 bg-violet-50",
-  ENDOWMENT: "border-amber-400 bg-amber-50",
+  TERM_LIFE: "border-emerald-400 bg-emerald-50",
+  WHOLE_LIFE: "border-emerald-400 bg-emerald-50",
+  ENDOWMENT: "border-emerald-400 bg-emerald-50",
   CHILD_EDUCATION_MARRIAGE: "border-emerald-400 bg-emerald-50",
-  GROUP_LIFE: "border-indigo-400 bg-indigo-50",
-  SAVINGS: "border-amber-400 bg-amber-50",
-  SINGLE_PREMIUM: "border-violet-400 bg-violet-50",
-  HEALTH_CASH: "border-rose-400 bg-rose-50",
+  GROUP_LIFE: "border-emerald-400 bg-emerald-50",
+  SAVINGS: "border-emerald-400 bg-emerald-50",
+  SINGLE_PREMIUM: "border-emerald-400 bg-emerald-50",
+  HEALTH_CASH: "border-emerald-400 bg-emerald-50",
 };
 
 export const PLAN_TYPE_TEXT: Record<string, string> = {
-  TERM_LIFE: "text-blue-700",
-  WHOLE_LIFE: "text-violet-700",
-  ENDOWMENT: "text-amber-700",
+  TERM_LIFE: "text-emerald-700",
+  WHOLE_LIFE: "text-emerald-700",
+  ENDOWMENT: "text-emerald-700",
   CHILD_EDUCATION_MARRIAGE: "text-emerald-700",
-  GROUP_LIFE: "text-indigo-700",
-  SAVINGS: "text-amber-700",
-  SINGLE_PREMIUM: "text-violet-700",
-  HEALTH_CASH: "text-rose-700",
+  GROUP_LIFE: "text-emerald-700",
+  SAVINGS: "text-emerald-700",
+  SINGLE_PREMIUM: "text-emerald-700",
+  HEALTH_CASH: "text-emerald-700",
 };
 
 export const customerTabs = [
