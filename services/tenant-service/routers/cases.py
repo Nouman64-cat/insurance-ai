@@ -459,12 +459,30 @@ async def update_case_status(
         if case.policy_id:
             policy_to_update = await session.get(Policy, case.policy_id)
         if not policy_to_update:
+            # Fallback: find the most-recent non-issued policy for THIS specific
+            # customer only. Explicitly exclude already-Active/Issued policies so
+            # we never accidentally link this case to an already-bound contract.
+            from sqlalchemy import cast, String as SAString
+            _excluded = [
+                "ACTIVE", "Active", "ISSUED", "Issued",
+                "LAPSED", "Lapsed", "CANCELLED", "Cancelled",
+                "DECLINED", "Declined",
+            ]
             policy_stmt = (
                 select(Policy)
-                .where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id)
+                .where(
+                    Policy.tenant_id == tenant_id,
+                    Policy.customer_id == case.customer_id,
+                    cast(Policy.status, SAString).notin_(_excluded),
+                )
                 .order_by(Policy.created_at.desc())
             )
             policy_to_update = (await session.execute(policy_stmt)).scalars().first()
+            # Stitch the case → policy FK so the issuance endpoint can find this
+            # case when it closes all APPROVED cases after issuing the policy.
+            if policy_to_update and case.policy_id is None:
+                case.policy_id = policy_to_update.id
+                session.add(case)
 
         if policy_to_update:
             st_val = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
@@ -472,24 +490,12 @@ async def update_case_status(
                 raise HTTPException(400, "Cannot approve case: The associated policy is already Active and cannot be issued again.")
             policy_to_update.status = PolicyStatusEnum.APPROVED
             session.add(policy_to_update)
-        
-        customer = await session.get(Customer, case.customer_id)
-        if customer:
-            from shared.models.core import ProfileStatusEnum, FamilyGroup, Organization
-            customer.profile_status = ProfileStatusEnum.POLICYHOLDER
-            session.add(customer)
-            
-            if customer.family_group_id:
-                fg = await session.get(FamilyGroup, customer.family_group_id)
-                if fg:
-                    fg.profile_status = ProfileStatusEnum.POLICYHOLDER
-                    session.add(fg)
-            
-            if customer.organization_id:
-                org = await session.get(Organization, customer.organization_id)
-                if org:
-                    org.profile_status = ProfileStatusEnum.POLICYHOLDER
-                    session.add(org)
+
+        # NOTE: Do NOT promote customer to POLICYHOLDER here.
+        # A customer only becomes a policyholder when the policy is actually
+        # issued and goes Active. Promoting at Approved is premature and causes
+        # them to appear on the Policyholders page before coverage exists.
+        # This transition is handled in routers/policies.py → issue_policy().
                     
     await session.commit()
     await session.refresh(case)

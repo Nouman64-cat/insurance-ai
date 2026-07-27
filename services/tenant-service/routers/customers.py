@@ -17,8 +17,11 @@ from shared.models.core import AcquisitionSource, Customer, Policy, Tenant, Prof
 from shared.pricing.calculator import calculate_premium
 from routers.users import verify_admin   # reuse existing Admin guard
 
-# A customer counts as "taking insurance" once a policy has cleared underwriting.
-ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.APPROVED, PolicyStatusEnum.ISSUED, PolicyStatusEnum.ACTIVE)
+# A customer counts as a policyholder only once a policy is actually bound and in-force.
+# APPROVED is intentionally excluded — it means "approved by underwriting but not yet issued",
+# i.e. still sitting in the Policy Issuance queue. Including it caused customers to appear
+# in the Policyholders page before they had any real coverage.
+ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.ISSUED, PolicyStatusEnum.ACTIVE)
 
 CustomerCategory = Literal["active", "full_details", "quick_lead", "not_interested"]
 
