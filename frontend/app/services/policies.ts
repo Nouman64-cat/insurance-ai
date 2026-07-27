@@ -13,6 +13,9 @@ export interface PolicyListItem {
   coverage_amount: number;
   term_years: number;
   status: string;
+  segment?: string;
+  case_number?: string | null;
+  case_status?: string | null;
   effective_date: string | null;
   expiry_date: string | null;
   created_at: string;

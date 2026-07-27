@@ -37,6 +37,7 @@ from shared.models.core import (
     RenewalStatusEnum,
     RenewalTransaction,
     RiskAssessment,
+    Case,
 )
 
 log = logging.getLogger(__name__)
@@ -170,6 +171,18 @@ async def list_policies(
     out = []
     for p in policies:
         cust = await session.get(Customer, p.customer_id)
+        
+        segment = "individual"
+        if getattr(p, "family_policy_id", None):
+            segment = "family"
+        elif getattr(p, "master_policy_id", None):
+            segment = "organization"
+            
+        case_res = await session.exec(select(Case).where(Case.policy_id == p.id))
+        case_obj = case_res.first()
+        case_number = case_obj.caseNumber if case_obj else None
+        case_status = case_obj.caseStatus if case_obj else None
+
         out.append({
             "id": str(p.id),
             "policy_number": p.policy_number,
@@ -180,6 +193,9 @@ async def list_policies(
             "coverage_amount": p.coverage_amount,
             "term_years": p.term_years,
             "status": _st(p),
+            "segment": segment,
+            "case_number": case_number,
+            "case_status": case_status,
             "effective_date": p.effective_date.isoformat() if p.effective_date else None,
             "expiry_date": p.expiry_date.isoformat() if p.expiry_date else None,
             "created_at": p.created_at.isoformat(),
