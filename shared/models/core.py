@@ -101,19 +101,31 @@ class PolicyStatusEnum(str, Enum):
     InformationRequested — paused, waiting on the customer for documents/medical
                           reports before underwriting can continue.
     Approved           — AI Auto Approve, or an underwriter approved the case.
+    AcceptedWithLoadings — Approved with premium loadings applied (underwriting decision).
     Declined           — AI hard-declined, or an underwriter rejected the case.
-    Issued             — approved policy accepted + first premium paid (not yet wired
-                          to a payment flow — set manually until that exists).
-    Lapsed             — issued policy that later lapsed (non-payment, cancellation).
+    Issued             — Policy issued (legacy / transitional; use Active for live cover).
+    Active             — Premium paid, coverage is live and in force.
+    GracePeriod        — Policy expired without renewal payment; claims still honoured
+                          during the grace window (configurable, default 30 days).
+    Lapsed             — Coverage terminated — non-payment past grace period.
+    Cancelled          — Coverage terminated at customer or insurer request.
+    PendingPayment     — Binding initiated; awaiting payment confirmation before
+                          coverage activates. Phase 2: payment gateway flips this
+                          to Active on settlement webhook.
     """
     QUOTED = "Quoted"
     PROPOSED = "Proposed"
     UNDER_REVIEW = "UnderReview"
     INFORMATION_REQUESTED = "InformationRequested"
     APPROVED = "Approved"
+    ACCEPTED_WITH_LOADINGS = "AcceptedWithLoadings"
+    PENDING_PAYMENT = "PendingPayment"
     DECLINED = "Declined"
     ISSUED = "Issued"
+    ACTIVE = "Active"
+    GRACE_PERIOD = "GracePeriod"
     LAPSED = "Lapsed"
+    CANCELLED = "Cancelled"
 
 
 class ProfileStatusEnum(str, Enum):
@@ -678,6 +690,17 @@ class Policy(SQLModel, table=True):
     # correct without a backfill.
     status: PolicyStatusEnum = Field(default=PolicyStatusEnum.QUOTED, max_length=50)
 
+    # ── Issuance / Contract fields (populated at issue time) ──────────────────
+    # Unique human-readable policy number — e.g. "POL-2026-0001". Null until issued.
+    policy_number: Optional[str] = Field(default=None, max_length=50, index=True)
+    # Coverage window set when the policy is bound and activated.
+    expiry_date: Optional[date] = Field(default=None)
+    # End of the grace period window after expiry (default: expiry + 30 days).
+    grace_period_end_date: Optional[date] = Field(default=None)
+    # Points to the latest PolicyVersion snapshot for this policy.
+    current_version_id: Optional[UUID] = Field(default=None, nullable=True)
+    # ─────────────────────────────────────────────────────────────────────────
+
     effective_date: Optional[date] = Field(default=None)
     assigned_underwriter_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -699,6 +722,18 @@ class Policy(SQLModel, table=True):
         back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     cases: List["Case"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    policy_versions: List["PolicyVersion"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    premium_schedules: List["PremiumSchedule"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    renewal_transactions: List["RenewalTransaction"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    policy_documents: List["PolicyDocument"] = Relationship(
         back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
@@ -1255,3 +1290,183 @@ class TokenUsage(SQLModel, table=True):
     output_tokens: int = Field(default=0)
     total_tokens: int = Field(default=0)
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)
+
+
+# =============================================================================
+# POLICY ISSUANCE & RENEWALS MODULE
+# =============================================================================
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PolicyVersion  —  immutable snapshot of policy terms at each lifecycle event
+# (issuance, endorsement, renewal). Append-only: never update, always insert.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BillingFrequencyEnum(str, Enum):
+    ANNUAL = "Annual"
+    SEMI_ANNUAL = "SemiAnnual"
+    QUARTERLY = "Quarterly"
+    MONTHLY = "Monthly"
+
+
+class PremiumScheduleStatusEnum(str, Enum):
+    PENDING = "Pending"
+    PAID = "Paid"
+    OVERDUE = "Overdue"
+    WAIVED = "Waived"
+
+
+class RenewalStatusEnum(str, Enum):
+    INITIATED = "Initiated"
+    UNDERWRITING_REVIEW = "UnderwritingReview"
+    QUOTED = "Quoted"
+    BOUND = "Bound"
+    LAPSED = "Lapsed"
+
+
+class PolicyDocumentTypeEnum(str, Enum):
+    SCHEDULE = "PolicySchedule"          # Declarations page
+    CERTIFICATE = "CertificateOfInsurance"
+    WORDING = "PolicyWording"            # T&Cs + endorsements
+    RENEWAL_NOTICE = "RenewalNotice"
+
+
+class PolicyVersion(SQLModel, table=True):
+    """
+    Immutable ledger of policy terms at each contract event.
+    Version 1.0 = initial issuance.
+    Version 1.x = mid-term endorsements (coverage changes, address updates).
+    Version N.0 = annual renewal rebinding.
+
+    Format: major (renewal cycle) + minor (endorsement sequence within cycle).
+    e.g. "1.0", "1.1", "2.0".
+    """
+    __tablename__ = "policy_versions"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    version_number: str = Field(max_length=20)      # e.g. "1.0", "1.1", "2.0"
+    effective_from: date = Field(nullable=False)
+    effective_to: Optional[date] = Field(default=None)  # null = currently active version
+
+    # Premium breakdown at this version (PKR)
+    base_premium: float = Field(ge=0)
+    loading_amount: float = Field(default=0.0, ge=0)
+    policy_fee: float = Field(default=500.0, ge=0)
+    tax_amount: float = Field(default=0.0, ge=0)
+    total_premium: float = Field(ge=0)
+
+    # Applied underwriting terms — persisted as JSON for auditability
+    loadings_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    exclusions_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # Who or what triggered this version (e.g. user_id for endorsements, "system" for STP renewal)
+    created_by: Optional[str] = Field(default=None, max_length=255)
+    event_type: str = Field(default="Issuance", max_length=50)  # Issuance | Endorsement | Renewal
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    policy: Optional[Policy] = Relationship(back_populates="policy_versions")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PremiumSchedule  —  recurring billing installment ledger for a policy
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PremiumSchedule(SQLModel, table=True):
+    """
+    One row per billing installment. Created at issuance (and at each renewal
+    binding). The scheduler marks rows OVERDUE once due_date passes unpaid;
+    the payment gateway (or manual collection flow) marks them PAID.
+    """
+    __tablename__ = "premium_schedules"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    policy_version_id: Optional[UUID] = Field(default=None, nullable=True)  # FK resolved at runtime
+
+    billing_frequency: BillingFrequencyEnum = Field(default=BillingFrequencyEnum.ANNUAL, max_length=50)
+    due_date: date = Field(nullable=False, index=True)
+    amount_due: float = Field(ge=0)
+    amount_paid: float = Field(default=0.0, ge=0)
+    status: PremiumScheduleStatusEnum = Field(default=PremiumScheduleStatusEnum.PENDING, max_length=50)
+
+    paid_at: Optional[datetime] = Field(default=None)
+    payment_reference: Optional[str] = Field(default=None, max_length=255)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    policy: Optional[Policy] = Relationship(back_populates="premium_schedules")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# RenewalTransaction  —  tracks one annual renewal cycle for a policy
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RenewalTransaction(SQLModel, table=True):
+    """
+    One row per renewal cycle (year N → year N+1). Progresses through
+    INITIATED → QUOTED → BOUND (STP path) or
+    INITIATED → UNDERWRITING_REVIEW → QUOTED → BOUND (referral path) or
+    any → LAPSED (unpaid after grace period).
+    """
+    __tablename__ = "renewal_transactions"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    old_version_id: Optional[UUID] = Field(default=None, nullable=True)
+    new_version_id: Optional[UUID] = Field(default=None, nullable=True)
+
+    renewal_year: int = Field(nullable=False)                   # e.g. 2, 3, 4 ...
+    status: RenewalStatusEnum = Field(default=RenewalStatusEnum.INITIATED, max_length=50)
+
+    # Renewal premium details (may differ from current version due to re-rating)
+    renewal_premium: Optional[float] = Field(default=None, ge=0)
+    renewal_loading: Optional[float] = Field(default=None, ge=0)
+
+    # Claims during the term — used to decide STP vs. UW referral
+    claims_count: int = Field(default=0, ge=0)
+    is_stp: bool = Field(default=True)     # False = referred to manual underwriting
+
+    # Scheduler-set timestamps
+    notice_sent_at: Optional[datetime] = Field(default=None)
+    bound_at: Optional[datetime] = Field(default=None)
+    lapsed_at: Optional[datetime] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    policy: Optional[Policy] = Relationship(back_populates="renewal_transactions")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PolicyDocument  —  reference to a generated legal document (PDF stub for MVP)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PolicyDocument(SQLModel, table=True):
+    """
+    Metadata record for each legal document generated at issuance or renewal.
+    storage_url points to the object-store path (or a /api download endpoint).
+    Phase 2 will wire in real PDF generation; Phase 1 stubs the content.
+    """
+    __tablename__ = "policy_documents"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    policy_version_id: Optional[UUID] = Field(default=None, nullable=True)
+
+    document_type: PolicyDocumentTypeEnum = Field(max_length=50)
+    document_name: str = Field(max_length=255)
+    storage_url: Optional[str] = Field(default=None, max_length=1000)
+
+    # Phase 1: stub_content holds minimal text summary until real PDF gen is added
+    stub_content: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    is_stub: bool = Field(default=True)   # False once real PDF is generated
+
+    generated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    # Relationships
+    policy: Optional[Policy] = Relationship(back_populates="policy_documents")

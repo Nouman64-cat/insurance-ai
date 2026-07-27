@@ -19,6 +19,7 @@ interface UnifiedPolicyholder {
   contact_info: string;
   created_at: string;
   primaryIdentifier?: string; // CNIC or Registration No
+  policy_number?: string;
 }
 
 type FilterType = "ALL" | "INDIVIDUAL" | "FAMILY" | "CORPORATE";
@@ -136,6 +137,7 @@ export default function PolicyholdersPage() {
           contact_info: c.details?.phone || "No phone",
           created_at: c.created_at,
           primaryIdentifier: c.cnic,
+          policy_number: c.active_policy_number,
         });
       });
 
@@ -178,7 +180,7 @@ export default function PolicyholdersPage() {
     return policyholders.filter(p => {
       if (filterType !== "ALL" && p.type !== filterType) return false;
       if (q) {
-        const haystack = `${p.name} ${p.contact_info} ${p.primaryIdentifier ?? ""}`.toLowerCase();
+        const haystack = `${p.name} ${p.contact_info} ${p.primaryIdentifier ?? ""} ${p.policy_number ?? ""}`.toLowerCase();
         if (!haystack.includes(q)) return false;
       }
       return true;
@@ -387,7 +389,8 @@ export default function PolicyholdersPage() {
                     <th className="px-6 py-4">Name</th>
                     <th className="px-6 py-4">Type</th>
                     <th className="px-6 py-4">Contact</th>
-                    <th className="px-6 py-4">Identifier</th>
+                    <th className="px-6 py-4">CNIC</th>
+                    <th className="px-6 py-4">Policy No.</th>
                     <th className="px-6 py-4">Enrolled Date</th>
                     <th className="px-6 py-4 text-right">Action</th>
                   </tr>
@@ -411,6 +414,7 @@ export default function PolicyholdersPage() {
                       </td>
                       <td className="px-6 py-4 text-slate-600">{p.contact_info}</td>
                       <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
+                      <td className="px-6 py-4 text-emerald-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
                       <td className="px-6 py-4 text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
                       <td className="px-6 py-4 text-right">
                         <button className="text-emerald-600 hover:text-emerald-800 font-semibold text-xs">

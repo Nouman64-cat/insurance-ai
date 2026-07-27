@@ -455,11 +455,23 @@ async def update_case_status(
     session.add(case)
     
     if case.caseStatus == CaseStatusEnum.APPROVED:
+        policy_to_update = None
         if case.policy_id:
-            policy = await session.get(Policy, case.policy_id)
-            if policy:
-                policy.status = PolicyStatusEnum.APPROVED
-                session.add(policy)
+            policy_to_update = await session.get(Policy, case.policy_id)
+        if not policy_to_update:
+            policy_stmt = (
+                select(Policy)
+                .where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id)
+                .order_by(Policy.created_at.desc())
+            )
+            policy_to_update = (await session.execute(policy_stmt)).scalars().first()
+
+        if policy_to_update:
+            st_val = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
+            if st_val.upper() in ("ACTIVE", "ISSUED"):
+                raise HTTPException(400, "Cannot approve case: The associated policy is already Active and cannot be issued again.")
+            policy_to_update.status = PolicyStatusEnum.APPROVED
+            session.add(policy_to_update)
         
         customer = await session.get(Customer, case.customer_id)
         if customer:

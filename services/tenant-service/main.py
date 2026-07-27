@@ -59,6 +59,8 @@ from routers.insurance_plans import router as insurance_plans_router
 from routers.tokens import router as tokens_router
 from routers.acquisition_sources import router as acquisition_sources_router
 from routers.agent import router as agent_router
+from routers.policies import router as policies_router
+from routers.renewal_scheduler import start_renewal_scheduler
 from shared.models.core import Role
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
@@ -118,11 +120,15 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
     worker_task = start_ocr_worker(stop_event)
 
+    # Renewal scheduler — daily lifecycle state machine
+    renewal_task = start_renewal_scheduler(stop_event)
+
     yield
 
     # Graceful shutdown
     stop_event.set()
     await worker_task
+    await renewal_task
     await producer.stop()
 
 
@@ -159,6 +165,7 @@ app.include_router(insurance_plans_router)
 app.include_router(tokens_router)
 app.include_router(acquisition_sources_router)
 app.include_router(agent_router)
+app.include_router(policies_router)
 
 
 @app.get("/health", tags=["Ops"])

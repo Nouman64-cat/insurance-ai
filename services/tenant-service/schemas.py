@@ -433,6 +433,8 @@ class CustomerRead(BaseModel):
     created_at:       datetime
     details:          Optional[dict] = None
 
+    active_policy_number: Optional[str] = None
+
     # Who brought this customer in (nullable — legacy/API-created rows may have none)
     acquisition_source_id: Optional[UUID] = None
     acquisition_source:    Optional[AcquisitionSourceRead] = None
