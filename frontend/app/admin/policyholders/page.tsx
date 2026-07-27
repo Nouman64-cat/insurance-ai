@@ -173,10 +173,21 @@ export default function PolicyholdersPage() {
     }
   };
 
-const getFilteredData = () => {
+  const getFilteredData = () => {
     const q = search.trim().toLowerCase();
     return policyholders.filter(p => {
       if (filterType !== "ALL" && p.type !== filterType) return false;
+      if (q) {
+        const haystack = `${p.name} ${p.contact_info} ${p.primaryIdentifier ?? ""}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  };
+
+  const getStatsData = () => {
+    const q = search.trim().toLowerCase();
+    return policyholders.filter(p => {
       if (q) {
         const haystack = `${p.name} ${p.contact_info} ${p.primaryIdentifier ?? ""}`.toLowerCase();
         if (!haystack.includes(q)) return false;
@@ -196,6 +207,9 @@ const getFilteredData = () => {
       </div>
     );
   }
+
+  const statsData = getStatsData();
+  const filteredPolicyholders = getFilteredData();
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
@@ -229,7 +243,7 @@ const getFilteredData = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Active</p>
-            <div className="text-2xl font-bold text-slate-900">{policyholders.length}</div>
+            <div className="text-2xl font-bold text-slate-900">{statsData.length}</div>
           </div>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -238,7 +252,7 @@ const getFilteredData = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Individuals</p>
-            <div className="text-2xl font-bold text-blue-700">{policyholders.filter(p => p.type === "INDIVIDUAL").length}</div>
+            <div className="text-2xl font-bold text-blue-700">{statsData.filter(p => p.type === "INDIVIDUAL").length}</div>
           </div>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-700">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -247,7 +261,7 @@ const getFilteredData = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Families</p>
-            <div className="text-2xl font-bold text-purple-700">{policyholders.filter(p => p.type === "FAMILY").length}</div>
+            <div className="text-2xl font-bold text-purple-700">{statsData.filter(p => p.type === "FAMILY").length}</div>
           </div>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-purple-100 text-purple-700">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M8 15v-2a4 4 0 018 0v2"/></svg>
@@ -256,7 +270,7 @@ const getFilteredData = () => {
         <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Corporates</p>
-            <div className="text-2xl font-bold text-emerald-700">{policyholders.filter(p => p.type === "CORPORATE").length}</div>
+            <div className="text-2xl font-bold text-emerald-700">{statsData.filter(p => p.type === "CORPORATE").length}</div>
           </div>
           <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z"/><path d="M6 12H4a2 2 0 00-2 2v8h4"/><path d="M18 9h2a2 2 0 012 2v11h-4"/></svg>

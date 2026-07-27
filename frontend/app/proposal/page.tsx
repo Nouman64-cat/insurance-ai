@@ -325,14 +325,24 @@ export default function QuotePage() {
   }, [quotes]);
 
   const kpis = useMemo(() => {
-    const totalCoverage = segmentQuotes.reduce((sum, q) => sum + q.coverage_amount, 0);
-    const totalPremium = segmentQuotes.reduce((sum, q) => sum + q.total_premium, 0);
+    const q = search.trim().toLowerCase();
+    let fullyFilteredQuotes = segmentQuotes;
+    if (q) {
+      fullyFilteredQuotes = segmentQuotes.filter(
+        (qt) =>
+          qt.customer_name?.toLowerCase().includes(q) ||
+          qt.policy_name?.toLowerCase().includes(q) ||
+          (qt.customer_type === "ORGANIZATION" && qt.registration_number?.toLowerCase().includes(q))
+      );
+    }
+    const totalCoverage = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.coverage_amount, 0);
+    const totalPremium = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.total_premium, 0);
     return [
-      { title: "Proposals", value: segmentQuotes.length, subtitle: "plans generated", accent: "slate" as const },
-      { title: "Total Coverage", value: segmentQuotes.length ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "amber" as const },
-      { title: "Total Premium", value: segmentQuotes.length ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "emerald" as const },
+      { title: "Proposals", value: fullyFilteredQuotes.length, subtitle: "plans generated", accent: "slate" as const },
+      { title: "Total Coverage", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "amber" as const },
+      { title: "Total Premium", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "emerald" as const },
     ];
-  }, [segmentQuotes]);
+  }, [segmentQuotes, search]);
 
   const { organizationGroups, familyGroups, individualGroups } = useMemo(() => {
     const q = search.trim().toLowerCase();
