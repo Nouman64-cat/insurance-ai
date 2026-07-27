@@ -1,15 +1,20 @@
 import asyncio
-import logging
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlmodel import SQLModel
-import os
-from database import get_session
-import uvicorn
-from fastapi import FastAPI, Depends
-from routers.organizations import delete_organization_employee
 from uuid import UUID
+from sqlmodel import select
+from database import engine, get_session
+from shared.models.core import Policy, Case, PolicyStatusEnum
+from sqlmodel.ext.asyncio.session import AsyncSession
 
-# Mock the dependency injection to just test the deletion logic
-# Actually, I can just use curl to hit the local server and look at the uvicorn output
+async def main():
+    async with AsyncSession(engine) as session:
+        cases = (await session.exec(select(Case))).all()
+        policies = (await session.exec(select(Policy))).all()
+        print(f"Total Cases: {len(cases)}")
+        for c in cases:
+            print(f"Case {c.id}: status={c.status}")
+            
+        print(f"\nTotal Policies: {len(policies)}")
+        for p in policies:
+            print(f"Policy {p.id}: status={p.status}")
 
+asyncio.run(main())

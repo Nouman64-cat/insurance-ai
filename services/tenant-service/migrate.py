@@ -657,6 +657,88 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v25d-enum — ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'INFORMATION_REQUESTED'",
         "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'INFORMATION_REQUESTED'",
     ),
+
+    # ── v26: Policy Issuance & Renewals module ───────────────────────────────
+    # New PolicyStatusEnum values for post-underwriting lifecycle stages.
+    (
+        "v26a-enum — add AcceptedWithLoadings to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'AcceptedWithLoadings'",
+    ),
+    (
+        "v26b-enum — add Active to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'Active'",
+    ),
+    (
+        "v26c-enum — add GracePeriod to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'GracePeriod'",
+    ),
+    (
+        "v26d-enum — add Cancelled to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'Cancelled'",
+    ),
+
+    # New columns on the existing policies table — added at issuance time.
+    (
+        "v26e — add policy_number to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS policy_number VARCHAR(50)",
+    ),
+    (
+        "v26f — add expiry_date to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS expiry_date DATE",
+    ),
+    (
+        "v26g — add grace_period_end_date to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS grace_period_end_date DATE",
+    ),
+    (
+        "v26h — add current_version_id to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS current_version_id UUID",
+    ),
+
+    # ── v27: Enum types for the new Issuance/Renewals tables ─────────────────
+    # These are brand-new tables so create_all() builds them; but their enum
+    # types must exist in Postgres BEFORE create_all runs. We create them here
+    # so _create_enums_idempotent() picks them up on the first run and the
+    # DO/EXCEPTION guard makes subsequent runs a no-op.
+    (
+        "v27a-enum — billingfrequencyenum",
+        "DO $$ BEGIN CREATE TYPE billingfrequencyenum AS ENUM "
+        "('Annual','SemiAnnual','Quarterly','Monthly'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    ),
+    (
+        "v27b-enum — premiumschedulestatusenum",
+        "DO $$ BEGIN CREATE TYPE premiumschedulestatusenum AS ENUM "
+        "('Pending','Paid','Overdue','Waived'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    ),
+    (
+        "v27c-enum — renewalstatusenum",
+        "DO $$ BEGIN CREATE TYPE renewalstatusenum AS ENUM "
+        "('Initiated','UnderwritingReview','Quoted','Bound','Lapsed'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    ),
+    (
+        "v27d-enum — policydocumenttypeenum",
+        "DO $$ BEGIN CREATE TYPE policydocumenttypeenum AS ENUM "
+        "('PolicySchedule','CertificateOfInsurance','PolicyWording','RenewalNotice'); "
+        "EXCEPTION WHEN duplicate_object THEN NULL; END $$;",
+    ),
+    # v28: PENDING_PAYMENT intermediate state for clean Phase-2 payment gateway
+    # integration. The issuance flow: APPROVED → PENDING_PAYMENT → ACTIVE.
+    # Phase 1 auto-transitions from PENDING_PAYMENT → ACTIVE immediately (mock pay-to-bind).
+    (
+        "v28a-enum — add PendingPayment to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'PENDING_PAYMENT'",
+    ),
+    # NOTE: The renewal scheduler (renewal_scheduler.py) MUST run in a single-worker
+    # deployment to avoid duplicate RenewalTransactions. Enforce via:
+    #   CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]
+    # in the Dockerfile. A pg_try_advisory_lock(42) guard in the scheduler provides
+    # a second line of defence if workers=1 is ever accidentally removed.
+    # Note: policy_versions, premium_schedules, renewal_transactions, policy_documents
+    # are brand-new tables — create_all() auto-creates them from SQLModel metadata.
+    # No ALTER TABLE entries needed here for those tables.
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

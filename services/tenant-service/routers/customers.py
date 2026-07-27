@@ -18,7 +18,7 @@ from shared.pricing.calculator import calculate_premium
 from routers.users import verify_admin   # reuse existing Admin guard
 
 # A customer counts as "taking insurance" once a policy has cleared underwriting.
-ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.APPROVED, PolicyStatusEnum.ISSUED)
+ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.APPROVED, PolicyStatusEnum.ISSUED, PolicyStatusEnum.ACTIVE)
 
 CustomerCategory = Literal["active", "full_details", "quick_lead", "not_interested"]
 
@@ -29,7 +29,7 @@ def _active_policy_exists(tenant_id: UUID):
         .where(
             Policy.tenant_id == tenant_id,
             Policy.customer_id == Customer.id,
-            cast(Policy.status, String).in_([status.value for status in ACTIVE_POLICY_STATUSES]),
+            func.upper(cast(Policy.status, String)).in_([status.value.upper() for status in ACTIVE_POLICY_STATUSES]),
         )
         .exists()
     )
