@@ -1018,26 +1018,38 @@ export function Sidebar() {
 
       {/* ── User & Logout ─────────────────────────────────────────────────── */}
       <div className="p-3 border-t border-slate-100 bg-slate-50 flex-shrink-0">
-        <Link href="/profile" className={`flex items-center hover:bg-white rounded-xl transition-colors p-2 ${collapsed ? "justify-center" : "gap-3"}`}>
-          <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0 ring-2 ring-white">
-            {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "SR"}
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-bold text-slate-900 truncate">{userName}</p>
-              <p className="text-[10px] text-slate-500 truncate">{userRole || userEmail}</p>
+        <div className={`flex items-center hover:bg-white rounded-xl transition-colors p-2 ${collapsed ? "justify-center" : "gap-3"}`}>
+          <Link href="/profile" className="flex items-center gap-3 flex-1 min-w-0" title="Profile">
+            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0 ring-2 ring-white">
+              {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "SR"}
             </div>
-          )}
+            {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-900 truncate">{userName}</p>
+                <p className="text-[10px] text-slate-500 truncate">{userRole || userEmail}</p>
+              </div>
+            )}
+          </Link>
           {!collapsed && (
-            <div className="text-slate-400 hover:text-slate-600 p-1">
+            <button 
+              type="button"
+              title="Logout"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                localStorage.clear();
+                window.location.replace("/login");
+              }}
+              className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors cursor-pointer flex-shrink-0 relative z-50"
+            >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                 <polyline points="16 17 21 12 16 7"></polyline>
                 <line x1="21" y1="12" x2="9" y2="12"></line>
               </svg>
-            </div>
+            </button>
           )}
-        </Link>
+        </div>
       </div>
     </aside>
   );

@@ -1164,7 +1164,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </button>
           <button
             onClick={() => overrideStatus("Approved")}
-            disabled={overriding !== null}
+            disabled={overriding !== null || !hasAny}
+            title={!hasAny ? "Run AI Underwriting before approving" : undefined}
             className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
           >
             {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
