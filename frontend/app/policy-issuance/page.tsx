@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
 import {
   getPolicyStats,
   listPolicies,
@@ -246,6 +247,7 @@ export default function PolicyIssuancePage() {
   const [tab, setTab] = useState<"queue" | "active">("queue");
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyListItem | null>(null);
   const [viewPolicy, setViewPolicy] = useState<PolicyListItem | null>(null);
+  const [segment, setSegment] = useState<SegmentFilter>("all");
   const [issuanceResult, setIssuanceResult] = useState<{ result: IssuanceResult, policyName: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -267,6 +269,10 @@ export default function PolicyIssuancePage() {
   useEffect(() => { load(); }, []);
 
   const queue = useMemo(() =>
+    policies.filter(p => {
+      if (p.status === "Approved") return p.case_status === "Approved";
+      return ["AcceptedWithLoadings", "PendingPayment", "Issued"].includes(p.status);
+    }),
     policies.filter(p => ["APPROVED", "ACCEPTEDWITHLOADINGS", "PENDINGPAYMENT", "ISSUED"].includes((p.status || "").toUpperCase())),
     [policies]);
 
@@ -275,7 +281,13 @@ export default function PolicyIssuancePage() {
     [policies]);
 
   const filtered = useMemo(() => {
-    const list = tab === "queue" ? queue : active;
+    let list = tab === "queue" ? queue : active;
+
+    // Segment filter
+    if (segment !== "all") {
+      list = list.filter(p => p.segment === segment);
+    }
+
     if (!search.trim()) return list;
     const q = search.toLowerCase();
     return list.filter(p =>
@@ -283,7 +295,17 @@ export default function PolicyIssuancePage() {
       (p.policy_number ?? "").toLowerCase().includes(q) ||
       p.product_name.toLowerCase().includes(q)
     );
-  }, [tab, queue, active, search]);
+  }, [tab, queue, active, search, segment]);
+
+  const segmentCounts = useMemo(() => {
+    const list = tab === "queue" ? queue : active;
+    return {
+      all: list.length,
+      individual: list.filter(p => p.segment === "individual").length,
+      organization: list.filter(p => p.segment === "organization").length,
+      family: list.filter(p => p.segment === "family").length,
+    };
+  }, [tab, queue, active]);
 
   const handleIssued = (result: IssuanceResult, policyId: string) => {
     const pol = policies.find(p => p.id === policyId);
@@ -329,24 +351,29 @@ export default function PolicyIssuancePage() {
 
       {/* Tab Bar + Search */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shrink-0">
-          {(["queue", "active"] as const).map(t => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              {t === "queue" ? `Issuance Queue (${queue.length})` : `Active Policies (${active.length})`}
-            </button>
-          ))}
+        <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
+          <input
+            type="text"
+            placeholder="Search customer, policy, product…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
+          />
+          <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
         </div>
-        <input
-          type="text"
-          placeholder="Search customer, policy, product…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
-        />
+        <div className="flex items-center gap-2">
+          <div className="flex bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shrink-0">
+            {(["queue", "active"] as const).map(t => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              >
+                {t === "queue" ? `Issuance Queue (${queue.length})` : `Active Policies (${active.length})`}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Table */}
@@ -370,7 +397,9 @@ export default function PolicyIssuancePage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                  <th className="px-5 py-3 text-left">Customer & Policy</th>
+                  <th className="px-5 py-3 text-left">Customer</th>
+                  {tab === "queue" && <th className="px-5 py-3 text-left">Case No</th>}
+                  {tab === "active" && <th className="px-5 py-3 text-left">Policy No</th>}
                   <th className="px-5 py-3 text-left">Product</th>
                   <th className="px-5 py-3 text-right">Sum Assured</th>
                   <th className="px-5 py-3 text-left">Status</th>
@@ -380,24 +409,33 @@ export default function PolicyIssuancePage() {
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {filtered.map(p => (
-                  <tr 
-                    key={p.id} 
+                  <tr
+                    key={p.id}
                     className={`hover:bg-slate-50 transition-colors ${tab === "active" ? "cursor-pointer" : ""}`}
                     onClick={() => tab === "active" && setViewPolicy(p)}
                   >
                     <td className="px-5 py-3">
-                      {tab === "active" ? (
-                        <div>
-                          <p className="font-semibold text-slate-800 text-xs">{p.customer_name}</p>
-                          <p className="font-mono text-[10px] text-emerald-700 font-bold mt-0.5">{p.policy_number ?? "—"}</p>
-                        </div>
-                      ) : (
-                        <div>
-                          <p className="font-semibold text-slate-800 text-xs">{p.customer_name}</p>
-                          <p className="text-[10px] text-slate-400">{p.term_years}yr term</p>
-                        </div>
-                      )}
+                      <div>
+                        <p className="font-semibold text-slate-800 text-xs">{p.customer_name}</p>
+                        {tab === "queue" && (
+                          <p className="text-[10px] text-slate-400 mt-0.5">{p.term_years}yr term</p>
+                        )}
+                      </div>
                     </td>
+                    {tab === "queue" && (
+                      <td className="px-5 py-3">
+                        {p.case_number ? (
+                          <p className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-semibold inline-block">{p.case_number}</p>
+                        ) : (
+                          <span className="text-slate-300">—</span>
+                        )}
+                      </td>
+                    )}
+                    {tab === "active" && (
+                      <td className="px-5 py-3">
+                        <p className="font-mono text-[10px] text-emerald-700 font-bold inline-block">{p.policy_number ?? "—"}</p>
+                      </td>
+                    )}
                     <td className="px-5 py-3 text-xs text-slate-600">{p.product_name}</td>
                     <td className="px-5 py-3 text-right font-semibold text-slate-700 text-xs">{fmtCoverage(p.coverage_amount)}</td>
                     <td className="px-5 py-3">
@@ -423,7 +461,7 @@ export default function PolicyIssuancePage() {
                           Issue Policy
                         </button>
                       ) : (
-                        <button 
+                        <button
                           onClick={(e) => {
                             e.stopPropagation();
                             setViewPolicy(p);

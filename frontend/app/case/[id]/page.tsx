@@ -317,7 +317,7 @@ function ReasonGroup({ label, scoreLabel, reasons, accentColor }: {
           const factorStr = isObj ? reason.factor : reason;
           const detailStr = isObj ? reason.reason : tidyReason(reason);
           const kind = isObj ? (reason.risk_level.toLowerCase().includes("high") || reason.risk_level.toLowerCase().includes("moderate") ? "risk" : "clear") : classifyReason(reason);
-          
+
           return (
             <li key={i} className="flex items-start gap-2.5 rounded-lg px-2.5 py-1.5 hover:bg-slate-50/70 transition-colors">
               <ReasonIcon kind={kind as any} className="w-3.5 h-3.5 mt-0.5" />
@@ -379,12 +379,11 @@ function ReasonTable({ sections }: { sections: ReasonSection[] }) {
               <td className="py-3 px-3 text-slate-600">{row.observation}</td>
               <td className="py-3 px-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full ${
-                    row.risk_rating.toLowerCase().includes("high") ? "bg-red-500" :
-                    row.risk_rating.toLowerCase().includes("moderate") ? "bg-amber-500" :
-                    row.risk_rating.toLowerCase().includes("info") ? "bg-blue-500" :
-                    "bg-emerald-500"
-                  }`} />
+                  <div className={`w-3 h-3 rounded-full ${row.risk_rating.toLowerCase().includes("high") ? "bg-red-500" :
+                      row.risk_rating.toLowerCase().includes("moderate") ? "bg-amber-500" :
+                        row.risk_rating.toLowerCase().includes("info") ? "bg-blue-500" :
+                          "bg-emerald-500"
+                    }`} />
                   <span className="text-sm text-slate-700">{row.risk_rating}</span>
                 </div>
               </td>
@@ -1301,10 +1300,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
               <Accordion title="Customer Details">
                 {detail?.principal_participant_name && (
-                    <DataRow label="Member Name" value={customer.name} />
+                  <DataRow label="Member Name" value={customer.name} />
                 )}
                 {detail?.is_principal_participant && (
-                    <DataRow label="Family Role" value="Principal Participant" />
+                  <DataRow label="Family Role" value="Principal Participant" />
                 )}
                 <DataRow label="Date of Birth" value={fmtDob(customer.dob)} />
                 <DataRow label="Gender" value={customer.gender} />
@@ -1388,37 +1387,37 @@ export default function CasePage({ params }: { params: { id: string } }) {
               title="Documents"
               action={<button onClick={() => setShowUpload(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">+ Upload</button>}
             >
-            {docs.required.length === 0 ? (
-              <p className="text-xs text-slate-400">No documents required for this plan type.</p>
-            ) : (
-              <ul className="space-y-1.5 mb-3">
-                {docs.required.map(d => {
-                  const got = docs.received.includes(d);
-                  return (
-                    <li key={d} className="flex items-center justify-between text-xs">
-                      <span className={got ? "text-slate-700" : "text-slate-400"}>{d}</span>
-                      <span className={`font-semibold ${got ? "text-emerald-600" : "text-amber-600"}`}>{got ? "Received" : "Missing"}</span>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+              {docs.required.length === 0 ? (
+                <p className="text-xs text-slate-400">No documents required for this plan type.</p>
+              ) : (
+                <ul className="space-y-1.5 mb-3">
+                  {docs.required.map(d => {
+                    const got = docs.received.includes(d);
+                    return (
+                      <li key={d} className="flex items-center justify-between text-xs">
+                        <span className={got ? "text-slate-700" : "text-slate-400"}>{d}</span>
+                        <span className={`font-semibold ${got ? "text-emerald-600" : "text-amber-600"}`}>{got ? "Received" : "Missing"}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
 
-            {artifacts.length > 0 && (
-              <div className="pt-3 border-t border-slate-100 space-y-1.5">
-                {artifacts.map(a => (
-                  <div key={a.id} className="flex items-center justify-between text-xs">
-                    <div className="min-w-0 flex-1 mr-2">
-                      <p className="truncate text-slate-700 font-medium">{a.file_name}</p>
-                      <p className="text-[10px] text-slate-400">{a.document_type} · {fmtFileSize(a.file_size)}</p>
+              {artifacts.length > 0 && (
+                <div className="pt-3 border-t border-slate-100 space-y-1.5">
+                  {artifacts.map(a => (
+                    <div key={a.id} className="flex items-center justify-between text-xs">
+                      <div className="min-w-0 flex-1 mr-2">
+                        <p className="truncate text-slate-700 font-medium">{a.file_name}</p>
+                        <p className="text-[10px] text-slate-400">{a.document_type} · {fmtFileSize(a.file_size)}</p>
+                      </div>
+                      <span className={`font-semibold flex-shrink-0 ${a.status === "Processing" ? "text-amber-600 animate-pulse" : a.ocr_result ? "text-emerald-600" : "text-slate-400"}`}>
+                        {a.status === "Processing" ? "OCR…" : a.ocr_result ? "OCR done" : a.status}
+                      </span>
                     </div>
-                    <span className={`font-semibold flex-shrink-0 ${a.status === "Processing" ? "text-amber-600 animate-pulse" : a.ocr_result ? "text-emerald-600" : "text-slate-400"}`}>
-                      {a.status === "Processing" ? "OCR…" : a.ocr_result ? "OCR done" : a.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
             </Accordion>
           </div>
 
@@ -1426,25 +1425,25 @@ export default function CasePage({ params }: { params: { id: string } }) {
           {hasAny && (
             <div className="card p-5">
               <Accordion title="Score Summary">
-              <div className="space-y-3">
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Medical Risk</span>
-                  <span className="font-bold text-slate-900">{medicalScore}%</span>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Medical Risk</span>
+                    <span className="font-bold text-slate-900">{medicalScore}%</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Financial Risk</span>
+                    <span className="font-bold text-slate-900">{financialScore}%</span>
+                  </div>
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-500">Fraud Risk</span>
+                    <span className="font-bold text-slate-900">{fraudPct}%</span>
+                  </div>
+                  <div className="h-px bg-slate-100 my-1" />
+                  <div className="flex justify-between items-center text-sm">
+                    <span className="font-semibold text-slate-700">Composite Score</span>
+                    <span className="font-extrabold text-slate-900">{compositeScore}%</span>
+                  </div>
                 </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Financial Risk</span>
-                  <span className="font-bold text-slate-900">{financialScore}%</span>
-                </div>
-                <div className="flex justify-between items-center text-xs">
-                  <span className="text-slate-500">Fraud Risk</span>
-                  <span className="font-bold text-slate-900">{fraudPct}%</span>
-                </div>
-                <div className="h-px bg-slate-100 my-1" />
-                <div className="flex justify-between items-center text-sm">
-                  <span className="font-semibold text-slate-700">Composite Score</span>
-                  <span className="font-extrabold text-slate-900">{compositeScore}%</span>
-                </div>
-              </div>
               </Accordion>
             </div>
           )}
@@ -1652,7 +1651,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       {showReportModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 lg:p-8 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto">
-            
+
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
               <div className="flex items-center gap-4">
@@ -1670,7 +1669,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
             {/* Body */}
             <div className="p-6 md:p-8 space-y-8 bg-white overflow-y-auto max-h-[75vh]">
-              
+
               {/* Hero Decision Section */}
               <div className="flex flex-col items-center justify-center text-center space-y-3 pb-8 border-b border-slate-100">
                 <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Final AI Decision</h3>
@@ -1686,18 +1685,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     Suggested Loading: +{suggestedLoading}%
                   </p>
                 )}
-                
+
                 <div className="w-full max-w-lg mt-8">
                   <div className="flex justify-between items-end mb-2">
                     <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Composite Risk</span>
                     <span className="text-3xl font-black text-slate-900 tracking-tighter">{compositeScore}%</span>
                   </div>
                   <div className="h-3.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
-                    <div 
-                      className={`h-full rounded-full transition-all duration-1000 ${
-                        compositeScore <= 30 ? "bg-emerald-500" :
-                        compositeScore <= 70 ? "bg-amber-500" : "bg-red-500"
-                      }`}
+                    <div
+                      className={`h-full rounded-full transition-all duration-1000 ${compositeScore <= 30 ? "bg-emerald-500" :
+                          compositeScore <= 70 ? "bg-amber-500" : "bg-red-500"
+                        }`}
                       style={{ width: `${compositeScore}%` }}
                     />
                   </div>
@@ -1712,7 +1710,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-widest">{section.label}</span>
                       <span className={`text-2xl font-black ${section.accentColor}`}>{section.scoreLabel}</span>
                     </div>
-                    
+
                     <ul className="w-full space-y-2.5">
                       {section.reasons.length > 0 ? (
                         section.reasons.map((r, rIdx) => {
@@ -1740,14 +1738,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 Generated {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
               </span>
               <div className="flex items-center gap-3">
-                <button 
+                <button
                   onClick={downloadPDF}
                   className="px-5 py-2.5 text-[13px] font-bold text-slate-700 bg-white border border-slate-300 rounded-xl hover:bg-slate-50 shadow-sm transition-all flex items-center gap-2 focus:ring-2 focus:ring-slate-200"
                 >
                   <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
                   Save PDF
                 </button>
-                <button 
+                <button
                   onClick={() => setShowReportModal(false)}
                   className="px-6 py-2.5 text-[13px] font-bold text-white bg-blue-600 border border-transparent rounded-xl hover:bg-blue-700 shadow-sm shadow-blue-600/20 transition-all focus:ring-2 focus:ring-blue-500 focus:ring-offset-1"
                 >
