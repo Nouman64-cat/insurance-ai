@@ -14,14 +14,14 @@ import {
 import { fmtCoverage } from "@/lib/mock-data";
 
 const STATUS_BADGE: Record<string, string> = {
-  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  AcceptedWithLoadings: "bg-amber-50 text-amber-700 border-amber-200",
-  PendingPayment: "bg-violet-50 text-violet-700 border-violet-200",
-  Active: "bg-blue-50 text-blue-700 border-blue-200",
-  Issued: "bg-blue-50 text-blue-700 border-blue-200",
-  Quoted: "bg-slate-50 text-slate-600 border-slate-200",
-  Lapsed: "bg-red-50 text-red-700 border-red-200",
-  Cancelled: "bg-red-50 text-red-700 border-red-200",
+  APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ACCEPTEDWITHLOADINGS: "bg-amber-50 text-amber-700 border-amber-200",
+  PENDINGPAYMENT: "bg-violet-50 text-violet-700 border-violet-200",
+  ACTIVE: "bg-blue-50 text-blue-700 border-blue-200",
+  ISSUED: "bg-blue-50 text-blue-700 border-blue-200",
+  QUOTED: "bg-slate-50 text-slate-600 border-slate-200",
+  LAPSED: "bg-red-50 text-red-700 border-red-200",
+  CANCELLED: "bg-red-50 text-red-700 border-red-200",
 };
 
 interface IssuanceModalProps {
@@ -78,7 +78,7 @@ function IssuanceModal({ policy, onClose, onIssued }: IssuanceModalProps) {
             <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Policy to be Bound</p>
             <p className="text-sm font-bold text-slate-900">{policy.customer_name}</p>
             <p className="text-xs text-slate-500">{policy.product_name} · {policy.term_years} year{policy.term_years > 1 ? "s" : ""} · Sum Assured {fmtCoverage(policy.coverage_amount)}</p>
-            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[policy.status] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[(policy.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
               {policy.status}
             </span>
           </div>
@@ -214,7 +214,7 @@ function PolicyDetailsModal({ policy, onClose }: { policy: PolicyListItem, onClo
             <div className="space-y-1">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Status</span>
               <div>
-                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[policy.status] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[(policy.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
                   {policy.status}
                 </span>
               </div>
@@ -267,7 +267,7 @@ export default function PolicyIssuancePage() {
   useEffect(() => { load(); }, []);
 
   const queue = useMemo(() =>
-    policies.filter(p => ["Approved", "AcceptedWithLoadings", "PendingPayment", "Issued"].includes(p.status)),
+    policies.filter(p => ["APPROVED", "ACCEPTEDWITHLOADINGS", "PENDINGPAYMENT", "ISSUED"].includes((p.status || "").toUpperCase())),
     [policies]);
 
   const active = useMemo(() =>
@@ -401,7 +401,7 @@ export default function PolicyIssuancePage() {
                     <td className="px-5 py-3 text-xs text-slate-600">{p.product_name}</td>
                     <td className="px-5 py-3 text-right font-semibold text-slate-700 text-xs">{fmtCoverage(p.coverage_amount)}</td>
                     <td className="px-5 py-3">
-                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[p.status] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[(p.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
                         {p.status}
                       </span>
                     </td>
