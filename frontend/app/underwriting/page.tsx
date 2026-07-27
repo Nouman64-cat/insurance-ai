@@ -151,17 +151,29 @@ export default function UnderwritingPage() {
   }, [cases]);
 
   const kpis = useMemo(() => {
-    const pendingDocs = segmentCases.filter(c => c.caseStatus === "Pending Documents").length;
-    const underReview = segmentCases.filter(c => c.caseStatus === "Under Review" || c.caseStatus === "New" || c.caseStatus === "InProgress").length;
-    const approved = segmentCases.filter(c => c.caseStatus === "Approved").length;
-    const customerCount = new Set(segmentCases.map(c => c.customer_id)).size;
+    // Apply search filter to KPIs so they perfectly match the visible cards
+    let fullyFilteredCases = segmentCases;
+    const q = search.trim().toLowerCase();
+    if (q) {
+      fullyFilteredCases = segmentCases.filter((c) => {
+        const idStr = c.customer_id ? String(c.customer_id).toLowerCase() : "";
+        const nameStr = c.customer_name ? String(c.customer_name).toLowerCase() : "";
+        const productStr = c.product_name ? String(c.product_name).toLowerCase() : "";
+        return idStr.includes(q) || nameStr.includes(q) || productStr.includes(q);
+      });
+    }
+
+    const pendingDocs = fullyFilteredCases.filter(c => c.caseStatus === "Pending Documents").length;
+    const underReview = fullyFilteredCases.filter(c => c.caseStatus === "Under Review" || c.caseStatus === "New" || c.caseStatus === "InProgress").length;
+    const approved = fullyFilteredCases.filter(c => c.caseStatus === "Approved").length;
+    
     return [
-      { title: "Cases", value: segmentCases.length, subtitle: "total cases", accent: "blue" as const },
+      { title: "Cases", value: fullyFilteredCases.length, subtitle: "total cases", accent: "blue" as const },
       { title: "Awaiting Documents", value: pendingDocs, subtitle: "checklist incomplete", accent: "amber" as const },
       { title: "In Underwriting", value: underReview, subtitle: "not yet decided", accent: "slate" as const },
       { title: "Approved", value: approved, subtitle: "ready to issue", accent: "emerald" as const },
     ];
-  }, [segmentCases]);
+  }, [segmentCases, search]);
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
