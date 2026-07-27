@@ -60,7 +60,7 @@ from shared.models.core import (
 # the current risk-engine aggregation node never emits it itself.
 _DECISION_POLICY_STATUS: dict[str, PolicyStatusEnum] = {
     "Auto Approve":         PolicyStatusEnum.APPROVED,
-    "Approve with Loading": PolicyStatusEnum.APPROVED,
+    "Approve with Loading": PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
     "Human Review":         PolicyStatusEnum.UNDER_REVIEW,
     "Decline":              PolicyStatusEnum.DECLINED,
 }

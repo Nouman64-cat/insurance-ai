@@ -126,6 +126,9 @@ class PolicyStatusEnum(str, Enum):
     GRACE_PERIOD = "GracePeriod"
     LAPSED = "Lapsed"
     CANCELLED = "Cancelled"
+    POSTPONED = "Postponed"
+    REINSURER_REFERRED = "ReinsurerReferred"
+    NOT_TAKEN_UP = "NotTakenUp"
 
 
 class ProfileStatusEnum(str, Enum):
@@ -1470,3 +1473,40 @@ class PolicyDocument(SQLModel, table=True):
 
     # Relationships
     policy: Optional[Policy] = Relationship(back_populates="policy_documents")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PolicyEvent  —  immutable audit/event log for the policy lifecycle
+# ─────────────────────────────────────────────────────────────────────────────
+
+class PolicyEvent(SQLModel, table=True):
+    """
+    Append-only ledger of every lifecycle action on a Policy — issuance,
+    payment confirmation, lapse, cancellation, renewal, endorsement, etc.
+
+    This is the policy-level analogue of CaseAuditTrail. Regulators (SECP)
+    require an immutable trail of who did what and when, and every state
+    transition driven through policy_state_machine.apply_transition() writes
+    one row here. Never updated, only inserted.
+    """
+    __tablename__ = "policy_events"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    # Semantic name of what happened, e.g. "PolicyIssued", "PaymentConfirmed",
+    # "PolicyLapsed", "PolicyCancelled", "PolicyRenewed", "StatusTransition".
+    event_type: str = Field(max_length=100, index=True)
+
+    # Status snapshot around the transition (string form of PolicyStatusEnum).
+    from_status: Optional[str] = Field(default=None, max_length=50)
+    to_status: Optional[str] = Field(default=None, max_length=50)
+
+    # Who triggered it — a user id string, "system" (scheduler), or "gateway".
+    actor: str = Field(default="system", max_length=255)
+
+    # Free-form structured context (amounts, payment refs, reasons) for audit.
+    detail_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)

@@ -16,7 +16,7 @@ from shared.models.core import CaseStatusEnum, PolicyStatusEnum
 
 DECISION_POLICY_STATUS: Dict[str, PolicyStatusEnum] = {
     "Auto Approve":         PolicyStatusEnum.APPROVED,
-    "Approve with Loading": PolicyStatusEnum.APPROVED,
+    "Approve with Loading": PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
     "Human Review":         PolicyStatusEnum.UNDER_REVIEW,
     "Decline":              PolicyStatusEnum.DECLINED,
 }

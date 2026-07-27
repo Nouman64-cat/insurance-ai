@@ -141,3 +141,37 @@ class CustomerCreatedEvent(BaseModel):
     timestamp: datetime = Field(default_factory=_utcnow)
     tenant_id: UUID
     payload: CustomerCreatedPayload
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Topic: insurance.policy.lifecycle.v1
+#
+# Published by the tenant-service after each policy lifecycle state transition
+# commits (issuance, payment confirmation, lapse, cancellation, renewal, …).
+# Consumers can decouple downstream side effects — notifications, document
+# generation, ledger postings — from the transactional write path.
+#
+# event_type mirrors the PolicyEvent.event_type persisted in the audit log,
+# e.g. "PolicyIssued", "PaymentConfirmed", "PolicyLapsed", "PolicyCancelled",
+# "PolicyRenewed".
+# ─────────────────────────────────────────────────────────────────────────────
+
+POLICY_LIFECYCLE_TOPIC = "insurance.policy.lifecycle.v1"
+
+
+class PolicyLifecyclePayload(BaseModel):
+    policy_id: UUID
+    policy_number: Optional[str] = None
+    customer_id: Optional[UUID] = None
+    from_status: Optional[str] = None
+    to_status: Optional[str] = None
+    actor: str = "system"
+    detail: Optional[dict] = None
+
+
+class PolicyLifecycleEvent(BaseModel):
+    event_id: UUID = Field(default_factory=uuid4)
+    event_type: str = "PolicyLifecycle"
+    timestamp: datetime = Field(default_factory=_utcnow)
+    tenant_id: UUID
+    payload: PolicyLifecyclePayload

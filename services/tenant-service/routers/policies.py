@@ -14,13 +14,22 @@ from datetime import date, datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from aiokafka import AIOKafkaProducer
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services import payment_gateway
+from services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from services.pricing_engine import GRACE_PERIOD_DAYS, PricingEngine
+from shared.events.kafka_events import (
+    POLICY_LIFECYCLE_TOPIC,
+    PolicyLifecycleEvent,
+    PolicyLifecyclePayload,
+)
 from shared.models.core import (
     BillingFrequencyEnum,
     Claim,
@@ -29,6 +38,7 @@ from shared.models.core import (
     Policy,
     PolicyDocument,
     PolicyDocumentTypeEnum,
+    PolicyEvent,
     PolicyStatusEnum,
     PolicyVersion,
     PremiumSchedule,
@@ -42,6 +52,19 @@ from shared.models.core import (
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["Policy Issuance & Renewals"])
+
+
+# ── Request bodies ────────────────────────────────────────────────────────────
+
+class PaymentInitiateRequest(BaseModel):
+    method: Optional[str] = None      # JazzCash | Easypaisa | Card | BankTransfer
+
+
+class PaymentConfirmRequest(BaseModel):
+    method: Optional[str] = None
+    reference: Optional[str] = None   # echo of the intent reference (webhook style)
+    amount: Optional[float] = None    # defaults to the schedule's amount_due
+    realize: bool = True              # False simulates a failed / abandoned payment
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -91,6 +114,102 @@ def _make_stub_docs(policy_number: str, product_name: str) -> list[dict]:
         {"type": PolicyDocumentTypeEnum.CERTIFICATE, "name": f"Certificate of Insurance – {policy_number}"},
         {"type": PolicyDocumentTypeEnum.WORDING,     "name": f"Policy Wording & Endorsements – {product_name}"},
     ]
+
+
+async def _publish_policy_event(request: Optional[Request], policy: Policy, event: PolicyEvent) -> None:
+    """Fire-and-forget: mirror a committed PolicyEvent onto Kafka so downstream
+    services (notifications, document generation) can react. A failed publish
+    must never fail the lifecycle transaction — the PolicyEvent row is the
+    source of truth, this is just the decoupled fan-out."""
+    if request is None or not hasattr(request, "app") or not hasattr(request.app, "state"):
+        return
+    producer: Optional[AIOKafkaProducer] = getattr(request.app.state, "kafka_producer", None)
+    if producer is None:
+        return
+    envelope = PolicyLifecycleEvent(
+        event_type=event.event_type,
+        tenant_id=policy.tenant_id,
+        payload=PolicyLifecyclePayload(
+            policy_id=policy.id,
+            policy_number=policy.policy_number,
+            customer_id=policy.customer_id,
+            from_status=event.from_status,
+            to_status=event.to_status,
+            actor=event.actor,
+            detail=event.detail_json,
+        ),
+    )
+    try:
+        await producer.send_and_wait(
+            POLICY_LIFECYCLE_TOPIC,
+            value=envelope.model_dump_json(),
+            key=str(policy.tenant_id),
+        )
+    except Exception as err:  # noqa: BLE001 — best-effort fan-out
+        log.warning("Failed to publish policy lifecycle event %s: %s", event.event_type, err)
+
+
+async def _pending_schedule(session: AsyncSession, policy_id: UUID) -> Optional[PremiumSchedule]:
+    """Earliest still-unpaid installment for a policy (by due date)."""
+    res = await session.exec(
+        select(PremiumSchedule).where(PremiumSchedule.policy_id == policy_id)
+    )
+    unpaid = [
+        s for s in res.all()
+        if (s.status.value if hasattr(s.status, "value") else str(s.status))
+        in (PremiumScheduleStatusEnum.PENDING.value, PremiumScheduleStatusEnum.OVERDUE.value)
+    ]
+    unpaid.sort(key=lambda s: s.due_date)
+    return unpaid[0] if unpaid else None
+
+
+async def _close_cases_and_promote(session: AsyncSession, policy: Policy) -> None:
+    """Close underwriting cases for a policy and promote the customer (and their
+    family/org) to POLICYHOLDER. Runs at payment confirmation — cover is now
+    legally in force, so the pre-issuance workflow artifacts are finalized."""
+    from shared.models.core import Case, CaseStatusEnum, FamilyGroup, Organization
+
+    closed_case_ids: set = set()
+
+    # Cases directly linked to this policy
+    cases_by_policy = (await session.exec(select(Case).where(Case.policy_id == policy.id))).all()
+    for case in cases_by_policy:
+        if case.caseStatus == CaseStatusEnum.APPROVED:
+            case.caseStatus = CaseStatusEnum.CLOSED
+            case.updatedAt = datetime.utcnow()
+            session.add(case)
+            closed_case_ids.add(case.caseld)
+
+    # Cases for this customer with no policy_id FK set (orphan approved cases)
+    from sqlalchemy import cast, String as SAString
+    cases_by_customer = (await session.exec(
+        select(Case).where(
+            Case.tenant_id == policy.tenant_id,
+            Case.customer_id == policy.customer_id,
+            cast(Case.caseStatus, SAString) == CaseStatusEnum.APPROVED.value,
+        )
+    )).all()
+    for case in cases_by_customer:
+        if case.caseld not in closed_case_ids:
+            case.caseStatus = CaseStatusEnum.CLOSED
+            case.updatedAt = datetime.utcnow()
+            session.add(case)
+
+    # Promote Customer (and their family/org group) to POLICYHOLDER
+    customer = await session.get(Customer, policy.customer_id)
+    if customer:
+        customer.profile_status = ProfileStatusEnum.POLICYHOLDER
+        session.add(customer)
+        if customer.family_group_id:
+            fg = await session.get(FamilyGroup, customer.family_group_id)
+            if fg:
+                fg.profile_status = ProfileStatusEnum.POLICYHOLDER
+                session.add(fg)
+        if customer.organization_id:
+            org = await session.get(Organization, customer.organization_id)
+            if org:
+                org.profile_status = ProfileStatusEnum.POLICYHOLDER
+                session.add(org)
 
 
 # ── GET /stats ────────────────────────────────────────────────────────────────
@@ -261,13 +380,18 @@ async def get_policy_detail(
 
 
 # ── POST /issue ───────────────────────────────────────────────────────────────
-# Refinement 2: entire issuance wrapped in atomic BEGIN block.
-# Refinement 1: pricing via PricingEngine.calculate() — no product logic in router.
-# Refinement (Q2): APPROVED → PENDING_PAYMENT → ACTIVE (mock immediate settlement).
+# Phase 1 (payment gate): /issue no longer flips straight to ACTIVE. It drafts
+# the contract (policy number, PolicyVersion 1.0, documents), writes the first
+# premium installment as PENDING, and stops at PENDING_PAYMENT. Coverage only
+# goes live once POST /payments/confirm realizes the first premium — so a policy
+# can NEVER reach ACTIVE without a PAID schedule row.
+# Pricing stays decoupled via PricingEngine.calculate(); the whole draft is one
+# atomic transaction; every status change goes through the state machine.
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/issue")
 async def issue_policy(
     tenant_id: UUID, policy_id: UUID,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     # ── Pre-flight checks (outside transaction — read-only) ──────────────────
@@ -292,7 +416,7 @@ async def issue_policy(
     ins_type_str = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
     base_rate, smoker_factor = await _load_plan_rates(session, tenant_id, policy.insurance_type)
 
-    # ── Pricing (decoupled — Refinement 1) ──────────────────────────────────
+    # ── Pricing (decoupled) ──────────────────────────────────────────────────
     breakdown = PricingEngine.calculate(
         insurance_type=ins_type_str,
         coverage_amount=policy.coverage_amount,
@@ -308,17 +432,14 @@ async def issue_policy(
     expiry = date(effective.year + policy.term_years, effective.month, effective.day)
     grace_end = expiry + timedelta(days=GRACE_PERIOD_DAYS)
 
-    # ── Atomic transaction block (Refinement 2) ──────────────────────────────
-    try:
-        # Step 1: PENDING_PAYMENT intermediate state (Refinement Q2)
-        policy.status = PolicyStatusEnum.PENDING_PAYMENT
-        policy.updated_at = datetime.utcnow()
-        session.add(policy)
-        await session.flush()
+    # First-premium payment intent — the applicant now owes this before cover binds.
+    intent = payment_gateway.initiate_payment(breakdown.total_premium)
 
+    # ── Atomic draft transaction ─────────────────────────────────────────────
+    try:
         policy_number = await _next_policy_number(session, tenant_id)
 
-        # Step 2: PolicyVersion 1.0 — immutable contract snapshot
+        # PolicyVersion 1.0 — immutable contract snapshot
         version = PolicyVersion(
             policy_id=policy_id,
             version_number="1.0",
@@ -339,101 +460,66 @@ async def issue_policy(
         session.add(version)
         await session.flush()  # get version.id before FK usage
 
-        # Step 3: First premium schedule installment
+        # First premium installment — PENDING until the gateway confirms it.
         schedule = PremiumSchedule(
             policy_id=policy_id,
             policy_version_id=version.id,
             billing_frequency=BillingFrequencyEnum.ANNUAL,
             due_date=effective,
             amount_due=breakdown.total_premium,
-            amount_paid=breakdown.total_premium,   # mock pay-to-bind
-            status=PremiumScheduleStatusEnum.PAID,
-            paid_at=datetime.utcnow(),
-            payment_reference="MOCK-PAY-TO-BIND-v1",
+            amount_paid=0.0,
+            status=PremiumScheduleStatusEnum.PENDING,
+            payment_reference=intent.reference,
         )
         session.add(schedule)
 
-        # Step 4: Stub document records
+        # Stub document records (Phase 3 replaces these with real PDFs)
         for doc_info in _make_stub_docs(policy_number, policy.product_name):
             session.add(PolicyDocument(
                 policy_id=policy_id,
                 policy_version_id=version.id,
                 document_type=doc_info["type"],
                 document_name=doc_info["name"],
-                stub_content=f"[STUB] {doc_info['name']} — real PDF in Phase 2.",
+                stub_content=f"[STUB] {doc_info['name']} — real PDF in Phase 3.",
                 is_stub=True,
             ))
 
-        # Step 5: PENDING_PAYMENT → ACTIVE (mock payment confirmed)
+        # Draft the contract fields and move to PENDING_PAYMENT (no cover yet).
         policy.policy_number = policy_number
-        policy.status = PolicyStatusEnum.ACTIVE
         policy.effective_date = effective
         policy.expiry_date = expiry
         policy.grace_period_end_date = grace_end
         policy.current_version_id = version.id
-        policy.updated_at = datetime.utcnow()
-        session.add(policy)
 
-        # Step 6: Close ALL associated Underwriting Cases for this policy.
-        # We search by policy_id first (the properly linked cases), then fall back
-        # to customer_id for any APPROVED cases that have no policy_id FK set
-        # (edge case from cases created before the policy_id FK existed).
-        from shared.models.core import Case, CaseStatusEnum
-        closed_case_ids: set = set()
-
-        # 6a: Cases directly linked to this policy
-        cases_by_policy = (await session.exec(select(Case).where(Case.policy_id == policy_id))).all()
-        for case in cases_by_policy:
-            if case.caseStatus == CaseStatusEnum.APPROVED:
-                case.caseStatus = CaseStatusEnum.CLOSED
-                case.updatedAt = datetime.utcnow()
-                session.add(case)
-                closed_case_ids.add(case.caseld)
-
-        # 6b: Cases for this customer with no policy_id (orphan approved cases)
-        from sqlalchemy import cast, String as SAString
-        cases_by_customer = (await session.exec(
-            select(Case).where(
-                Case.tenant_id == policy.tenant_id,
-                Case.customer_id == policy.customer_id,
-                cast(Case.caseStatus, SAString) == CaseStatusEnum.APPROVED.value,
-            )
-        )).all()
-        for case in cases_by_customer:
-            if case.caseld not in closed_case_ids:
-                case.caseStatus = CaseStatusEnum.CLOSED
-                case.updatedAt = datetime.utcnow()
-                session.add(case)
-
-        # Step 7: Promote Customer (and their family/org group) to POLICYHOLDER
-        from shared.models.core import FamilyGroup, Organization
-        customer = await session.get(Customer, policy.customer_id)
-        if customer:
-            customer.profile_status = ProfileStatusEnum.POLICYHOLDER
-            session.add(customer)
-            if customer.family_group_id:
-                fg = await session.get(FamilyGroup, customer.family_group_id)
-                if fg:
-                    fg.profile_status = ProfileStatusEnum.POLICYHOLDER
-                    session.add(fg)
-            if customer.organization_id:
-                org = await session.get(Organization, customer.organization_id)
-                if org:
-                    org.profile_status = ProfileStatusEnum.POLICYHOLDER
-                    session.add(org)
+        event = apply_transition(
+            session, policy, PolicyStatusEnum.PENDING_PAYMENT,
+            event_type="PolicyIssued",
+            actor="system",
+            detail={
+                "policy_number": policy_number,
+                "total_premium": breakdown.total_premium,
+                "payment_reference": intent.reference,
+                "version": "1.0",
+            },
+        )
 
         await session.commit()
 
-
+    except IllegalStateTransition as exc:
+        await session.rollback()
+        raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         await session.rollback()
-        log.error("Issuance failed for policy %s — rolled back: %s", policy_id, exc, exc_info=True)
+        log.exception("Issuance failed for policy %s — rolled back", policy_id)
         raise HTTPException(500, f"Issuance failed and was rolled back: {exc}") from exc
 
-    log.info("Policy issued: %s (%s) — premium PKR %.0f", policy_number, policy_id, breakdown.total_premium)
+    await _publish_policy_event(request, policy, event)
+
+    log.info("Policy drafted (pending payment): %s (%s) — premium PKR %.0f",
+             policy_number, policy_id, breakdown.total_premium)
     return {
         "policy_number": policy_number,
-        "status": "Active",
+        "status": "PendingPayment",
         "effective_date": effective.isoformat(),
         "expiry_date": expiry.isoformat(),
         "grace_period_end_date": grace_end.isoformat(),
@@ -441,6 +527,136 @@ async def issue_policy(
         "version": "1.0",
         "documents_generated": 3,
         "grace_period_days": GRACE_PERIOD_DAYS,
+        "amount_due": round(breakdown.total_premium, 2),
+        "payment": intent.to_dict(),
+        "available_payment_methods": payment_gateway.available_methods(),
+    }
+
+
+# ── POST /payments/initiate ───────────────────────────────────────────────────
+# Optional step: let an agent/customer pick a channel (JazzCash, Easypaisa,
+# card, bank transfer) for a policy already sitting in PENDING_PAYMENT. Refreshes
+# the pending installment's payment_reference to the chosen channel's intent.
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/initiate")
+async def initiate_payment(
+    tenant_id: UUID, policy_id: UUID,
+    body: PaymentInitiateRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    policy = await _get_policy(session, tenant_id, policy_id)
+    if _st(policy) != PolicyStatusEnum.PENDING_PAYMENT.value:
+        raise HTTPException(400, f"Policy is not awaiting payment (current: {_st(policy)})")
+
+    schedule = await _pending_schedule(session, policy_id)
+    if schedule is None:
+        raise HTTPException(400, "No pending premium installment found for this policy")
+
+    try:
+        intent = payment_gateway.initiate_payment(schedule.amount_due, body.method)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    schedule.payment_reference = intent.reference
+    session.add(schedule)
+    await session.commit()
+
+    return {
+        "policy_id": str(policy_id),
+        "amount_due": round(schedule.amount_due, 2),
+        "payment": intent.to_dict(),
+        "available_payment_methods": payment_gateway.available_methods(),
+    }
+
+
+# ── POST /payments/confirm ────────────────────────────────────────────────────
+# Webhook-style settlement callback. Marks the first premium PAID and only then
+# binds cover: PENDING_PAYMENT → ACTIVE, closes underwriting cases, promotes the
+# customer to POLICYHOLDER. This is the single gate that activates a policy.
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/payments/confirm")
+async def confirm_payment(
+    tenant_id: UUID, policy_id: UUID,
+    request: Request,
+    body: PaymentConfirmRequest,
+    session: AsyncSession = Depends(get_session),
+):
+    policy = await _get_policy(session, tenant_id, policy_id)
+    if _st(policy) != PolicyStatusEnum.PENDING_PAYMENT.value:
+        raise HTTPException(400, f"Policy is not awaiting payment (current: {_st(policy)})")
+
+    schedule = await _pending_schedule(session, policy_id)
+    if schedule is None:
+        raise HTTPException(400, "No pending premium installment found for this policy")
+
+    amount = body.amount if body.amount is not None else schedule.amount_due
+    reference = body.reference or schedule.payment_reference or payment_gateway.generate_reference(
+        payment_gateway.PaymentMethodEnum.JAZZCASH
+    )
+    try:
+        intent = payment_gateway.confirm_payment(reference, amount, body.method, realize=body.realize)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    # Failed / abandoned settlement — stay in PENDING_PAYMENT, record the attempt.
+    if intent.status != payment_gateway.PaymentStatusEnum.REALIZED:
+        record_event(
+            session, policy,
+            event_type="PaymentFailed",
+            from_status=PolicyStatusEnum.PENDING_PAYMENT,
+            to_status=PolicyStatusEnum.PENDING_PAYMENT,
+            actor="gateway",
+            detail={"payment_reference": reference, "amount": amount, "method": intent.method.value},
+        )
+        await session.commit()
+        raise HTTPException(402, "Payment was not realized — policy remains pending payment")
+
+    try:
+        # Mark the installment PAID.
+        schedule.amount_paid = schedule.amount_due
+        schedule.status = PremiumScheduleStatusEnum.PAID
+        schedule.paid_at = intent.realized_at or datetime.utcnow()
+        schedule.payment_reference = intent.reference
+        session.add(schedule)
+
+        # Bind cover: PENDING_PAYMENT → ACTIVE (guarded by the state machine).
+        event = apply_transition(
+            session, policy, PolicyStatusEnum.ACTIVE,
+            event_type="PaymentConfirmed",
+            actor="gateway",
+            detail={
+                "payment_reference": intent.reference,
+                "amount": round(amount, 2),
+                "method": intent.method.value,
+                "schedule_id": str(schedule.id),
+            },
+        )
+
+        # Finalize the pre-issuance workflow now that cover is in force.
+        await _close_cases_and_promote(session, policy)
+
+        await session.commit()
+
+    except IllegalStateTransition as exc:
+        await session.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    except Exception as exc:
+        await session.rollback()
+        log.exception("Payment confirmation failed for policy %s — rolled back", policy_id)
+        raise HTTPException(500, f"Payment confirmation failed and was rolled back: {exc}") from exc
+
+    await _publish_policy_event(request, policy, event)
+
+    log.info("Policy activated: %s (%s) — first premium realized (ref=%s)",
+             policy.policy_number, policy_id, intent.reference)
+    return {
+        "policy_id": str(policy_id),
+        "policy_number": policy.policy_number,
+        "status": "Active",
+        "effective_date": policy.effective_date.isoformat() if policy.effective_date else None,
+        "expiry_date": policy.expiry_date.isoformat() if policy.expiry_date else None,
+        "grace_period_end_date": policy.grace_period_end_date.isoformat() if policy.grace_period_end_date else None,
+        "payment": intent.to_dict(),
     }
 
 
@@ -449,6 +665,7 @@ async def issue_policy(
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/renew")
 async def renew_policy(
     tenant_id: UUID, policy_id: UUID,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     policy = await _get_policy(session, tenant_id, policy_id)
@@ -536,18 +753,33 @@ async def renew_policy(
             payment_reference=f"MOCK-RENEWAL-Y{renewal_year}",
         ))
 
-        policy.status = PolicyStatusEnum.ACTIVE
         policy.expiry_date = new_expiry
         policy.grace_period_end_date = new_grace
         policy.current_version_id = new_version.id
-        policy.updated_at = datetime.utcnow()
-        session.add(policy)
+
+        # Rebind cover for the new term (ACTIVE self-transition, or GRACE→ACTIVE).
+        event = apply_transition(
+            session, policy, PolicyStatusEnum.ACTIVE,
+            event_type="PolicyRenewed",
+            actor="system" if is_stp else "underwriter",
+            detail={
+                "renewal_year": renewal_year,
+                "new_version": new_vnum,
+                "renewal_premium": breakdown.total_premium,
+                "is_stp": is_stp,
+            },
+        )
         await session.commit()
 
+    except IllegalStateTransition as exc:
+        await session.rollback()
+        raise HTTPException(400, str(exc)) from exc
     except Exception as exc:
         await session.rollback()
-        log.error("Renewal failed for policy %s — rolled back: %s", policy_id, exc, exc_info=True)
+        log.exception("Renewal failed for policy %s — rolled back", policy_id)
         raise HTTPException(500, f"Renewal failed and was rolled back: {exc}") from exc
+
+    await _publish_policy_event(request, policy, event)
 
     return {
         "policy_number": policy.policy_number,
@@ -564,24 +796,44 @@ async def renew_policy(
 # ── POST /lapse ───────────────────────────────────────────────────────────────
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/lapse")
-async def lapse_policy(tenant_id: UUID, policy_id: UUID, session: AsyncSession = Depends(get_session)):
+async def lapse_policy(
+    tenant_id: UUID, policy_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
     policy = await _get_policy(session, tenant_id, policy_id)
-    policy.status = PolicyStatusEnum.LAPSED
-    policy.updated_at = datetime.utcnow()
-    session.add(policy)
-    await session.commit()
+    try:
+        event = apply_transition(
+            session, policy, PolicyStatusEnum.LAPSED,
+            event_type="PolicyLapsed", actor="system",
+        )
+        await session.commit()
+    except IllegalStateTransition as exc:
+        await session.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    await _publish_policy_event(request, policy, event)
     return {"policy_id": str(policy_id), "status": "Lapsed"}
 
 
 # ── POST /cancel ──────────────────────────────────────────────────────────────
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/cancel")
-async def cancel_policy(tenant_id: UUID, policy_id: UUID, session: AsyncSession = Depends(get_session)):
+async def cancel_policy(
+    tenant_id: UUID, policy_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
     policy = await _get_policy(session, tenant_id, policy_id)
-    policy.status = PolicyStatusEnum.CANCELLED
-    policy.updated_at = datetime.utcnow()
-    session.add(policy)
-    await session.commit()
+    try:
+        event = apply_transition(
+            session, policy, PolicyStatusEnum.CANCELLED,
+            event_type="PolicyCancelled", actor="system",
+        )
+        await session.commit()
+    except IllegalStateTransition as exc:
+        await session.rollback()
+        raise HTTPException(400, str(exc)) from exc
+    await _publish_policy_event(request, policy, event)
     return {"policy_id": str(policy_id), "status": "Cancelled"}
 
 
@@ -604,4 +856,31 @@ async def list_policy_documents(
             "generated_at": d.generated_at.isoformat(),
         }
         for d in result.all()
+    ]
+
+
+# ── GET /events (lifecycle audit trail) ───────────────────────────────────────
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/events")
+async def list_policy_events(
+    tenant_id: UUID, policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_policy(session, tenant_id, policy_id)
+    result = await session.exec(
+        select(PolicyEvent)
+        .where(PolicyEvent.policy_id == policy_id)
+        .order_by(PolicyEvent.created_at.asc())  # type: ignore[arg-type]
+    )
+    return [
+        {
+            "id": str(e.id),
+            "event_type": e.event_type,
+            "from_status": e.from_status,
+            "to_status": e.to_status,
+            "actor": e.actor,
+            "detail": e.detail_json,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in result.all()
     ]

@@ -20,6 +20,7 @@ State transitions managed:
 
 import asyncio
 import logging
+import os
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import text
@@ -81,8 +82,11 @@ async def _process_renewals(session) -> None:
     def st(p):
         return p.status.value if hasattr(p.status, "value") else str(p.status)
 
-    active_policies = [p for p in all_policies if st(p) == "Active"]
-    grace_policies  = [p for p in all_policies if st(p) == "GracePeriod"]
+    active_policies = [p for p in all_policies if st(p).upper() == "ACTIVE"]
+    grace_policies  = [p for p in all_policies if st(p).upper() == "GRACEPERIOD"]
+    pending_policies = [p for p in all_policies if st(p).upper() == "PENDINGPAYMENT"]
+    
+    ntu_days = int(os.environ.get("NTU_DAYS", "30"))
 
     # ── 1. ACTIVE → GRACE_PERIOD  ─────────────────────────────────────────────
     for policy in active_policies:
@@ -127,23 +131,36 @@ async def _process_renewals(session) -> None:
                     )
         else:
             # Expiry date has passed — move to GRACE_PERIOD
-            policy.status = PolicyStatusEnum.GRACE_PERIOD
+            from services.policy_state_machine import apply_transition, IllegalStateTransition
             if not policy.grace_period_end_date:
                 policy.grace_period_end_date = (
                     policy.expiry_date + timedelta(days=GRACE_PERIOD_DAYS)
                 )
-            policy.updated_at = datetime.utcnow()
-            session.add(policy)
-            log.info("Policy %s → GRACE_PERIOD (expired %s)", policy.policy_number, policy.expiry_date)
+            try:
+                apply_transition(
+                    session, policy, PolicyStatusEnum.GRACE_PERIOD,
+                    event_type="PolicyGracePeriod", actor="scheduler",
+                    detail={"expiry_date": policy.expiry_date.isoformat()},
+                )
+                log.info("Policy %s → GRACE_PERIOD (expired %s)", policy.policy_number, policy.expiry_date)
+            except IllegalStateTransition as exc:
+                log.warning("Skipped GRACE transition for %s: %s", policy.policy_number, exc)
 
     # ── 2. GRACE_PERIOD → LAPSED ──────────────────────────────────────────────
     for policy in grace_policies:
         if not policy.grace_period_end_date or today <= policy.grace_period_end_date:
             continue
 
-        policy.status = PolicyStatusEnum.LAPSED
-        policy.updated_at = datetime.utcnow()
-        session.add(policy)
+        from services.policy_state_machine import apply_transition, IllegalStateTransition
+        try:
+            apply_transition(
+                session, policy, PolicyStatusEnum.LAPSED,
+                event_type="PolicyLapsed", actor="scheduler",
+                detail={"grace_period_end_date": policy.grace_period_end_date.isoformat()},
+            )
+        except IllegalStateTransition as exc:
+            log.warning("Skipped LAPSE transition for %s: %s", policy.policy_number, exc)
+            continue
 
         # Close any open renewal transactions
         rt_res = await session.exec(
@@ -160,6 +177,23 @@ async def _process_renewals(session) -> None:
             "Policy %s → LAPSED (grace ended %s)",
             policy.policy_number, policy.grace_period_end_date,
         )
+
+    # ── 3. PENDING_PAYMENT → NOT_TAKEN_UP ─────────────────────────────────────
+    for policy in pending_policies:
+        if not policy.updated_at:
+            continue
+        days_pending = (datetime.utcnow() - policy.updated_at).days
+        if days_pending > ntu_days:
+            from services.policy_state_machine import apply_transition, IllegalStateTransition
+            try:
+                apply_transition(
+                    session, policy, PolicyStatusEnum.NOT_TAKEN_UP,
+                    event_type="PolicyNotTakenUp", actor="scheduler",
+                    detail={"days_pending": days_pending, "threshold_days": ntu_days},
+                )
+                log.info("Policy %s → NOT_TAKEN_UP (unpaid for %d days)", policy.policy_number or policy.id, days_pending)
+            except IllegalStateTransition as exc:
+                log.warning("Skipped NTU transition for %s: %s", policy.policy_number or policy.id, exc)
 
     await session.commit()
 
