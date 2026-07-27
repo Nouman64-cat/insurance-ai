@@ -32,8 +32,13 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
   if (!lastMessage) {
     return [
       { label: "Add a new customer", actionType: "submit", payload: "Add a new customer" },
+      { label: "Start underwriting", actionType: "submit", payload: "Start underwriting journey for a customer" },
+      { label: "Create a proposal", actionType: "submit", payload: "Create a proposal for a customer" },
+      { label: "Check pending cases", actionType: "submit", payload: "Show me all pending cases" },
+      { label: "View dashboard stats", actionType: "submit", payload: "Show me the dashboard statistics" },
+      { label: "List active quotes", actionType: "submit", payload: "List all quotes" },
+      { label: "Search records", actionType: "submit", payload: "Search for a customer by name" },
       { label: "Test with demo data", actionType: "submit", payload: "Test the full workflow with demo data" },
-      { label: "View all cases", actionType: "navigate", payload: "underwriting" },
     ];
   }
 
@@ -583,7 +588,7 @@ export function CopilotInterface() {
                        {(turnActions.length > 0
                          ? turnActions
                          : getRecommendedActions(undefined)
-                       ).slice(0, 2).map((action, idx) => (
+                       ).slice(0, 8).map((action, idx) => (
                          <button
                            key={idx}
                            onClick={() => handleQuickAction(action)}
