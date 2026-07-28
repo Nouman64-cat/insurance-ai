@@ -52,7 +52,7 @@ from routers.families import (
     create_life_bundle_policy,
 )
 
-FAMILY_NAME = "Chaudhry Family"
+FAMILY_NAME = "Ahmed Khan Family"
 
 # 5 synthetic members — CNIC series distinct from customers_seed.py's
 # (35202-...), organizations_seed.py's (61101-1000...), and any tenant's
@@ -60,11 +60,11 @@ FAMILY_NAME = "Chaudhry Family"
 # Spans risk-engine's FAMILY_FLOATER age band (0-80): a 10-year-old child up
 # to a 68-year-old parent.
 _MEMBERS: list[dict] = [
-    {"cnic": "61105-5000001-1", "name": "Imtiaz Chaudhry",  "dob": date(1980, 4, 18), "gender": "Male",   "occupation": "Civil Engineer", "declared_income": 2_200_000, "relationship": "Self",   "is_smoker": False, "height_cm": 176, "weight_kg": 80},
-    {"cnic": "61105-5000002-2", "name": "Nadia Chaudhry",   "dob": date(1984, 9, 2),  "gender": "Female", "occupation": "Pharmacist",     "declared_income": 1_100_000, "relationship": "Spouse", "is_smoker": False, "height_cm": 161, "weight_kg": 60},
-    {"cnic": "61105-5000003-3", "name": "Bilal Chaudhry",   "dob": date(2015, 6, 25), "gender": "Male",   "occupation": "Student",        "declared_income": 0,         "relationship": "Child",  "is_smoker": False, "height_cm": 120, "weight_kg": 25},
-    {"cnic": "61105-5000004-4", "name": "Areeba Chaudhry",  "dob": date(2018, 12, 3), "gender": "Female", "occupation": "Student",        "declared_income": 0,         "relationship": "Child",  "is_smoker": False, "height_cm": 100, "weight_kg": 17},
-    {"cnic": "61105-5000005-5", "name": "Shaukat Chaudhry", "dob": date(1957, 2, 11), "gender": "Male",   "occupation": "Retired",        "declared_income": 0,         "relationship": "Parent", "is_smoker": False, "height_cm": 168, "weight_kg": 72},
+    {"cnic": "42202-9922883-7", "name": "Ahmed Khan",  "dob": date(1980, 10, 10), "gender": "Male",   "occupation": "Business Owner", "declared_income": 5_000_000, "relationship": "Self",   "is_smoker": False, "height_cm": 176, "weight_kg": 80},
+    {"cnic": "42202-9922883-8", "name": "Fatima Ahmed",   "dob": date(1984, 9, 2),  "gender": "Female", "occupation": "Pharmacist",     "declared_income": 1_100_000, "relationship": "Spouse", "is_smoker": False, "height_cm": 161, "weight_kg": 60},
+    {"cnic": "42202-9922883-9", "name": "Bilal Ahmed",   "dob": date(2015, 6, 25), "gender": "Male",   "occupation": "Student",        "declared_income": 0,         "relationship": "Child",  "is_smoker": False, "height_cm": 120, "weight_kg": 25},
+    {"cnic": "42202-9922883-0", "name": "Areeba Ahmed",  "dob": date(2018, 12, 3), "gender": "Female", "occupation": "Student",        "declared_income": 0,         "relationship": "Child",  "is_smoker": False, "height_cm": 100, "weight_kg": 17},
+    {"cnic": "42202-9922883-1", "name": "Shaukat Ahmed", "dob": date(1957, 2, 11), "gender": "Male",   "occupation": "Retired",        "declared_income": 0,         "relationship": "Parent", "is_smoker": False, "height_cm": 168, "weight_kg": 72},
 ]
 
 
@@ -83,8 +83,8 @@ async def seed_family(session: AsyncSession, tenant_id: UUID) -> dict | None:
         tenant_id=tenant_id,
         body=FamilyGroupCreate(
             name=FAMILY_NAME,
-            contact_person="Imtiaz Chaudhry",
-            contact_email="imtiaz.chaudhry@example.pk",
+            contact_person="Ahmed Khan",
+            contact_email="ahmed.khan@example.pk",
             contact_phone="+92-321-9988776",
             household_declared_income=3_300_000,
         ),

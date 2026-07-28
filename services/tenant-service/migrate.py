@@ -756,6 +756,26 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v30-enum — add PremiumNotice to policydocumenttypeenum",
         "ALTER TYPE policydocumenttypeenum ADD VALUE IF NOT EXISTS 'PREMIUM_NOTICE'",
     ),
+    (
+        "v31a-enum-fix — add ACCEPTED_WITH_LOADINGS to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'ACCEPTED_WITH_LOADINGS'",
+    ),
+    (
+        "v31b-enum-fix — add ACTIVE to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'ACTIVE'",
+    ),
+    (
+        "v31c-enum-fix — add GRACE_PERIOD to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'GRACE_PERIOD'",
+    ),
+    (
+        "v31d-enum-fix — add CANCELLED to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'CANCELLED'",
+    ),
+    (
+        "v32-enum-draft — add DRAFT to profilestatusenum",
+        "ALTER TYPE profilestatusenum ADD VALUE IF NOT EXISTS 'DRAFT'",
+    ),
     # NOTE: The renewal scheduler (renewal_scheduler.py) MUST run in a single-worker
     # deployment to avoid duplicate RenewalTransactions. Enforce via:
     #   CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]

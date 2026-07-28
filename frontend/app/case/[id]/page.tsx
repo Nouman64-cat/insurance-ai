@@ -403,7 +403,7 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
   tenantId: string; caseId: string; docTypes: string[]; onClose: () => void; onUploaded: () => void;
 }) {
   const [docType, setDocType] = useState(docTypes[0] ?? "Other");
-  const [files, setFiles] = useState<File[]>([]);
+  const [fileItems, setFileItems] = useState<{file: File, type: string}[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
@@ -411,7 +411,7 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
 
   const addFiles = (newFiles: FileList | File[]) => {
     setErr("");
-    const valid: File[] = [];
+    const valid: {file: File, type: string}[] = [];
     for (let i = 0; i < newFiles.length; i++) {
       const f = newFiles[i];
       const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
@@ -419,32 +419,32 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
         setErr(`Unsupported format ".${ext}". Allowed: ${SUPPORTED_EXTS.join(", ").toUpperCase()}`);
         continue;
       }
-      valid.push(f);
+      valid.push({ file: f, type: docType });
     }
-    setFiles(prev => [...prev, ...valid]);
+    setFileItems(prev => [...prev, ...valid]);
   };
 
   const submit = async () => {
-    if (files.length === 0) return;
+    if (fileItems.length === 0) return;
     setUploading(true);
     setErr("");
     const failures: string[] = [];
-    for (const file of files) {
+    for (const item of fileItems) {
       const form = new FormData();
-      form.append("document_type", docType);
-      form.append("file", file);
+      form.append("document_type", item.type);
+      form.append("file", item.file);
       try {
         await api.post(`/tenants/${tenantId}/cases/${caseId}/artifacts`, form, {
           headers: { "Content-Type": "multipart/form-data" }, timeout: 120_000,
         });
       } catch (e: any) {
-        failures.push(`${file.name}: ${e.response?.data?.detail ?? e.message ?? "failed"}`);
+        failures.push(`${item.file.name}: ${e.response?.data?.detail ?? e.message ?? "failed"}`);
       }
     }
     setUploading(false);
     if (failures.length > 0) {
       setErr(failures.join("\n"));
-      setFiles([]);
+      setFileItems([]);
     } else {
       onUploaded();
     }
@@ -459,7 +459,7 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
         </div>
         <div className="p-6 space-y-4">
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-600">Document Type</label>
+            <label className="block text-xs font-semibold text-slate-600">Default Document Type</label>
             <select value={docType} onChange={e => setDocType(e.target.value)} className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400">
               {[...docTypes, "Other"].filter((v, i, a) => a.indexOf(v) === i).map(t => <option key={t}>{t}</option>)}
             </select>
@@ -478,12 +478,23 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
             <p className="text-[10px] text-slate-400">PDF · PNG · JPG · JPEG · TIFF · BMP</p>
           </div>
 
-          {files.length > 0 && (
-            <ul className="space-y-1 max-h-32 overflow-y-auto">
-              {files.map((f, i) => (
-                <li key={i} className="flex items-center justify-between text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5">
-                  <span className="truncate text-slate-700">{f.name}</span>
-                  <button onClick={() => setFiles(prev => prev.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-500 ml-2">✕</button>
+          {fileItems.length > 0 && (
+            <ul className="space-y-2 max-h-48 overflow-y-auto">
+              {fileItems.map((item, i) => (
+                <li key={i} className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                  <span className="truncate text-slate-700 flex-1" title={item.file.name}>{item.file.name}</span>
+                  <select 
+                    value={item.type} 
+                    onChange={e => {
+                      const newItems = [...fileItems];
+                      newItems[i].type = e.target.value;
+                      setFileItems(newItems);
+                    }}
+                    className="w-32 bg-white border border-slate-200 rounded-md px-2 py-1 text-[11px] text-slate-600 focus:outline-none focus:border-blue-400"
+                  >
+                    {[...docTypes, "Other"].filter((v, idx, a) => a.indexOf(v) === idx).map(t => <option key={t}>{t}</option>)}
+                  </select>
+                  <button onClick={() => setFileItems(prev => prev.filter((_, j) => j !== i))} className="text-slate-400 hover:text-red-500 flex-shrink-0 ml-1">✕</button>
                 </li>
               ))}
             </ul>
@@ -493,7 +504,7 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
 
           <div className="flex justify-end gap-3 pt-1">
             <button onClick={onClose} disabled={uploading} className="px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
-            <button onClick={submit} disabled={files.length === 0 || uploading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all">
+            <button onClick={submit} disabled={fileItems.length === 0 || uploading} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700 disabled:opacity-50 transition-all">
               {uploading ? <Spinner /> : null}
               {uploading ? "Uploading…" : "Upload & OCR"}
             </button>
@@ -930,7 +941,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       await fetchDetail();
       if (newStatus === "Approved") {
         setSuccessMessage("Case successfully approved and forwarded to Issuance Queue.");
-        setTimeout(() => setSuccessMessage(null), 4000);
+        setTimeout(() => router.push("/policy-issuance"), 1200);
       }
     } catch (err: any) {
       setError(err.message ?? "Failed to update case status.");
@@ -1145,31 +1156,37 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </p>
         </div>
 
-        {/* Action buttons */}
-        <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
-          <button
-            onClick={() => overrideStatus("Pending Documents")}
-            disabled={overriding !== null}
-            className="px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
-          >
-            {overriding === "Pending Documents" ? <Spinner className="w-3.5 h-3.5 border-slate-400 border-t-slate-700" /> : "Request Info"}
-          </button>
-          <button
-            onClick={() => overrideStatus("Rejected")}
-            disabled={overriding !== null}
-            className="px-4 py-2 text-sm font-semibold text-red-700 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors"
-          >
-            {overriding === "Rejected" ? <Spinner className="w-3.5 h-3.5 border-red-300 border-t-red-700" /> : "Override: Decline"}
-          </button>
-          <button
-            onClick={() => overrideStatus("Approved")}
-            disabled={overriding !== null || !hasAny}
-            title={!hasAny ? "Run AI Underwriting before approving" : undefined}
-            className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
-          >
-            {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
-          </button>
-        </div>
+        {/* Action buttons — once the case has reached a final decision (either
+            via this override or the AI's own Auto Approve/Decline), there's
+            nothing left to override, so hide the decision buttons entirely
+            rather than let a stale/redundant click re-assert the same status
+            and bounce off the policy state machine ("Approved → Approved"). */}
+        {c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" && (
+          <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+            <button
+              onClick={() => overrideStatus("Pending Documents")}
+              disabled={overriding !== null}
+              className="px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+            >
+              {overriding === "Pending Documents" ? <Spinner className="w-3.5 h-3.5 border-slate-400 border-t-slate-700" /> : "Request Info"}
+            </button>
+            <button
+              onClick={() => overrideStatus("Rejected")}
+              disabled={overriding !== null}
+              className="px-4 py-2 text-sm font-semibold text-red-700 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors"
+            >
+              {overriding === "Rejected" ? <Spinner className="w-3.5 h-3.5 border-red-300 border-t-red-700" /> : "Override: Decline"}
+            </button>
+            <button
+              onClick={() => overrideStatus("Approved")}
+              disabled={overriding !== null || !hasAny}
+              title={!hasAny ? "Run AI Underwriting before approving" : undefined}
+              className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
+            >
+              {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
+            </button>
+          </div>
+        )}
 
         {/* Final step after underwriting — generate the full application dossier */}
         <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">

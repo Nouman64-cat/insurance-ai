@@ -272,9 +272,13 @@ function getAvailableActions(status: string, hasMissingFields: boolean, forBatch
   } else if (status === "Proposed") { // Submitted
     opts.push({ value: "status:UnderReview", label: "Start Review", tier: "submission" });
     opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
+    // Undo an accidental Submit — back to Draft, no harm done.
+    opts.push({ value: "status:Quoted", label: "Step Back to Draft", tier: "submission" });
   } else if (status === "UnderReview") {
     opts.push({ value: "underwriting", label: "Send to Underwriting", tier: "submission" });
     opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
+    // Undo an accidental Start Review — back to Submitted, no harm done.
+    opts.push({ value: "status:Proposed", label: "Step Back to Submitted", tier: "submission" });
   } else if (status === "InformationRequested") {
     if (!forBatch && hasMissingFields) {
       opts.push({ value: "save_info", label: "Save Information", tier: "submission" });
@@ -462,6 +466,11 @@ export default function QuotePage() {
   const handleBulkProceed = async (customerQuotes: QuoteListItem[]) => {
     const selectedQuotes = customerQuotes.filter((q) => selectedQuoteIds.has(q.quote_id));
     if (selectedQuotes.length === 0) return;
+    
+    if (selectedQuotes.some((q) => q.quote_id.startsWith("draft-"))) {
+      setBulkProceedError("Cannot proceed with an unquoted Draft. Please generate a Quotation in the Leads Hub first.");
+      return;
+    }
 
     setIsBulkProceeding(true);
     setBulkProceedError(null);
@@ -521,6 +530,11 @@ export default function QuotePage() {
   const handleBulkStatusUpdate = async (customerQuotes: QuoteListItem[], targetStatus: string) => {
     const selectedQuotes = customerQuotes.filter((q) => selectedQuoteIds.has(q.quote_id));
     if (selectedQuotes.length === 0) return;
+    
+    if (selectedQuotes.some((q) => q.quote_id.startsWith("draft-"))) {
+      setBulkProceedError("Cannot change status of an unquoted Draft. Please generate a Quotation in the Leads Hub first.");
+      return;
+    }
 
     setIsBulkProceeding(true);
     setBulkProceedError(null);
@@ -532,6 +546,9 @@ export default function QuotePage() {
       setBulkProceedSuccess("Successfully updated statuses.");
       fetchQuotes();
       setSelectedProposalIds(new Set());
+      // Jump to the destination tab so the just-moved lead(s) are visible
+      // right away instead of vanishing from the tab the user was on.
+      setActiveTab(targetStatus as StatusFilter);
     } catch (err: any) {
       setBulkProceedError(err.message ?? "Failed to update statuses.");
     } finally {
@@ -559,6 +576,10 @@ export default function QuotePage() {
     option.tier === "decision" ? `Reject ${selectedCount} proposal(s)? This cannot be undone.` : undefined;
 
   const openQuote = useCallback(async (quoteId: string) => {
+    if (quoteId.startsWith("draft-")) {
+      alert("This is an unquoted draft lead. Please go to the Leads Hub and generate a Quotation for this customer before proceeding here.");
+      return;
+    }
     setSelectedProposalId(quoteId);
     setDetail(null);
     setDetailError(null);
@@ -595,7 +616,56 @@ export default function QuotePage() {
       if (sourceFilter) filters.acquisition_source_id = sourceFilter;
 
       const data = await listQuotes(filters);
-      setQuotes(data || []);
+      let quotesList = data || [];
+
+      // Fetch customers still moving through the Leads pipeline (no status yet,
+      // Lead, In Progress, or explicit Draft) that don't have a real quote yet,
+      // so they still show up in the Draft tab. `customers` has no server-side
+      // status filter, so the pipeline/dead-lead/policyholder split happens
+      // client-side here.
+      const tenantId = localStorage.getItem("tenant_id");
+      if (tenantId) {
+        try {
+          const draftRes = await api.get(`/tenants/${tenantId}/customers`);
+          if (draftRes.data && Array.isArray(draftRes.data)) {
+            const pipelineCustomers = draftRes.data.filter(
+              (c: any) => !c.profile_status || !["NOT_INTERESTED", "POLICYHOLDER"].includes(c.profile_status)
+            );
+            // Filter out customers that already have a quoted policy
+            const unquoted = pipelineCustomers.filter(
+              (c: any) => !quotesList.some((q) => q.customer_id === c.id)
+            );
+            const fakeQuotes = unquoted.map((c: any) => ({
+              quote_id: `draft-${c.id}`,
+              customer_id: c.id,
+              customer_name: c.name,
+              customer_cnic: c.cnic || "Pending",
+              policy_id: `draft-${c.id}`,
+              plan_label: "Unassigned Plan",
+              insurance_type: "UNKNOWN",
+              coverage_amount: 0,
+              term_years: 0,
+              base_premium: 0,
+              loading_applied: 0,
+              total_premium: 0,
+              rate_version: "v0",
+              created_at: c.created_at,
+              status: "Quoted", // Forces it into the Draft tab
+              effective_date: null,
+              updated_at: c.updated_at,
+              assigned_underwriter_id: null,
+              assigned_underwriter_name: null,
+              sla_status: null,
+              sla_days_remaining: null,
+            }));
+            quotesList = [...quotesList, ...fakeQuotes];
+          }
+        } catch (e) {
+          console.warn("Failed to fetch pipeline customers:", e);
+        }
+      }
+
+      setQuotes(quotesList);
     } catch (err: any) {
       setError(err.message ?? "Failed to load quotations.");
     } finally {
@@ -1144,6 +1214,7 @@ export default function QuotePage() {
           error={detailError}
           onClose={closeQuote}
           onRefresh={fetchQuotes}
+          onStatusChange={(newStatus) => setActiveTab(newStatus as StatusFilter)}
           canAct={canActOnProposals}
           canDecide={canDecideProposals}
           onStartUnderwriting={async () => {
@@ -1574,7 +1645,7 @@ function ProposalsGrid({
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
 function QuoteDetailModal({
-  detail, loading, error, onClose, onStartUnderwriting, onRefresh, canAct, canDecide
+  detail, loading, error, onClose, onStartUnderwriting, onRefresh, onStatusChange, canAct, canDecide
 }: {
   detail: QuoteDetail | null;
   loading: boolean;
@@ -1582,6 +1653,7 @@ function QuoteDetailModal({
   onClose: () => void;
   onStartUnderwriting: () => Promise<void>;
   onRefresh: () => void;
+  onStatusChange: (newStatus: string) => void;
   canAct: boolean;
   canDecide: boolean;
 }) {
@@ -1648,7 +1720,11 @@ function QuoteDetailModal({
         const tenantId = localStorage.getItem("tenant_id");
         if (tenantId) await updateCustomer(tenantId, detail.customer_id, missingFormData);
       } else if (value.startsWith("status:")) {
-        await updateQuote(detail.quote_id, { status: value.slice("status:".length) });
+        const newStatus = value.slice("status:".length);
+        await updateQuote(detail.quote_id, { status: newStatus });
+        // Jump to the destination tab so this lead is immediately visible
+        // where it landed, instead of vanishing from the tab it was on.
+        onStatusChange(newStatus);
       }
       onRefresh();
       onClose();

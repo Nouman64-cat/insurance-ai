@@ -6,7 +6,8 @@ through the pipeline moves it off the Leads page (it becomes a policyholder),
 this endpoint restores the canonical starting state in one click:
 
   • wipe every customer + all funnel data for the tenant, then
-  • re-seed the 5 leads + 5 in-progress proposals (seeds/funnel_seed.py).
+  • re-seed the 5 leads (3 individual + 1 family + 1 corporate) + 3 draft
+    proposals (seeds/funnel_seed.py).
 
 Everything else (underwriting / applications / issuance / policyholders) returns
 to 0 records. The seed data lives in the seeds files, so the same reset works on
@@ -29,7 +30,7 @@ router = APIRouter(tags=["Demo"])
 
 @router.post("/tenants/{tenant_id}/demo/reset-funnel")
 async def reset_funnel(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
-    """Purge the tenant and re-seed the canonical 5 leads + 5 proposals."""
+    """Purge the tenant and re-seed the canonical 5 leads (3 individual + 1 family + 1 corporate)."""
     purged = await purge_tenant(session, tenant_id)
     created = await seed_leads(session, tenant_id)
     log.info("Demo funnel reset for tenant %s — purged %d, seeded %d", tenant_id, purged, len(created))

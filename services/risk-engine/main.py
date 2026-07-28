@@ -137,9 +137,12 @@ async def evaluate(
         financial_score=result["financial_score"],
         fraud_probability=result["fraud_probability"],
         composite_risk_score=result["composite_risk_score"],
-        ai_decision=result["ai_decision"],
-        suggested_loading=result["suggested_loading"],
-        reasons=result["reasons"],
+        ai_decision=result.get("ai_decision", result.get("decision", "Unknown")),
+        suggested_loading=result.get("suggested_loading"),
+        reasons=[
+            f"{r.get('parameter', 'Factor')} ({r.get('risk_rating', 'Info')}): {r.get('observation', '')}" if isinstance(r, dict) else str(r)
+            for r in result.get("reasons", [])
+        ],
     )
 
 

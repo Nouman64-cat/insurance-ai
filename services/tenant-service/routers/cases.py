@@ -435,6 +435,8 @@ async def delete_case(
     await session.execute(delete(CaseAuditTrail).where(CaseAuditTrail.caseld == case_id))
     await session.execute(delete(CaseComment).where(CaseComment.caseld == case_id))
     await session.execute(delete(CaseAssignment).where(CaseAssignment.caseld == case_id))
+    await session.execute(delete(RiskAssessment).where(RiskAssessment.case_id == case_id))
+    await session.execute(delete(Artifact).where(Artifact.case_id == case_id))
     
     await session.delete(case)
     await session.commit()
@@ -514,6 +516,15 @@ async def update_case_status(
             if policy_to_update and case.policy_id is None:
                 case.policy_id = policy_to_update.id
                 session.add(case)
+                
+                # If it was still Quoted (because the case wasn't explicitly created against it),
+                # move it to Proposed now so it can legally transition to Approved/Declined.
+                st_early = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
+                if st_early == PolicyStatusEnum.QUOTED.value:
+                    apply_transition(
+                        session, policy_to_update, PolicyStatusEnum.PROPOSED,
+                        event_type="case_linked_retroactively", actor=str(user.id)
+                    )
 
         if policy_to_update:
             target_status = (
@@ -523,13 +534,18 @@ async def update_case_status(
             st_val = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
             if st_val.upper() in ("ACTIVE", "ISSUED"):
                 raise HTTPException(400, "Cannot decide this case: the associated policy is already Active/Issued.")
-            try:
-                apply_transition(
-                    session, policy_to_update, target_status,
-                    event_type="case_decision", actor=str(user.id),
-                )
-            except IllegalStateTransition as exc:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
+            # Idempotent no-op if the policy is already in the target status — the
+            # AI's auto-decision (routers/evaluate.py) may have already applied it
+            # before an underwriter's manual "Override: Approve/Decline" click
+            # lands, and re-asserting the same status is not a real transition.
+            if st_val != target_status.value:
+                try:
+                    apply_transition(
+                        session, policy_to_update, target_status,
+                        event_type="case_decision", actor=str(user.id),
+                    )
+                except IllegalStateTransition as exc:
+                    raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
         # NOTE: Do NOT promote customer to POLICYHOLDER here.
         # A customer only becomes a policyholder when the policy is actually
