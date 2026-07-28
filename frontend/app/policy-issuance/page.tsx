@@ -523,6 +523,7 @@ export default function PolicyIssuancePage() {
                 {t === "queue" ? `Issuance Queue (${queue.length})` : `Active Policies (${active.length})`}
               </button>
             ))}
+          </div>
         </div>
       </div>
       {activeFilterChips.length > 0 && (

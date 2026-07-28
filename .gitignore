@@ -132,4 +132,4 @@ next-env.d.ts
 
 local-tests
 
-*.tsbuildinfo
+*.tsbuildinfo*.pdf
