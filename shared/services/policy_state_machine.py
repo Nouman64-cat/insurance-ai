@@ -46,12 +46,14 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
     PolicyStatusEnum.PROPOSED: {
         PolicyStatusEnum.UNDER_REVIEW,
         PolicyStatusEnum.INFORMATION_REQUESTED,
+        PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.UNDER_REVIEW: {
         PolicyStatusEnum.INFORMATION_REQUESTED,
+        PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
         PolicyStatusEnum.DECLINED,
@@ -74,13 +76,24 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         # KYC fields), or straight back into review otherwise.
         PolicyStatusEnum.PROPOSED,
         PolicyStatusEnum.UNDER_REVIEW,
+        PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+        PolicyStatusEnum.DECLINED,
+    },
+    # Stage A step 1 — revised terms issued; awaiting the customer's explicit
+    # accept/decline. Accept bakes the revised terms and moves to an issuable
+    # state; decline / expiry ends the application (NotTakenUp).
+    PolicyStatusEnum.COUNTER_OFFER: {
+        PolicyStatusEnum.APPROVED,
+        PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+        PolicyStatusEnum.NOT_TAKEN_UP,
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.APPROVED: {
         PolicyStatusEnum.PENDING_PAYMENT,
         PolicyStatusEnum.ISSUED,
+        PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.DECLINED,
         PolicyStatusEnum.CANCELLED,
     },
@@ -90,6 +103,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.PENDING_PAYMENT,
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ISSUED,
+        PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.DECLINED,
         PolicyStatusEnum.CANCELLED,
     },

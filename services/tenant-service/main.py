@@ -60,7 +60,10 @@ from routers.tokens import router as tokens_router
 from routers.acquisition_sources import router as acquisition_sources_router
 from routers.agent import router as agent_router
 from routers.policies import router as policies_router
-from routers.renewal_scheduler import start_renewal_scheduler
+from routers.pre_issuance import router as pre_issuance_router
+from routers.demo import router as demo_router
+# STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
+# from routers.renewal_scheduler import start_renewal_scheduler
 from shared.models.core import Role
 
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
@@ -120,15 +123,19 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
     worker_task = start_ocr_worker(stop_event)
 
-    # Renewal scheduler — daily lifecycle state machine
-    renewal_task = start_renewal_scheduler(stop_event)
+    # ── STAGE B — POST-ISSUANCE LIFECYCLE (renewal scheduler) ──────────────────
+    # Daily state machine (ACTIVE → GracePeriod → Lapsed + renewals). Runs AFTER
+    # a policy is issued. Temporarily disabled for now — re-enable with the import
+    # above when Stage B is back in scope.
+    # renewal_task = start_renewal_scheduler(stop_event)
+    # ───────────────────────────────────────────────────────────────────────────
 
     yield
 
     # Graceful shutdown
     stop_event.set()
     await worker_task
-    await renewal_task
+    # await renewal_task  # STAGE B — disabled (see above)
     await producer.stop()
 
 
@@ -166,6 +173,8 @@ app.include_router(tokens_router)
 app.include_router(acquisition_sources_router)
 app.include_router(agent_router)
 app.include_router(policies_router)
+app.include_router(pre_issuance_router)
+app.include_router(demo_router)
 
 
 @app.get("/health", tags=["Ops"])

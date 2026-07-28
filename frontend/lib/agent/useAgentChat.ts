@@ -145,11 +145,22 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
           // "done"/"error". A settle for an id we never saw (e.g. after an
           // interrupt/resume where the "active" fired in the previous stream)
           // is inserted directly in its settled state.
-          setSteps((prev) => {
-            const idx = prev.findIndex((s) => s.id === evt.id);
-            if (idx === -1) return [...prev, { id: evt.id, label: evt.label, status: evt.status }];
-            const copy = [...prev];
+          const updateSteps = (prevSteps: ProcessStep[]) => {
+            const idx = prevSteps.findIndex((s) => s.id === evt.id);
+            if (idx === -1) return [...prevSteps, { id: evt.id, label: evt.label, status: evt.status }];
+            const copy = [...prevSteps];
             copy[idx] = { ...copy[idx], status: evt.status, label: evt.label };
+            return copy;
+          };
+          setSteps((prev) => updateSteps(prev));
+          setMessages((prev) => {
+            const copy = [...prev];
+            for (let i = copy.length - 1; i >= 0; i--) {
+              if (copy[i].role === "assistant") {
+                copy[i] = { ...copy[i], steps: updateSteps(copy[i].steps || []) };
+                break;
+              }
+            }
             return copy;
           });
           break;

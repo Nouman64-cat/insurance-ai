@@ -249,6 +249,32 @@ export async function listPolicyDocuments(policyId: string): Promise<PolicyDocum
   return res.data;
 }
 
+export async function downloadDocument(policyId: string, docId: string): Promise<void> {
+  const tid = tenantId();
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/documents/${docId}/download`, {
+    headers: { "X-Tenant-Id": tid },
+    responseType: "blob",
+  });
+  
+  const blob = new Blob([res.data], { type: res.headers['content-type'] || 'application/pdf' });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  
+  // Extract filename from content-disposition header if present
+  let filename = "document.pdf";
+  const disposition = res.headers["content-disposition"];
+  if (disposition && disposition.includes("filename=")) {
+    filename = disposition.split("filename=")[1].replace(/['"]/g, "");
+  }
+  
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
 export function fmtPKR(amount: number): string {
   return new Intl.NumberFormat("en-PK", {
     style: "currency",

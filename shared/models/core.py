@@ -117,6 +117,7 @@ class PolicyStatusEnum(str, Enum):
     PROPOSED = "Proposed"
     UNDER_REVIEW = "UnderReview"
     INFORMATION_REQUESTED = "InformationRequested"
+    COUNTER_OFFER = "CounterOffer"
     APPROVED = "Approved"
     ACCEPTED_WITH_LOADINGS = "AcceptedWithLoadings"
     PENDING_PAYMENT = "PendingPayment"
@@ -1327,6 +1328,7 @@ class RenewalStatusEnum(str, Enum):
 
 
 class PolicyDocumentTypeEnum(str, Enum):
+    PREMIUM_NOTICE = "PremiumNotice"
     SCHEDULE = "PolicySchedule"          # Declarations page
     CERTIFICATE = "CertificateOfInsurance"
     WORDING = "PolicyWording"            # T&Cs + endorsements
@@ -1510,3 +1512,175 @@ class PolicyEvent(SQLModel, table=True):
     detail_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE A — PRE-ISSUANCE GATES
+# Between an underwriting decision and a bound contract sit legally-required
+# gates: accepting revised terms (counter-offer), clearing requirements,
+# collecting the first premium, compliance screening, capturing beneficiaries,
+# and generating policy documents. The tables below back the first, second,
+# fourth and fifth of those; premium (PremiumSchedule) and documents
+# (PolicyDocument) already exist above.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class CounterOfferTypeEnum(str, Enum):
+    LOADING = "Loading"                     # accept-with-loading (extra premium)
+    EXCLUSION = "Exclusion"                 # cover excludes a condition/activity
+    REDUCED_SUM_ASSURED = "ReducedSumAssured"
+    PLAN_SUBSTITUTION = "PlanSubstitution"  # offered a different product
+
+
+class CounterOfferStatusEnum(str, Enum):
+    PENDING = "Pending"                     # awaiting customer response
+    ACCEPTED = "Accepted"
+    DECLINED = "Declined"
+    EXPIRED = "Expired"                     # validity window elapsed
+
+
+class CounterOffer(SQLModel, table=True):
+    """
+    Revised underwriting terms the customer must explicitly accept before the
+    policy can bind. Created when underwriting is not a clean accept — loading,
+    exclusions, reduced sum assured, or a plan substitution. Has a validity
+    window (default 21 days); an unanswered offer past `valid_until` expires and
+    the policy is marked NotTakenUp. You cannot bind a contract on terms the
+    applicant has not agreed to — this is the record of that agreement.
+    """
+    __tablename__ = "counter_offers"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    offer_type: CounterOfferTypeEnum = Field(max_length=50)
+    status: CounterOfferStatusEnum = Field(default=CounterOfferStatusEnum.PENDING, max_length=50)
+
+    # Original terms snapshot (for a clear side-by-side in the UI).
+    original_coverage_amount: Optional[float] = Field(default=None, ge=0)
+    original_premium: Optional[float] = Field(default=None, ge=0)
+    original_product_name: Optional[str] = Field(default=None, max_length=255)
+
+    # Revised terms — whichever apply to offer_type.
+    revised_loading_pct: Optional[float] = Field(default=None, ge=0.0, le=500.0)
+    revised_coverage_amount: Optional[float] = Field(default=None, ge=0)
+    revised_premium: Optional[float] = Field(default=None, ge=0)
+    revised_product_name: Optional[str] = Field(default=None, max_length=255)
+    exclusions_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    valid_until: date = Field(nullable=False, index=True)
+
+    created_by: Optional[str] = Field(default=None, max_length=255)   # underwriter user id
+    responded_at: Optional[datetime] = Field(default=None)
+    response_note: Optional[str] = Field(default=None, max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class RequirementTypeEnum(str, Enum):
+    MEDICAL_REPORT = "MedicalReport"
+    INCOME_PROOF = "IncomeProof"
+    KYC_CNIC = "KycCnic"
+    ADDITIONAL_DOC = "AdditionalDoc"
+
+
+class RequirementStatusEnum(str, Enum):
+    PENDING = "Pending"        # not yet supplied
+    SUBMITTED = "Submitted"    # customer supplied, awaiting verification
+    VERIFIED = "Verified"      # accepted by the insurer
+    WAIVED = "Waived"          # insurer waived the requirement
+
+
+class PolicyRequirement(SQLModel, table=True):
+    """
+    One outstanding pre-issuance requirement for a policy — a medical report,
+    income proof, KYC/CNIC verification, or an extra underwriting document.
+    Issuance is gated until every requirement is Verified or Waived.
+    """
+    __tablename__ = "policy_requirements"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    requirement_type: RequirementTypeEnum = Field(max_length=50)
+    label: str = Field(max_length=255)
+    description: Optional[str] = Field(default=None, max_length=500)
+    status: RequirementStatusEnum = Field(default=RequirementStatusEnum.PENDING, max_length=50)
+
+    # Optional link to the uploaded document that satisfied this requirement.
+    artifact_id: Optional[UUID] = Field(default=None, foreign_key="artifacts.id", nullable=True)
+
+    submitted_at: Optional[datetime] = Field(default=None)
+    verified_by: Optional[str] = Field(default=None, max_length=255)
+    verified_at: Optional[datetime] = Field(default=None)
+    note: Optional[str] = Field(default=None, max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class ComplianceCheckTypeEnum(str, Enum):
+    AML = "AML"                 # anti-money-laundering risk scoring
+    SANCTIONS = "Sanctions"     # sanctions / PEP watchlist screening
+    SECP = "SECP"               # SECP regulatory / CNIC registry verification
+
+
+class ComplianceStatusEnum(str, Enum):
+    PENDING = "Pending"
+    PASSED = "Passed"
+    FLAGGED = "Flagged"         # needs manual review / clearance
+    FAILED = "Failed"           # hard block
+
+
+class ComplianceCheck(SQLModel, table=True):
+    """
+    Result of one mandatory regulatory screening for a policy — AML, sanctions,
+    or SECP verification. Produced by services/compliance_engine.py at the
+    pre-issuance compliance step. A Flagged check can be manually cleared by an
+    officer; a Failed check hard-blocks issuance.
+    """
+    __tablename__ = "compliance_checks"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False)
+
+    check_type: ComplianceCheckTypeEnum = Field(max_length=50)
+    status: ComplianceStatusEnum = Field(default=ComplianceStatusEnum.PENDING, max_length=50)
+
+    score: Optional[float] = Field(default=None)                    # e.g. AML risk score 0–100
+    details_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    screened_at: Optional[datetime] = Field(default=None)
+    cleared_by: Optional[str] = Field(default=None, max_length=255)  # officer who overrode a flag
+    cleared_at: Optional[datetime] = Field(default=None)
+    clearance_note: Optional[str] = Field(default=None, max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class Beneficiary(SQLModel, table=True):
+    """
+    A nominee on a policy's death benefit. Multiple beneficiaries per policy;
+    the sum of share_pct across a policy's beneficiaries must equal 100. Replaces
+    the single free-text Policy.nominee_name (kept for back-compat) with a
+    structured, queryable, validatable record.
+    """
+    __tablename__ = "beneficiaries"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    name: str = Field(max_length=255)
+    cnic: Optional[str] = Field(default=None, max_length=15)
+    relationship: str = Field(max_length=100)                       # Spouse | Child | Parent | ...
+    share_pct: float = Field(ge=0.0, le=100.0)
+
+    date_of_birth: Optional[date] = Field(default=None)
+    is_minor: bool = Field(default=False)
+    guardian_name: Optional[str] = Field(default=None, max_length=255)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)

@@ -1,16 +1,23 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import {
   getPolicyDetail,
   getPolicyEvents,
   fmtPKR,
+  downloadDocument,
   type PolicyDetail,
   type PolicyEvent,
 } from "@/app/services/policies";
 import { fmtCoverage } from "@/lib/mock-data";
 import { LifecycleStepper } from "./LifecycleStepper";
+import { StageAPanel } from "./StageAPanel";
 import { ISSUANCE_STAGES, currentStageIndex, normStatus } from "./lifecycle";
+
+// Statuses where the Stage A pre-issuance checklist is relevant.
+const PRE_ISSUANCE_STATUSES = new Set([
+  "COUNTEROFFER", "APPROVED", "ACCEPTEDWITHLOADINGS", "INFORMATIONREQUESTED", "PENDINGPAYMENT", "ISSUED",
+]);
 
 interface DrawerProps {
   policyId: string;
@@ -91,28 +98,28 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const reload = useCallback(async () => {
+    try {
+      const [d, e] = await Promise.all([
+        getPolicyDetail(policyId),
+        getPolicyEvents(policyId).catch(() => [] as PolicyEvent[]),
+      ]);
+      setDetail(d);
+      setEvents(e);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail ?? err?.message ?? "Failed to load policy.");
+    }
+  }, [policyId]);
+
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
-      try {
-        const [d, e] = await Promise.all([
-          getPolicyDetail(policyId),
-          getPolicyEvents(policyId).catch(() => [] as PolicyEvent[]),
-        ]);
-        if (!alive) return;
-        setDetail(d);
-        setEvents(e);
-      } catch (err: any) {
-        if (alive) setError(err?.response?.data?.detail ?? "Failed to load policy.");
-      } finally {
-        if (alive) setLoading(false);
-      }
+      await reload();
+      if (alive) setLoading(false);
     })();
-    return () => {
-      alive = false;
-    };
-  }, [policyId]);
+    return () => { alive = false; };
+  }, [reload]);
 
   const status = detail?.status ?? "";
   const stageIdx = currentStageIndex(status);
@@ -163,6 +170,13 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
                 )}
               </div>
             </Section>
+
+            {/* Stage A — pre-issuance checklist */}
+            {PRE_ISSUANCE_STATUSES.has(normStatus(status)) && (
+              <Section title="Stage A — Pre-Issuance">
+                <StageAPanel policyId={policyId} onChanged={reload} />
+              </Section>
+            )}
 
             {/* Key facts */}
             <Section title="Contract">
@@ -217,15 +231,28 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
               ) : (
                 <div className="space-y-1.5">
                   {detail.documents.map((d) => (
-                    <div key={d.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-50">
+                    <div key={d.id} className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-slate-50 group">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-4 h-4 text-slate-400 flex-shrink-0">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" />
                       </svg>
                       <p className="text-xs font-medium text-slate-700 flex-1 truncate">{d.document_name}</p>
                       {d.is_stub && (
-                        <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                        <span className="text-[9px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded mr-2">
                           STUB
                         </span>
+                      )}
+                      {!d.is_stub && (
+                        <button
+                          onClick={() => downloadDocument(policyId, d.id).catch(err => alert("Failed to download document: " + err.message))}
+                          title="Download Document"
+                          className="text-slate-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-emerald-50"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7 10 12 15 17 10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                        </button>
                       )}
                     </div>
                   ))}

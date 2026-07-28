@@ -9,6 +9,9 @@ import { listBranches, Branch } from "@/app/services/branches";
 import { listAcquisitionSources, AcquisitionSource } from "@/app/services/acquisitionSources";
 import FiltersPanel from "@/components/FiltersPanel";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
+import CustomerFormModal from "@/components/entities/CustomerFormModal";
+import FamilyFormModal from "@/components/entities/FamilyFormModal";
+import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
@@ -32,6 +35,8 @@ export default function PolicyholdersPage() {
   const [error, setError] = useState("");
   const [filterType, setFilterType] = useState<FilterType>("ALL");
   const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: EntityType } | null>(null);
+  const [activeAdd, setActiveAdd] = useState<{ type: EntityType } | null>(null);
+  const [actionBusyId, setActionBusyId] = useState<string | null>(null);
 
 
   const [search, setSearch] = useState("");
@@ -203,6 +208,26 @@ export default function PolicyholdersPage() {
     setSelectedEntity({ id: item.id, type: item.type });
   };
 
+  const handleDelete = async (policyholder: UnifiedPolicyholder) => {
+    if (!confirm(`Delete this ${policyholder.type.toLowerCase()} "${policyholder.name}"? This action cannot be undone.`)) return;
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setActionBusyId(policyholder.id);
+    setError("");
+    try {
+      let endpoint = "";
+      if (policyholder.type === "INDIVIDUAL") endpoint = `/tenants/${tenantId}/customers/${policyholder.id}`;
+      else if (policyholder.type === "FAMILY") endpoint = `/tenants/${tenantId}/families/${policyholder.id}`;
+      else if (policyholder.type === "CORPORATE") endpoint = `/tenants/${tenantId}/organizations/${policyholder.id}`;
+      await api.delete(endpoint);
+      await fetchPolicyholders();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to delete.");
+    } finally {
+      setActionBusyId(null);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
@@ -237,6 +262,24 @@ export default function PolicyholdersPage() {
               <line x1="9" y1="17" x2="13" y2="17" />
             </svg>
             Insurance Plans
+          </button>
+          <button
+            onClick={() => setActiveAdd({ type: "INDIVIDUAL" })}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
+          >
+            + Add Individual
+          </button>
+          <button
+            onClick={() => setActiveAdd({ type: "FAMILY" })}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow active:scale-95"
+          >
+            + Add Family
+          </button>
+          <button
+            onClick={() => setActiveAdd({ type: "CORPORATE" })}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
+          >
+            + Add Corporate
           </button>
         </div>
       </div>
@@ -405,9 +448,19 @@ export default function PolicyholdersPage() {
                       <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
                       <td className="px-6 py-4 text-emerald-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
                       <td className="px-6 py-4 text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
-                      <td className="px-6 py-4 text-right">
-                        <button className="text-emerald-600 hover:text-emerald-800 font-semibold text-xs">
+                      <td className="px-6 py-4 text-right space-x-3">
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleRowClick(p); }} 
+                          className="text-emerald-600 hover:text-emerald-800 font-semibold text-xs"
+                        >
                           View Details
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDelete(p); }} 
+                          disabled={actionBusyId === p.id}
+                          className="text-red-500 hover:text-red-700 font-semibold text-xs disabled:opacity-50"
+                        >
+                          {actionBusyId === p.id ? "Deleting..." : "Delete"}
                         </button>
                       </td>
                     </tr>
@@ -425,6 +478,42 @@ export default function PolicyholdersPage() {
           entityId={selectedEntity.id} 
           entityType={selectedEntity.type} 
           onSaved={fetchPolicyholders}
+        />
+      )}
+
+      {activeAdd?.type === "INDIVIDUAL" && (
+        <CustomerFormModal
+          open={true}
+          mode="create"
+          onClose={() => setActiveAdd(null)}
+          onSaved={(msg, entity) => {
+            setActiveAdd(null);
+            fetchPolicyholders();
+          }}
+        />
+      )}
+      {activeAdd?.type === "FAMILY" && (
+        <FamilyFormModal
+          open={true}
+          mode="full"
+          onClose={() => setActiveAdd(null)}
+          onSaved={(msg, entity) => {
+            setActiveAdd(null);
+            if (entity?.id) router.push(`/admin/families/${entity.id}`);
+            else fetchPolicyholders();
+          }}
+        />
+      )}
+      {activeAdd?.type === "CORPORATE" && (
+        <OrganizationFormModal
+          open={true}
+          mode="full"
+          onClose={() => setActiveAdd(null)}
+          onSaved={(msg, entity) => {
+            setActiveAdd(null);
+            if (entity?.id) router.push(`/admin/organizations/${entity.id}`);
+            else fetchPolicyholders();
+          }}
         />
       )}
     </div>

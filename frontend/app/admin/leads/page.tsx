@@ -6,6 +6,7 @@ import { listAcquisitionSources, AcquisitionSource } from "@/app/services/acquis
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
+import { resetFunnel } from "@/app/services/demo";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
 import FiltersPanel from "@/components/FiltersPanel";
 import AddEntryChooser, { EntryEntityType } from "@/components/entities/AddEntryChooser";
@@ -37,6 +38,8 @@ export default function LeadsHubPage() {
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<FilterType>("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: EntityType } | null>(null);
@@ -158,6 +161,43 @@ export default function LeadsHubPage() {
       setChooserType("CORPORATE");
     }
   }, [searchParams]);
+
+  // Surface the post-reset confirmation once the page has reloaded fresh.
+  useEffect(() => {
+    try {
+      const msg = sessionStorage.getItem("funnelResetMsg");
+      if (msg) {
+        setResetMsg(msg);
+        sessionStorage.removeItem("funnelResetMsg");
+      }
+    } catch { /* sessionStorage unavailable — non-fatal */ }
+  }, []);
+
+  const handleResetFunnel = async () => {
+    if (!window.confirm(
+      "Reset demo data?\n\nThis wipes ALL customers, policies, cases and funnel data for this tenant, "
+      + "then restores the 5 leads + 5 in-progress proposals. Every other screen (underwriting, "
+      + "applications, issuance, policyholders) goes back to 0 records."
+    )) return;
+    setResetting(true);
+    setResetMsg(null);
+    try {
+      const r = await resetFunnel();
+      // Every customer id from before the reset is now stale — a lingering
+      // selection or open edit/delete would 404 ("Customer not found"). A full
+      // reload rebuilds all page state from the freshly-seeded data.
+      try {
+        sessionStorage.setItem(
+          "funnelResetMsg",
+          `Reset complete — ${r.seeded_leads} leads restored (${r.purged_customers} records cleared).`,
+        );
+      } catch { /* sessionStorage unavailable — non-fatal */ }
+      window.location.reload();
+    } catch (e: any) {
+      setResetMsg(e?.message ?? "Reset failed.");
+      setResetting(false);
+    }
+  };
 
   const fetchLeads = async () => {
     setLoading(true);
@@ -436,6 +476,20 @@ export default function LeadsHubPage() {
         </div>
         <div className="flex items-center gap-2 self-start">
           <button
+            onClick={handleResetFunnel}
+            disabled={resetting}
+            title="Wipe all data and restore the 5 leads + 5 proposals"
+            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all shadow-sm disabled:opacity-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 ${resetting ? "animate-spin" : ""}`}>
+              <path d="M3 12a9 9 0 019-9 9.75 9.75 0 016.74 2.74L21 8" />
+              <path d="M21 3v5h-5" />
+              <path d="M21 12a9 9 0 01-9 9 9.75 9.75 0 01-6.74-2.74L3 16" />
+              <path d="M3 21v-5h5" />
+            </svg>
+            {resetting ? "Resetting…" : "Reset Demo Data"}
+          </button>
+          <button
             onClick={() => router.push("/plans")}
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
           >
@@ -641,6 +695,13 @@ export default function LeadsHubPage() {
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-medium">
           {error}
+        </div>
+      )}
+
+      {resetMsg && (
+        <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm font-medium">
+          <span>{resetMsg}</span>
+          <button onClick={() => setResetMsg(null)} className="text-emerald-500 hover:text-emerald-700 text-lg leading-none">×</button>
         </div>
       )}
 

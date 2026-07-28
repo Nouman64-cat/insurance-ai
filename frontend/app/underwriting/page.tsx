@@ -7,6 +7,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } from "@/components/SegmentDropdown";
 import { fmtCoverage } from "@/lib/mock-data";
 import { listCases, CaseQueueItem } from "@/app/services/cases";
+import { createCounterOffer } from "@/app/services/preIssuance";
 import api from "@/app/services/api";
 import FiltersPanel from "@/components/FiltersPanel";
 
@@ -40,6 +41,7 @@ export default function UnderwritingPage() {
   const [dateTo, setDateTo] = useState("");
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [counterOfferCase, setCounterOfferCase] = useState<CaseQueueItem | null>(null);
 
   useEffect(() => {
     const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
@@ -423,6 +425,14 @@ export default function UnderwritingPage() {
                                       Report
                                     </button>
                                   )}
+                                  {c.policy_id && c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" && (
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); setCounterOfferCase(c); }}
+                                      className="text-xs font-semibold text-amber-600 hover:text-amber-700 transition-colors"
+                                    >
+                                      Counter-offer
+                                    </button>
+                                  )}
                                   <span className="text-xs font-semibold text-blue-600">Open case →</span>
                                 </div>
                               </td>
@@ -437,6 +447,118 @@ export default function UnderwritingPage() {
             })}
           </div>
         )}
+      </div>
+
+      {counterOfferCase && (
+        <CounterOfferModal
+          caseItem={counterOfferCase}
+          onClose={() => setCounterOfferCase(null)}
+          onDone={() => {
+            setCounterOfferCase(null);
+            const tid = localStorage.getItem("tenant_id") ?? "";
+            if (tid) listCases(tid, "Underwriting").then(setCases).catch(() => {});
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── Counter-offer modal — underwriter issues revised terms for customer sign-off ──
+function CounterOfferModal({
+  caseItem, onClose, onDone,
+}: Readonly<{ caseItem: CaseQueueItem; onClose: () => void; onDone: () => void }>) {
+  const [offerType, setOfferType] = useState<"Loading" | "Exclusion" | "ReducedSumAssured" | "PlanSubstitution">("Loading");
+  const [loadingPct, setLoadingPct] = useState(25);
+  const [revisedCoverage, setRevisedCoverage] = useState<number>(caseItem.coverage_amount ?? 0);
+  const [revisedProduct, setRevisedProduct] = useState("");
+  const [exclusions, setExclusions] = useState("");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const submit = async () => {
+    if (!caseItem.policy_id) return;
+    setBusy(true); setErr(null);
+    try {
+      await createCounterOffer(caseItem.policy_id, {
+        offer_type: offerType,
+        reason: reason || undefined,
+        created_by: "underwriter",
+        revised_loading_pct: offerType === "Loading" ? loadingPct : undefined,
+        revised_coverage_amount: offerType === "ReducedSumAssured" ? revisedCoverage : undefined,
+        revised_product_name: offerType === "PlanSubstitution" ? revisedProduct : undefined,
+        exclusions: offerType === "Exclusion" ? exclusions.split(",").map(s => s.trim()).filter(Boolean) : undefined,
+      });
+      onDone();
+    } catch (e: any) {
+      setErr(e?.message ?? "Failed to send counter-offer");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-amber-500 px-5 py-3">
+          <p className="text-white/80 text-[11px] font-semibold uppercase tracking-wider">Revised Terms</p>
+          <h2 className="text-white text-lg font-bold">Send Counter-Offer</h2>
+          <p className="text-white/80 text-xs">{caseItem.customer_name} · {caseItem.product_name}</p>
+        </div>
+        <div className="p-5 space-y-3">
+          <div>
+            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Type</label>
+            <select value={offerType} onChange={(e) => setOfferType(e.target.value as any)}
+              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2">
+              <option value="Loading">Accept with Loading</option>
+              <option value="Exclusion">Exclusion</option>
+              <option value="ReducedSumAssured">Reduced Sum Assured</option>
+              <option value="PlanSubstitution">Plan Substitution</option>
+            </select>
+          </div>
+          {offerType === "Loading" && (
+            <div>
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Premium loading %</label>
+              <input type="number" value={loadingPct} onChange={(e) => setLoadingPct(Number(e.target.value))}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+            </div>
+          )}
+          {offerType === "ReducedSumAssured" && (
+            <div>
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Revised sum assured (PKR)</label>
+              <input type="number" value={revisedCoverage} onChange={(e) => setRevisedCoverage(Number(e.target.value))}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+            </div>
+          )}
+          {offerType === "PlanSubstitution" && (
+            <div>
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Substitute product</label>
+              <input value={revisedProduct} onChange={(e) => setRevisedProduct(e.target.value)} placeholder="e.g. Health Gold"
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+            </div>
+          )}
+          {offerType === "Exclusion" && (
+            <div>
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Exclusions (comma-separated)</label>
+              <input value={exclusions} onChange={(e) => setExclusions(e.target.value)} placeholder="e.g. Pre-existing cardiac conditions"
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+            </div>
+          )}
+          <div>
+            <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Reason</label>
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2}
+              className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2" />
+          </div>
+          {err && <p className="text-xs text-red-600">{err}</p>}
+          <div className="flex justify-end gap-2 pt-1">
+            <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+            <button onClick={submit} disabled={busy}
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-amber-500 hover:bg-amber-600 text-white disabled:opacity-40">
+              {busy ? "Sending…" : "Send counter-offer"}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

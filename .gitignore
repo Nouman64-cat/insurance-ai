@@ -133,3 +133,6 @@ next-env.d.ts
 local-tests
 
 *.tsbuildinfo
+# Generated policy document PDFs
+services/tenant-service/media/
+*.pdf

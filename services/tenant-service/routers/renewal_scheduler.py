@@ -1,3 +1,10 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE B — POST-ISSUANCE LIFECYCLE (renewal / grace / lapse automation)
+# This entire module is Stage B: it runs AFTER a policy is issued and active.
+# Temporarily DISABLED for now — it is no longer started from main.py's lifespan.
+# The code below is left intact; re-enable by uncommenting the import + start call
+# in main.py when Stage B is back in scope.
+# ═══════════════════════════════════════════════════════════════════════════════
 """
 Renewal scheduler — runs daily inside the uvicorn process.
 

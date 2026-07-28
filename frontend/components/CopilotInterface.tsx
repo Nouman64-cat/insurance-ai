@@ -43,6 +43,20 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
   }
 
   const text = (lastMessage.text || "").toLowerCase();
+  
+  if (text.includes("missing documents") || (text.includes("upload") && text.includes("document"))) {
+    const isCNIC = text.includes("cnic");
+    const isMed = text.includes("medical");
+    const isSalary = text.includes("salary");
+    const actions = [];
+    if (isCNIC || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload CNIC", actionType: "upload", payload: JSON.stringify({ document_type: "CNIC" }) });
+    if (isMed || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload Medical Report", actionType: "upload", payload: JSON.stringify({ document_type: "Medical Report" }) });
+    if (isSalary || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload Salary Slip", actionType: "upload", payload: JSON.stringify({ document_type: "Salary Slip" }) });
+    actions.push({ label: "I have uploaded them", actionType: "submit", payload: "I have uploaded the documents. Please check and proceed." });
+    return actions;
+  }
+
+
   if (text.includes("customer") && text.includes("added")) {
     return [
       { label: "Create case now", actionType: "submit", payload: "Create an underwriting case for the customer" },
@@ -811,6 +825,11 @@ export function CopilotInterface() {
                       ) : (
                         <div className="copilot-markdown">
                           <ReactMarkdown>{msg.text}</ReactMarkdown>
+                          {msg.steps && msg.steps.length > 0 && (
+                            <div className="mt-4 mb-1">
+                              <ProcessGraph steps={msg.steps} compact={true} />
+                            </div>
+                          )}
                         </div>
                       )}
                       {msg.quickActions && msg.quickActions.length > 0 && (
