@@ -135,6 +135,7 @@ class PolicyStatusEnum(str, Enum):
 class ProfileStatusEnum(str, Enum):
     LEAD = "LEAD"
     PROSPECT = "PROSPECT"
+    DRAFT = "DRAFT"
     UNDERWRITING_READY = "UNDERWRITING_READY"
     NOT_INTERESTED = "NOT_INTERESTED"
     POLICYHOLDER = "POLICYHOLDER"

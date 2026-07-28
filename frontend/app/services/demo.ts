@@ -11,8 +11,9 @@ export interface FunnelResetResult {
 
 /**
  * Wipe every customer + all funnel data for the current tenant and restore the
- * canonical 5 leads + 5 in-progress proposals (seeds/funnel_seed.py). Every other
- * screen (underwriting / applications / issuance / policyholders) returns to 0.
+ * canonical 5 leads (3 individual + 1 family + 1 corporate) + 3 draft
+ * proposals (seeds/funnel_seed.py). Every other screen (underwriting /
+ * applications / issuance / policyholders) returns to 0.
  */
 export async function resetFunnel(): Promise<FunnelResetResult> {
   const tid = tenantId();

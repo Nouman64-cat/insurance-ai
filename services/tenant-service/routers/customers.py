@@ -226,7 +226,7 @@ async def list_customers(
         query = query.where(cast(Customer.profile_status, String) == ProfileStatusEnum.LEAD.value, ~active_exists)
     elif category == "full_details":
         query = query.where(
-            cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value]),
+            cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value, ProfileStatusEnum.DRAFT.value]),
             ~active_exists,
         )
 
@@ -280,7 +280,7 @@ async def get_customer_stats(
     not_interested = await _count(cast(Customer.profile_status, String) == ProfileStatusEnum.NOT_INTERESTED.value, ~active_exists)
     quick_leads = await _count(cast(Customer.profile_status, String) == ProfileStatusEnum.LEAD.value, ~active_exists)
     full_details = await _count(
-        cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value]),
+        cast(Customer.profile_status, String).in_([ProfileStatusEnum.PROSPECT.value, ProfileStatusEnum.UNDERWRITING_READY.value, ProfileStatusEnum.DRAFT.value]),
         ~active_exists,
     )
 

@@ -59,20 +59,24 @@ from shared.services.policy_state_machine import IllegalStateTransition, apply_t
 
 log = logging.getLogger(__name__)
 
-# AI decision band -> Policy/Case lifecycle status. "Approve with Loading" is
-# a possible AIDecision value (human underwriters can apply it) even though
-# the current risk-engine aggregation node never emits it itself.
+# AI decision band -> Policy/Case lifecycle status. The AI's decision is only
+# ever a recommendation surfaced to the underwriter (via RiskAssessment.ai_decision
+# and the case's reasons) — it never finalizes Approved/Declined itself. Every
+# band parks the case/policy at Under Review so a human always makes the actual
+# Approve/Decline call via the case's Override buttons (tenant-service
+# routers/cases.py::update_case_status), which is what drives it into the
+# Policy Issuance queue.
 _DECISION_POLICY_STATUS: dict[str, PolicyStatusEnum] = {
-    "Auto Approve":         PolicyStatusEnum.APPROVED,
-    "Approve with Loading": PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+    "Auto Approve":         PolicyStatusEnum.UNDER_REVIEW,
+    "Approve with Loading": PolicyStatusEnum.UNDER_REVIEW,
     "Human Review":         PolicyStatusEnum.UNDER_REVIEW,
-    "Decline":              PolicyStatusEnum.DECLINED,
+    "Decline":              PolicyStatusEnum.UNDER_REVIEW,
 }
 _DECISION_CASE_STATUS: dict[str, CaseStatusEnum] = {
-    "Auto Approve":         CaseStatusEnum.APPROVED,
-    "Approve with Loading": CaseStatusEnum.APPROVED,
+    "Auto Approve":         CaseStatusEnum.UNDER_REVIEW,
+    "Approve with Loading": CaseStatusEnum.UNDER_REVIEW,
     "Human Review":         CaseStatusEnum.UNDER_REVIEW,
-    "Decline":              CaseStatusEnum.REJECTED,
+    "Decline":              CaseStatusEnum.UNDER_REVIEW,
 }
 from dependencies import Settings
 
@@ -339,10 +343,9 @@ async def evaluate_stream(
                 )
                 db.add(assessment)
 
-                # Auto-transition the Policy (and, if this evaluation belongs to
-                # a Case, the Case too) from the deterministic decision band —
-                # Auto Approve/Decline never need an underwriter's eyes; Human
-                # Review parks the case in the underwriter queue.
+                # Park the Policy (and, if this evaluation belongs to a Case, the
+                # Case too) at Under Review — every decision band lands here so
+                # the underwriter always makes the final Approve/Decline call.
                 new_policy_status = _DECISION_POLICY_STATUS.get(final_risk["ai_decision"])
                 if new_policy_status is not None:
                     try:

@@ -231,8 +231,8 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                 <input value={b.relationship} placeholder="Relation"
                   onChange={(e) => setBens((p) => p.map((x, j) => j === i ? { ...x, relationship: e.target.value } : x))}
                   className="w-20 text-xs border border-slate-200 rounded px-2 py-1" />
-                <input type="number" value={b.share_pct}
-                  onChange={(e) => setBens((p) => p.map((x, j) => j === i ? { ...x, share_pct: Number(e.target.value) } : x))}
+                <input type="number" value={b.share_pct === 0 ? "" : b.share_pct}
+                  onChange={(e) => setBens((p) => p.map((x, j) => j === i ? { ...x, share_pct: e.target.value === "" ? 0 : Number(e.target.value) } : x))}
                   className="w-14 text-xs border border-slate-200 rounded px-2 py-1" />
                 <button onClick={() => setBens((p) => p.filter((_, j) => j !== i))}
                   className="text-slate-300 hover:text-red-500 text-sm px-1">×</button>
@@ -243,8 +243,13 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                 className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold">+ Add beneficiary</button>
               <span className={`text-[11px] font-semibold ${Math.abs(benTotal - 100) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>Σ {benTotal}%</span>
             </div>
-            <Btn tone="emerald" disabled={busy || Math.abs(benTotal - 100) > 0.01 || bens.some((b) => !b.name || !b.relationship)}
-              onClick={() => run(() => replaceBeneficiaries(policyId, bens))}>Save beneficiaries</Btn>
+            <div className="flex items-center gap-2">
+              <Btn tone="emerald" disabled={busy || Math.abs(benTotal - 100) > 0.01 || bens.some((b) => !b.name || !b.relationship)}
+                onClick={() => run(() => replaceBeneficiaries(policyId, bens))}>Save beneficiaries</Btn>
+              {Math.abs(benTotal - 100) > 0.01 && bens.length > 0 && (
+                <span className="text-[10px] text-amber-600">Total share must equal 100% to save</span>
+              )}
+            </div>
           </div>
         </StepShell>
 

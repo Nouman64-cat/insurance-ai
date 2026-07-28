@@ -1,20 +1,33 @@
 """
-Minimal funnel seed — N leads, each with an in-progress proposal, nothing else.
+Minimal funnel seed — 5 leads (3 individual, 1 family, 1 corporate), nothing else.
 
 The user wants the pipeline screens to start with just:
-  • Leads page      — 5 leads (Customer.profile_status = LEAD)
-  • Proposal page   — 5 in-progress proposals (Policy.status = Proposed) against
-                      those same leads
+  • Leads page      — 5 leads: 3 Individual (Customer.profile_status = LEAD),
+                      1 Family (bare FamilyGroup, no members yet), 1 Corporate
+                      (bare Organization, no employees yet).
+  • Proposal page   — 3 draft proposals (Policy.status = Quoted), one per
+                      individual lead. The family/corporate leads are seeded
+                      at the same "just captured, no members" stage a real
+                      quick-lead would start at, so they carry no policy yet
+                      (a family/org needs at least one member before a plan
+                      can be quoted against it) — same reason they're
+                      deliberately NOT given a member Customer here: the Leads
+                      page lists individual customers on their own, so a
+                      member would double up as its own "Individual" row and
+                      throw off the 3/1/1 split.
 and everything else empty (no underwriting cases, no approved/issuable policies,
 no policyholders, no applications).
 
-So each seeded person is ONE Customer (LEAD) + ONE Policy (Proposed) + a
+So each seeded individual is ONE Customer (LEAD) + ONE Policy (Quoted) + a
 PremiumQuote — and deliberately NO Case / RiskAssessment / Stage A rows, so the
 underwriting / applications / issuance / policyholder screens stay clean.
 
 Runs a full purge of the tenant first (via stage_a_seed.purge_tenant), so it is
-a clean slate every time. Extend LEADS below to add more, or add other stages
-later (5 per stage) — the purge + insert pattern stays the same.
+a clean slate every time. purge_tenant only deletes Customer rows (and what
+cascades from them) — it deliberately leaves Organization/FamilyGroup shells
+alone (see its docstring) — so the family/corporate leads here are found-or-
+created by name instead of blindly inserted, or every reset would pile up a
+fresh duplicate shell.
 
 Run inside the tenant-service container:
 
@@ -35,9 +48,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from shared.models.core import (
     Customer,
+    FamilyGroup,
     Gender,
     InsuranceTypeEnum,
     MaritalStatus,
+    Organization,
     Policy,
     PolicyEvent,
     PolicyStatusEnum,
@@ -59,10 +74,10 @@ def _price(coverage: float, term: int, base_rate: float) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 5 leads, each carrying one in-progress (Proposed) proposal.
+# 3 individual leads, each carrying one draft (Quoted) proposal.
 # ─────────────────────────────────────────────────────────────────────────────
 
-LEADS: list[dict] = [
+INDIVIDUAL_LEADS: list[dict] = [
     {
         "cnic": "35202-6710453-9", "name": "Zoya Kamal", "dob": date(1995, 3, 21),
         "gender": Gender.FEMALE, "marital_status": MaritalStatus.SINGLE,
@@ -82,24 +97,6 @@ LEADS: list[dict] = [
         "nominee_name": "Sana Ansari", "nominee_relationship": "Spouse",
     },
     {
-        "cnic": "61101-7752104-1", "name": "Hina Tariq", "dob": date(1991, 12, 2),
-        "gender": Gender.FEMALE, "marital_status": MaritalStatus.MARRIED,
-        "occupation": "Pharmacist", "declared_income": 2_400_000,
-        "is_smoker": False, "city": "Islamabad", "province": "Islamabad",
-        "product_name": "Health Platinum", "insurance_type": InsuranceTypeEnum.HEALTH_CASH,
-        "coverage_amount": 4_000_000, "term_years": 15, "base_rate": 3.6,
-        "nominee_name": "Tariq Javed", "nominee_relationship": "Spouse",
-    },
-    {
-        "cnic": "33100-3391827-5", "name": "Usman Ghani", "dob": date(1984, 5, 17),
-        "gender": Gender.MALE, "marital_status": MaritalStatus.MARRIED,
-        "occupation": "School Principal", "declared_income": 2_100_000,
-        "is_smoker": False, "city": "Faisalabad", "province": "Punjab",
-        "product_name": "Term Life 20", "insurance_type": InsuranceTypeEnum.TERM_LIFE,
-        "coverage_amount": 6_000_000, "term_years": 20, "base_rate": 3.3,
-        "nominee_name": "Ayesha Ghani", "nominee_relationship": "Spouse",
-    },
-    {
         "cnic": "17301-9920184-6", "name": "Sadia Noor", "dob": date(1993, 9, 28),
         "gender": Gender.FEMALE, "marital_status": MaritalStatus.SINGLE,
         "occupation": "Software Developer", "declared_income": 3_000_000,
@@ -110,17 +107,40 @@ LEADS: list[dict] = [
     },
 ]
 
+# 1 family lead — a bare household shell, same stage a "+ Add Family" quick
+# lead starts at before any member is added.
+FAMILY_LEAD: dict = {
+    "name": "Khan Family",
+    "contact_person": "Ahmed Khan",
+    "contact_email": "ahmed.khan@example.com",
+    "contact_phone": "0300-1234567",
+    "city": "Lahore", "province": "Punjab",
+}
 
-async def seed_leads(session: AsyncSession, tenant_id: UUID) -> list[Customer]:
-    """Insert the leads + their in-progress proposals for one tenant."""
-    existing = set((await session.exec(
+# 1 corporate lead — a bare employer shell, same stage a "+ Add Corporate"
+# quick lead starts at before any employee/census is added.
+CORPORATE_LEAD: dict = {
+    "name": "Metro Textiles Ltd",
+    "registration_number": "REG-2026-00147",
+    "industry": "Manufacturing",
+    "contact_person": "Farhan Malik",
+    "contact_email": "hr@metrotextiles.pk",
+    "contact_phone": "042-1112223334",
+    "city": "Lahore", "province": "Punjab",
+}
+
+
+async def seed_leads(session: AsyncSession, tenant_id: UUID) -> list[Customer | FamilyGroup | Organization]:
+    """Insert the 3 individual leads + their draft proposals, and find-or-create
+    the 1 family + 1 corporate lead shell, for one tenant."""
+    existing_cnics = set((await session.exec(
         select(Customer.cnic).where(Customer.tenant_id == tenant_id))).all())
     sources = await get_or_seed_sources(session, tenant_id)
     now = datetime.utcnow()
-    created: list[Customer] = []
+    created: list[Customer | FamilyGroup | Organization] = []
 
-    for spec in LEADS:
-        if spec["cnic"] in existing:
+    for spec in INDIVIDUAL_LEADS:
+        if spec["cnic"] in existing_cnics:
             continue
         pricing = _price(spec["coverage_amount"], spec["term_years"], spec["base_rate"])
 
@@ -135,14 +155,14 @@ async def seed_leads(session: AsyncSession, tenant_id: UUID) -> list[Customer]:
         session.add(customer)
         await session.flush()
 
-        # The proposal — an in-progress (Proposed / "Submitted") policy, no case,
-        # so it shows on the Proposal page but not in underwriting / issuance.
+        # The proposal — a draft (Quoted) policy, no case, so it shows on the
+        # Proposal page's Draft tab but not in underwriting / issuance.
         policy = Policy(
             tenant_id=tenant_id, customer_id=customer.id,
             product_name=spec["product_name"], insurance_type=spec["insurance_type"],
             coverage_amount=spec["coverage_amount"], term_years=spec["term_years"],
             nominee_name=spec["nominee_name"], nominee_relationship=spec["nominee_relationship"],
-            status=PolicyStatusEnum.PROPOSED,
+            status=PolicyStatusEnum.QUOTED,
         )
         session.add(policy)
         await session.flush()
@@ -152,15 +172,44 @@ async def seed_leads(session: AsyncSession, tenant_id: UUID) -> list[Customer]:
             base_premium=pricing["base_premium"], loading_applied=pricing["loading_amount"],
             total_premium=pricing["total_premium"], rate_version="SEED-1.0",
         ))
-        for offset, (evt, frm, to) in enumerate(
-            [("PolicyQuoted", None, "Quoted"), ("QuoteProposed", "Quoted", "Proposed")]
-        ):
-            session.add(PolicyEvent(
-                tenant_id=tenant_id, policy_id=policy.id, event_type=evt,
-                from_status=frm, to_status=to, actor="seed",
-                detail_json={"seeded": True}, created_at=now - timedelta(days=2 - offset),
-            ))
+        session.add(PolicyEvent(
+            tenant_id=tenant_id, policy_id=policy.id, event_type="PolicyQuoted",
+            from_status=None, to_status="Quoted", actor="seed",
+            detail_json={"seeded": True}, created_at=now - timedelta(days=2),
+        ))
         created.append(customer)
+
+    # Family lead — reuse the shell if a previous reset already created it
+    # (purge_tenant intentionally never deletes FamilyGroup rows).
+    family = (await session.exec(
+        select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id, FamilyGroup.name == FAMILY_LEAD["name"])
+    )).first()
+    if family is None:
+        family = FamilyGroup(
+            tenant_id=tenant_id, name=FAMILY_LEAD["name"],
+            contact_person=FAMILY_LEAD["contact_person"], contact_email=FAMILY_LEAD["contact_email"],
+            contact_phone=FAMILY_LEAD["contact_phone"], city=FAMILY_LEAD["city"], province=FAMILY_LEAD["province"],
+            profile_status=ProfileStatusEnum.LEAD,
+        )
+        session.add(family)
+        await session.flush()
+    created.append(family)
+
+    # Corporate lead — same find-or-create reasoning as the family above.
+    org = (await session.exec(
+        select(Organization).where(Organization.tenant_id == tenant_id, Organization.name == CORPORATE_LEAD["name"])
+    )).first()
+    if org is None:
+        org = Organization(
+            tenant_id=tenant_id, name=CORPORATE_LEAD["name"],
+            registration_number=CORPORATE_LEAD["registration_number"], industry=CORPORATE_LEAD["industry"],
+            contact_person=CORPORATE_LEAD["contact_person"], contact_email=CORPORATE_LEAD["contact_email"],
+            contact_phone=CORPORATE_LEAD["contact_phone"], city=CORPORATE_LEAD["city"], province=CORPORATE_LEAD["province"],
+            profile_status=ProfileStatusEnum.LEAD,
+        )
+        session.add(org)
+        await session.flush()
+    created.append(org)
 
     await session.commit()
     return created
@@ -185,13 +234,13 @@ async def _run(tenant_id: UUID | None, all_tenants: bool) -> None:
             purged = await purge_tenant(session, tenant.id)
             created = await seed_leads(session, tenant.id)
             print(f"[{tenant.name}] {tenant.id}: purged {purged} customer(s), "
-                  f"seeded {len(created)} lead(s) + in-progress proposal(s)")
+                  f"seeded {len(created)} lead(s) (3 individual + 1 family + 1 corporate)")
             for c in created:
                 print(f"  ✓ {c.name}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed 5 leads + in-progress proposals (clean funnel).")
+    parser = argparse.ArgumentParser(description="Seed 5 leads (3 individual + 1 family + 1 corporate).")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--tenant-id", type=UUID, help="Seed a single tenant by UUID.")
     group.add_argument("--all-tenants", action="store_true", help="Seed every tenant.")

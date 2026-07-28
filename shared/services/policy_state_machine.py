@@ -50,6 +50,8 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
         PolicyStatusEnum.DECLINED,
+        # Step back — undoes an accidental Submit before anyone's acted on it.
+        PolicyStatusEnum.QUOTED,
     },
     PolicyStatusEnum.UNDER_REVIEW: {
         PolicyStatusEnum.INFORMATION_REQUESTED,
@@ -59,6 +61,8 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.DECLINED,
         PolicyStatusEnum.POSTPONED,
         PolicyStatusEnum.REINSURER_REFERRED,
+        # Step back — undoes an accidental Start Review before anyone's acted on it.
+        PolicyStatusEnum.PROPOSED,
     },
     PolicyStatusEnum.REINSURER_REFERRED: {
         PolicyStatusEnum.APPROVED,
@@ -133,7 +137,12 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
     # Terminal (for now) — Phase 4c adds LAPSED → ACTIVE (reinstatement).
     PolicyStatusEnum.LAPSED: set(),
     PolicyStatusEnum.CANCELLED: set(),
-    PolicyStatusEnum.DECLINED: set(),
+    PolicyStatusEnum.DECLINED: {
+        # Allow underwriters to override a previous decline decision (AI or manual)
+        PolicyStatusEnum.UNDER_REVIEW,
+        PolicyStatusEnum.APPROVED,
+        PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+    },
     PolicyStatusEnum.NOT_TAKEN_UP: set(),
 }
 

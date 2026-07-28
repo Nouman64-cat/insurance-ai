@@ -176,7 +176,7 @@ export default function LeadsHubPage() {
   const handleResetFunnel = async () => {
     if (!window.confirm(
       "Reset demo data?\n\nThis wipes ALL customers, policies, cases and funnel data for this tenant, "
-      + "then restores the 5 leads + 5 in-progress proposals. Every other screen (underwriting, "
+      + "then restores the 5 leads (3 individual + 1 family + 1 corporate) + 3 draft proposals. Every other screen (underwriting, "
       + "applications, issuance, policyholders) goes back to 0 records."
     )) return;
     setResetting(true);
@@ -341,6 +341,7 @@ export default function LeadsHubPage() {
       if (filterType !== "ALL" && l.type !== filterType) return false;
       if (statusFilter !== "ALL") {
         if (statusFilter === "IN_PROGRESS" && (l.status !== "PROSPECT" && l.status !== "UNDERWRITING_READY")) return false;
+        if (statusFilter === "DRAFT" && l.status !== "DRAFT") return false;
         if (statusFilter === "LEAD" && l.status !== "LEAD") return false;
         if (statusFilter === "DEAD" && l.status !== "NOT_INTERESTED") return false;
         if (statusFilter === "POLICYHOLDER" && l.status !== "POLICYHOLDER") return false;
@@ -358,6 +359,7 @@ export default function LeadsHubPage() {
     return leads.filter(l => {
       if (statusFilter !== "ALL") {
         if (statusFilter === "IN_PROGRESS" && (l.status !== "PROSPECT" && l.status !== "UNDERWRITING_READY")) return false;
+        if (statusFilter === "DRAFT" && l.status !== "DRAFT") return false;
         if (statusFilter === "LEAD" && l.status !== "LEAD") return false;
         if (statusFilter === "DEAD" && l.status !== "NOT_INTERESTED") return false;
         if (statusFilter === "POLICYHOLDER" && l.status !== "POLICYHOLDER") return false;
@@ -478,7 +480,7 @@ export default function LeadsHubPage() {
           <button
             onClick={handleResetFunnel}
             disabled={resetting}
-            title="Wipe all data and restore the 5 leads + 5 proposals"
+            title="Wipe all data and restore the 5 leads (3 individual + 1 family + 1 corporate)"
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-all shadow-sm disabled:opacity-50"
           >
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 ${resetting ? "animate-spin" : ""}`}>
@@ -619,6 +621,7 @@ export default function LeadsHubPage() {
               <option value="ALL">All</option>
               <option value="LEAD">Leads</option>
               <option value="IN_PROGRESS">In Progress</option>
+              <option value="DRAFT">Draft</option>
               <option value="DEAD">Dead</option>
             </select>
           </div>
@@ -754,11 +757,37 @@ export default function LeadsHubPage() {
                         <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
                         In Progress
                       </h3>
-                      <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").length} of ${filtered.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").length}`}>
-                        {filtered.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").length}
+                      <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length} of ${filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length}`}>
+                        {filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length}
                       </span>
                     </div>
-                    {paginated.filter(l => l.status !== "LEAD" && l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER").map(lead => (
+                    {paginated.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").map(lead => (
+                      <LeadCard
+                        key={lead.id}
+                        lead={lead}
+                        busy={actionBusyId === lead.id}
+                        onClick={() => handleCardClick(lead)}
+                        onMoveInProgress={() => handleMoveInProgress(lead)}
+                        onMarkNotInterested={() => handleMarkNotInterested(lead)}
+                        onReactivate={() => handleReactivate(lead)}
+                        onDelete={() => handleDeleteLead(lead)}
+                      />
+                    ))}
+                  </div>
+
+
+                  {/* DRAFT COLUMN */}
+                  <div className="flex flex-col gap-3 flex-1 min-w-[280px] w-full">
+                    <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-fuchsia-400">
+                      <h3 className="font-bold text-slate-700 flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-fuchsia-500"></span>
+                        Draft
+                      </h3>
+                      <span className="bg-fuchsia-100 text-fuchsia-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "DRAFT").length} of ${filtered.filter(l => l.status === "DRAFT").length}`}>
+                        {filtered.filter(l => l.status === "DRAFT").length}
+                      </span>
+                    </div>
+                    {paginated.filter(l => l.status === "DRAFT").map(lead => (
                       <LeadCard
                         key={lead.id}
                         lead={lead}

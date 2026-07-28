@@ -28,7 +28,31 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
     }
   }, [isOpen, entityId]);
 
+
+  const handleSendToDraft = async () => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setLoading(true);
+    setError("");
+    try {
+      let endpoint = "";
+      if (entityType === "INDIVIDUAL") {
+        await api.put(`/tenants/${tenantId}/customers/${entityId}`, { profile_status: "DRAFT" });
+      } else if (entityType === "FAMILY") {
+        await api.patch(`/tenants/${tenantId}/families/${entityId}`, { profile_status: "DRAFT" });
+      } else if (entityType === "CORPORATE") {
+        await api.patch(`/tenants/${tenantId}/organizations/${entityId}`, { profile_status: "DRAFT" });
+      }
+      fetchDetails();
+      if (onSaved) onSaved();
+    } catch (err: any) {
+      setError(err.message || "Failed to update status to DRAFT.");
+      setLoading(false);
+    }
+  };
+
   const fetchDetails = async () => {
+
     setLoading(true);
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
@@ -118,8 +142,18 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 Manage Corporate & Census
               </button>
             )}
+
+            {data?.profile_status !== "DRAFT" && (
+              <button 
+                onClick={handleSendToDraft}
+                className="text-xs font-semibold text-fuchsia-700 bg-fuchsia-50 border border-fuchsia-200 hover:bg-fuchsia-100 px-4 py-2 rounded-lg transition-colors shadow-sm"
+              >
+                Send to Draft
+              </button>
+            )}
             <button 
               onClick={() => setShowEditModal(true)}
+
               className="text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg transition-colors shadow-sm"
             >
               Open Full Details Form
