@@ -35,7 +35,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from services import compliance_engine
 from services.policy_documents import generate_and_store_documents
-from services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
+from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from services.pre_issuance_gate import compute_readiness
 from routers.policies import _get_policy, _publish_policy_event, _st
 from shared.models.core import (
