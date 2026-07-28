@@ -24,7 +24,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from dependencies import get_tenant_id
+from dependencies import get_current_user, get_tenant_id
 from schemas import QuoteDetail, QuoteListItem, QuoteRequest, QuoteResponse, QuoteUpdate
 from shared.models.core import (
     AcquisitionSource,
@@ -40,12 +40,28 @@ from shared.models.core import (
     Policy,
     PolicyStatusEnum,
     PremiumQuote,
+    Role,
     Tenant,
     User,
 )
 from shared.pricing.calculator import calculate_premium
+from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
 
 router = APIRouter(tags=["Quotation"])
+
+# Statuses that represent an underwriting *decision* (accept/decline/refer) —
+# only an Underwriter (or Admin/SuperAdmin) may set these. Everything else in
+# PolicyStatusEnum reachable from the proposal stage (Proposed, UnderReview,
+# InformationRequested) is submission-side and an Agent may set it too.
+_DECISION_STATUSES = {
+    PolicyStatusEnum.APPROVED,
+    PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+    PolicyStatusEnum.DECLINED,
+    PolicyStatusEnum.POSTPONED,
+    PolicyStatusEnum.REINSURER_REFERRED,
+}
+_DECISION_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+_SUBMISSION_ROLES = {"Agent", "Underwriter", "Admin", "SuperAdmin"}
 
 SLA_TARGET_DAYS = {
     PolicyStatusEnum.PROPOSED: 2,
@@ -290,6 +306,7 @@ async def update_quote(
     body: QuoteUpdate,
     tenant_id: UUID = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> QuoteDetail:
     stmt = (
         select(PremiumQuote, Policy, Customer, AcquisitionSource, MasterPolicy, Organization, FamilyPolicy, FamilyGroup, User)
@@ -310,10 +327,25 @@ async def update_quote(
             detail=f"Quote '{quote_id}' not found for this tenant.",
         )
     quote, policy, customer, source, master_policy, org, family_policy, family_group, underwriter = row
-    
+
     updated = False
     if body.status is not None:
-        policy.status = body.status
+        actor_role = await session.get(Role, current_user.role_id)
+        actor_role_name = actor_role.name if actor_role else "Viewer"
+        required_roles = _DECISION_ROLES if body.status in _DECISION_STATUSES else _SUBMISSION_ROLES
+        if actor_role_name not in required_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Setting status to '{body.status.value}' requires one of: {', '.join(sorted(required_roles))} (you are {actor_role_name}).",
+            )
+        try:
+            apply_transition(
+                session, policy, body.status,
+                event_type="proposal_status_change",
+                actor=str(current_user.id),
+            )
+        except IllegalStateTransition as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
         updated = True
     if body.assigned_underwriter_id is not None:
         policy.assigned_underwriter_id = body.assigned_underwriter_id

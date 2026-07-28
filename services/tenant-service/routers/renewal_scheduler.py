@@ -131,7 +131,7 @@ async def _process_renewals(session) -> None:
                     )
         else:
             # Expiry date has passed — move to GRACE_PERIOD
-            from services.policy_state_machine import apply_transition, IllegalStateTransition
+            from shared.services.policy_state_machine import apply_transition, IllegalStateTransition
             if not policy.grace_period_end_date:
                 policy.grace_period_end_date = (
                     policy.expiry_date + timedelta(days=GRACE_PERIOD_DAYS)
@@ -151,7 +151,7 @@ async def _process_renewals(session) -> None:
         if not policy.grace_period_end_date or today <= policy.grace_period_end_date:
             continue
 
-        from services.policy_state_machine import apply_transition, IllegalStateTransition
+        from shared.services.policy_state_machine import apply_transition, IllegalStateTransition
         try:
             apply_transition(
                 session, policy, PolicyStatusEnum.LAPSED,
@@ -184,7 +184,7 @@ async def _process_renewals(session) -> None:
             continue
         days_pending = (datetime.utcnow() - policy.updated_at).days
         if days_pending > ntu_days:
-            from services.policy_state_machine import apply_transition, IllegalStateTransition
+            from shared.services.policy_state_machine import apply_transition, IllegalStateTransition
             try:
                 apply_transition(
                     session, policy, PolicyStatusEnum.NOT_TAKEN_UP,

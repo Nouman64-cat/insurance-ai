@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, delete
@@ -8,6 +8,7 @@ from datetime import datetime
 
 from database import get_session
 from document_requirements import get_required_documents
+from routers.auth import oauth2_scheme, _get_current_user, _role_name
 from shared.models.core import (
     Customer,
     Artifact,
@@ -37,8 +38,17 @@ from schemas import (
     CaseCommentCreate,
     PolicyRead,
 )
+from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
 
 router = APIRouter(prefix="/tenants/{tenant_id}/cases", tags=["Cases"])
+
+# Case decisions (Approved/Rejected) drive the linked Policy's status and are
+# reserved for whoever is allowed to make an underwriting call; everything
+# else about managing a case (opening it, moving it through review) is also
+# something the submitting Agent can do. Mirrors the same split applied to
+# the Proposal page's PATCH /quotes/{id} in api-gateway/routers/quote.py.
+_CASE_DECISION_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
+_CASE_SUBMISSION_ROLES = {"Agent", "Underwriter", "Admin", "SuperAdmin"}
 
 def generate_case_number() -> str:
     # Auto-generate CaseNumber: e.g., CASE-YYYY-XXXXXX
@@ -51,11 +61,15 @@ async def create_case(
     tenant_id: UUID,
     body: CaseCreate,
     session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
 ):
-    # Fetch a valid user to satisfy FK constraints for audit logs
-    user = (await session.execute(select(User).where(User.tenant_id == tenant_id))).scalars().first()
-    if not user:
-        raise HTTPException(status_code=400, detail="Tenant has no users to perform this action.")
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _CASE_SUBMISSION_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Opening a case requires one of: {', '.join(sorted(_CASE_SUBMISSION_ROLES))} (you are {role_name}).",
+        )
 
     # If a policy is named, it must belong to this tenant + customer — a case
     # opens formal underwriting on one specific quote, not just any policy.
@@ -85,8 +99,13 @@ async def create_case(
     # ("Quoted") to formally in-flight ("Proposed") — the customer has
     # committed to this specific offer.
     if policy is not None and policy.status == PolicyStatusEnum.QUOTED:
-        policy.status = PolicyStatusEnum.PROPOSED
-        session.add(policy)
+        try:
+            apply_transition(
+                session, policy, PolicyStatusEnum.PROPOSED,
+                event_type="case_opened", actor=str(user.id),
+            )
+        except IllegalStateTransition as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
     await session.commit()
     await session.refresh(case)
@@ -427,22 +446,30 @@ async def update_case_status(
     tenant_id: UUID,
     case_id: UUID,
     body: CaseStatusUpdate,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
 ):
-    user = (await session.execute(select(User).where(User.tenant_id == tenant_id))).scalars().first()
-    if not user:
-        raise HTTPException(status_code=400, detail="Tenant has no users.")
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+
+    is_decision = body.status in (CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED)
+    required_roles = _CASE_DECISION_ROLES if is_decision else _CASE_SUBMISSION_ROLES
+    if role_name not in required_roles:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Setting case status to '{body.status.value}' requires one of: {', '.join(sorted(required_roles))} (you are {role_name}).",
+        )
 
     stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
     result = await session.execute(stmt)
     case = result.scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=404, detail="Case not found")
-    
+
     old_status = case.caseStatus
     case.caseStatus = body.status
     case.updatedAt = datetime.utcnow()
-    
+
     history = CaseHistory(
         caseld=case.caseld,
         actionType=ActionTypeEnum.STATUS_CHANGE,
@@ -453,8 +480,12 @@ async def update_case_status(
     )
     session.add(history)
     session.add(case)
-    
-    if case.caseStatus == CaseStatusEnum.APPROVED:
+
+    # A case decision (Approved/Rejected) drives the linked Policy's own
+    # lifecycle status — this is the *only* legitimate place a proposal
+    # reaches Approved/Declined; the Proposal page's PATCH /quotes/{id}
+    # (api-gateway/routers/quote.py) no longer allows jumping there directly.
+    if case.caseStatus in (CaseStatusEnum.APPROVED, CaseStatusEnum.REJECTED):
         policy_to_update = None
         if case.policy_id:
             policy_to_update = await session.get(Policy, case.policy_id)
@@ -485,21 +516,30 @@ async def update_case_status(
                 session.add(case)
 
         if policy_to_update:
+            target_status = (
+                PolicyStatusEnum.APPROVED if case.caseStatus == CaseStatusEnum.APPROVED
+                else PolicyStatusEnum.DECLINED
+            )
             st_val = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
             if st_val.upper() in ("ACTIVE", "ISSUED"):
-                raise HTTPException(400, "Cannot approve case: The associated policy is already Active and cannot be issued again.")
-            policy_to_update.status = PolicyStatusEnum.APPROVED
-            session.add(policy_to_update)
+                raise HTTPException(400, "Cannot decide this case: the associated policy is already Active/Issued.")
+            try:
+                apply_transition(
+                    session, policy_to_update, target_status,
+                    event_type="case_decision", actor=str(user.id),
+                )
+            except IllegalStateTransition as exc:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
         # NOTE: Do NOT promote customer to POLICYHOLDER here.
         # A customer only becomes a policyholder when the policy is actually
         # issued and goes Active. Promoting at Approved is premature and causes
         # them to appear on the Policyholders page before coverage exists.
         # This transition is handled in routers/policies.py → issue_policy().
-                    
+
     await session.commit()
     await session.refresh(case)
-    
+
     return case
 
 

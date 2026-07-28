@@ -6,6 +6,8 @@ import api from "../services/api";
 import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
 import { MetricCard } from "@/components/MetricCard";
 import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
+import { StatusDropdown, StatusFilter } from "@/components/StatusDropdown";
+import { FancyDropdown, FancyDropdownOption } from "@/components/FancyDropdown";
 import { fmtCoverage } from "@/lib/mock-data";
 
 import { updateQuote } from "../services/quotes";
@@ -92,7 +94,204 @@ const STATUS_TABS = [
   { id: "Issued", label: "Issued" },
 ];
 
+// ── Status badge / SLA / underwriter presentation ───────────────────────────
+// Same stage vocabulary and colors as StatusDropdown's dots, so the pill on a
+// row and the filter used to find that row always agree visually.
+
+const STATUS_LABEL: Record<string, string> = {
+  Quoted: "Draft",
+  Proposed: "Submitted",
+  UnderReview: "Under Review",
+  InformationRequested: "Info Requested",
+  Approved: "Approved",
+  AcceptedWithLoadings: "Accepted (Loadings)",
+  Declined: "Rejected",
+  Issued: "Issued",
+};
+
+const STATUS_BADGE_STYLE: Record<string, string> = {
+  Quoted: "bg-slate-100 text-slate-600 border-slate-200",
+  Proposed: "bg-blue-50 text-blue-700 border-blue-200",
+  UnderReview: "bg-amber-50 text-amber-700 border-amber-200",
+  InformationRequested: "bg-amber-50 text-amber-600 border-amber-200",
+  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  AcceptedWithLoadings: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Declined: "bg-rose-50 text-rose-700 border-rose-200",
+  Issued: "bg-violet-50 text-violet-700 border-violet-200",
+};
+
+const STATUS_DOT: Record<string, string> = {
+  Quoted: "bg-slate-400",
+  Proposed: "bg-blue-500",
+  UnderReview: "bg-amber-500",
+  InformationRequested: "bg-amber-300",
+  Approved: "bg-emerald-500",
+  AcceptedWithLoadings: "bg-emerald-500",
+  Declined: "bg-rose-500",
+  Issued: "bg-violet-500",
+};
+
+function StatusBadge({ status, className = "" }: { status: string; className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border whitespace-nowrap ${
+        STATUS_BADGE_STYLE[status] ?? "bg-slate-100 text-slate-600 border-slate-200"
+      } ${className}`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[status] ?? "bg-slate-400"}`} />
+      {STATUS_LABEL[status] ?? status}
+    </span>
+  );
+}
+
+const SLA_STYLE: Record<string, { dot: string; text: string; label: string }> = {
+  within_sla: { dot: "bg-emerald-500", text: "text-emerald-600", label: "On track" },
+  approaching_breach: { dot: "bg-amber-500", text: "text-amber-600", label: "Due soon" },
+  breached: { dot: "bg-rose-500", text: "text-rose-600", label: "SLA breached" },
+};
+
+function SlaHint({ status, daysRemaining }: { status: QuoteListItem["sla_status"]; daysRemaining: number | null }) {
+  if (!status) return null;
+  const s = SLA_STYLE[status];
+  if (!s) return null;
+  const label = status !== "breached" && daysRemaining != null ? `${daysRemaining}d left` : s.label;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-semibold ${s.text}`}>
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${s.dot}`} />
+      {label}
+    </span>
+  );
+}
+
+function initials(name?: string | null): string {
+  if (!name) return "?";
+  return name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]?.toUpperCase() ?? "").join("");
+}
+
+function UnderwriterInitial({ name }: { name?: string | null }) {
+  return (
+    <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-[9px] font-bold shrink-0">
+      {initials(name)}
+    </span>
+  );
+}
+
+function UnderwriterAvatar({ name }: { name?: string | null }) {
+  if (!name) {
+    return (
+      <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-400">
+        <span className="w-5 h-5 rounded-full border border-dashed border-slate-300 flex items-center justify-center shrink-0">–</span>
+        Unassigned
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-slate-600" title={name}>
+      <UnderwriterInitial name={name} />
+      <span className="truncate max-w-[90px]">{name}</span>
+    </span>
+  );
+}
+
+function OrgIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="4" y="3" width="12" height="18" rx="1" />
+      <path d="M9 8h2M9 12h2M9 16h2" />
+      <path d="M16 21v-8h4v8" />
+    </svg>
+  );
+}
+
+function FamilyIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <circle cx="8" cy="8" r="3" />
+      <circle cx="17" cy="9" r="2.5" />
+      <path d="M2 21c0-3.6 2.7-6 6-6s6 2.4 6 6" />
+      <path d="M14.5 21c.3-2.8 2-4.5 4.5-4.5s4.2 1.7 4.5 4" />
+    </svg>
+  );
+}
+
+function KpiIcon({ name, className = "w-4.5 h-4.5" }: { name: "document" | "shield" | "coin"; className?: string }) {
+  const props = { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, className };
+  if (name === "shield") {
+    return (
+      <svg {...props}>
+        <path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" />
+      </svg>
+    );
+  }
+  if (name === "coin") {
+    return (
+      <svg {...props}>
+        <ellipse cx="12" cy="6" rx="8" ry="3" />
+        <path d="M4 6v6c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+        <path d="M4 12v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...props}>
+      <path d="M14 3v4a1 1 0 001 1h4" />
+      <path d="M17 21H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+      <path d="M9 13h6M9 17h4" />
+    </svg>
+  );
+}
+
 const STORAGE_KEY = "proposal_view_state";
+
+// ── Available next actions per status ───────────────────────────────────────
+// A single source of truth for "what can this proposal legally do next,"
+// mirroring shared/services/policy_state_machine.py's _TRANSITIONS map (minus
+// Approved/AcceptedWithLoadings, which stay Case-only — see canDecideProposals
+// below for why Reject doesn't get the same restriction). Both the per-lead
+// dropdown and the batch dropdown read from this one function so the two
+// never drift apart.
+//
+//   kind "status"       — a plain PATCH /quotes/{id} {status}
+//   kind "underwriting" — opens/advances the underwriting Case (not a status PATCH)
+//   kind "save_info"    — saves the missing customer fields (single-lead only)
+
+interface ProposalActionOption {
+  value: string;
+  label: string;
+  tier: "submission" | "decision"; // submission: Agent+; decision: Underwriter+
+}
+
+function getAvailableActions(status: string, hasMissingFields: boolean, forBatch: boolean): ProposalActionOption[] {
+  const opts: ProposalActionOption[] = [];
+
+  if (status === "Quoted") { // Draft
+    if (forBatch || !hasMissingFields) {
+      opts.push({ value: "status:Proposed", label: "Submit Proposal", tier: "submission" });
+    }
+    opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
+  } else if (status === "Proposed") { // Submitted
+    opts.push({ value: "status:UnderReview", label: "Start Review", tier: "submission" });
+    opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
+  } else if (status === "UnderReview") {
+    opts.push({ value: "underwriting", label: "Send to Underwriting", tier: "submission" });
+    opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
+  } else if (status === "InformationRequested") {
+    if (!forBatch && hasMissingFields) {
+      opts.push({ value: "save_info", label: "Save Information", tier: "submission" });
+    }
+    opts.push({ value: "status:Proposed", label: "Re-Submit Proposal", tier: "submission" });
+    opts.push({ value: "status:UnderReview", label: "Return to Under Review", tier: "submission" });
+  } else {
+    // Approved / AcceptedWithLoadings / Declined / Issued: no actions here —
+    // these are outcomes reached only via the underwriting Case's decision.
+    return [];
+  }
+
+  // Reject is legal directly from any of the four statuses above
+  opts.push({ value: "status:Declined", label: "Reject Proposal", tier: "decision" });
+
+  return opts;
+}
 
 // ── Grouping types ───────────────────────────────────────────────────────────
 // Corporate/group-life quotes (Policy.master_policy_id set) nest three levels
@@ -148,7 +347,7 @@ export default function QuotePage() {
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<SegmentFilter>("all");
 
-  const [activeTab, setActiveTab] = useState("ALL");
+  const [activeTab, setActiveTab] = useState<StatusFilter>("ALL");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [agentFilter, setAgentFilter] = useState("");
@@ -157,6 +356,27 @@ export default function QuotePage() {
   const [sources, setSources] = useState<AcquisitionSource[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  const underwriterFilterOptions: FancyDropdownOption[] = useMemo(
+    () => [
+      { value: "", label: "All Underwriters" },
+      ...underwriters.map((u) => ({ value: u.id, label: u.full_name, description: u.email, icon: <UnderwriterInitial name={u.full_name} /> })),
+    ],
+    [underwriters]
+  );
+
+  const sourceFilterOptions: FancyDropdownOption[] = useMemo(
+    () => [
+      { value: "", label: "All Sources" },
+      ...sources.map((s) => ({
+        value: s.id,
+        label: s.name,
+        description: [SOURCE_TYPE_LABELS[s.source_type] ?? s.source_type, s.partner_name].filter(Boolean).join(" · "),
+      })),
+    ],
+    [sources]
+  );
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -171,8 +391,23 @@ export default function QuotePage() {
       listUnderwriters(tenantId).then(setUnderwriters).catch(console.error);
       listAcquisitionSources(tenantId).then(setSources).catch(console.error);
     }
+    setUserRole(localStorage.getItem("user_role"));
     setIsHydrated(true);
   }, []);
+
+  // Submitting/moving a proposal along (Submit, Start Review, Send to
+  // Underwriting) is something an Agent can do. A Viewer (or unrecognized
+  // role) gets no action buttons on this page at all.
+  const canActOnProposals = userRole != null && ["Agent", "Underwriter", "Admin", "SuperAdmin"].includes(userRole);
+  // Deciding a proposal is Underwriter/Admin-only, but the two decisions
+  // aren't symmetric: Approve genuinely requires underwriting to have run
+  // (risk assessment, documents) — that stays Case-only (see /case/[id]
+  // "Override: Approve"). Reject has no such requirement — the backend state
+  // machine (shared/services/policy_state_machine.py) legally allows
+  // Draft/Submitted/Under Review/Info Requested -> Rejected directly, since a
+  // real underwriter can decline outright (e.g. plain ineligibility) without
+  // running a full assessment first. So Reject gets its own button here.
+  const canDecideProposals = userRole != null && ["Underwriter", "Admin", "SuperAdmin"].includes(userRole);
 
   const isMounted = useRef(false);
   useEffect(() => {
@@ -304,49 +539,24 @@ export default function QuotePage() {
     }
   };
 
-  const getBatchActionProps = (quotesToProcess: QuoteListItem[]) => {
-    const selectedQuotes = quotesToProcess.filter((q) => selectedQuoteIds.has(q.quote_id));
-    const count = selectedQuotes.length;
+  // Same option list the per-lead modal uses (getAvailableActions), just with
+  // forBatch=true so it doesn't try to reason about any one customer's
+  // missing fields — both Submit and Send-to-Info-Requested are offered
+  // together and the underwriter picks whichever fits the selected batch.
+  const batchOptions = useMemo(() => getAvailableActions(activeTab, false, true), [activeTab]);
 
-    if (activeTab === "ALL" || activeTab === "Issued" || activeTab === "Declined") {
-      return null;
+  const handleBatchApply = async (value: string, quotesToProcess: QuoteListItem[]) => {
+    if (value === "underwriting") {
+      await handleBulkProceed(quotesToProcess);
+      return;
     }
-
-    if (activeTab === "Approved") {
-      return {
-        label: "Batch Proceed to Underwriting",
-        onClick: () => handleBulkProceed(quotesToProcess),
-        disabled: isBulkProceeding || count === 0 || selectedQuotes.some(q => q.status !== "Approved"),
-        title: count > 0 && selectedQuotes.some(q => q.status !== "Approved") ? "Only approved proposals can proceed" : ""
-      };
+    if (value.startsWith("status:")) {
+      await handleBulkStatusUpdate(quotesToProcess, value.slice("status:".length));
     }
-
-    let targetStatus = "";
-    let label = "";
-
-    if (activeTab === "Quoted") {
-      targetStatus = "Proposed";
-      label = "Batch Submit";
-    } else if (activeTab === "Proposed") {
-      targetStatus = "UnderReview";
-      label = "Batch Start Review";
-    } else if (activeTab === "UnderReview") {
-      targetStatus = "Approved";
-      label = "Batch Approve";
-    } else if (activeTab === "InformationRequested") {
-      targetStatus = "Proposed";
-      label = "Batch Re-Submit";
-    }
-
-    if (!targetStatus) return null;
-
-    return {
-      label,
-      onClick: () => handleBulkStatusUpdate(quotesToProcess, targetStatus),
-      disabled: isBulkProceeding || count === 0,
-      title: ""
-    };
   };
+
+  const getBatchConfirmMessage = (option: ProposalActionOption, selectedCount: number) =>
+    option.tier === "decision" ? `Reject ${selectedCount} proposal(s)? This cannot be undone.` : undefined;
 
   const openQuote = useCallback(async (quoteId: string) => {
     setSelectedProposalId(quoteId);
@@ -369,17 +579,21 @@ export default function QuotePage() {
     setDetailError(null);
   }, []);
 
+  // Status is filtered client-side (like segment already was) so the status
+  // dropdown can show a live count per status and switching status feels
+  // instant — no network round-trip just to change which status you're
+  // looking at. Only the other filters (date range, underwriter, source)
+  // still go to the server.
   const fetchQuotes = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
       const filters: any = {};
-      if (activeTab !== "ALL") filters.status = activeTab;
       if (dateFrom) filters.created_from = dateFrom;
       if (dateTo) filters.created_to = dateTo;
       if (agentFilter) filters.assigned_underwriter_id = agentFilter;
       if (sourceFilter) filters.acquisition_source_id = sourceFilter;
-      
+
       const data = await listQuotes(filters);
       setQuotes(data || []);
     } catch (err: any) {
@@ -387,28 +601,41 @@ export default function QuotePage() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, dateFrom, dateTo, agentFilter, sourceFilter]);
+  }, [dateFrom, dateTo, agentFilter, sourceFilter]);
 
   useEffect(() => {
     if (!isHydrated) return;
     fetchQuotes();
   }, [fetchQuotes, isHydrated]);
 
-  // The dropdown-selected segment scopes which quotes count toward the stats
-  // and folder list; the search box then narrows within that scope.
-  const segmentQuotes = useMemo(() => {
-    const filtered = segment === "all" ? quotes : quotes.filter((q) => quoteSegment(q) === segment);
-    return dedupeQuotesByCustomer(filtered);
-  }, [quotes, segment]);
+  const statusFilteredQuotes = useMemo(() => {
+    return activeTab === "ALL" ? quotes : quotes.filter((q) => q.status === activeTab);
+  }, [quotes, activeTab]);
 
-  const segmentCounts = useMemo(() => {
-    const counts: Partial<Record<SegmentFilter, number>> = { all: dedupeQuotesByCustomer(quotes).length };
-    for (const s of ["individual", "family", "organization"] as const) {
-      const filtered = quotes.filter((q) => quoteSegment(q) === s);
-      counts[s] = dedupeQuotesByCustomer(filtered).length;
+  const statusCounts = useMemo(() => {
+    const counts: Partial<Record<StatusFilter, number>> = { ALL: dedupeQuotesByCustomer(quotes).length };
+    for (const tab of STATUS_TABS) {
+      if (tab.id === "ALL") continue;
+      counts[tab.id as StatusFilter] = dedupeQuotesByCustomer(quotes.filter((q) => q.status === tab.id)).length;
     }
     return counts;
   }, [quotes]);
+
+  // The dropdown-selected segment scopes which quotes count toward the stats
+  // and folder list; the search box then narrows within that scope.
+  const segmentQuotes = useMemo(() => {
+    const filtered = segment === "all" ? statusFilteredQuotes : statusFilteredQuotes.filter((q) => quoteSegment(q) === segment);
+    return dedupeQuotesByCustomer(filtered);
+  }, [statusFilteredQuotes, segment]);
+
+  const segmentCounts = useMemo(() => {
+    const counts: Partial<Record<SegmentFilter, number>> = { all: dedupeQuotesByCustomer(statusFilteredQuotes).length };
+    for (const s of ["individual", "family", "organization"] as const) {
+      const filtered = statusFilteredQuotes.filter((q) => quoteSegment(q) === s);
+      counts[s] = dedupeQuotesByCustomer(filtered).length;
+    }
+    return counts;
+  }, [statusFilteredQuotes]);
 
   const kpis = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -424,9 +651,9 @@ export default function QuotePage() {
     const totalCoverage = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.coverage_amount, 0);
     const totalPremium = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.total_premium, 0);
     return [
-      { title: "Proposals", value: fullyFilteredQuotes.length, subtitle: "plans generated", accent: "slate" as const },
-      { title: "Total Coverage", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "amber" as const },
-      { title: "Total Premium", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "emerald" as const },
+      { title: "Proposals", value: fullyFilteredQuotes.length, subtitle: "plans generated", accent: "slate" as const, icon: <KpiIcon name="document" /> },
+      { title: "Total Coverage", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "amber" as const, icon: <KpiIcon name="shield" /> },
+      { title: "Total Premium", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "emerald" as const, icon: <KpiIcon name="coin" /> },
     ];
   }, [segmentQuotes, search]);
 
@@ -536,18 +763,36 @@ export default function QuotePage() {
   }, [segmentQuotes, search]);
 
   const totalResults = organizationGroups.length + familyGroups.length + individualGroups.length;
+  const activeTabLabel = STATUS_TABS.find((t) => t.id === activeTab)?.label ?? activeTab;
+  const activeFilterCount = [dateFrom, dateTo, agentFilter, sourceFilter].filter(Boolean).length;
+  const clearFilters = () => {
+    setDateFrom("");
+    setDateTo("");
+    setAgentFilter("");
+    setSourceFilter("");
+  };
 
   return (
     <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full space-y-5">
-      <div className="flex items-start justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Proposals</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Generated automatically in the background the moment an customer is registered — no form to fill in.
-            Corporate proposals are nested by organization and master policy; family proposals by family and floater/life-bundle policy.
-          </p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-sm shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+              <path d="M14 3v4a1 1 0 001 1h4" />
+              <path d="M17 21H7a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v11a2 2 0 01-2 2z" />
+              <path d="M9 13h6M9 17h4" />
+            </svg>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Proposals</h1>
+            <p className="text-sm text-slate-500 mt-0.5 max-w-2xl">
+              Generated automatically the moment a customer is registered — no form to fill in. Corporate
+              proposals nest by organization and master policy; family proposals by family and floater/life-bundle policy.
+            </p>
+          </div>
         </div>
-        <span className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold tracking-wide">
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold tracking-wide font-mono shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           GET /quotes
         </span>
       </div>
@@ -556,49 +801,96 @@ export default function QuotePage() {
         {kpis.map((k) => <MetricCard key={k.title} {...k} />)}
       </div>
 
-      
-      <div className="flex flex-col gap-4">
-        <div className="flex items-center gap-1 border-b border-slate-200">
-          {STATUS_TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${activeTab === tab.id ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <StatusDropdown value={activeTab} onChange={setActiveTab} counts={statusCounts} />
+          <p className="text-[11px] text-slate-400 px-1">
+            Draft → Submitted → Under Review → Approved/Rejected → Issued — one way, no skipping stages.
+          </p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">
-          <button onClick={() => setFiltersOpen(!filtersOpen)} className="px-3 py-1.5 text-xs font-semibold border border-slate-200 rounded-lg hover:bg-slate-50">
-            {filtersOpen ? 'Hide Filters' : 'Show Advanced Filters'}
+          <button
+            onClick={() => setFiltersOpen(!filtersOpen)}
+            className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border rounded-lg transition-colors ${
+              filtersOpen ? "bg-blue-50 border-blue-200 text-blue-700" : "border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+              <line x1="4" y1="6" x2="20" y2="6" /><line x1="8" y1="12" x2="16" y2="12" /><line x1="11" y1="18" x2="13" y2="18" />
+            </svg>
+            {filtersOpen ? "Hide Filters" : "Advanced Filters"}
+            {activeFilterCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white">{activeFilterCount}</span>
+            )}
           </button>
-          {filtersOpen && (
-            <div className="flex flex-wrap gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl w-full">
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1" title="Created From" />
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1" title="Created To" />
-              <select value={agentFilter} onChange={e => setAgentFilter(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1">
-                <option value="">All Underwriters</option>
-                {underwriters.map(u => <option key={u.id} value={u.id}>{u.full_name}</option>)}
-              </select>
-              <select value={sourceFilter} onChange={e => setSourceFilter(e.target.value)} className="text-xs border border-slate-200 rounded px-2 py-1">
-                <option value="">All Sources</option>
-                {sources.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
-            </div>
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors">
+              Clear filters
+            </button>
           )}
         </div>
+        {filtersOpen && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Created From</label>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={e => setDateFrom(e.target.value)}
+                className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Created To</label>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={e => setDateTo(e.target.value)}
+                className="w-full text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Underwriter</label>
+              <FancyDropdown
+                value={agentFilter}
+                onChange={setAgentFilter}
+                options={underwriterFilterOptions}
+                placeholder="All Underwriters"
+                searchable={underwriters.length > 6}
+                size="sm"
+                className="w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-400 mb-1">Source</label>
+              <FancyDropdown
+                value={sourceFilter}
+                onChange={setSourceFilter}
+                options={sourceFilterOptions}
+                placeholder="All Sources"
+                searchable={sources.length > 6}
+                size="sm"
+                className="w-full"
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
-          <input
-            type="text"
-            placeholder="Search by customer, CNIC, organization, or plan…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
-          />
+          <div className="relative w-full max-w-xs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+              <circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              placeholder="Search by customer, CNIC, organization, or plan…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+            />
+          </div>
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
         </div>
         <div className="flex items-center gap-2">
@@ -642,27 +934,26 @@ export default function QuotePage() {
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="py-20 flex flex-col items-center justify-center gap-2">
-            <div className="animate-spin h-7 w-7 text-blue-500 rounded-full border-2 border-slate-100 border-t-blue-500" />
-            <span className="text-xs text-slate-400">Loading proposals…</span>
-          </div>
+          <ProposalsSkeleton viewMode={viewMode} />
         ) : totalResults === 0 ? (
           <div className="py-20 flex flex-col items-center justify-center text-center px-6">
             <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-              <span className="text-2xl">📁</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-slate-400">
+                <path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+              </svg>
             </div>
             <p className="text-sm font-semibold text-slate-600">
               {quotes.length === 0
                 ? "No proposals yet"
                 : segmentQuotes.length === 0
-                  ? `No ${segment === "all" ? "" : segment} proposals`
+                  ? `No ${segment === "all" ? "" : segment + " "}proposals in "${activeTabLabel}"`
                   : "No proposals match your search"}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
                 ? "Register a customer and a proposal will be generated automatically in the background."
                 : segmentQuotes.length === 0
-                  ? "Try switching the segment filter to All Cases."
+                  ? "Try a different status or switch the segment filter to All Cases."
                   : "Try a different customer name, CNIC, organization, or plan."}
             </p>
           </div>
@@ -670,40 +961,33 @@ export default function QuotePage() {
           <div className="p-4 space-y-5">
             {organizationGroups.length > 0 && (
               <div className="space-y-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-amber-600 px-1">
+                  <OrgIcon className="w-3.5 h-3.5" />
                   Corporate / Group Life
+                  <span className="text-slate-400 font-medium normal-case tracking-normal">
+                    · {organizationGroups.length} {organizationGroups.length === 1 ? "organization" : "organizations"} ·{" "}
+                    {organizationGroups.reduce((n, o) => n + o.policies.reduce((m, p) => m + p.customers.length, 0), 0)} insured
+                  </span>
                 </p>
                 {(() => {
                   const allOrgQuotes = organizationGroups.flatMap(org => org.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
                   const selectedQuotes = allOrgQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
                   const selectedOrgCount = selectedQuotes.length;
                   const allSelected = allOrgQuotes.length > 0 && selectedOrgCount === allOrgQuotes.length;
-                  const actionProps = getBatchActionProps(allOrgQuotes);
                   return (
                     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
-                      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            checked={allSelected}
-                            onChange={() => toggleAllInFolder(allOrgQuotes.map(q => q.quote_id))}
-                          />
-                          <p className="text-xs font-semibold text-slate-500">
-                            {selectedOrgCount} of {allOrgQuotes.length} plan(s) selected
-                          </p>
-                        </div>
-                        {actionProps && (
-                          <button
-                            onClick={actionProps.onClick}
-                            disabled={actionProps.disabled}
-                            title={actionProps.title}
-                            className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                          >
-                            {isBulkProceeding ? "Processing..." : actionProps.label}
-                          </button>
-                        )}
-                      </div>
+                      <BatchActionBar
+                        selectedCount={selectedOrgCount}
+                        totalCount={allOrgQuotes.length}
+                        allSelected={allSelected}
+                        onToggleAll={() => toggleAllInFolder(allOrgQuotes.map(q => q.quote_id))}
+                        options={batchOptions}
+                        onApply={(value) => handleBatchApply(value, allOrgQuotes)}
+                        getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedOrgCount)}
+                        disabled={isBulkProceeding || selectedOrgCount === 0}
+                        canAct={canActOnProposals}
+                        canDecide={canDecideProposals}
+                      />
                       {viewMode === 'grid' ? (
                         <div className="p-4 bg-slate-50/30">
                           <ProposalsGrid
@@ -731,40 +1015,33 @@ export default function QuotePage() {
 
             {familyGroups.length > 0 && (
               <div className="space-y-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-violet-600 px-1">
+                  <FamilyIcon className="w-3.5 h-3.5" />
                   Family Insurance
+                  <span className="text-slate-400 font-medium normal-case tracking-normal">
+                    · {familyGroups.length} {familyGroups.length === 1 ? "family" : "families"} ·{" "}
+                    {familyGroups.reduce((n, f) => n + f.policies.reduce((m, p) => m + p.customers.length, 0), 0)} insured
+                  </span>
                 </p>
                 {(() => {
                   const allFamQuotes = familyGroups.flatMap(family => family.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
                   const selectedQuotes = allFamQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
                   const selectedFamCount = selectedQuotes.length;
                   const allSelected = allFamQuotes.length > 0 && selectedFamCount === allFamQuotes.length;
-                  const actionProps = getBatchActionProps(allFamQuotes);
                   return (
                     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
-                      <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
-                        <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                            checked={allSelected}
-                            onChange={() => toggleAllInFolder(allFamQuotes.map(q => q.quote_id))}
-                          />
-                          <p className="text-xs font-semibold text-slate-500">
-                            {selectedFamCount} of {allFamQuotes.length} plan(s) selected
-                          </p>
-                        </div>
-                        {actionProps && (
-                          <button
-                            onClick={actionProps.onClick}
-                            disabled={actionProps.disabled}
-                            title={actionProps.title}
-                            className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                          >
-                            {isBulkProceeding ? "Processing..." : actionProps.label}
-                          </button>
-                        )}
-                      </div>
+                      <BatchActionBar
+                        selectedCount={selectedFamCount}
+                        totalCount={allFamQuotes.length}
+                        allSelected={allSelected}
+                        onToggleAll={() => toggleAllInFolder(allFamQuotes.map(q => q.quote_id))}
+                        options={batchOptions}
+                        onApply={(value) => handleBatchApply(value, allFamQuotes)}
+                        getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedFamCount)}
+                        disabled={isBulkProceeding || selectedFamCount === 0}
+                        canAct={canActOnProposals}
+                        canDecide={canDecideProposals}
+                      />
                       {viewMode === 'grid' ? (
                         <div className="p-4 bg-slate-50/30">
                           <ProposalsGrid
@@ -793,8 +1070,11 @@ export default function QuotePage() {
             {individualGroups.length > 0 && (
               <div className="space-y-3">
                 {(organizationGroups.length > 0 || familyGroups.length > 0) && (
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-1 pt-1">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-blue-600 px-1 pt-1">
                     Individual
+                    <span className="text-slate-400 font-medium normal-case tracking-normal">
+                      {" "}· {individualGroups.length} {individualGroups.length === 1 ? "customer" : "customers"}
+                    </span>
                   </p>
                 )}
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
@@ -803,32 +1083,20 @@ export default function QuotePage() {
                     const selectedQuotes = allIndividualQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
                     const selectedIndividualCount = selectedQuotes.length;
                     const allSelected = allIndividualQuotes.length > 0 && selectedIndividualCount === allIndividualQuotes.length;
-                    const actionProps = getBatchActionProps(allIndividualQuotes);
                     return (
                       <div className="flex flex-col">
-                        <div className="px-4 py-3 flex items-center justify-between border-b border-slate-200 bg-slate-50/50">
-                          <div className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
-                              checked={allSelected}
-                              onChange={() => toggleAllInFolder(allIndividualQuotes.map(q => q.quote_id))}
-                            />
-                            <p className="text-xs font-semibold text-slate-500">
-                              {selectedIndividualCount} of {allIndividualQuotes.length} plan(s) selected
-                            </p>
-                          </div>
-                          {actionProps && (
-                            <button
-                              onClick={actionProps.onClick}
-                              disabled={actionProps.disabled}
-                              title={actionProps.title}
-                              className="flex items-center gap-2 px-3.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 disabled:opacity-50 disabled:bg-slate-400 transition-colors shadow-sm"
-                            >
-                              {isBulkProceeding ? "Processing..." : actionProps.label}
-                            </button>
-                          )}
-                        </div>
+                        <BatchActionBar
+                          selectedCount={selectedIndividualCount}
+                          totalCount={allIndividualQuotes.length}
+                          allSelected={allSelected}
+                          onToggleAll={() => toggleAllInFolder(allIndividualQuotes.map(q => q.quote_id))}
+                          options={batchOptions}
+                          onApply={(value) => handleBatchApply(value, allIndividualQuotes)}
+                          getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedIndividualCount)}
+                          disabled={isBulkProceeding || selectedIndividualCount === 0}
+                          canAct={canActOnProposals}
+                          canDecide={canDecideProposals}
+                        />
                         {bulkProceedError && (
                           <div className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-lg p-3">
                             <p className="text-xs text-red-600">{bulkProceedError}</p>
@@ -848,7 +1116,6 @@ export default function QuotePage() {
                               toggleSelection={toggleSelection}
                               toggleAllInFolder={toggleAllInFolder}
                               openQuote={openQuote}
-                        viewMode={viewMode}
                             />
                           </div>
                         ) : (
@@ -858,7 +1125,6 @@ export default function QuotePage() {
                             toggleSelection={toggleSelection}
                             toggleAllInFolder={toggleAllInFolder}
                             openQuote={openQuote}
-                        viewMode={viewMode}
                           />
                         )}
                       </div>
@@ -878,6 +1144,8 @@ export default function QuotePage() {
           error={detailError}
           onClose={closeQuote}
           onRefresh={fetchQuotes}
+          canAct={canActOnProposals}
+          canDecide={canDecideProposals}
           onStartUnderwriting={async () => {
             if (!detail) return;
             const tenantId = localStorage.getItem("tenant_id");
@@ -893,6 +1161,234 @@ export default function QuotePage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// ── Action dropdown ────────────────────────────────────────────────────────
+// The standard "pick one, then Go" bulk-action pattern (Gmail, GitHub issue
+// lists, Django admin) — shows only the options legal from wherever this
+// lead/batch currently sits, so there's never a button for a move that isn't
+// actually allowed. Shared between the single-lead modal and the batch bar.
+
+const ACTION_ICON_PROPS = {
+  viewBox: "0 0 24 24",
+  fill: "none",
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+  width: 15,
+  height: 15,
+};
+
+function ActionIcon({ value }: { value: string }) {
+  if (value === "status:Declined") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><circle cx="12" cy="12" r="9" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg>
+    );
+  }
+  if (value === "underwriting") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><path d="M12 3l7 3v6c0 4.5-3 7.5-7 9-4-1.5-7-4.5-7-9V6l7-3z" /><polyline points="9 12 11 14 15 10" /></svg>
+    );
+  }
+  if (value === "save_info") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" /><polyline points="17 21 17 13 7 13 7 21" /><polyline points="7 3 7 8 15 8" /></svg>
+    );
+  }
+  if (value === "status:InformationRequested") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><path d="M21 11.5a8.4 8.4 0 01-1 4 8.5 8.5 0 01-7.5 4.5 8.4 8.4 0 01-4-1L3 20l1-5.5a8.4 8.4 0 01-1-4A8.5 8.5 0 0111 3a8.5 8.5 0 0110 8.5z" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="15.5" x2="12" y2="15.51" /></svg>
+    );
+  }
+  if (value === "status:UnderReview") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><circle cx="11" cy="11" r="7" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+    );
+  }
+  if (value === "status:Proposed") {
+    return (
+      <svg {...ACTION_ICON_PROPS}><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+    );
+  }
+  return <svg {...ACTION_ICON_PROPS}><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>;
+}
+
+function ActionDropdown({
+  options, onApply, isOptionDisabled, getConfirmMessage, disabled, canAct, canDecide,
+}: {
+  options: ProposalActionOption[];
+  onApply: (value: string) => void | Promise<void>;
+  isOptionDisabled?: (value: string) => boolean;
+  getConfirmMessage?: (option: ProposalActionOption) => string | undefined;
+  disabled?: boolean;
+  canAct: boolean;
+  canDecide: boolean;
+}) {
+  const visible = options.filter((o) => (o.tier === "decision" ? canDecide : canAct));
+  const [selected, setSelected] = useState(visible[0]?.value ?? "");
+  const [applying, setApplying] = useState(false);
+
+  useEffect(() => {
+    if (!visible.find((o) => o.value === selected)) {
+      setSelected(visible[0]?.value ?? "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible.map((o) => o.value).join("|")]);
+
+  if (visible.length === 0) return null;
+  const selectedOption = visible.find((o) => o.value === selected) ?? null;
+  const optionDisabled = selectedOption ? (isOptionDisabled?.(selectedOption.value) ?? false) : true;
+
+  const dropdownOptions: FancyDropdownOption[] = visible.map((o) => ({
+    value: o.value,
+    label: o.label,
+    icon: (
+      <span className={o.tier === "decision" ? "text-rose-500" : "text-blue-500"}>
+        <ActionIcon value={o.value} />
+      </span>
+    ),
+  }));
+
+  const handleApply = async () => {
+    if (!selectedOption) return;
+    const confirmMessage = getConfirmMessage?.(selectedOption);
+    if (confirmMessage && !window.confirm(confirmMessage)) return;
+    setApplying(true);
+    try {
+      await onApply(selectedOption.value);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      <FancyDropdown
+        value={selected}
+        onChange={setSelected}
+        options={dropdownOptions}
+        disabled={disabled || applying}
+        size="sm"
+        className="min-w-[190px]"
+      />
+      <button
+        onClick={handleApply}
+        disabled={disabled || applying || optionDisabled}
+        className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold transition-colors disabled:opacity-50 ${
+          selectedOption?.tier === "decision"
+            ? "bg-rose-600 text-white hover:bg-rose-700"
+            : "bg-blue-600 text-white hover:bg-blue-700"
+        }`}
+      >
+        {applying ? (
+          <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        )}
+        {applying ? "Applying…" : "Apply"}
+      </button>
+    </div>
+  );
+}
+
+// ── Batch action bar (folder header) ──────────────────────────────────────────
+// Reused across the Corporate/Family/Individual folder headers.
+
+function BatchActionBar({
+  selectedCount, totalCount, allSelected, onToggleAll, options, onApply, getConfirmMessage, disabled, canAct, canDecide,
+}: {
+  selectedCount: number;
+  totalCount: number;
+  allSelected: boolean;
+  onToggleAll: () => void;
+  options: ProposalActionOption[];
+  onApply: (value: string) => void | Promise<void>;
+  getConfirmMessage?: (option: ProposalActionOption) => string | undefined;
+  disabled: boolean;
+  canAct: boolean;
+  canDecide: boolean;
+}) {
+  return (
+    <div className="px-4 py-3 flex items-center justify-between gap-3 flex-wrap border-b border-slate-200 bg-slate-50/50">
+      <div className="flex items-center gap-3">
+        <input
+          type="checkbox"
+          className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+          checked={allSelected}
+          onChange={onToggleAll}
+        />
+        <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+          {selectedCount > 0 && (
+            <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+              {selectedCount}
+            </span>
+          )}
+          {selectedCount > 0 ? `of ${totalCount} plan(s) selected` : `${totalCount} plan(s) in this folder`}
+        </p>
+      </div>
+      <ActionDropdown
+        options={options}
+        onApply={onApply}
+        getConfirmMessage={getConfirmMessage}
+        disabled={disabled}
+        canAct={canAct}
+        canDecide={canDecide}
+      />
+    </div>
+  );
+}
+
+// ── Loading skeleton ─────────────────────────────────────────────────────────
+// Shaped like whichever view is active, so the transition from "loading" to
+// "here are your rows" doesn't jump — the skeleton already has the right
+// silhouette instead of a generic centered spinner.
+
+function ProposalsSkeleton({ viewMode }: { viewMode: "list" | "grid" }) {
+  if (viewMode === "grid") {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 p-4 animate-pulse">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="h-3.5 bg-slate-200 rounded w-2/3" />
+            <div className="h-2.5 bg-slate-100 rounded w-1/3" />
+            <div className="flex items-center justify-between">
+              <div className="h-4 w-16 bg-slate-100 rounded-full" />
+              <div className="h-3 w-10 bg-slate-100 rounded" />
+            </div>
+            <div className="h-12 bg-slate-100 rounded-lg" />
+            <div className="flex justify-between pt-2 border-t border-slate-100">
+              <div className="h-3 bg-slate-100 rounded w-1/4" />
+              <div className="h-3 bg-slate-100 rounded w-1/4" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 space-y-3 animate-pulse">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <div key={i} className="flex items-center gap-4 px-2 py-2">
+          <div className="w-4 h-4 rounded bg-slate-200 shrink-0" />
+          <div className="flex-1 space-y-1.5 min-w-0">
+            <div className="h-3.5 bg-slate-200 rounded w-1/3 max-w-[160px]" />
+            <div className="h-2.5 bg-slate-100 rounded w-1/5 max-w-[100px]" />
+          </div>
+          <div className="h-5 w-20 bg-slate-100 rounded-full shrink-0" />
+          <div className="h-3.5 w-20 bg-slate-100 rounded shrink-0" />
+          <div className="h-3.5 w-20 bg-slate-100 rounded shrink-0" />
+          <div className="h-3.5 w-16 bg-slate-100 rounded shrink-0" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -932,11 +1428,13 @@ function ProposalsTable({
             </th>
             <th className="px-5 py-3 text-left">Customer</th>
             <th className="px-2 py-3 text-left">Plan</th>
+            <th className="px-5 py-3 text-left">Status</th>
             <th className="px-5 py-3 text-right">Coverage</th>
             <th className="px-5 py-3 text-center">Term</th>
             <th className="px-5 py-3 text-right">Premium</th>
             <th className="px-5 py-3 text-right">Risk</th>
             <th className="px-5 py-3 text-right">Total</th>
+            <th className="px-5 py-3 text-left">Underwriter</th>
             <th className="px-5 py-3 text-left">Generated</th>
           </tr>
         </thead>
@@ -975,11 +1473,20 @@ function ProposalsTable({
                   {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
                 </span>
               </td>
+              <td className="px-5 py-3.5">
+                <StatusBadge status={row.status} />
+              </td>
               <td className="px-5 py-3.5 text-right font-medium text-slate-700">{formatPKR(row.coverage_amount)}</td>
               <td className="px-5 py-3.5 text-center text-slate-600">{row.term_years}y</td>
               <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.base_premium)}</td>
               <td className="px-5 py-3.5 text-right text-slate-600">{formatPKR(row.loading_applied)}</td>
               <td className="px-5 py-3.5 text-right font-bold text-slate-900">{formatPKR(row.total_premium)}</td>
+              <td className="px-5 py-3.5">
+                <UnderwriterAvatar name={row.assigned_underwriter_name} />
+                <div className="mt-1">
+                  <SlaHint status={row.sla_status} daysRemaining={row.sla_days_remaining} />
+                </div>
+              </td>
               <td className="px-5 py-3.5 text-slate-500 text-xs whitespace-nowrap">
                 {new Date(row.created_at).toLocaleDateString()}
               </td>
@@ -1021,7 +1528,7 @@ function ProposalsGrid({
               onChange={() => toggleSelection(row.quote_id)}
             />
           </div>
-          
+
           <div className="pr-6">
             <h4 className="font-bold text-slate-900 truncate">{row.customer_name}</h4>
             <p className="text-xs text-slate-500 font-mono mt-0.5">{row.customer_cnic}</p>
@@ -1029,7 +1536,12 @@ function ProposalsGrid({
               Lead ID: {formatLeadDisplayId(row.customer_id, row.created_at, quoteSegment(row))}
             </p>
           </div>
-          
+
+          <div className="flex items-center justify-between gap-2">
+            <StatusBadge status={row.status} />
+            <SlaHint status={row.sla_status} daysRemaining={row.sla_days_remaining} />
+          </div>
+
           <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-100 flex items-center justify-between">
             <div className="min-w-0 pr-2">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Plan</p>
@@ -1039,6 +1551,8 @@ function ProposalsGrid({
               {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
             </span>
           </div>
+
+          <UnderwriterAvatar name={row.assigned_underwriter_name} />
 
           <div className="grid grid-cols-2 gap-3 mt-auto pt-2 border-t border-slate-100">
             <div>
@@ -1060,7 +1574,7 @@ function ProposalsGrid({
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
 function QuoteDetailModal({
-  detail, loading, error, onClose, onStartUnderwriting, onRefresh
+  detail, loading, error, onClose, onStartUnderwriting, onRefresh, canAct, canDecide
 }: {
   detail: QuoteDetail | null;
   loading: boolean;
@@ -1068,6 +1582,8 @@ function QuoteDetailModal({
   onClose: () => void;
   onStartUnderwriting: () => Promise<void>;
   onRefresh: () => void;
+  canAct: boolean;
+  canDecide: boolean;
 }) {
   const [underwriters, setUnderwriters] = useState<Agent[]>([]);
   const [updating, setUpdating] = useState(false);
@@ -1076,6 +1592,14 @@ function QuoteDetailModal({
     const tenantId = localStorage.getItem("tenant_id");
     if (tenantId) listUnderwriters(tenantId).then(setUnderwriters).catch(console.error);
   }, []);
+
+  const underwriterOptions: FancyDropdownOption[] = useMemo(
+    () => [
+      { value: "", label: "Unassigned" },
+      ...underwriters.map((u) => ({ value: u.id, label: u.full_name, description: u.email, icon: <UnderwriterInitial name={u.full_name} /> })),
+    ],
+    [underwriters]
+  );
 
   const handleUpdate = async (updates: { status?: string; assigned_underwriter_id?: string | null }) => {
     if (!detail) return;
@@ -1091,7 +1615,6 @@ function QuoteDetailModal({
     }
   };
 
-  const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   const missingFields = useMemo(() => {
@@ -1106,97 +1629,48 @@ function QuoteDetailModal({
 
   const [missingFormData, setMissingFormData] = useState<Record<string, any>>({});
 
-  const handleStart = async () => {
-    setStarting(true);
+  // Same option list (and the same reasoning for why Reject always tags
+  // along) as the batch dropdown — see getAvailableActions above.
+  const modalOptions = useMemo(() => {
+    if (!detail) return [];
+    return getAvailableActions(detail.status, missingFields.length > 0, false);
+  }, [detail?.status, missingFields.length]);
+
+  const handleApplyAction = async (value: string) => {
+    if (!detail) return;
     setStartError(null);
     try {
-      await onStartUnderwriting();
+      if (value === "underwriting") {
+        await onStartUnderwriting();
+        return;
+      }
+      if (value === "save_info") {
+        const tenantId = localStorage.getItem("tenant_id");
+        if (tenantId) await updateCustomer(tenantId, detail.customer_id, missingFormData);
+      } else if (value.startsWith("status:")) {
+        await updateQuote(detail.quote_id, { status: value.slice("status:".length) });
+      }
+      onRefresh();
+      onClose();
     } catch (err: any) {
-      setStartError(err.message ?? "Failed to start underwriting.");
-      setStarting(false);
+      setStartError(err.message ?? "Failed to update.");
     }
   };
-
-  const getModalActionProps = () => {
-    if (!detail) return null;
-    const status = detail.status;
-
-    if (status === "Approved") {
-      return {
-        label: starting ? "Opening case…" : "Proceed to Underwriting",
-        onClick: handleStart,
-        disabled: starting
-      };
-    }
-    
-    let targetStatus = "";
-    let label = "";
-    let isSaveInfo = false;
-    
-    if (status === "Quoted") {
-      if (missingFields.length > 0) {
-        targetStatus = "InformationRequested";
-        label = "Send to Info Requested";
-      } else {
-        targetStatus = "Proposed";
-        label = "Submit Proposal";
-      }
-    } else if (status === "Proposed") {
-      targetStatus = "UnderReview";
-      label = "Start Review";
-    } else if (status === "UnderReview") {
-      targetStatus = "Approved";
-      label = "Approve Proposal";
-    } else if (status === "InformationRequested") {
-      if (missingFields.length > 0) {
-        isSaveInfo = true;
-        label = "Save Information";
-      } else {
-        targetStatus = "Proposed";
-        label = "Re-Submit Proposal";
-      }
-    }
-    
-    if (!targetStatus && !isSaveInfo) return null;
-    
-    return {
-      label: starting ? "Processing..." : label,
-      disabled: starting || (isSaveInfo && Object.keys(missingFormData).length === 0),
-      onClick: async () => {
-        setStarting(true);
-        setStartError(null);
-        try {
-          if (isSaveInfo) {
-            const tenantId = localStorage.getItem("tenant_id");
-            if (tenantId && detail) {
-              await updateCustomer(tenantId, detail.customer_id, missingFormData);
-            }
-          } else {
-            await updateQuote(detail.quote_id, { status: targetStatus });
-          }
-          onRefresh();
-          onClose();
-        } catch (err: any) {
-          setStartError(err.message ?? "Failed to update.");
-          setStarting(false);
-        }
-      }
-    };
-  };
-
-  const modalActionProps = getModalActionProps();
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-slate-900/40 flex items-start justify-center overflow-y-auto py-10 px-4"
+      className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-[2px] flex items-start justify-center overflow-y-auto py-10 px-4"
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-2xl overflow-hidden"
+        className="modal-pop bg-white rounded-xl border border-slate-200 shadow-xl w-full max-w-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-          <p className="text-sm font-semibold text-slate-700">Proposal Details</p>
+          <div className="flex items-center gap-2.5">
+            <p className="text-sm font-semibold text-slate-700">Proposal Details</p>
+            {detail && <StatusBadge status={detail.status} />}
+          </div>
           <button
             onClick={onClose}
             className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
@@ -1232,13 +1706,15 @@ function QuoteDetailModal({
                 <span className="text-[10px] font-mono text-slate-400">Ref: {detail.quote_id.slice(0, 8).toUpperCase()}</span>
               </div>
               {detail.organization_name && (
-                <p className="text-[11px] text-blue-600 font-semibold">
+                <p className="flex items-center gap-1.5 text-[11px] text-amber-600 font-semibold">
+                  <OrgIcon className="w-3 h-3" />
                   Corporate — {detail.organization_name}
                   {detail.master_policy_label ? ` · ${detail.master_policy_label}` : ""}
                 </p>
               )}
               {detail.family_group_name && (
-                <p className="text-[11px] text-rose-600 font-semibold">
+                <p className="flex items-center gap-1.5 text-[11px] text-violet-600 font-semibold">
+                  <FamilyIcon className="w-3 h-3" />
                   Family — {detail.family_group_name}
                   {detail.family_policy_label ? ` · ${detail.family_policy_label}` : ""}
                 </p>
@@ -1276,17 +1752,15 @@ function QuoteDetailModal({
             <div className="bg-slate-50 border border-slate-200 p-4 rounded-xl">
               <div>
                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-500 block mb-1">Assigned Underwriter</label>
-                <select 
-                  className="w-full max-w-sm text-sm border border-slate-200 rounded-lg p-2 bg-white"
+                <FancyDropdown
+                  className="w-full max-w-sm"
                   value={detail.assigned_underwriter_id || ""}
-                  onChange={e => handleUpdate({ assigned_underwriter_id: e.target.value || null })}
+                  onChange={(v) => handleUpdate({ assigned_underwriter_id: v || null })}
+                  options={underwriterOptions}
+                  placeholder="Unassigned"
+                  searchable={underwriters.length > 6}
                   disabled={updating}
-                >
-                  <option value="">Unassigned</option>
-                  {underwriters.map(u => (
-                    <option key={u.id} value={u.id}>{u.full_name}</option>
-                  ))}
-                </select>
+                />
               </div>
             </div>
 
@@ -1378,23 +1852,20 @@ function QuoteDetailModal({
                     <div key={f.key}>
                       <label className="text-xs font-semibold text-slate-700 block mb-1">{f.label}</label>
                       {f.type === 'select' ? (
-                        <select
-                          className="w-full text-sm border border-slate-300 rounded p-2"
+                        <FancyDropdown
+                          className="w-full"
                           value={missingFormData[f.key] || ''}
-                          onChange={e => setMissingFormData({...missingFormData, [f.key]: e.target.value})}
-                        >
-                          <option value="">Select {f.label}</option>
-                          {f.key === 'gender' && (
-                            <>
-                              <option value="Male">Male</option>
-                              <option value="Female">Female</option>
-                            </>
-                          )}
-                        </select>
+                          onChange={(v) => setMissingFormData({...missingFormData, [f.key]: v})}
+                          placeholder={`Select ${f.label}`}
+                          options={f.key === 'gender' ? [
+                            { value: "Male", label: "Male" },
+                            { value: "Female", label: "Female" },
+                          ] : []}
+                        />
                       ) : (
                         <input
                           type={f.type}
-                          className="w-full text-sm border border-slate-300 rounded p-2"
+                          className="w-full text-sm border border-slate-300 rounded-lg p-2 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
                           value={missingFormData[f.key] || ''}
                           onChange={e => setMissingFormData({...missingFormData, [f.key]: e.target.value})}
                           placeholder={`Enter ${f.label}`}
@@ -1406,22 +1877,26 @@ function QuoteDetailModal({
               </div>
             )}
 
-            {/* Dynamic action button */}
-            {modalActionProps && (
-              <section className="pt-1 border-t border-slate-100">
+            {(detail.status === "Approved" || detail.status === "AcceptedWithLoadings" || detail.status === "Declined") && (
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
+                This proposal's outcome was decided on its underwriting case, not here — open the case to review the decision.
+              </div>
+            )}
+
+            {/* Dynamic action dropdown — only the moves legal from here */}
+            {modalOptions.length > 0 && (
+              <section className="pt-1 border-t border-slate-100 space-y-2">
                 {startError && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{startError}</p>
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-1">{startError}</p>
                 )}
-                <button
-                  onClick={modalActionProps.onClick}
-                  disabled={modalActionProps.disabled}
-                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-900 text-white rounded-lg text-sm font-semibold hover:bg-slate-800 disabled:opacity-50 transition-colors"
-                >
-                  {starting ? (
-                    <span className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-white/30 border-t-white" />
-                  ) : null}
-                  {modalActionProps.label}
-                </button>
+                <ActionDropdown
+                  options={modalOptions}
+                  onApply={handleApplyAction}
+                  isOptionDisabled={(value) => value === "save_info" && Object.keys(missingFormData).length === 0}
+                  getConfirmMessage={(o) => (o.tier === "decision" ? "Reject this proposal? This cannot be undone." : undefined)}
+                  canAct={canAct}
+                  canDecide={canDecide}
+                />
               </section>
             )}
           </div>
