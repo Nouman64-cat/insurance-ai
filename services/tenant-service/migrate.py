@@ -731,6 +731,31 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v28a-enum — add PendingPayment to policystatusenum",
         "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'PENDING_PAYMENT'",
     ),
+    # v29: Stage A pre-issuance. CounterOffer is the new revised-terms gate;
+    # NotTakenUp is the decline/expiry outcome. Postponed / ReinsurerReferred
+    # were in the state machine's enum but never added to the DB type — add them
+    # now so those transitions can persist. All stored as enum NAMES (see the
+    # existing rows: 'APPROVED', 'PENDING_PAYMENT', ...).
+    (
+        "v29a-enum — add CounterOffer to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'COUNTER_OFFER'",
+    ),
+    (
+        "v29b-enum — add NotTakenUp to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'NOT_TAKEN_UP'",
+    ),
+    (
+        "v29c-enum — add Postponed to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'POSTPONED'",
+    ),
+    (
+        "v29d-enum — add ReinsurerReferred to policystatusenum",
+        "ALTER TYPE policystatusenum ADD VALUE IF NOT EXISTS 'REINSURER_REFERRED'",
+    ),
+    (
+        "v30-enum — add PremiumNotice to policydocumenttypeenum",
+        "ALTER TYPE policydocumenttypeenum ADD VALUE IF NOT EXISTS 'PREMIUM_NOTICE'",
+    ),
     # NOTE: The renewal scheduler (renewal_scheduler.py) MUST run in a single-worker
     # deployment to avoid duplicate RenewalTransactions. Enforce via:
     #   CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]

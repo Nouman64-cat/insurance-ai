@@ -53,4 +53,4 @@ boto3
 aiokafka
 pgvector==0.3.1
 google-genai
-
+reportlab==4.2.5

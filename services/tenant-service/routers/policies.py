@@ -23,7 +23,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from services import payment_gateway
+from services.policy_documents import generate_and_store_documents, generate_and_store_premium_notice
 from services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
+from services.pre_issuance_gate import NotReadyToIssue, assert_ready_to_issue
 from services.pricing_engine import GRACE_PERIOD_DAYS, PricingEngine
 from shared.events.kafka_events import (
     POLICY_LIFECYCLE_TOPIC,
@@ -106,14 +108,6 @@ async def _load_plan_rates(session: AsyncSession, tenant_id: UUID, insurance_typ
     if plan and plan.base_premium_rate:
         return float(plan.base_premium_rate), float(plan.smoker_factor or 1.0)
     return get_default_rates(ins_type_str)
-
-
-def _make_stub_docs(policy_number: str, product_name: str) -> list[dict]:
-    return [
-        {"type": PolicyDocumentTypeEnum.SCHEDULE,    "name": f"Policy Schedule – {policy_number}"},
-        {"type": PolicyDocumentTypeEnum.CERTIFICATE, "name": f"Certificate of Insurance – {policy_number}"},
-        {"type": PolicyDocumentTypeEnum.WORDING,     "name": f"Policy Wording & Endorsements – {product_name}"},
-    ]
 
 
 async def _publish_policy_event(request: Optional[Request], policy: Policy, event: PolicyEvent) -> None:
@@ -402,6 +396,14 @@ async def issue_policy(
     if policy.policy_number:
         raise HTTPException(400, "Policy already issued")
 
+    # Stage A gate — cannot draft the contract until every pre-issuance step is
+    # satisfied (revised terms accepted, requirements cleared, compliance passed,
+    # beneficiaries capturing 100%). Same rules the /pre-issuance checklist shows.
+    try:
+        await assert_ready_to_issue(session, policy)
+    except NotReadyToIssue as exc:
+        raise HTTPException(400, f"Pre-issuance checklist incomplete: {exc}") from exc
+
     cust = await session.get(Customer, policy.customer_id)
     is_smoker = bool(getattr(cust, "is_smoker", False))
 
@@ -473,23 +475,15 @@ async def issue_policy(
         )
         session.add(schedule)
 
-        # Stub document records (Phase 3 replaces these with real PDFs)
-        for doc_info in _make_stub_docs(policy_number, policy.product_name):
-            session.add(PolicyDocument(
-                policy_id=policy_id,
-                policy_version_id=version.id,
-                document_type=doc_info["type"],
-                document_name=doc_info["name"],
-                stub_content=f"[STUB] {doc_info['name']} — real PDF in Phase 3.",
-                is_stub=True,
-            ))
-
         # Draft the contract fields and move to PENDING_PAYMENT (no cover yet).
         policy.policy_number = policy_number
         policy.effective_date = effective
         policy.expiry_date = expiry
         policy.grace_period_end_date = grace_end
         policy.current_version_id = version.id
+
+        # Generate the Premium Notice (bill) now that the contract fields are set.
+        await generate_and_store_premium_notice(session, policy, version.id)
 
         event = apply_transition(
             session, policy, PolicyStatusEnum.PENDING_PAYMENT,
@@ -635,6 +629,9 @@ async def confirm_payment(
         # Finalize the pre-issuance workflow now that cover is in force.
         await _close_cases_and_promote(session, policy)
 
+        # Generate the binding documents (Schedule, Certificate, Wording)
+        await generate_and_store_documents(session, policy, policy.current_version_id)
+
         await session.commit()
 
     except IllegalStateTransition as exc:
@@ -660,181 +657,186 @@ async def confirm_payment(
     }
 
 
-# ── POST /renew ───────────────────────────────────────────────────────────────
-
-@router.post("/tenants/{tenant_id}/policies/{policy_id}/renew")
-async def renew_policy(
-    tenant_id: UUID, policy_id: UUID,
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    policy = await _get_policy(session, tenant_id, policy_id)
-    if _st(policy) not in ("Active", "GracePeriod"):
-        raise HTTPException(400, f"Policy must be Active or GracePeriod to renew (current: {_st(policy)})")
-
-    rt_all = list((await session.exec(select(RenewalTransaction).where(RenewalTransaction.policy_id == policy_id))).all())
-    renewal_year = len(rt_all) + 2
-
-    claims_count = len(list((await session.exec(select(Claim).where(Claim.policy_id == policy_id))).all()))
-    is_stp = claims_count == 0
-
-    cust = await session.get(Customer, policy.customer_id)
-    is_smoker = bool(getattr(cust, "is_smoker", False))
-
-    ins_type_str = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
-    base_rate, smoker_factor = await _load_plan_rates(session, tenant_id, policy.insurance_type)
-    age_index = 1.02 ** (renewal_year - 1)   # +2% per renewal year
-
-    breakdown = PricingEngine.calculate(
-        insurance_type=ins_type_str,
-        coverage_amount=policy.coverage_amount,
-        term_years=policy.term_years,
-        base_rate=base_rate,
-        smoker_factor=smoker_factor,
-        loading_pct=0.0,
-        is_smoker=is_smoker,
-        age_index=age_index,
-    )
-
-    try:
-        # Close the current version
-        curr_ver_res = await session.exec(
-            select(PolicyVersion).where(PolicyVersion.policy_id == policy_id)
-            .order_by(PolicyVersion.created_at.desc())  # type: ignore[arg-type]
-        )
-        curr_ver = curr_ver_res.first()
-        if curr_ver and curr_ver.effective_to is None:
-            curr_ver.effective_to = policy.expiry_date or date.today()
-            session.add(curr_ver)
-
-        curr_vnum = curr_ver.version_number if curr_ver else "1.0"
-        new_vnum = f"{int(curr_vnum.split('.')[0]) + 1}.0"
-        old_expiry = policy.expiry_date or date.today()
-        new_expiry = date(old_expiry.year + 1, old_expiry.month, old_expiry.day)
-        new_grace = new_expiry + timedelta(days=GRACE_PERIOD_DAYS)
-
-        new_version = PolicyVersion(
-            policy_id=policy_id,
-            version_number=new_vnum,
-            effective_from=old_expiry,
-            effective_to=None,
-            base_premium=breakdown.base_premium,
-            loading_amount=breakdown.loading_amount,
-            policy_fee=breakdown.policy_fee,
-            tax_amount=breakdown.tax_amount,
-            total_premium=breakdown.total_premium,
-            loadings_json={"rating_basis": breakdown.rating_basis, "age_index": round(age_index, 4)},
-            created_by="system" if is_stp else "underwriter",
-            event_type="Renewal",
-        )
-        session.add(new_version)
-        await session.flush()
-
-        session.add(RenewalTransaction(
-            policy_id=policy_id,
-            old_version_id=curr_ver.id if curr_ver else None,
-            new_version_id=new_version.id,
-            renewal_year=renewal_year,
-            status=RenewalStatusEnum.BOUND,
-            renewal_premium=breakdown.total_premium,
-            claims_count=claims_count,
-            is_stp=is_stp,
-            bound_at=datetime.utcnow(),
-        ))
-        session.add(PremiumSchedule(
-            policy_id=policy_id,
-            policy_version_id=new_version.id,
-            billing_frequency=BillingFrequencyEnum.ANNUAL,
-            due_date=old_expiry,
-            amount_due=breakdown.total_premium,
-            amount_paid=breakdown.total_premium,
-            status=PremiumScheduleStatusEnum.PAID,
-            paid_at=datetime.utcnow(),
-            payment_reference=f"MOCK-RENEWAL-Y{renewal_year}",
-        ))
-
-        policy.expiry_date = new_expiry
-        policy.grace_period_end_date = new_grace
-        policy.current_version_id = new_version.id
-
-        # Rebind cover for the new term (ACTIVE self-transition, or GRACE→ACTIVE).
-        event = apply_transition(
-            session, policy, PolicyStatusEnum.ACTIVE,
-            event_type="PolicyRenewed",
-            actor="system" if is_stp else "underwriter",
-            detail={
-                "renewal_year": renewal_year,
-                "new_version": new_vnum,
-                "renewal_premium": breakdown.total_premium,
-                "is_stp": is_stp,
-            },
-        )
-        await session.commit()
-
-    except IllegalStateTransition as exc:
-        await session.rollback()
-        raise HTTPException(400, str(exc)) from exc
-    except Exception as exc:
-        await session.rollback()
-        log.exception("Renewal failed for policy %s — rolled back", policy_id)
-        raise HTTPException(500, f"Renewal failed and was rolled back: {exc}") from exc
-
-    await _publish_policy_event(request, policy, event)
-
-    return {
-        "policy_number": policy.policy_number,
-        "new_version": new_vnum,
-        "renewal_year": renewal_year,
-        "new_expiry_date": new_expiry.isoformat(),
-        "renewal_premium": breakdown.total_premium,
-        "is_stp": is_stp,
-        "claims_during_term": claims_count,
-        "age_index_applied": round(age_index, 4),
-    }
-
-
-# ── POST /lapse ───────────────────────────────────────────────────────────────
-
-@router.post("/tenants/{tenant_id}/policies/{policy_id}/lapse")
-async def lapse_policy(
-    tenant_id: UUID, policy_id: UUID,
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    policy = await _get_policy(session, tenant_id, policy_id)
-    try:
-        event = apply_transition(
-            session, policy, PolicyStatusEnum.LAPSED,
-            event_type="PolicyLapsed", actor="system",
-        )
-        await session.commit()
-    except IllegalStateTransition as exc:
-        await session.rollback()
-        raise HTTPException(400, str(exc)) from exc
-    await _publish_policy_event(request, policy, event)
-    return {"policy_id": str(policy_id), "status": "Lapsed"}
-
-
-# ── POST /cancel ──────────────────────────────────────────────────────────────
-
-@router.post("/tenants/{tenant_id}/policies/{policy_id}/cancel")
-async def cancel_policy(
-    tenant_id: UUID, policy_id: UUID,
-    request: Request,
-    session: AsyncSession = Depends(get_session),
-):
-    policy = await _get_policy(session, tenant_id, policy_id)
-    try:
-        event = apply_transition(
-            session, policy, PolicyStatusEnum.CANCELLED,
-            event_type="PolicyCancelled", actor="system",
-        )
-        await session.commit()
-    except IllegalStateTransition as exc:
-        await session.rollback()
-        raise HTTPException(400, str(exc)) from exc
-    await _publish_policy_event(request, policy, event)
-    return {"policy_id": str(policy_id), "status": "Cancelled"}
+# ═══════════════════════════════════════════════════════════════════════════════
+# STAGE B — POST-ISSUANCE LIFECYCLE (renew / lapse / cancel)
+# Temporarily commented out for now. These actions run AFTER a policy has been
+# issued and activated. Re-enable when Stage B is back in scope.
+# ═══════════════════════════════════════════════════════════════════════════════
+# # ── POST /renew ───────────────────────────────────────────────────────────────
+#
+# @router.post("/tenants/{tenant_id}/policies/{policy_id}/renew")
+# async def renew_policy(
+#     tenant_id: UUID, policy_id: UUID,
+#     request: Request,
+#     session: AsyncSession = Depends(get_session),
+# ):
+#     policy = await _get_policy(session, tenant_id, policy_id)
+#     if _st(policy) not in ("Active", "GracePeriod"):
+#         raise HTTPException(400, f"Policy must be Active or GracePeriod to renew (current: {_st(policy)})")
+#
+#     rt_all = list((await session.exec(select(RenewalTransaction).where(RenewalTransaction.policy_id == policy_id))).all())
+#     renewal_year = len(rt_all) + 2
+#
+#     claims_count = len(list((await session.exec(select(Claim).where(Claim.policy_id == policy_id))).all()))
+#     is_stp = claims_count == 0
+#
+#     cust = await session.get(Customer, policy.customer_id)
+#     is_smoker = bool(getattr(cust, "is_smoker", False))
+#
+#     ins_type_str = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
+#     base_rate, smoker_factor = await _load_plan_rates(session, tenant_id, policy.insurance_type)
+#     age_index = 1.02 ** (renewal_year - 1)   # +2% per renewal year
+#
+#     breakdown = PricingEngine.calculate(
+#         insurance_type=ins_type_str,
+#         coverage_amount=policy.coverage_amount,
+#         term_years=policy.term_years,
+#         base_rate=base_rate,
+#         smoker_factor=smoker_factor,
+#         loading_pct=0.0,
+#         is_smoker=is_smoker,
+#         age_index=age_index,
+#     )
+#
+#     try:
+#         # Close the current version
+#         curr_ver_res = await session.exec(
+#             select(PolicyVersion).where(PolicyVersion.policy_id == policy_id)
+#             .order_by(PolicyVersion.created_at.desc())  # type: ignore[arg-type]
+#         )
+#         curr_ver = curr_ver_res.first()
+#         if curr_ver and curr_ver.effective_to is None:
+#             curr_ver.effective_to = policy.expiry_date or date.today()
+#             session.add(curr_ver)
+#
+#         curr_vnum = curr_ver.version_number if curr_ver else "1.0"
+#         new_vnum = f"{int(curr_vnum.split('.')[0]) + 1}.0"
+#         old_expiry = policy.expiry_date or date.today()
+#         new_expiry = date(old_expiry.year + 1, old_expiry.month, old_expiry.day)
+#         new_grace = new_expiry + timedelta(days=GRACE_PERIOD_DAYS)
+#
+#         new_version = PolicyVersion(
+#             policy_id=policy_id,
+#             version_number=new_vnum,
+#             effective_from=old_expiry,
+#             effective_to=None,
+#             base_premium=breakdown.base_premium,
+#             loading_amount=breakdown.loading_amount,
+#             policy_fee=breakdown.policy_fee,
+#             tax_amount=breakdown.tax_amount,
+#             total_premium=breakdown.total_premium,
+#             loadings_json={"rating_basis": breakdown.rating_basis, "age_index": round(age_index, 4)},
+#             created_by="system" if is_stp else "underwriter",
+#             event_type="Renewal",
+#         )
+#         session.add(new_version)
+#         await session.flush()
+#
+#         session.add(RenewalTransaction(
+#             policy_id=policy_id,
+#             old_version_id=curr_ver.id if curr_ver else None,
+#             new_version_id=new_version.id,
+#             renewal_year=renewal_year,
+#             status=RenewalStatusEnum.BOUND,
+#             renewal_premium=breakdown.total_premium,
+#             claims_count=claims_count,
+#             is_stp=is_stp,
+#             bound_at=datetime.utcnow(),
+#         ))
+#         session.add(PremiumSchedule(
+#             policy_id=policy_id,
+#             policy_version_id=new_version.id,
+#             billing_frequency=BillingFrequencyEnum.ANNUAL,
+#             due_date=old_expiry,
+#             amount_due=breakdown.total_premium,
+#             amount_paid=breakdown.total_premium,
+#             status=PremiumScheduleStatusEnum.PAID,
+#             paid_at=datetime.utcnow(),
+#             payment_reference=f"MOCK-RENEWAL-Y{renewal_year}",
+#         ))
+#
+#         policy.expiry_date = new_expiry
+#         policy.grace_period_end_date = new_grace
+#         policy.current_version_id = new_version.id
+#
+#         # Rebind cover for the new term (ACTIVE self-transition, or GRACE→ACTIVE).
+#         event = apply_transition(
+#             session, policy, PolicyStatusEnum.ACTIVE,
+#             event_type="PolicyRenewed",
+#             actor="system" if is_stp else "underwriter",
+#             detail={
+#                 "renewal_year": renewal_year,
+#                 "new_version": new_vnum,
+#                 "renewal_premium": breakdown.total_premium,
+#                 "is_stp": is_stp,
+#             },
+#         )
+#         await session.commit()
+#
+#     except IllegalStateTransition as exc:
+#         await session.rollback()
+#         raise HTTPException(400, str(exc)) from exc
+#     except Exception as exc:
+#         await session.rollback()
+#         log.exception("Renewal failed for policy %s — rolled back", policy_id)
+#         raise HTTPException(500, f"Renewal failed and was rolled back: {exc}") from exc
+#
+#     await _publish_policy_event(request, policy, event)
+#
+#     return {
+#         "policy_number": policy.policy_number,
+#         "new_version": new_vnum,
+#         "renewal_year": renewal_year,
+#         "new_expiry_date": new_expiry.isoformat(),
+#         "renewal_premium": breakdown.total_premium,
+#         "is_stp": is_stp,
+#         "claims_during_term": claims_count,
+#         "age_index_applied": round(age_index, 4),
+#     }
+#
+#
+# # ── POST /lapse ───────────────────────────────────────────────────────────────
+#
+# @router.post("/tenants/{tenant_id}/policies/{policy_id}/lapse")
+# async def lapse_policy(
+#     tenant_id: UUID, policy_id: UUID,
+#     request: Request,
+#     session: AsyncSession = Depends(get_session),
+# ):
+#     policy = await _get_policy(session, tenant_id, policy_id)
+#     try:
+#         event = apply_transition(
+#             session, policy, PolicyStatusEnum.LAPSED,
+#             event_type="PolicyLapsed", actor="system",
+#         )
+#         await session.commit()
+#     except IllegalStateTransition as exc:
+#         await session.rollback()
+#         raise HTTPException(400, str(exc)) from exc
+#     await _publish_policy_event(request, policy, event)
+#     return {"policy_id": str(policy_id), "status": "Lapsed"}
+#
+#
+# # ── POST /cancel ──────────────────────────────────────────────────────────────
+#
+# @router.post("/tenants/{tenant_id}/policies/{policy_id}/cancel")
+# async def cancel_policy(
+#     tenant_id: UUID, policy_id: UUID,
+#     request: Request,
+#     session: AsyncSession = Depends(get_session),
+# ):
+#     policy = await _get_policy(session, tenant_id, policy_id)
+#     try:
+#         event = apply_transition(
+#             session, policy, PolicyStatusEnum.CANCELLED,
+#             event_type="PolicyCancelled", actor="system",
+#         )
+#         await session.commit()
+#     except IllegalStateTransition as exc:
+#         await session.rollback()
+#         raise HTTPException(400, str(exc)) from exc
+#     await _publish_policy_event(request, policy, event)
+#     return {"policy_id": str(policy_id), "status": "Cancelled"}
 
 
 # ── GET /documents ────────────────────────────────────────────────────────────

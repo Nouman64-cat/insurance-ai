@@ -13,7 +13,12 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from schemas import CustomerCreate, CustomerRead, CustomerStatsRead, CustomerUpdate, PolicyCreate, PolicyRead, PolicyUpdate
 from shared.events.kafka_events import CUSTOMER_CREATED_TOPIC, CustomerCreatedEvent, CustomerCreatedPayload
-from shared.models.core import AcquisitionSource, Customer, Policy, Tenant, ProfileStatusEnum, PolicyStatusEnum, PremiumQuote, InsurancePlan
+from shared.models.core import (
+    AcquisitionSource, Beneficiary, Case, ComplianceCheck, CounterOffer,
+    Customer, Policy, PolicyDocument, PolicyEvent, PolicyRequirement,
+    PolicyVersion, PremiumQuote, PremiumSchedule, Tenant,
+    ProfileStatusEnum, PolicyStatusEnum, InsurancePlan,
+)
 from shared.pricing.calculator import calculate_premium
 from routers.users import verify_admin   # reuse existing Admin guard
 
@@ -454,6 +459,25 @@ async def delete_customer(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
         )
+
+    # Cascade-delete all child records manually in dependency order
+    # so we don't hit FK violations on tables without ON DELETE CASCADE.
+    policies = (await session.exec(select(Policy).where(Policy.customer_id == customer_id))).all()
+    for policy in policies:
+        pid = policy.id
+        # Level-3 children (depend on policy)
+        for model in (
+            PolicyEvent, PolicyDocument, PolicyVersion, PremiumSchedule,
+            PremiumQuote, PolicyRequirement, ComplianceCheck, CounterOffer,
+            Beneficiary,
+        ):
+            for row in (await session.exec(select(model).where(model.policy_id == pid))).all():  # type: ignore[attr-defined]
+                await session.delete(row)
+        # Cases reference policy but may be shared; delete only this policy's cases
+        for row in (await session.exec(select(Case).where(Case.policy_id == pid))).all():
+            await session.delete(row)
+        await session.delete(policy)
+
     await session.delete(customer)
     await session.commit()
     return None

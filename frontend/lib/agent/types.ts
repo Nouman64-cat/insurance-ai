@@ -29,6 +29,7 @@ export interface AgentMessage {
   text: string;
   quickActions?: QuickAction[];
   actionResult?: ActionResult;
+  steps?: ProcessStep[];
 }
 
 // One node in the live process graph the agent narrates while working.

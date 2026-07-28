@@ -49,6 +49,36 @@ OUTBOUND_TOPIC    = "insurance.risk.evaluated.v1"
 # Core processing
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _coerce_reasons(raw: list) -> list[str]:
+    """Ensure every item in the AI's 'reasons' list is a plain string.
+
+    The LLM occasionally returns a list of dicts like:
+        {"parameter": "Age", "observation": "...", "risk_rating": "Low"}
+    instead of a list of strings.  This helper normalises both formats so
+    RiskEvaluatedPayload(reasons: list[str]) never fails validation.
+    """
+    out: list[str] = []
+    for item in raw:
+        if isinstance(item, str):
+            out.append(item)
+        elif isinstance(item, dict):
+            param = item.get("parameter", "")
+            obs   = item.get("observation", "")
+            rating = item.get("risk_rating", "")
+            parts = [p for p in [param, obs] if p]
+            text  = ": ".join(parts) if parts else str(item)
+            if rating:
+                text += f" (risk rating: {rating})"
+            out.append(text)
+        else:
+            out.append(str(item))
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Core processing
+# ─────────────────────────────────────────────────────────────────────────────
+
 async def _process(
     event: ProposalSubmittedEvent,
     producer: AIOKafkaProducer,
@@ -94,7 +124,7 @@ async def _process(
                 composite_risk_score=result["composite_risk_score"],
             ),
             ai_decision=result["ai_decision"],
-            reasons=result["reasons"],
+            reasons=_coerce_reasons(result.get("reasons", [])),
         ),
     )
 
