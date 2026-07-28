@@ -100,21 +100,19 @@ interface SegmentDropdownProps {
 }
 
 export function SegmentDropdown({ value, onChange, counts, className = "" }: SegmentDropdownProps) {
-  const [open, setOpen] = useState(false);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const listboxId = useId();
-  const selected = OPTIONS.find((o) => o.value === value) ?? OPTIONS[0];
-
+  
+  // Close on click outside
   useEffect(() => {
-    if (!open) return;
+    if (!expanded) return;
     const handleClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        setExpanded(false);
       }
     };
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") setExpanded(false);
     };
     document.addEventListener("mousedown", handleClick);
     document.addEventListener("keydown", handleKey);
@@ -122,121 +120,92 @@ export function SegmentDropdown({ value, onChange, counts, className = "" }: Seg
       document.removeEventListener("mousedown", handleClick);
       document.removeEventListener("keydown", handleKey);
     };
-  }, [open]);
+  }, [expanded]);
 
-  const openMenu = () => {
-    setActiveIndex(OPTIONS.findIndex((o) => o.value === value));
-    setOpen(true);
+  // Define text colors explicitly so Tailwind picks them up
+  const textColors: Record<SegmentFilter, string> = {
+    all: "text-slate-600",
+    individual: "text-blue-600",
+    family: "text-violet-600",
+    organization: "text-amber-600",
   };
 
-  const handleButtonKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      openMenu();
-    }
-  };
-
-  const handleListKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setActiveIndex((i) => Math.min(i + 1, OPTIONS.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setActiveIndex((i) => Math.max(i - 1, 0));
-    } else if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      onChange(OPTIONS[activeIndex].value);
-      setOpen(false);
-    }
-  };
+  const selectedOption = OPTIONS.find(o => o.value === value) || OPTIONS[0];
+  const unselectedOptions = OPTIONS.filter(o => o.value !== value);
 
   return (
-    <div ref={containerRef} className={`relative inline-block text-left ${className}`}>
+    <div ref={containerRef} className={`relative ${className}`}>
       <button
         type="button"
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        aria-controls={listboxId}
-        onClick={() => (open ? setOpen(false) : openMenu())}
-        onKeyDown={handleButtonKeyDown}
-        className="inline-flex items-center gap-2.5 pl-3 pr-2.5 py-2 text-sm font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg shadow-sm hover:border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-colors"
+        onClick={() => setExpanded(!expanded)}
+        className={`flex items-center justify-between gap-3 px-4 h-10 text-sm font-semibold bg-white border rounded-full transition-all focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
+          expanded ? "border-blue-400 shadow-md ring-2 ring-blue-500/20" : "border-slate-200 shadow-sm hover:border-slate-300"
+        }`}
       >
-        <span className={`w-2 h-2 rounded-full ${selected.dot}`} />
-        <span className="text-slate-500">{selected.icon}</span>
-        <span>{selected.label}</span>
-        {counts?.[selected.value] != null && (
-          <span className="px-1.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-500">
-            {counts[selected.value]}
+        <div className="flex items-center gap-2">
+          <span className={textColors[selectedOption.value]}>
+            {selectedOption.icon}
           </span>
-        )}
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`text-slate-400 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
-        >
+          <span className="text-slate-700 whitespace-nowrap">
+            {selectedOption.label}
+          </span>
+          {counts?.[selectedOption.value] != null && (
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              expanded ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
+            }`}>
+              {counts[selectedOption.value]}
+            </span>
+          )}
+        </div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 ml-1 transition-transform duration-300 ${expanded ? "rotate-180 text-blue-600" : "text-slate-400"}`}>
           <polyline points="6 9 12 15 18 9" />
         </svg>
       </button>
 
-      {open && (
-        <ul
-          id={listboxId}
-          role="listbox"
-          tabIndex={-1}
-          aria-activedescendant={`${listboxId}-${activeIndex}`}
-          onKeyDown={handleListKeyDown}
-          ref={(el) => el?.focus()}
-          className="absolute z-20 mt-1.5 w-64 py-1.5 bg-white border border-slate-200 rounded-xl shadow-lg focus:outline-none"
+      {expanded && (
+        <div 
+          className="absolute top-full left-0 mt-2 w-[220px] bg-white border border-slate-100 rounded-xl shadow-[0_8px_24px_rgb(0,0,0,0.08)] z-50 overflow-hidden py-2"
+          style={{ animation: 'slideDown 0.15s ease-out forwards' }}
         >
-          {OPTIONS.map((option, index) => {
-            const isSelected = option.value === value;
-            const isActive = index === activeIndex;
-            return (
-              <li
-                key={option.value}
-                id={`${listboxId}-${index}`}
-                role="option"
-                aria-selected={isSelected}
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => {
-                  onChange(option.value);
-                  setOpen(false);
-                }}
-                className={`flex items-center gap-3 mx-1.5 px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${
-                  isActive ? "bg-blue-50" : ""
-                }`}
-              >
-                <span className={`flex items-center justify-center w-7 h-7 rounded-lg ${isSelected ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-500"}`}>
+          {OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(option.value);
+                setExpanded(false);
+              }}
+              className={`w-full flex items-center justify-between px-4 py-2.5 text-sm transition-colors ${
+                value === option.value
+                  ? "bg-blue-50/50"
+                  : "hover:bg-slate-50"
+              }`}
+            >
+              <div className="flex items-center gap-2.5">
+                <span className={value === option.value ? textColors[option.value] : "text-slate-400"}>
                   {option.icon}
                 </span>
-                <span className="flex-1 min-w-0">
-                  <span className={`block text-sm font-semibold ${isSelected ? "text-blue-700" : "text-slate-700"}`}>
-                    {option.label}
-                  </span>
-                  <span className="block text-xs text-slate-400 truncate">{option.description}</span>
+                <span className={`font-semibold ${value === option.value ? textColors[option.value] : "text-slate-600"}`}>
+                  {option.label}
                 </span>
-                {counts?.[option.value] != null && (
-                  <span className={`px-1.5 py-0.5 rounded-full text-xs font-bold ${isSelected ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>
-                    {counts[option.value]}
-                  </span>
-                )}
-                {isSelected && (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-blue-600 shrink-0">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                )}
-              </li>
-            );
-          })}
-        </ul>
+              </div>
+              {counts?.[option.value] != null && (
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                  value === option.value ? "bg-white text-blue-700 shadow-sm" : "bg-slate-100 text-slate-500"
+                }`}>
+                  {counts[option.value]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       )}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes slideDown {
+          from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+      `}} />
     </div>
   );
 }

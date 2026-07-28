@@ -16,6 +16,7 @@ POST /evaluate/stream is kept intact for synchronous dev/testing workflows.
 """
 
 import json
+import logging
 from typing import List, Literal, Optional
 from uuid import UUID, uuid4
 
@@ -54,6 +55,9 @@ from shared.models.core import (
     Tenant,
     User,
 )
+from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
+
+log = logging.getLogger(__name__)
 
 # AI decision band -> Policy/Case lifecycle status. "Approve with Loading" is
 # a possible AIDecision value (human underwriters can apply it) even though
@@ -341,8 +345,16 @@ async def evaluate_stream(
                 # Review parks the case in the underwriter queue.
                 new_policy_status = _DECISION_POLICY_STATUS.get(final_risk["ai_decision"])
                 if new_policy_status is not None:
-                    policy.status = new_policy_status
-                    db.add(policy)
+                    try:
+                        apply_transition(
+                            db, policy, new_policy_status,
+                            event_type="ai_decision", actor="risk-engine",
+                            detail={"ai_decision": final_risk["ai_decision"]},
+                        )
+                    except IllegalStateTransition as exc:
+                        # Policy already moved on (e.g. re-evaluated after issuance) —
+                        # log and keep the assessment, but don't force an illegal jump.
+                        log.warning("Skipped AI auto-transition for policy %s: %s", policy.id, exc)
 
                 if case is not None:
                     new_case_status = _DECISION_CASE_STATUS.get(final_risk["ai_decision"])
@@ -362,20 +374,12 @@ async def evaluate_stream(
                         case.caseStatus = new_case_status
                         db.add(case)
 
-                if new_policy_status == PolicyStatusEnum.APPROVED or (case is not None and case.caseStatus == CaseStatusEnum.APPROVED):
-                    from shared.models.core import ProfileStatusEnum, FamilyGroup, Organization
-                    customer.profile_status = ProfileStatusEnum.POLICYHOLDER
-                    db.add(customer)
-                    if customer.family_group_id:
-                        fg = await db.get(FamilyGroup, customer.family_group_id)
-                        if fg:
-                            fg.profile_status = ProfileStatusEnum.POLICYHOLDER
-                            db.add(fg)
-                    if customer.organization_id:
-                        org = await db.get(Organization, customer.organization_id)
-                        if org:
-                            org.profile_status = ProfileStatusEnum.POLICYHOLDER
-                            db.add(org)
+                # NOTE: Do NOT promote the customer to POLICYHOLDER here. A customer
+                # only becomes a policyholder once the policy is actually issued and
+                # goes Active — promoting at Approved is premature and causes them to
+                # appear on the Policyholders page before coverage exists. This
+                # transition is handled in routers/policies.py::issue_policy() (see
+                # the identical note in tenant-service/routers/cases.py).
 
                 await db.commit()
                 await db.refresh(assessment)

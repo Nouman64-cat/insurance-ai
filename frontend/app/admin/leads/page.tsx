@@ -13,6 +13,7 @@ import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import CustomerQuickLeadModal from "@/components/entities/CustomerQuickLeadModal";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
+import { MetricCard } from "@/components/MetricCard";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 type ProfileStatus = "LEAD" | "PROSPECT" | "UNDERWRITING_READY" | "NOT_INTERESTED" | "POLICYHOLDER";
@@ -469,42 +470,30 @@ export default function LeadsHubPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Total Leads</p>
-            <div className="text-2xl font-bold text-slate-900">{statsLeads.length}</div>
-          </div>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 text-slate-700">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>
-          </div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Individual</p>
-            <div className="text-2xl font-bold text-blue-700">{statsLeads.filter(l => l.type === "INDIVIDUAL").length}</div>
-          </div>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-blue-100 text-blue-700">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>
-          </div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Family</p>
-            <div className="text-2xl font-bold text-purple-700">{statsLeads.filter(l => l.type === "FAMILY").length}</div>
-          </div>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-purple-100 text-purple-700">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z" /><circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" /><path d="M8 15v-2a4 4 0 018 0v2" /></svg>
-          </div>
-        </div>
-        <div className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1">Corporate</p>
-            <div className="text-2xl font-bold text-emerald-700">{statsLeads.filter(l => l.type === "CORPORATE").length}</div>
-          </div>
-          <div className="w-10 h-10 rounded-full flex items-center justify-center bg-emerald-100 text-emerald-700">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" /><path d="M6 12H4a2 2 0 00-2 2v8h4" /><path d="M18 9h2a2 2 0 012 2v11h-4" /></svg>
-          </div>
-        </div>
+        <MetricCard
+          title="Total Leads"
+          value={statsLeads.length}
+          accent="slate"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" /></svg>}
+        />
+        <MetricCard
+          title="Individual"
+          value={statsLeads.filter(l => l.type === "INDIVIDUAL").length}
+          accent="blue"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>}
+        />
+        <MetricCard
+          title="Family"
+          value={statsLeads.filter(l => l.type === "FAMILY").length}
+          accent="purple"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z" /><circle cx="8" cy="17" r="2" /><circle cx="16" cy="17" r="2" /><path d="M8 15v-2a4 4 0 018 0v2" /></svg>}
+        />
+        <MetricCard
+          title="Corporate"
+          value={statsLeads.filter(l => l.type === "CORPORATE").length}
+          accent="emerald"
+          icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z" /><path d="M6 12H4a2 2 0 00-2 2v8h4" /><path d="M18 9h2a2 2 0 012 2v11h-4" /></svg>}
+        />
       </div>
 
       {/* Filters, search */}

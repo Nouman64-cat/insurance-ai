@@ -118,7 +118,25 @@
   }
 }
 
+/* ── Modal entrance ────────────────────────────────────────────────────────── */
+/* Subtle fade + scale-up so dialogs (e.g. proposal detail) feel like they
+   settle into place rather than snapping in instantly. */
+.modal-pop {
+  animation: modal-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
 /* Keyframes live outside @layer so Tailwind never purges them. */
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 @keyframes record-pop {
   0% {
     box-shadow: 0 0 0 0 rgba(139, 92, 246, 0);

@@ -188,3 +188,25 @@ async def verify_superadmin(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="SuperAdmin privileges required",
         )
+
+
+def require_roles(*allowed_role_names: str):
+    """
+    Dependency factory — 403s unless the caller's Role.name is one of
+    `allowed_role_names`. Usage: `Depends(require_roles("Underwriter", "Admin"))`.
+    """
+
+    async def _dependency(
+        token: str = Depends(oauth2_scheme),
+        session: AsyncSession = Depends(get_session),
+    ) -> User:
+        user = await _get_current_user(token, session)
+        role_name = await _role_name(user, session)
+        if role_name not in allowed_role_names:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"This action requires one of: {', '.join(allowed_role_names)} (you are {role_name}).",
+            )
+        return user
+
+    return _dependency

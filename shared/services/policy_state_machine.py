@@ -37,6 +37,10 @@ log = logging.getLogger(__name__)
 _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
     PolicyStatusEnum.QUOTED: {
         PolicyStatusEnum.PROPOSED,
+        # A Draft is auto-generated with no form filled in — basic KYC fields
+        # (DOB, gender, occupation, income) may still be missing, so it must
+        # be able to pause here before it can even be formally submitted.
+        PolicyStatusEnum.INFORMATION_REQUESTED,
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.PROPOSED: {
@@ -64,6 +68,11 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.DECLINED,
     },
     PolicyStatusEnum.INFORMATION_REQUESTED: {
+        # Once the missing info is supplied, resume wherever the proposal
+        # would naturally sit next — Proposed if this pause happened before
+        # formal review even started (the common case: a Draft missing basic
+        # KYC fields), or straight back into review otherwise.
+        PolicyStatusEnum.PROPOSED,
         PolicyStatusEnum.UNDER_REVIEW,
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,

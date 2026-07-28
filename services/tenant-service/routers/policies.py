@@ -23,8 +23,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from services import payment_gateway
-from services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from services.pricing_engine import GRACE_PERIOD_DAYS, PricingEngine
+from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from shared.events.kafka_events import (
     POLICY_LIFECYCLE_TOPIC,
     PolicyLifecycleEvent,
