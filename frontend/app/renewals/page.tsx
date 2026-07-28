@@ -11,6 +11,7 @@ import {
   fmtPKR,
 } from "@/app/services/policies";
 import { fmtCoverage } from "@/lib/mock-data";
+import { MetricCard } from "@/components/MetricCard";
 
 const URGENCY_CONFIG = {
   "90d": { label: "90 Days", color: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400", header: "bg-slate-50 border-slate-200" },
@@ -173,18 +174,18 @@ export default function RenewalsPage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: "Renewing (90d)", value: loading ? "—" : totalRenewing, sub: "in renewal pipeline", color: "blue" },
-          { title: "Urgent (≤30d)", value: loading ? "—" : urgentCount, sub: "immediate action needed", color: "orange" },
-          { title: "Grace Period", value: loading ? "—" : (stats?.grace_period ?? graceCount), sub: "expired, claims honoured", color: "red" },
-          { title: "Active Policies", value: loading ? "—" : (stats?.active ?? "—"), sub: "total in-force", color: "emerald" },
+          { title: "Renewing (90d)", value: loading ? "—" : totalRenewing, sub: "in renewal pipeline", color: "blue" as const },
+          { title: "Urgent (≤30d)", value: loading ? "—" : urgentCount, sub: "immediate action needed", color: "orange" as const },
+          { title: "Grace Period", value: loading ? "—" : (stats?.grace_period ?? graceCount), sub: "expired, claims honoured", color: "red" as const },
+          { title: "Active Policies", value: loading ? "—" : (stats?.active ?? "—"), sub: "total in-force", color: "emerald" as const },
         ].map(k => (
-          <div key={k.title} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{k.title}</p>
-            <p className={`text-3xl font-bold mt-1 ${k.color === "orange" ? "text-orange-600" : k.color === "red" ? "text-red-600" : k.color === "emerald" ? "text-emerald-600" : "text-blue-600"}`}>
-              {k.value}
-            </p>
-            <p className="text-xs text-slate-400 mt-0.5">{k.sub}</p>
-          </div>
+          <MetricCard
+            key={k.title}
+            title={k.title}
+            value={k.value}
+            subtitle={k.sub}
+            accent={k.color}
+          />
         ))}
       </div>
 

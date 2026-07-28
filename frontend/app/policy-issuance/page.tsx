@@ -22,6 +22,8 @@ import { getReadiness } from "@/app/services/preIssuance";
 import { PolicyProcessRail } from "@/components/policy/PolicyProcessRail";
 import { PolicyLifecycleDrawer } from "@/components/policy/PolicyLifecycleDrawer";
 import { LifecycleStepper } from "@/components/policy/LifecycleStepper";
+import { MetricCard } from "@/components/MetricCard";
+import FiltersPanel from "@/components/FiltersPanel";
 
 const STATUS_BADGE: Record<string, string> = {
   APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -454,6 +456,9 @@ export default function PolicyIssuancePage() {
   const [paymentPolicy, setPaymentPolicy] = useState<PolicyListItem | null>(null);
   const [viewPolicy, setViewPolicy] = useState<PolicyListItem | null>(null);
   const [segment, setSegment] = useState<SegmentFilter>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("ALL");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [issuanceResult, setIssuanceResult] = useState<{ result: IssuanceResult, policyName: string } | null>(null);
   const [activatedMsg, setActivatedMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -488,12 +493,42 @@ export default function PolicyIssuancePage() {
     policies.filter(p => (p.status || "").toUpperCase() === "ACTIVE"),
     [policies]);
 
+  const clearFilters = () => {
+    setFilterStatus("ALL");
+    setDateFrom("");
+    setDateTo("");
+  };
+
+  const structuredFilterCount = [filterStatus !== "ALL", dateFrom || dateTo].filter(Boolean).length;
+
+  const activeFilterChips: { key: string; label: string; onRemove: () => void }[] = [];
+  if (filterStatus !== "ALL") activeFilterChips.push({ key: "status", label: filterStatus, onRemove: () => setFilterStatus("ALL") });
+  if (dateFrom || dateTo) {
+    const label = dateFrom && dateTo
+      ? (dateFrom === dateTo ? `On ${dateFrom}` : `${dateFrom} → ${dateTo}`)
+      : dateFrom
+      ? `From ${dateFrom}`
+      : `Until ${dateTo}`;
+    activeFilterChips.push({ key: "date", label, onRemove: () => { setDateFrom(""); setDateTo(""); } });
+  }
+
   const filtered = useMemo(() => {
     let list = tab === "queue" ? queue : active;
 
     // Segment filter
     if (segment !== "all") {
       list = list.filter(p => p.segment === segment);
+    }
+    if (filterStatus !== "ALL") {
+      list = list.filter(p => p.status === filterStatus);
+    }
+    if (dateFrom || dateTo) {
+      list = list.filter(p => {
+        const d = new Date(p.created_at || new Date()).getTime();
+        const start = dateFrom ? new Date(dateFrom).getTime() : 0;
+        const end = dateTo ? new Date(dateTo).getTime() + 86400000 : Infinity;
+        return d >= start && d <= end;
+      });
     }
 
     if (!search.trim()) return list;
@@ -503,7 +538,7 @@ export default function PolicyIssuancePage() {
       (p.policy_number ?? "").toLowerCase().includes(q) ||
       p.product_name.toLowerCase().includes(q)
     );
-  }, [tab, queue, active, search, segment]);
+  }, [tab, queue, active, search, segment, filterStatus, dateFrom, dateTo]);
 
   const segmentCounts = useMemo(() => {
     const list = tab === "queue" ? queue : active;
@@ -554,19 +589,19 @@ export default function PolicyIssuancePage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { title: "Pending Issuance", value: stats?.pending_issuance ?? "—", sub: "approved, not yet bound", color: "amber" },
-          { title: "Pending Payment", value: loading ? "—" : pendingPaymentCount, sub: "awaiting first premium", color: "violet" },
-          { title: "Active Policies", value: stats?.active ?? "—", sub: "in-force coverage", color: "emerald" },
-          { title: "Expiring (30d)", value: stats?.expiring_30d ?? "—", sub: "renewal due soon", color: "blue" },
-          { title: "Lapsed", value: stats?.lapsed ?? "—", sub: "coverage terminated", color: "red" },
+          { title: "Pending Issuance", value: stats?.pending_issuance ?? "—", sub: "approved, not yet bound", color: "amber" as const },
+          { title: "Pending Payment", value: loading ? "—" : pendingPaymentCount, sub: "awaiting first premium", color: "violet" as const },
+          { title: "Active Policies", value: stats?.active ?? "—", sub: "in-force coverage", color: "emerald" as const },
+          { title: "Expiring (30d)", value: stats?.expiring_30d ?? "—", sub: "renewal due soon", color: "blue" as const },
+          { title: "Lapsed", value: stats?.lapsed ?? "—", sub: "coverage terminated", color: "red" as const },
         ].map(k => (
-          <div key={k.title} className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{k.title}</p>
-            <p className={`text-3xl font-bold mt-1 ${k.color === "amber" ? "text-amber-600" : k.color === "emerald" ? "text-emerald-600" : k.color === "red" ? "text-red-600" : k.color === "violet" ? "text-violet-600" : "text-blue-600"}`}>
-              {loading ? <span className="text-slate-300">—</span> : k.value}
-            </p>
-            <p className="text-xs text-slate-400 mt-0.5">{k.sub}</p>
-          </div>
+          <MetricCard
+            key={k.title}
+            title={k.title}
+            value={loading ? "—" : k.value}
+            subtitle={k.sub}
+            accent={k.color}
+          />
         ))}
       </div>
 
@@ -584,6 +619,24 @@ export default function PolicyIssuancePage() {
             className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
           />
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
+          
+          <FiltersPanel
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onDateFromChange={setDateFrom}
+            onDateToChange={setDateTo}
+            statusFilter={filterStatus}
+            onStatusChange={setFilterStatus}
+            statusOptions={[
+              { value: "PendingPayment", label: "Pending Payment" },
+              { value: "Approved", label: "Approved" },
+              { value: "Active", label: "Active" },
+              { value: "Issued", label: "Issued" },
+              { value: "Quoted", label: "Quoted" }
+            ]}
+            activeCount={structuredFilterCount}
+            onClearAll={clearFilters}
+          />
         </div>
         <div className="flex items-center gap-2">
           <div className="flex bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shrink-0">
@@ -599,6 +652,27 @@ export default function PolicyIssuancePage() {
           </div>
         </div>
       </div>
+      {activeFilterChips.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 -mt-2">
+          {activeFilterChips.map((chip) => (
+            <span
+              key={chip.key}
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-medium"
+            >
+              {chip.label}
+              <button
+                onClick={chip.onRemove}
+                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-emerald-600 hover:underline ml-1">
+            Clear all
+          </button>
+        </div>
+      )}
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
