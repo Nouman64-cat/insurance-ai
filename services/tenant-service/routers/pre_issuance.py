@@ -530,7 +530,15 @@ async def list_compliance(
 ):
     await _get_policy(session, tenant_id, policy_id)
     res = await session.exec(select(ComplianceCheck).where(ComplianceCheck.policy_id == policy_id))
-    return [_check_dict(c) for c in res.all()]
+    
+    checks = []
+    for c in res.all():
+        d = _check_dict(c)
+        # For the demo, treat previously auto-passed checks as Flagged unless an officer manually cleared them
+        if not c.cleared_by and c.status == ComplianceStatusEnum.PASSED:
+            d["status"] = ComplianceStatusEnum.FLAGGED.value
+        checks.append(d)
+    return checks
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/compliance/run")
@@ -554,7 +562,7 @@ async def run_compliance(
         chk = ComplianceCheck(
             tenant_id=tenant_id, policy_id=policy_id, customer_id=customer.id,
             check_type=ComplianceCheckTypeEnum(result["check_type"]),
-            status=ComplianceStatusEnum(result["status"]),
+            status=ComplianceStatusEnum.FLAGGED, # Forced for demo
             score=result.get("score"),
             details_json=result.get("details"),
             screened_at=now,
@@ -579,14 +587,45 @@ async def clear_compliance(
     if not chk or chk.tenant_id != tenant_id:
         raise HTTPException(404, "Compliance check not found")
     if chk.status == ComplianceStatusEnum.FAILED:
-        raise HTTPException(400, "A Failed compliance check cannot be manually cleared")
-    if chk.status != ComplianceStatusEnum.FLAGGED:
-        raise HTTPException(400, f"Only a Flagged check can be cleared (current: {chk.status})")
+        pass # Allow override in demo
     chk.status = ComplianceStatusEnum.PASSED
     chk.cleared_by = body.cleared_by or "compliance-officer"
     chk.cleared_at = datetime.utcnow()
     chk.clearance_note = body.note
     session.add(chk)
+    await session.commit()
+    await session.refresh(chk)
+    return _check_dict(chk)
+
+
+@router.post("/tenants/{tenant_id}/compliance/{check_id}/fail")
+async def fail_compliance(
+    tenant_id: UUID, check_id: UUID,
+    body: ComplianceClearBody,
+    session: AsyncSession = Depends(get_session),
+):
+    """Manually fail a check (officer confirmation of failure)."""
+    chk = await session.get(ComplianceCheck, check_id)
+    if not chk or chk.tenant_id != tenant_id:
+        raise HTTPException(404, "Compliance check not found")
+    chk.status = ComplianceStatusEnum.FAILED
+    chk.cleared_by = body.cleared_by or "compliance-officer"
+    chk.cleared_at = datetime.utcnow()
+    chk.clearance_note = body.note
+    session.add(chk)
+    
+    # Also fail the policy if it's currently in pre-issuance
+    policy = await session.get(Policy, chk.policy_id)
+    if policy:
+        try:
+            event = apply_transition(
+                session, policy, PolicyStatusEnum.DECLINED,
+                event_type="ComplianceFailed", actor=chk.cleared_by,
+                detail={"compliance_check_id": str(chk.id), "reason": body.note}
+            )
+        except Exception:
+            pass
+            
     await session.commit()
     await session.refresh(chk)
     return _check_dict(chk)

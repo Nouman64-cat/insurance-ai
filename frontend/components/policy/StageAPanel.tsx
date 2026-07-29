@@ -26,10 +26,12 @@ function StepShell({
   return (
     <div className="relative pl-9">
       <span className={`absolute left-0 top-0 flex items-center justify-center w-6 h-6 rounded-full border text-[11px] font-bold ${PILL[state]}`}>
-        {state === "done" ? "✓" : n}
+        {n}
       </span>
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-semibold text-slate-800">{title}</p>
+        <p className="text-sm font-semibold text-slate-800">
+          {title} {state === "done" && <span className="text-emerald-500 ml-1">✓</span>}
+        </p>
         <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border ${PILL[state]}`}>{hint}</span>
       </div>
       {children && <div className="mt-2">{children}</div>}
@@ -197,17 +199,22 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                 {checks.map((c) => {
                   const tone = c.status === "Passed" ? "text-emerald-700 bg-emerald-50 border-emerald-200"
                     : c.status === "Flagged" ? "text-amber-700 bg-amber-50 border-amber-200"
-                    : c.status === "Failed" ? "text-red-700 bg-red-50 border-red-200" : "text-slate-500 bg-slate-50 border-slate-200";
+                      : c.status === "Failed" ? "text-red-700 bg-red-50 border-red-200" : "text-slate-500 bg-slate-50 border-slate-200";
                   return (
                     <div key={c.id} className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 bg-slate-50">
                       <div>
                         <p className="text-xs font-medium text-slate-700">{c.check_type}
-                          <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>{c.status}</span>
+                          <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>
+                            {c.status === "Flagged" ? "Pending" : c.status}
+                          </span>
                         </p>
                         {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
                       </div>
                       {c.status === "Flagged" && (
-                        <Btn tone="amber" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Clear flag</Btn>
+                        <div className="flex gap-1.5 flex-shrink-0">
+                          <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Approve</Btn>
+                          <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review", "officer"))}>Reject</Btn>
+                        </div>
                       )}
                     </div>
                   );
@@ -219,7 +226,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
           </div>
         </StepShell>
 
-        {/* 5 — Beneficiaries */}
+        {/* 5 — Beneficiaries
         <StepShell n={5} title="Capture Beneficiaries" state={benState}
           hint={bens.length ? `${benTotal}%` : "none"}>
           <div className="space-y-1.5">
@@ -251,10 +258,10 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
               )}
             </div>
           </div>
-        </StepShell>
+        </StepShell> */}
 
         {/* 6 — Documents */}
-        <StepShell n={6} title="Generate & Validate Documents" state={docState}
+        <StepShell n={5} title="Generate & Validate Documents" state={docState}
           hint={docs.length ? `${s.documents.generated}/${s.documents.total}` : "none"}>
           <div className="space-y-1.5">
             {docs.length === 0 ? (

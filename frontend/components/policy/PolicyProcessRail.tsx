@@ -97,9 +97,8 @@ function Arrow() {
 function PhaseNode({ label, blurb, muted }: Readonly<{ label: string; blurb: string; muted?: boolean }>) {
   return (
     <div
-      className={`flex-1 min-w-[120px] rounded-lg border px-3 py-2.5 ${
-        muted ? "border-slate-200 bg-slate-50" : "border-emerald-100 bg-emerald-50/50"
-      }`}
+      className={`flex-1 min-w-[120px] rounded-lg border px-3 py-2.5 ${muted ? "border-slate-200 bg-slate-50" : "border-emerald-100 bg-emerald-50/50"
+        }`}
     >
       <p className="text-[11px] font-semibold text-slate-600 leading-tight">{label}</p>
       <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">{blurb}</p>

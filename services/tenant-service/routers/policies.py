@@ -91,7 +91,7 @@ async def _next_policy_number(session: AsyncSession, tenant_id: UUID) -> str:
         )
     )
     count = len(list(result.all())) + 1
-    return f"POL-{year}-{count:04d}"
+    return f"PL-{year}-{count:04d}"
 
 
 async def _load_plan_rates(session: AsyncSession, tenant_id: UUID, insurance_type) -> tuple[float, float]:
