@@ -185,8 +185,12 @@ _GENERIC_FALLBACK = PlanRules(
 )
 
 
-def _age_from_dob(dob_str: str) -> int:
-    dob = datetime.strptime(dob_str, "%Y-%m-%d").date()
+def _age_from_dob(dob_val: Any) -> int:
+    if isinstance(dob_val, (date, datetime)):
+        dob = dob_val.date() if isinstance(dob_val, datetime) else dob_val
+    else:
+        clean_str = str(dob_val).split("T")[0].strip()
+        dob = datetime.strptime(clean_str, "%Y-%m-%d").date()
     return (date.today() - dob).days // 365
 
 

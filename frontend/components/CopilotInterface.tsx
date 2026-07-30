@@ -141,6 +141,9 @@ export function CopilotInterface() {
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const interruptRiskRef = useRef<boolean>(false);
+  
+  const [bulkSteps, setBulkSteps] = useState<ProcessStep[]>([]);
+  const interruptBulkRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (selectedFile && selectedFile.type.startsWith("image/")) {
@@ -361,7 +364,8 @@ export function CopilotInterface() {
               }
             } else if (evt.type === "invalid" || evt.type === "error") {
                updateStep("error", "Assessment failed", "error");
-               throw new Error(evt.message || "Validation failed");
+               const errMsg = evt.errors?.length ? evt.errors.join("; ") : (evt.message || "Validation failed");
+               throw new Error(errMsg);
             }
           }
         }
@@ -390,6 +394,7 @@ export function CopilotInterface() {
           },
           quick_actions: [
             { label: "View Results", actionType: "navigate", payload: results_route },
+            { label: "Download Report", actionType: "download", payload: args.case_id },
             { label: "Move to Review", actionType: "submit", payload: `Move case ${args.case_id} to Under Review` }
           ]
         });
@@ -401,7 +406,106 @@ export function CopilotInterface() {
       }
     })();
   }, [pendingInterrupt, resolveInterrupt]);
+  // Client-executed bulk underwriting journey
+  useEffect(() => {
+    if (pendingInterrupt?.kind !== "client_execute") return;
+    if (pendingInterrupt.toolCall.name !== "bulk_underwriting_journey") return;
+    
+    if (interruptBulkRef.current) return;
+    interruptBulkRef.current = true;
+    
+    const cnics = pendingInterrupt.toolCall.args.cnics || [];
+    setBulkSteps(cnics.map((c: string) => ({ id: c, label: `Processing ${c}`, status: "pending" })));
+    
+    (async () => {
+      try {
+        const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
+        
+        // Remove /api from API_BASE because chat API runs on 8003
+        // Actually, we'll use the Chat agent URL directly for this stream.
+        const chatAgentUrl = process.env.NEXT_PUBLIC_CHAT_API_URL ?? "http://localhost:8003";
 
+        const res = await fetch(`${chatAgentUrl}/bulk-underwriting/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
+          body: JSON.stringify({ cnics }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) throw new Error("No stream reader available");
+
+        let buffer = "";
+        let finalMessage = "Processed bulk underwriting journey.\n";
+        let missingUploadActions: QuickAction[] = [];
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          
+          for (let p of parts) {
+            p = p.trim();
+            if (!p.startsWith("data: ")) continue;
+            
+            try {
+              const evt = JSON.parse(p.slice(6));
+              
+              if (evt.type === "progress") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "active", label: `${evt.step} for ${evt.cnic}` } : s
+                ));
+              } else if (evt.type === "warning") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "error", label: `Missing docs for ${evt.cnic}` } : s
+                ));
+                finalMessage += `\n❌ **${evt.cnic}**: Missing ${evt.missing.length} documents.`;
+                evt.missing.slice(0, 3).forEach((doc: string) => {
+                  missingUploadActions.push({
+                    label: `Upload ${doc} (${evt.cnic})`,
+                    actionType: "upload",
+                    payload: JSON.stringify({ document_type: doc, cnic: evt.cnic })
+                  });
+                });
+              } else if (evt.type === "error") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "error", label: `Error: ${evt.message}` } : s
+                ));
+                finalMessage += `\n❌ **${evt.cnic}**: Failed - ${evt.message}`;
+              } else if (evt.type === "done") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "done", label: `Completed ${evt.cnic}` } : s
+                ));
+                const d = evt.result.ai_decision || "Unknown";
+                finalMessage += `\n✅ **${evt.cnic}**: Case ${evt.caseNumber} opened. Decision: **${d}**`;
+              }
+            } catch (e) {
+              console.warn("Failed to parse SSE event", p, e);
+            }
+          }
+        }
+        
+        resolveInterrupt({
+          success: true,
+          message: finalMessage,
+          quick_actions: [
+            ...missingUploadActions,
+            { label: "View Cases", actionType: "navigate", payload: "cases" }
+          ]
+        });
+      } catch (err: any) {
+        resolveInterrupt({ success: false, message: `Bulk processing failed: ${err.message}` });
+      } finally {
+        interruptBulkRef.current = false;
+        setBulkSteps([]);
+      }
+    })();
+  }, [pendingInterrupt, resolveInterrupt]);
   const getBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -463,6 +567,8 @@ export function CopilotInterface() {
       fileInputRef.current?.click();
     } else if (action.actionType === "confirm") {
       resolveInterrupt(action.payload === "Yes");
+    } else if (action.actionType === "download") {
+      handleDownloadPDF(action.payload);
     } else {
       handleSubmit(undefined, action.payload);
     }
@@ -660,14 +766,9 @@ export function CopilotInterface() {
               try {
                 const result = await uploadDocument(args, file);
                 notify(`✅ ${result.message}`, true);
-                if (pendingInterrupt) {
-                  setUploadedDocs((prev) => [...prev, args.document_type]);
-                  // Do NOT resolve the interrupt yet — the user might need to upload multiple
-                  // documents. They will click the 'Proceed' button when they are done.
-                } else {
-                  const msg = `I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`;
-                  send(msg);
-                }
+                setUploadedDocs((prev) => [...prev, args.document_type]);
+                // Do not auto-send a message. The user can upload multiple docs
+                // and then click 'Retry Risk Assessment' manually.
               } catch (err: any) {
                 notify(`⚠️ ${err.message || "Upload failed."}`, false);
               } finally {
@@ -1427,13 +1528,13 @@ export function CopilotInterface() {
                 ))}
                 {/* Live process graph — the agent narrating its own state
                     machine, node by node, while (and after) it works. */}
-                {(steps.length > 0 || riskSteps.length > 0) && (
+                {(steps.length > 0 || riskSteps.length > 0 || bulkSteps.length > 0) && (
                   <div className="flex justify-start items-start gap-2">
                     <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                     </div>
                     <div className="max-w-[82%] flex-1">
-                      <ProcessGraph steps={riskSteps.length > 0 ? riskSteps : steps} />
+                      <ProcessGraph steps={bulkSteps.length > 0 ? bulkSteps : (riskSteps.length > 0 ? riskSteps : steps)} />
                     </div>
                   </div>
                 )}
@@ -1499,7 +1600,9 @@ export function CopilotInterface() {
                       try {
                         const result = await uploadDocument(args, file);
                         notify(`✅ ${result.message}`, true);
-                        send(`I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`);
+                        setUploadedDocs((prev) => [...prev, args.document_type]);
+                        // Do not auto-send a message. The user can upload multiple docs
+                        // and then click 'Retry Risk Assessment' manually.
                       } catch (err: any) {
                         notify(`⚠️ ${err.message || "Upload failed."}`, false);
                       } finally {

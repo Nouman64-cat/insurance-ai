@@ -28,6 +28,7 @@ MUTATING_TOOLS = {
     # (continue_underwriting_journey is deliberately NOT here: the journey was
     # already consented to at start; resuming it shouldn't re-prompt.)
     "start_underwriting_journey",
+    "bulk_underwriting_journey",
 }
 
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
@@ -142,6 +143,8 @@ def is_role_allowed(tool_name: str, role: str) -> bool:
 
 
 def requires_confirmation(tool_name: str) -> bool:
+    if tool_name == "run_risk_assessment":
+        return False
     return tool_name in MUTATING_TOOLS
 
 

@@ -521,6 +521,18 @@ def continue_underwriting_journey(**kwargs) -> str:
     return "{}"
 
 
+class BulkJourneyArgs(BaseModel):
+    cnics: list[str] = Field(description="List of CNICs to process.")
+
+
+@tool(args_schema=BulkJourneyArgs)
+def bulk_underwriting_journey(**kwargs) -> str:
+    """Run the autonomous underwriting pipeline for MULTIPLE customers in bulk.
+    Use this when the user asks to process a batch of customers, create cases
+    and proposals for multiple people, or run bulk risk assessments."""
+    return "{}"
+
+
 class QuickStartArgs(BaseModel):
     use_demo_data: bool = Field(
         default=True,
@@ -589,4 +601,5 @@ ALL_TOOLS = [
     quick_start_workflow,
     start_underwriting_journey,
     continue_underwriting_journey,
+    bulk_underwriting_journey,
 ]

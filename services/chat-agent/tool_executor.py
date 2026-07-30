@@ -402,47 +402,43 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
 
 @handles("get_document_checklist")
 async def _get_document_checklist(args: dict, ctx: Ctx) -> dict:
-    while True:
-        case = await _resolve_case(args, ctx)
-        case_id = _case_id(case)
-        res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
-        res.raise_for_status()
-        cl = res.json()
-        missing = cl.get("missing") or []
-        received = cl.get("received") or []
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+    res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
+    res.raise_for_status()
+    cl = res.json()
+    missing = cl.get("missing") or []
+    received = cl.get("received") or []
 
-        body = f"Documents for **{case.get('caseNumber')}**:\n"
-        body += "".join(f"- ✅ {d}\n" for d in received)
-        body += "".join(f"- ❌ {d} (missing)\n" for d in missing)
-        body += "\nAll required documents are in — the assessment can run." if not missing else \
-                f"\n{len(missing)} document(s) still needed before the assessment can run."
+    body = f"Documents for **{case.get('caseNumber')}**:\n"
+    body += "".join(f"- ✅ {d}\n" for d in received)
+    body += "".join(f"- ❌ {d} (missing)\n" for d in missing)
+    body += "\nAll required documents are in — the assessment can run." if not missing else \
+            f"\n{len(missing)} document(s) still needed before the assessment can run."
 
-        if not missing:
-            return {
-                "success": True,
-                "message": body,
-                "checklist": cl,
-                "quick_actions": [
-                    {"label": "Run Risk Assessment", "actionType": "submit",
-                     "payload": f"Run risk assessment for case {case.get('caseNumber')}"}
-                ],
-            }
+    if not missing:
+        return {
+            "success": True,
+            "message": body,
+            "checklist": cl,
+            "quick_actions": [
+                {"label": "Run Risk Assessment", "actionType": "submit",
+                 "payload": f"Run risk assessment for case {case.get('caseNumber')}"}
+            ],
+        }
 
-        upload_actions = [
-            {"label": f"Upload {doc}", "actionType": "upload",
-             "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
-            for doc in missing[:3]
-        ]
-        answer = interrupt({
-            "kind": "clarify",
-            "tool_call": {"name": "get_document_checklist", "args": args},
-            "question": body,
-            "custom_actions": upload_actions + [{"label": "Proceed", "actionType": "submit", "payload": "Proceed"}]
-        })
-        if str(answer).lower() not in ("proceed", "yes", "true"):
-            return {"success": True, "message": "Document check completed."}
-        # Brief pause to let the backend fully persist the uploaded document
-        await asyncio.sleep(1.5)
+    upload_actions = [
+        {"label": f"Upload {doc}", "actionType": "upload",
+         "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
+        for doc in missing[:3]
+    ]
+    return {
+        "success": False,
+        "message": body,
+        "checklist": cl,
+        "quick_actions": upload_actions + [{"label": "Retry Risk Assessment", "actionType": "submit", "payload": f"I've uploaded the documents. Please re-check and run the risk assessment for CNIC {case.get('customer_cnic') or args.get('cnic')}."}]
+    }
+
 
 
 @handles("list_artifacts")
@@ -1033,6 +1029,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
     detail = detail_res.json()
     customer, policy = detail.get("customer"), detail.get("policy")
     checklist = detail.get("document_checklist") or {}
+    latest = detail.get("latest_assessment")
 
     if not customer:
         raise LookupError("That case has no applicant attached.")
@@ -1047,6 +1044,49 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             }],
         }
 
+    # If risk assessment was already completed in the portal/DB and no explicit re-run was requested
+    if latest and latest.get("ai_decision") and not args.get("force_rerun"):
+        decision = latest.get("ai_decision")
+        results_route = f"case/{case_id}"
+        summary = (
+            f"Risk assessment for case **{case.get('caseNumber')}** has already been completed!\n"
+            f"- Medical Score: {latest.get('medical_score') if latest.get('medical_score') is not None else '—'}/100\n"
+            f"- Financial Score: {latest.get('financial_score') if latest.get('financial_score') is not None else '—'}/100\n"
+            f"- Fraud Risk: {latest.get('fraud_probability') if latest.get('fraud_probability') is not None else '—'}\n"
+            f"- **Decision: {decision}**"
+        )
+        return {
+            "success": True,
+            "message": summary,
+            "assessment": {
+                "scores": {
+                    "medical_score": latest.get("medical_score"),
+                    "financial_score": latest.get("financial_score"),
+                    "fraud_probability": latest.get("fraud_probability"),
+                    "composite_risk_score": latest.get("composite_risk_score"),
+                    "reasons": latest.get("reasons") or [],
+                },
+                "ai_decision": decision,
+                "case_id": case_id,
+                "reasons": latest.get("reasons") or [],
+                "medical_reasons": latest.get("medical_reasons") or [],
+                "financial_reasons": latest.get("financial_reasons") or [],
+                "fraud_reasons": latest.get("fraud_reasons") or [],
+            },
+            "last_action": {
+                "toolName": "run_risk_assessment",
+                "entityType": "case",
+                "entityId": case_id,
+                "route": results_route,
+                "label": "Risk assessment complete"
+            },
+            "quick_actions": [
+                {"label": "View Results", "actionType": "navigate", "payload": results_route},
+                {"label": "Download Report", "actionType": "download", "payload": case_id},
+                {"label": "Move to Review", "actionType": "submit", "payload": f"Move case {case_id} to Under Review"}
+            ]
+        }
+
     missing = checklist.get("missing") or []
     if missing:
         upload_actions = [
@@ -1057,7 +1097,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": f"Missing {len(missing)} required document(s): {', '.join(missing)}.",
-            "quick_actions": upload_actions + [{"label": "Retry Risk Assessment", "actionType": "submit", "payload": f"Run risk assessment for CNIC {case.get('customer_cnic') or args.get('cnic')}"}]
+            "quick_actions": upload_actions + [{"label": "Retry Risk Assessment", "actionType": "submit", "payload": f"I've uploaded the documents. Please re-check and run the risk assessment for CNIC {case.get('customer_cnic') or args.get('cnic')}."}]
         }
 
     # Offload the execution to the client so it can stream the live steps to the UI.
@@ -1347,3 +1387,17 @@ def _readable_detail(detail) -> Optional[str]:
                 msgs.append(str(d))
         return "; ".join(m for m in msgs if m)
     return str(detail)
+@handles("bulk_underwriting_journey")
+async def _bulk_underwriting_journey(args: dict, ctx: Ctx) -> dict:
+    cnics = args.get("cnics", [])
+    if not cnics:
+        return {"success": False, "error": "No CNICs provided for bulk processing."}
+
+    return {
+        "__client_execute__": True,
+        "kind": "client_execute",
+        "tool_call": {
+            "name": "bulk_underwriting_journey", 
+            "args": {"cnics": cnics}
+        }
+    }

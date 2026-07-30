@@ -219,3 +219,81 @@ async def chat_execute_tool(body: ExecuteToolRequest, x_tenant_id: str = Header(
     jwt_token = authorization.replace("Bearer ", "") if authorization else ""
     ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token)
     return await execute_tool(body.name, body.args, ctx)
+
+
+@router.post("/bulk-underwriting/stream")
+async def bulk_underwriting_stream(request: Request, body: dict, x_tenant_id: str = Header(default=""), authorization: str = Header(default="")):
+    cnics = body.get("cnics", [])
+    jwt_token = authorization.replace("Bearer ", "") if authorization else ""
+    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token)
+    
+    async def _generate():
+        if not cnics:
+            yield f"data: {json.dumps({'type': 'error', 'message': 'No CNICs provided'})}\n\n"
+            return
+            
+        from tool_executor import _demo_customer, _customer_payload
+        
+        for cnic in cnics:
+            yield f"data: {json.dumps({'type': 'progress', 'cnic': cnic, 'step': 'Starting'})}\n\n"
+            try:
+                # 1. Resolve or create customer
+                yield f"data: {json.dumps({'type': 'progress', 'cnic': cnic, 'step': 'Creating customer'})}\n\n"
+                cust_res = await ctx.client.get(ctx.tsvc("/customers"))
+                cust_res.raise_for_status()
+                customer = next((c for c in cust_res.json() if c.get("cnic") == cnic), None)
+                if not customer:
+                    demo = _demo_customer()
+                    demo["cnic"] = cnic
+                    demo.pop("_birth_year")
+                    c_res = await ctx.client.post(ctx.tsvc("/customers"), json=_customer_payload(demo))
+                    c_res.raise_for_status()
+                    customer = c_res.json()
+                
+                # 2. Create case
+                yield f"data: {json.dumps({'type': 'progress', 'cnic': cnic, 'step': 'Opening case'})}\n\n"
+                case_res = await ctx.client.post(ctx.tsvc("/cases"), json={
+                    "customer_id": customer["id"], "caseType": "Underwriting",
+                    "priorityLevel": "Normal", "sourceChannel": "Online",
+                })
+                case_res.raise_for_status()
+                case = case_res.json()
+                case_id = case.get("caseld") or case.get("id")
+
+                # 3. Create proposal
+                yield f"data: {json.dumps({'type': 'progress', 'cnic': cnic, 'step': 'Generating proposal'})}\n\n"
+                coverage = min(customer.get("declared_income", 1000000) * 10, 20_000_000)
+                policy_res = await ctx.client.post(ctx.tsvc(f"/customers/{customer['id']}/policies"), json={
+                    "product_name": "Term Life Plus", "insurance_type": "TERM_LIFE",
+                    "coverage_amount": coverage, "term_years": 15,
+                })
+                policy_res.raise_for_status()
+                policy = policy_res.json()
+                
+                # 4. Check documents
+                yield f"data: {json.dumps({'type': 'progress', 'cnic': cnic, 'step': 'Checking documents'})}\n\n"
+                cl_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
+                cl_res.raise_for_status()
+                cl = cl_res.json()
+                missing = cl.get("missing") or []
+                
+                if missing:
+                    # Emit a warning event for missing documents
+                    yield f"data: {json.dumps({'type': 'warning', 'cnic': cnic, 'case_id': case_id, 'caseNumber': case.get('caseNumber'), 'missing': missing})}\n\n"
+                    continue
+                
+                # 5. Run risk assessment
+                yield f"data: {json.dumps({'type': 'progress', 'cnic': cnic, 'step': 'Running AI assessment'})}\n\n"
+                eval_res = await ctx.client.post(
+                    ctx.gateway("/evaluate"),
+                    json={"customer": customer, "policy": policy, "case_id": case_id},
+                    timeout=120.0
+                )
+                eval_res.raise_for_status()
+                result = eval_res.json()
+                
+                yield f"data: {json.dumps({'type': 'done', 'cnic': cnic, 'case_id': case_id, 'caseNumber': case.get('caseNumber'), 'result': result})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'cnic': cnic, 'message': str(e)})}\n\n"
+                
+    return StreamingResponse(_generate(), media_type="text/event-stream", headers=_SSE_HEADERS)
