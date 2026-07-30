@@ -187,7 +187,7 @@ def list_quotes() -> str:
 @tool(args_schema=EmptyArgs)
 def list_insurance_plans() -> str:
     """List the insurance product catalogue — plan names, types, and eligibility
-    bands. Use before create_proposal so the product name is a real one."""
+    bands. DO NOT call this before create_proposal (create_proposal fetches it automatically)."""
     return "{}"
 
 
@@ -413,13 +413,13 @@ def delete_case(**kwargs) -> str:
 class CreateProposalArgs(BaseModel):
     cnic: Optional[str] = None
     applicant_name: Optional[str] = None
-    product_name: Optional[str] = None
+    product_name: Optional[str] = Field(default=None, description="LEAVE EMPTY unless explicitly selected. Output 'auto' if the user asks you to pick any generic plan.")
     insurance_type: Optional[
         Literal["TERM_LIFE", "WHOLE_LIFE", "ENDOWMENT", "CHILD_EDUCATION_MARRIAGE",
                 "GROUP_LIFE", "SAVINGS", "SINGLE_PREMIUM", "HEALTH_CASH"]
     ] = None
-    coverage_amount: Optional[float] = Field(default=None, description="Sum assured in PKR.")
-    term_years: Optional[int] = None
+    coverage_amount: Optional[float] = Field(default=None, description="LEAVE EMPTY unless user explicitly specified it. Defaults to 5,000,000 PKR.")
+    term_years: Optional[int] = Field(default=None, description="LEAVE EMPTY unless user explicitly specified it. Defaults to 10 years.")
 
 
 @tool(args_schema=CreateProposalArgs)
@@ -530,6 +530,10 @@ class QuickStartArgs(BaseModel):
         default=False,
         description="Run the whole journey end to end — customer, case, proposal, "
         "then assessment — rather than stopping after the customer.",
+    )
+    applicant_name: Optional[str] = Field(
+        default=None,
+        description="Optional specific name to use for the demo customer, instead of a random one."
     )
 
 

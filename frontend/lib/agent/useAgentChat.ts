@@ -67,6 +67,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
     }
   });
   const threadIdRef = useRef<string>("");
+  const pendingAssessmentRef = useRef<any>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -86,7 +87,27 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
       switch (evt.type) {
         case "token":
           if (evt.content) {
-            setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: evt.content }]);
+            setMessages((prev) => {
+              const copy = [...prev];
+              // Move the assessment from any previous message in this turn to the final token bubble
+              if (pendingAssessmentRef.current) {
+                for (let i = copy.length - 1; i >= 0; i--) {
+                  if (copy[i].role === "user") break;
+                  if (copy[i].role === "assistant" && copy[i].assessment) {
+                    copy[i] = { ...copy[i] };
+                    delete copy[i].assessment;
+                  }
+                }
+              }
+              copy.push({
+                id: newId(),
+                role: "assistant",
+                text: evt.content,
+                assessment: pendingAssessmentRef.current || undefined,
+              });
+              return copy;
+            });
+            pendingAssessmentRef.current = null;
           }
           break;
 
@@ -99,13 +120,16 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
           const kind = evt.kind;
           const question = evt.question || (kind === "confirm" ? "Proceed?" : "Could you clarify?");
           const quickActions: QuickAction[] | undefined =
-            kind === "confirm"
+            evt.custom_actions ||
+            (kind === "confirm"
               ? (evt.options || ["Yes", "Cancel"]).map((label) => ({ label, actionType: "confirm", payload: label }))
-              : undefined;
+              : kind === "clarify" && evt.options
+              ? evt.options.map((label) => ({ label, actionType: "submit", payload: label }))
+              : undefined);
           setPendingInterrupt(
             kind === "confirm"
               ? { kind: "confirm", question, options: evt.options, toolCall }
-              : { kind: "clarify", question, toolCall }
+              : { kind: "clarify", question, options: evt.options, toolCall }
           );
           setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: question, quickActions }]);
           break;
@@ -167,6 +191,21 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
 
         case "navigate":
           onNavigateRef.current?.(evt.route, evt.entity_id, evt.highlight);
+          break;
+
+        case "assessment":
+          pendingAssessmentRef.current = evt.assessment;
+          // Also attach to the current message just in case no token event follows
+          setMessages((prev) => {
+            const copy = [...prev];
+            for (let i = copy.length - 1; i >= 0; i--) {
+              if (copy[i].role === "assistant") {
+                copy[i] = { ...copy[i], assessment: evt.assessment };
+                break;
+              }
+            }
+            return copy;
+          });
           break;
 
         case "done":
@@ -238,17 +277,24 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
   }, []);
 
   const send = useCallback(
-    async (text: string) => {
-      if (!text.trim() || isLoading) return;
+    async (text: string, attachments?: { name: string, url: string }[]) => {
+      if ((!text.trim() && (!attachments || attachments.length === 0)) || isLoading) return;
       setPendingInterrupt(null);
       setSteps([]);
-      setMessages((prev) => [...prev, { id: newId(), role: "user", text: text.trim() }]);
+      setTurnActions([]);
+      
+      let msgText = text.trim();
+      setMessages((prev) => [...prev, { id: newId(), role: "user", text: msgText, attachments }]);
       setIsLoading(true);
       try {
+        const payload: any = { thread_id: threadIdRef.current, message: text.trim(), role: currentRole() };
+        if (attachments && attachments.length > 0) {
+            payload.attachments = attachments;
+        }
         const res = await fetch("/api/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json", ...authHeaders() },
-          body: JSON.stringify({ thread_id: threadIdRef.current, message: text.trim(), role: currentRole() }),
+          body: JSON.stringify(payload),
         });
         await consumeStream(res);
       } catch {

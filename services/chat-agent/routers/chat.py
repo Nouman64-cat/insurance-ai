@@ -120,6 +120,8 @@ async def _consume(graph, config, input_):
                             yield _event({"type": "navigate", **result["navigate"]})
                         if result.get("last_action"):
                             yield _event({"type": "action_completed", **result["last_action"]})
+                        if result.get("assessment"):
+                            yield _event({"type": "assessment", "assessment": result["assessment"]})
                         if result.get("quick_actions"):
                             yield _event({"type": "quick_actions", "actions": result["quick_actions"]})
     except Exception as exc:
@@ -157,7 +159,7 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
             yield pending
         return StreamingResponse(_regen(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
-    if not body.message:
+    if not body.message and not body.attachments:
         # Mount-time "is this thread paused?" check with nothing pending —
         # a genuine no-op, not an error (e.g. a fresh thread after "New Chat").
         async def _noop():
@@ -165,8 +167,23 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
         return StreamingResponse(_noop(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
     jwt_token = authorization.replace("Bearer ", "") if authorization else ""
+    
+    if body.attachments:
+        content = []
+        if body.message:
+            content.append({"type": "text", "text": body.message})
+        for att in body.attachments:
+            if "url" in att:
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": att["url"]}
+                })
+        message_content = content
+    else:
+        message_content = body.message
+    
     input_ = {
-        "messages": [HumanMessage(content=body.message)],
+        "messages": [HumanMessage(content=message_content)],
         "tenant_id": x_tenant_id,
         "user_role": body.role,
         "jwt_token": jwt_token,

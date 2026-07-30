@@ -11,6 +11,7 @@ from schemas import InsurancePlanCreate, InsurancePlanRead, InsurancePlanUpdate
 from seeds.insurance_plans_seed import seed_insurance_plans
 from shared.models.core import InsurancePlan, Tenant
 from routers.users import verify_admin   # tenant-scoped Admin / cross-tenant SuperAdmin guard
+from routers.auth import oauth2_scheme, _get_current_user
 
 router = APIRouter(prefix="/tenants", tags=["Insurance Plans"])
 
@@ -67,9 +68,11 @@ async def create_insurance_plan(
 @router.get(
     "/{tenant_id}/insurance-plans",
     response_model=List[InsurancePlanRead],
-    dependencies=[Depends(verify_admin)],
 )
-async def list_insurance_plans(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
+async def list_insurance_plans(tenant_id: UUID, session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    user = await _get_current_user(token, session)
+    if user.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     result = await session.exec(
         select(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id).order_by(InsurancePlan.created_at)
     )
@@ -79,9 +82,11 @@ async def list_insurance_plans(tenant_id: UUID, session: AsyncSession = Depends(
 @router.get(
     "/{tenant_id}/insurance-plans/{plan_id}",
     response_model=InsurancePlanRead,
-    dependencies=[Depends(verify_admin)],
 )
-async def get_insurance_plan(tenant_id: UUID, plan_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_insurance_plan(tenant_id: UUID, plan_id: UUID, session: AsyncSession = Depends(get_session), token: str = Depends(oauth2_scheme)):
+    user = await _get_current_user(token, session)
+    if user.tenant_id != tenant_id:
+        raise HTTPException(status_code=403, detail="Access denied")
     return await _get_plan(tenant_id, plan_id, session)
 
 
