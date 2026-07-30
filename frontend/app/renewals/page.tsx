@@ -89,7 +89,7 @@ function RenewalCard({
 
         {/* STP badge */}
         <div className="flex items-center gap-1.5">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-2.5 h-2.5"><polyline points="20 6 9 17 4 12" /></svg>
             STP Auto-Rate
           </span>
@@ -102,7 +102,7 @@ function RenewalCard({
           <button
             onClick={() => handle("renew")}
             disabled={!!actionLoading}
-            className="flex-1 px-3 py-2 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
+            className="flex-1 px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
           >
             {actionLoading === "renew" ? "Binding…" : "Bind Renewal"}
           </button>

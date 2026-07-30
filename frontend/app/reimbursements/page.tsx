@@ -8,29 +8,29 @@ const KPIS = [
 ] as const;
 
 const ROWS = [
-  { ref: "RMB-2026-D1", policy: "POL-2023-0541", holder: "Bilal Farooq", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 5, requested: "PKR 25,000", annualLimit: "PKR 50,000", utilized: "PKR 0", approved: "PKR 25,000", fraudScore: "2%", status: "Approved" },
-  { ref: "RMB-2026-D2", policy: "POL-2022-0812", holder: "Asma Tariq", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 3, requested: "PKR 15,000", annualLimit: "PKR 50,000", utilized: "PKR 15,000", approved: "—", fraudScore: "94%", status: "Duplicate Rejected" },
-  { ref: "RMB-2026-D3", policy: "POL-2021-0339", holder: "Hamza Qureshi", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 4, requested: "PKR 20,000", annualLimit: "PKR 50,000", utilized: "PKR 40,000", approved: "PKR 10,000", fraudScore: "6%", status: "Partial — Limit" },
-  { ref: "RMB-2026-D4", policy: "POL-2024-0107", holder: "Zainab Malik", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 2, requested: "PKR 10,000", annualLimit: "PKR 50,000", utilized: "PKR 5,000", approved: "PKR 10,000", fraudScore: "1%", status: "Approved" },
-  { ref: "RMB-2026-D5", policy: "POL-2022-0654", holder: "Omar Siddiqui", rider: "Hospital Cash", dailyBenefit: "PKR 7,500", days: 7, requested: "PKR 52,500", annualLimit: "PKR 75,000", utilized: "PKR 30,000", approved: "PKR 45,000", fraudScore: "4%", status: "Partial — Limit" },
-  { ref: "RMB-2026-D6", policy: "POL-2023-0789", holder: "Rabia Aziz", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 6, requested: "PKR 30,000", annualLimit: "PKR 50,000", utilized: "PKR 10,000", approved: "PKR 30,000", fraudScore: "3%", status: "Approved" },
+  { ref: "RMB-2026-D1", policy: "PL-2023-0541", holder: "Bilal Farooq", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 5, requested: "PKR 25,000", annualLimit: "PKR 50,000", utilized: "PKR 0", approved: "PKR 25,000", fraudScore: "2%", status: "Approved" },
+  { ref: "RMB-2026-D2", policy: "PL-2022-0812", holder: "Asma Tariq", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 3, requested: "PKR 15,000", annualLimit: "PKR 50,000", utilized: "PKR 15,000", approved: "—", fraudScore: "94%", status: "Duplicate Rejected" },
+  { ref: "RMB-2026-D3", policy: "PL-2021-0339", holder: "Hamza Qureshi", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 4, requested: "PKR 20,000", annualLimit: "PKR 50,000", utilized: "PKR 40,000", approved: "PKR 10,000", fraudScore: "6%", status: "Partial — Limit" },
+  { ref: "RMB-2026-D4", policy: "PL-2024-0107", holder: "Zainab Malik", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 2, requested: "PKR 10,000", annualLimit: "PKR 50,000", utilized: "PKR 5,000", approved: "PKR 10,000", fraudScore: "1%", status: "Approved" },
+  { ref: "RMB-2026-D5", policy: "PL-2022-0654", holder: "Omar Siddiqui", rider: "Hospital Cash", dailyBenefit: "PKR 7,500", days: 7, requested: "PKR 52,500", annualLimit: "PKR 75,000", utilized: "PKR 30,000", approved: "PKR 45,000", fraudScore: "4%", status: "Partial — Limit" },
+  { ref: "RMB-2026-D6", policy: "PL-2023-0789", holder: "Rabia Aziz", rider: "Hospital Cash", dailyBenefit: "PKR 5,000", days: 6, requested: "PKR 30,000", annualLimit: "PKR 50,000", utilized: "PKR 10,000", approved: "PKR 30,000", fraudScore: "3%", status: "Approved" },
 ];
 
 const STATUS_STYLE: Record<string, string> = {
-  "Approved":           "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  "Approved":           "bg-blue-50 text-blue-700 border border-blue-200",
   "Partial — Limit":    "bg-blue-50 text-blue-700 border border-blue-200",
   "Duplicate Rejected": "bg-red-50 text-red-700 border border-red-200",
 };
 
 function FraudBar({ pct }: { pct: string }) {
   const n = parseInt(pct);
-  const color = n >= 80 ? "bg-red-500" : n >= 50 ? "bg-amber-400" : "bg-emerald-500";
+  const color = n >= 80 ? "bg-red-500" : n >= 50 ? "bg-amber-400" : "bg-blue-500";
   return (
     <div className="flex items-center gap-2">
       <div className="w-12 h-1.5 rounded-full bg-slate-100 overflow-hidden">
         <div className={`h-full rounded-full ${color}`} style={{ width: pct }} />
       </div>
-      <span className={`text-xs font-bold ${n >= 80 ? "text-red-600" : "text-emerald-600"}`}>{pct}</span>
+      <span className={`text-xs font-bold ${n >= 80 ? "text-red-600" : "text-blue-600"}`}>{pct}</span>
     </div>
   );
 }
@@ -49,9 +49,9 @@ export default function ReimbursementsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {[
-          { label: "Customer Retention Score", score: 95, color: "bg-emerald-500" },
+          { label: "Customer Retention Score", score: 95, color: "bg-blue-500" },
           { label: "Claim Ratio Score", score: 85, color: "bg-amber-400" },
-          { label: "Fraud Control Score", score: 90, color: "bg-emerald-500" },
+          { label: "Fraud Control Score", score: 90, color: "bg-blue-500" },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{s.label}</p>
@@ -94,7 +94,7 @@ export default function ReimbursementsPage() {
                   <td className="px-5 py-3 text-right font-semibold text-slate-700">{r.requested}</td>
                   <td className="px-5 py-3 text-right text-slate-500">{r.annualLimit}</td>
                   <td className="px-5 py-3 text-right text-slate-500">{r.utilized}</td>
-                  <td className="px-5 py-3 text-right font-bold text-emerald-700">{r.approved}</td>
+                  <td className="px-5 py-3 text-right font-bold text-blue-700">{r.approved}</td>
                   <td className="px-5 py-3"><FraudBar pct={r.fraudScore} /></td>
                   <td className="px-5 py-3">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLE[r.status]}`}>{r.status}</span>

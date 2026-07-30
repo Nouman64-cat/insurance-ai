@@ -195,7 +195,7 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
               </button>
               <button
                 type="submit" disabled={saving}
-                className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 rounded-lg transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
               >
                 {saving ? "Saving…" : "Add Family"}
               </button>

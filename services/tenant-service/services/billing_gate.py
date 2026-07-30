@@ -103,7 +103,7 @@ def _row_dict(s: PremiumSchedule, today: date, sent_kinds: set[str], receipt: Pr
         "paid_at": s.paid_at.isoformat() if s.paid_at else None,
         "payment_reference": s.payment_reference,
         "receipt": ({"id": str(receipt.id), "receipt_no": receipt.receipt_no,
-                     "total_amount": receipt.total_amount} if receipt else None),
+                     "total_amount": receipt.total_amount, "method": receipt.method} if receipt else None),
     }
 
 

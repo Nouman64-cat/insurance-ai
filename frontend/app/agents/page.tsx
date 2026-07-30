@@ -17,12 +17,12 @@ const ROWS = [
 ];
 
 const BONUS_STYLE: Record<string, string> = {
-  "Eligible":     "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  "Eligible":     "bg-blue-50 text-blue-700 border border-blue-200",
   "Not Eligible": "bg-slate-100 text-slate-500 border border-slate-200",
 };
 
 function ScoreBar({ score }: { score: number }) {
-  const color = score >= 90 ? "bg-emerald-500" : score >= 75 ? "bg-amber-400" : "bg-red-400";
+  const color = score >= 90 ? "bg-blue-500" : score >= 75 ? "bg-amber-400" : "bg-red-400";
   return (
     <div className="flex items-center gap-2">
       <div className="w-14 h-1.5 rounded-full bg-slate-100 overflow-hidden">
@@ -93,10 +93,10 @@ export default function AgentsPage() {
                   <td className="px-4 py-3 text-right text-slate-600">{r.policies}</td>
                   <td className="px-5 py-3 text-right font-semibold text-slate-700">{r.premium}</td>
                   <td className="px-5 py-3"><ScoreBar score={r.salesScore} /></td>
-                  <td className={`px-4 py-3 text-right text-xs font-semibold ${parseFloat(r.complaint) > 1 ? "text-red-600" : "text-emerald-600"}`}>{r.complaint}</td>
+                  <td className={`px-4 py-3 text-right text-xs font-semibold ${parseFloat(r.complaint) > 1 ? "text-red-600" : "text-blue-600"}`}>{r.complaint}</td>
                   <td className="px-4 py-3 text-right text-slate-600">{r.persistency}%</td>
                   <td className="px-5 py-3 text-right font-bold text-blue-700">{r.commissionRate}</td>
-                  <td className="px-5 py-3 text-right font-bold text-emerald-700">{r.commissionEarned}</td>
+                  <td className="px-5 py-3 text-right font-bold text-blue-700">{r.commissionEarned}</td>
                   <td className="px-5 py-3">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${BONUS_STYLE[r.bonus]}`}>{r.bonus}</span>
                   </td>

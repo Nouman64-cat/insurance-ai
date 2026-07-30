@@ -130,7 +130,7 @@ export function TopBar({ title = "Management Intelligence Dashboard", subtitle }
           </button>
           <button
             onClick={() => setAutomationMode(true)}
-            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all ${isAutomationMode ? 'bg-indigo-600 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}
+            className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full transition-all ${isAutomationMode ? 'bg-blue-600 shadow-sm text-white' : 'text-slate-500 hover:text-slate-700'}`}
           >
             Automation
           </button>

@@ -12,7 +12,7 @@ function UsersIcon() {
 }
 
 const SEGMENTS = [
-  { label: "High Value (LTV > 5M)", pct: 28, color: "bg-violet-500" },
+  { label: "High Value (LTV > 5M)", pct: 28, color: "bg-blue-500" },
   { label: "Standard (LTV 2–5M)",   pct: 54, color: "bg-blue-400"   },
   { label: "Entry-Level (LTV < 2M)", pct: 18, color: "bg-slate-300" },
 ] as const;
@@ -22,9 +22,9 @@ export function CustomerCard() {
     <PillarCard
       icon={<UsersIcon />}
       title="Customer Intelligence"
-      barClass="bg-violet-600"
-      iconBg="bg-violet-50"
-      iconColor="text-violet-600"
+      barClass="bg-blue-600"
+      iconBg="bg-blue-50"
+      iconColor="text-blue-600"
     >
       {/* Persistency ring + segments */}
       <div className="flex items-start gap-4 mb-4">
@@ -43,7 +43,7 @@ export function CustomerCard() {
       <div className="grid grid-cols-3 gap-3">
         <div className="text-center">
           <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Avg LTV</p>
-          <p className="text-lg font-extrabold text-violet-700 mt-0.5">PKR 2.8M</p>
+          <p className="text-lg font-extrabold text-blue-700 mt-0.5">PKR 2.8M</p>
           <p className="text-[10px] text-slate-400">per customer</p>
         </div>
         <div className="text-center">

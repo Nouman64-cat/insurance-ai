@@ -16,7 +16,7 @@ const CASE_STATUS_STYLE: Record<string, string> = {
   InProgress: "bg-blue-50 text-blue-700 border-blue-200",
   "Pending Documents": "bg-amber-50 text-amber-700 border-amber-200",
   "Under Review": "bg-blue-50 text-blue-700 border-blue-200",
-  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Approved: "bg-blue-50 text-blue-700 border-blue-200",
   Rejected: "bg-red-50 text-red-700 border-red-200",
   Closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
@@ -254,7 +254,7 @@ export default function UnderwritingPage() {
             placeholder="Search by customer, CNIC, or case number…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
+            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
           />
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
           
@@ -282,14 +282,14 @@ export default function UnderwritingPage() {
           <button
             onClick={() => setViewMode("list")}
             title="List View"
-            className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /><line x1="3" y1="6" x2="3.01" y2="6" /><line x1="3" y1="12" x2="3.01" y2="12" /><line x1="3" y1="18" x2="3.01" y2="18" /></svg>
           </button>
           <button
             onClick={() => setViewMode("grid")}
             title="Grid View"
-            className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>
           </button>
@@ -301,18 +301,18 @@ export default function UnderwritingPage() {
           {activeFilterChips.map((chip) => (
             <span
               key={chip.key}
-              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-medium"
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
             >
               {chip.label}
               <button
                 onClick={chip.onRemove}
-                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700"
+                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
               >
                 ✕
               </button>
             </span>
           ))}
-          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-emerald-600 hover:underline ml-1">
+          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
             Clear all
           </button>
         </div>
@@ -388,7 +388,7 @@ export default function UnderwritingPage() {
                             </span>
                           )}
                           {decidedCount > 0 && (
-                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
                               {decidedCount} evaluated
                             </span>
                           )}

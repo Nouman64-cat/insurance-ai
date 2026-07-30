@@ -15,7 +15,7 @@ import FiltersPanel from "@/components/FiltersPanel";
 import { normStatus } from "@/components/policy/lifecycle";
 
 const STATUS_BADGE: Record<string, string> = {
-  ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ACTIVE: "bg-blue-50 text-blue-700 border-blue-200",
   GRACEPERIOD: "bg-amber-50 text-amber-700 border-amber-200",
   LAPSED: "bg-red-50 text-red-700 border-red-200",
   CANCELLED: "bg-slate-100 text-slate-600 border-slate-300",
@@ -180,7 +180,7 @@ function PostIssuanceContent() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search policy, customer, product..."
-                className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-300 transition-colors"
+                className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-colors"
               />
             </div>
 
@@ -219,9 +219,9 @@ function PostIssuanceContent() {
           <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
             <span className="text-xs text-slate-400 font-medium">Active filters:</span>
             {activeFilterChips.map(chip => (
-              <span key={chip.key} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 text-[11px] font-semibold border border-emerald-100">
+              <span key={chip.key} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md bg-blue-50 text-blue-700 text-[11px] font-semibold border border-blue-100">
                 {chip.label}
-                <button onClick={chip.onRemove} className="hover:text-emerald-900 transition-colors">
+                <button onClick={chip.onRemove} className="hover:text-blue-900 transition-colors">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </span>
@@ -251,7 +251,7 @@ function PostIssuanceContent() {
               {loading ? (
                 <tr>
                   <td colSpan={6} className="px-5 py-16 text-center">
-                    <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-200 border-t-emerald-500 mx-auto" />
+                    <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-200 border-t-blue-500 mx-auto" />
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
@@ -309,7 +309,7 @@ function PostIssuanceContent() {
                     <td className="px-5 py-3.5 text-right">
                       <button
                         onClick={() => router.push(`/post-issuance/${p.id}`)}
-                        className="text-[11px] font-semibold tracking-widest text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-100 hover:border-emerald-200 px-3 py-1.5 rounded-lg transition-all"
+                        className="text-[11px] font-semibold tracking-widest text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-100 hover:border-blue-200 px-3 py-1.5 rounded-lg transition-all"
                       >
                         MANAGE
                       </button>
@@ -327,12 +327,12 @@ function PostIssuanceContent() {
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes highlightBlink {
           0%, 100% { background-color: #f8fafc; border-left-color: transparent; }
-          20%, 80% { background-color: #d1fae5; border-left-color: #10b981; }
+          20%, 80% { background-color: #dbeafe; border-left-color: #3b82f6; }
         }
         .highlight-row {
           animation: highlightBlink 2s ease-in-out infinite;
-          background-color: #ecfdf5;
-          border-left: 3px solid #10b981;
+          background-color: #eff6ff;
+          border-left: 3px solid #3b82f6;
         }
       `}} />
     </div>

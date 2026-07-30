@@ -11,39 +11,39 @@ interface MetricCardProps {
 
 const ACCENT_GRADIENT: Record<NonNullable<MetricCardProps["accent"]>, string> = {
   slate:   "from-slate-500/5 to-slate-400/5",
-  emerald: "from-emerald-500/10 to-teal-400/5",
+  emerald: "from-blue-500/10 to-blue-400/5",
   amber:   "from-amber-500/10 to-orange-400/5",
-  blue:    "from-blue-600/10 to-indigo-400/5",
+  blue:    "from-blue-600/10 to-blue-400/5",
   red:     "from-rose-500/10 to-red-400/5",
-  purple:  "from-purple-500/10 to-fuchsia-400/5",
-  violet:  "from-violet-500/10 to-purple-400/5",
+  purple:  "from-blue-500/10 to-fuchsia-400/5",
+  violet:  "from-blue-500/10 to-blue-400/5",
   orange:  "from-orange-500/10 to-amber-400/5",
 };
 
 const ACCENT_TEXT: Record<NonNullable<MetricCardProps["accent"]>, string> = {
   slate:   "text-slate-700",
-  emerald: "text-emerald-800",
+  emerald: "text-blue-800",
   amber:   "text-amber-800",
   blue:    "text-blue-800",
   red:     "text-red-800",
-  purple:  "text-purple-800",
-  violet:  "text-violet-800",
+  purple:  "text-blue-800",
+  violet:  "text-blue-800",
   orange:  "text-orange-800",
 };
 
 const ACCENT_ICON_BG: Record<NonNullable<MetricCardProps["accent"]>, string> = {
   slate:   "bg-white text-slate-600 shadow-slate-200/50",
-  emerald: "bg-white text-emerald-600 shadow-emerald-200/50",
+  emerald: "bg-white text-blue-600 shadow-blue-200/50",
   amber:   "bg-white text-amber-600 shadow-amber-200/50",
   blue:    "bg-white text-blue-600 shadow-blue-200/50",
   red:     "bg-white text-rose-600 shadow-rose-200/50",
-  purple:  "bg-white text-purple-600 shadow-purple-200/50",
-  violet:  "bg-white text-violet-600 shadow-violet-200/50",
+  purple:  "bg-white text-blue-600 shadow-blue-200/50",
+  violet:  "bg-white text-blue-600 shadow-blue-200/50",
   orange:  "bg-white text-orange-600 shadow-orange-200/50",
 };
 
 const TREND_COLOR = {
-  up:      "text-emerald-600 bg-emerald-50",
+  up:      "text-blue-600 bg-blue-50",
   down:    "text-rose-600 bg-rose-50",
   neutral: "text-slate-600 bg-slate-50",
 };

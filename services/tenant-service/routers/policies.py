@@ -25,7 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from services import payment_gateway
 from services.policy_documents import generate_and_store_documents, generate_and_store_premium_notice
-from services.pre_issuance_gate import NotReadyToIssue, assert_ready_to_issue
+from services.pre_issuance_gate import NotReadyToIssue, assert_ready_to_issue, compute_readiness
 from services.pricing_engine import GRACE_PERIOD_DAYS, PricingEngine
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from shared.events.kafka_events import (
@@ -34,6 +34,7 @@ from shared.events.kafka_events import (
     PolicyLifecyclePayload,
 )
 from shared.models.core import (
+    Beneficiary,
     BillingFrequencyEnum,
     Claim,
     Customer,
@@ -93,6 +94,41 @@ async def _next_policy_number(session: AsyncSession, tenant_id: UUID) -> str:
     )
     count = len(list(result.all())) + 1
     return f"PL-{year}-{count:04d}"
+
+
+async def _price_breakdown(session: AsyncSession, tenant_id: UUID, policy: Policy,
+                           coverage_override: Optional[float] = None):
+    """Compute the premium breakdown for a policy (shared by /issue, the
+    issuance-preview and endorsement re-quotes). Reads the customer smoker flag,
+    the latest risk-assessment loading and the plan rates, then delegates to
+    PricingEngine.calculate(). Pass coverage_override to re-price a sum-assured
+    change without mutating the policy."""
+    cust = await session.get(Customer, policy.customer_id)
+    is_smoker = bool(getattr(cust, "is_smoker", False))
+    ra = (await session.exec(
+        select(RiskAssessment).where(RiskAssessment.policy_id == policy.id)
+        .order_by(RiskAssessment.created_at.desc())  # type: ignore[arg-type]
+    )).first()
+    loading_pct = float(getattr(ra, "suggested_loading", 0) or 0)
+    ins_type_str = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
+    base_rate, smoker_factor = await _load_plan_rates(session, tenant_id, policy.insurance_type)
+    return PricingEngine.calculate(
+        insurance_type=ins_type_str,
+        coverage_amount=coverage_override if coverage_override is not None else policy.coverage_amount,
+        term_years=policy.term_years,
+        base_rate=base_rate,
+        smoker_factor=smoker_factor,
+        loading_pct=loading_pct,
+        is_smoker=is_smoker,
+    ), loading_pct
+
+
+def _maturity_date(effective: date, term_years: int) -> date:
+    """Contract maturity = effective + term (safe for Feb-29 effective dates)."""
+    try:
+        return date(effective.year + term_years, effective.month, effective.day)
+    except ValueError:
+        return date(effective.year + term_years, effective.month, effective.day - 1)
 
 
 async def _load_plan_rates(session: AsyncSession, tenant_id: UUID, insurance_type) -> tuple[float, float]:
@@ -414,6 +450,9 @@ async def get_policy_detail(
         "status": _st(policy),
         "effective_date": policy.effective_date.isoformat() if policy.effective_date else None,
         "expiry_date": policy.expiry_date.isoformat() if policy.expiry_date else None,
+        "maturity_date": policy.maturity_date.isoformat() if policy.maturity_date else None,
+        "issued_by": policy.issued_by,
+        "issued_at": policy.issued_at.isoformat() if policy.issued_at else None,
         "grace_period_end_date": policy.grace_period_end_date.isoformat() if policy.grace_period_end_date else None,
         "delivery_date": policy.delivery_date.isoformat() if policy.delivery_date else None,
         "free_look_end_date": policy.free_look_end_date.isoformat() if policy.free_look_end_date else None,
@@ -450,6 +489,58 @@ async def get_policy_detail(
 # can NEVER reach ACTIVE without a PAID schedule row.
 # Pricing stays decoupled via PricingEngine.calculate(); the whole draft is one
 # atomic transaction; every status change goes through the state machine.
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/issuance-preview")
+async def issuance_preview(
+    tenant_id: UUID, policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Everything the issuance Review screen needs in one call: the insured, the
+    contract terms (with the maturity date it *will* get), the real premium
+    breakdown, the beneficiaries, and the Stage-A readiness (blockers/warnings)."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    cust = await session.get(Customer, policy.customer_id)
+    breakdown, loading_pct = await _price_breakdown(session, tenant_id, policy)
+
+    effective = policy.effective_date or date.today()
+    maturity = _maturity_date(effective, policy.term_years)
+    readiness = await compute_readiness(session, policy)
+
+    bens = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == policy_id))).all()
+
+    return {
+        "policy_id": str(policy.id),
+        "status": _st(policy),
+        "already_issued": bool(policy.policy_number),
+        "insured": {
+            "name": cust.name if cust else "—",
+            "cnic": cust.cnic if cust else None,
+            "dob": cust.dob.isoformat() if (cust and cust.dob) else None,
+            "policyholder_id": cust.policyholder_id if cust else None,
+            "is_smoker": bool(getattr(cust, "is_smoker", False)),
+        },
+        "contract": {
+            "product_name": policy.product_name,
+            "insurance_type": policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type),
+            "coverage_amount": policy.coverage_amount,
+            "term_years": policy.term_years,
+            "effective_date": effective.isoformat(),
+            "maturity_date": maturity.isoformat(),
+            "billing_frequency": "Annual",
+            "loading_pct": loading_pct,
+        },
+        "premium_breakdown": breakdown.to_dict(),
+        "beneficiaries": [
+            {"name": b.name, "relationship": b.relationship, "share_pct": b.share_pct}
+            for b in bens
+        ],
+        "readiness": {
+            "ready_to_issue": readiness["ready_to_issue"],
+            "blockers": readiness["blockers"],
+            "warnings": readiness["warnings"],
+        },
+    }
+
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/issue")
 async def issue_policy(
@@ -548,9 +639,13 @@ async def issue_policy(
         policy.policy_number = policy_number
         policy.effective_date = effective
         policy.expiry_date = expiry
+        policy.maturity_date = _maturity_date(effective, policy.term_years)
         policy.grace_period_end_date = grace_end
         policy.current_version_id = version.id
         policy.demo_bypass_flags = demo_bypass_flags
+        # Issuance formalities — the authorising officer + timestamp.
+        policy.issued_by = "issuance-officer"
+        policy.issued_at = datetime.utcnow()
 
         # Generate the Premium Notice (bill) now that the contract fields are set.
         await generate_and_store_premium_notice(session, policy, version.id)
@@ -586,6 +681,7 @@ async def issue_policy(
         "status": "PendingPayment",
         "effective_date": effective.isoformat(),
         "expiry_date": expiry.isoformat(),
+        "maturity_date": policy.maturity_date.isoformat() if policy.maturity_date else None,
         "grace_period_end_date": grace_end.isoformat(),
         "premium_breakdown": breakdown.to_dict(),
         "version": "1.0",

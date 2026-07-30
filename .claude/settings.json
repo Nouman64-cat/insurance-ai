@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"http://localhost:8011/tenants/00000000-0000-0000-0000-000000000000/policies/00000000-0000-0000-0000-000000000000/issuance-preview\")",
+      "Bash(curl -s \"http://localhost:8011/openapi.json\")",
+      "Bash(curl -s -o /dev/null -w \"policy-issuance page: HTTP %{http_code}\\\\n\" \"http://localhost:3000/policy-issuance\")",
+      "Bash(curl -s -o /dev/null -w \"policy-issuance: HTTP %{http_code}\\\\n\" \"http://localhost:3000/policy-issuance\")",
+      "Bash(curl -s -o /dev/null -w \"post-issuance page compiles: HTTP %{http_code}\\\\n\" \"http://localhost:3000/post-issuance/test\")",
+      "Bash(cd /home/nouman-ejaz/projects/insurance-ai/frontend *)",
+      "Bash(curl -s -o /dev/null -w \"post-issuance page: HTTP %{http_code}\\\\n\" \"http://localhost:3000/post-issuance/test\")",
+      "Bash(curl -s -o /dev/null -w \"send-email route: HTTP %{http_code}\\\\n\" -X POST \"http://localhost:8011/tenants/00000000-0000-0000-0000-000000000000/policies/00000000-0000-0000-0000-000000000000/issuance/send-email\")",
+      "Bash(curl -s -X POST \"http://localhost:8011/tenants/00000000-0000-0000-0000-000000000000/policies/00000000-0000-0000-0000-000000000000/issuance/send-email\")"
+    ],
+    "additionalDirectories": [
+      "/home/nouman-ejaz/projects/insurance-ai/app/services"
+    ]
+  }
+}

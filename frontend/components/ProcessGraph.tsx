@@ -14,7 +14,7 @@ import type { ProcessStep } from "@/lib/agent/types";
 function NodeIcon({ status }: { status: ProcessStep["status"] }) {
   if (status === "done") {
     return (
-      <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 animate-in zoom-in duration-300">
+      <span className="w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center shrink-0 animate-in zoom-in duration-300">
         <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
           <polyline points="20 6 9 17 4 12" />
         </svg>
@@ -33,8 +33,8 @@ function NodeIcon({ status }: { status: ProcessStep["status"] }) {
   // active — pulsing core with a radiating ping ring
   return (
     <span className="relative w-5 h-5 flex items-center justify-center shrink-0">
-      <span className="absolute inset-0 rounded-full bg-violet-400 opacity-60 animate-ping" />
-      <span className="relative w-3 h-3 rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500" />
+      <span className="absolute inset-0 rounded-full bg-blue-400 opacity-60 animate-ping" />
+      <span className="relative w-3 h-3 rounded-full bg-gradient-to-br from-blue-500 to-fuchsia-500" />
     </span>
   );
 }
@@ -44,10 +44,10 @@ export function ProcessGraph({ steps, compact = false }: { steps: ProcessStep[];
 
   return (
     <div
-      className={`rounded-xl border border-violet-100 bg-white/80 backdrop-blur-sm shadow-sm ${compact ? "px-3 py-2" : "px-3.5 py-3"}`}
+      className={`rounded-xl border border-blue-100 bg-white/80 backdrop-blur-sm shadow-sm ${compact ? "px-3 py-2" : "px-3.5 py-3"}`}
       aria-live="polite"
     >
-      <p className="text-[9px] font-extrabold uppercase tracking-widest text-violet-400 mb-1.5 flex items-center gap-1.5">
+      <p className="text-[9px] font-extrabold uppercase tracking-widest text-blue-400 mb-1.5 flex items-center gap-1.5">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3 h-3">
           <circle cx="5" cy="6" r="2" /><circle cx="12" cy="12" r="2" /><circle cx="19" cy="18" r="2" />
           <path d="M7 7l3 3M14 13l3 3" strokeLinecap="round" />
@@ -66,10 +66,10 @@ export function ProcessGraph({ steps, compact = false }: { steps: ProcessStep[];
                   <span
                     className={`w-0.5 flex-1 min-h-[10px] my-0.5 rounded-full transition-colors duration-500 ${
                       step.status === "done"
-                        ? "bg-emerald-300"
+                        ? "bg-blue-300"
                         : step.status === "error"
                         ? "bg-rose-200"
-                        : "bg-violet-200 animate-pulse"
+                        : "bg-blue-200 animate-pulse"
                     }`}
                   />
                 )}
@@ -79,14 +79,14 @@ export function ProcessGraph({ steps, compact = false }: { steps: ProcessStep[];
                 <p
                   className={`text-[12px] leading-5 font-semibold truncate ${
                     step.status === "active"
-                      ? "text-violet-700 animate-pulse"
+                      ? "text-blue-700 animate-pulse"
                       : step.status === "error"
                       ? "text-rose-600"
                       : "text-slate-600"
                   }`}
                 >
                   {step.label}
-                  {step.status === "active" && <span className="text-violet-400">…</span>}
+                  {step.status === "active" && <span className="text-blue-400">…</span>}
                 </p>
               </div>
             </li>

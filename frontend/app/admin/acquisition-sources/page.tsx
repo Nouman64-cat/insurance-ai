@@ -38,8 +38,8 @@ const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
 
 const SOURCE_TYPE_STYLE: Record<SourceType, string> = {
   AGENT: "bg-blue-50 text-blue-700 border-blue-100",
-  BROKER: "bg-violet-50 text-violet-700 border-violet-100",
-  BANCASSURANCE: "bg-emerald-50 text-emerald-700 border-emerald-100",
+  BROKER: "bg-blue-50 text-blue-700 border-blue-100",
+  BANCASSURANCE: "bg-blue-50 text-blue-700 border-blue-100",
   CORPORATE_AGENT: "bg-amber-50 text-amber-700 border-amber-100",
   DIRECT: "bg-slate-100 text-slate-600 border-slate-200",
   DIGITAL: "bg-rose-50 text-rose-700 border-rose-100",
@@ -253,7 +253,7 @@ export default function AcquisitionSourcesPage() {
         </div>
         <button
           onClick={openCreate}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all shadow-sm active:scale-95 self-start"
+          className="flex items-center gap-1.5 px-4 py-2 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 transition-all shadow-sm active:scale-95 self-start"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Add Source
@@ -261,7 +261,7 @@ export default function AcquisitionSourcesPage() {
       </div>
 
       {error && <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>}
-      {success && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium">{success}</div>}
+      {success && <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">{success}</div>}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -295,13 +295,13 @@ export default function AcquisitionSourcesPage() {
       {/* Control Bar */}
       <div className="flex flex-col sm:flex-row items-center gap-3">
         <div className="flex-1 w-full relative group">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-emerald-500 transition-colors" ><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 group-focus-within:text-blue-500 transition-colors" ><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input
             type="text"
             placeholder="Search by name, code, partner, or type…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 bg-white shadow-sm transition-all"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-white shadow-sm transition-all"
           />
         </div>
         
@@ -325,7 +325,7 @@ export default function AcquisitionSourcesPage() {
           <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200/80 ml-auto sm:ml-1 h-[42px] items-center shadow-sm">
             <button
               onClick={() => setViewMode("list")}
-              className={`p-1.5 rounded text-slate-600 transition-all ${viewMode === "list" ? "bg-white shadow text-emerald-600" : "hover:text-slate-900"}`}
+              className={`p-1.5 rounded text-slate-600 transition-all ${viewMode === "list" ? "bg-white shadow text-blue-600" : "hover:text-slate-900"}`}
               title="List View"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -346,18 +346,18 @@ export default function AcquisitionSourcesPage() {
           {activeFilterChips.map((chip) => (
             <span
               key={chip.key}
-              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-medium"
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
             >
               {chip.label}
               <button
                 onClick={chip.onRemove}
-                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700"
+                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
               >
                 ✕
               </button>
             </span>
           ))}
-          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-emerald-600 hover:underline ml-1">
+          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
             Clear all
           </button>
         </div>
@@ -396,7 +396,7 @@ export default function AcquisitionSourcesPage() {
                           <p className="font-bold text-slate-900 text-sm leading-tight group-hover:text-blue-700 transition-colors">{s.name}</p>
                           <p className="font-mono text-[10px] font-semibold text-slate-500 mt-1 bg-slate-50 inline-block px-1.5 py-0.5 rounded">{s.code}</p>
                         </div>
-                        <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${s.is_active ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-slate-300"}`} title={s.is_active ? "Active" : "Inactive"} />
+                        <span className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${s.is_active ? "bg-blue-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" : "bg-slate-300"}`} title={s.is_active ? "Active" : "Inactive"} />
                       </div>
                       
                       <div className="space-y-2 mb-4 text-xs mt-auto">
@@ -422,9 +422,9 @@ export default function AcquisitionSourcesPage() {
                       
                       <div className="pt-3 border-t border-slate-100/80 flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Customers</span>
-                        <div className="flex items-center gap-1.5 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-100/50 px-2.5 py-1 rounded-lg">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 text-emerald-600"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
-                          <span className="font-bold text-emerald-700 text-xs">{s.customer_count}</span>
+                        <div className="flex items-center gap-1.5 bg-gradient-to-r from-blue-50 to-blue-50 border border-blue-100/50 px-2.5 py-1 rounded-lg">
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3 text-blue-600"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                          <span className="font-bold text-blue-700 text-xs">{s.customer_count}</span>
                         </div>
                       </div>
                     </div>
@@ -501,13 +501,13 @@ export default function AcquisitionSourcesPage() {
                     </td>
                     <td className="px-5 py-4 text-right font-bold text-slate-800 text-sm">
                       {s.customer_count > 0 ? (
-                        <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md inline-block">{s.customer_count}</span>
+                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md inline-block">{s.customer_count}</span>
                       ) : (
                         <span className="text-slate-400">{s.customer_count}</span>
                       )}
                     </td>
                     <td className="px-5 py-4 text-center">
-                      <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold ${s.is_active ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-500"}`}>
+                      <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold ${s.is_active ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-500"}`}>
                         {s.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
@@ -653,7 +653,7 @@ export default function AcquisitionSourcesPage() {
                     type="checkbox"
                     checked={form.is_active}
                     onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-                    className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
                   />
                   <label htmlFor="is_active" className="text-sm font-bold text-slate-800 cursor-pointer select-none">Channel is Active</label>
                 </div>
@@ -671,7 +671,7 @@ export default function AcquisitionSourcesPage() {
               <button
                 onClick={handleSave}
                 disabled={saving}
-                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl shadow-sm hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-all active:scale-95"
+                className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl shadow-sm hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all active:scale-95"
               >
                 {saving && <span className="animate-spin h-4 w-4 rounded-full border-2 border-white/30 border-t-white" />}
                 {saving ? "Saving…" : editingId ? "Save Changes" : "Create Source"}

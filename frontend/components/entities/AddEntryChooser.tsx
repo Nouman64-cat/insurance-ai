@@ -52,14 +52,14 @@ export default function AddEntryChooser({ entityType, onClose, onSelect }: Props
           <button
             type="button"
             onClick={() => onSelect("quick")}
-            className="group text-left rounded-xl border-2 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/40 p-5 transition-all"
+            className="group text-left rounded-xl border-2 border-slate-200 hover:border-blue-400 hover:bg-blue-50/40 p-5 transition-all"
           >
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3">
+            <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center mb-3">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <div className="text-sm font-bold text-slate-800 group-hover:text-emerald-700">Quick Lead</div>
+            <div className="text-sm font-bold text-slate-800 group-hover:text-blue-700">Quick Lead</div>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">{meta.quickHint}</p>
           </button>
 

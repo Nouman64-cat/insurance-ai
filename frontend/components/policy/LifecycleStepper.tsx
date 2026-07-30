@@ -16,13 +16,13 @@ interface LifecycleStepperProps {
 }
 
 const DOT: Record<StageState, string> = {
-  done: "bg-emerald-500 border-emerald-500 text-white",
-  current: "bg-white border-emerald-500 text-emerald-600 ring-4 ring-emerald-100",
+  done: "bg-blue-500 border-blue-500 text-white",
+  current: "bg-white border-blue-500 text-blue-600 ring-4 ring-blue-100",
   upcoming: "bg-white border-slate-300 text-slate-300",
 };
 
 const CONNECTOR: Record<StageState, string> = {
-  done: "bg-emerald-500",
+  done: "bg-blue-500",
   current: "bg-slate-200",
   upcoming: "bg-slate-200",
 };

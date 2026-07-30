@@ -7,8 +7,8 @@ interface RiskScoreBarProps {
 }
 
 function scoreColor(score: number) {
-  if (score <= 10) return "bg-emerald-500";
-  if (score <= 20) return "bg-emerald-400";
+  if (score <= 10) return "bg-blue-500";
+  if (score <= 20) return "bg-blue-400";
   if (score <= 30) return "bg-lime-400";
   if (score <= 40) return "bg-yellow-400";
   if (score <= 50) return "bg-amber-400";
@@ -20,8 +20,8 @@ function scoreColor(score: number) {
 }
 
 function scoreTierColor(score: number) {
-  if (score <= 10) return "text-emerald-700";
-  if (score <= 20) return "text-emerald-600";
+  if (score <= 10) return "text-blue-700";
+  if (score <= 20) return "text-blue-600";
   if (score <= 30) return "text-lime-700";
   if (score <= 40) return "text-yellow-700";
   if (score <= 50) return "text-amber-700";
@@ -83,8 +83,8 @@ export function RiskScoreBar({
 export function CompositeScoreRing({ score }: { score: number }) {
   const tier = scoreTier(score);
   const ringColor =
-    score <= 10 ? "border-emerald-500" :
-    score <= 20 ? "border-emerald-400" :
+    score <= 10 ? "border-blue-500" :
+    score <= 20 ? "border-blue-400" :
     score <= 30 ? "border-lime-400"    :
     score <= 40 ? "border-yellow-400"  :
     score <= 50 ? "border-amber-400"   :

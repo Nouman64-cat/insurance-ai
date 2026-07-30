@@ -32,7 +32,7 @@ interface DrawerProps {
 }
 
 const SCHEDULE_TONE: Record<string, string> = {
-  PAID: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  PAID: "bg-blue-50 text-blue-700 border-blue-200",
   PENDING: "bg-amber-50 text-amber-700 border-amber-200",
   OVERDUE: "bg-red-50 text-red-700 border-red-200",
   WAIVED: "bg-slate-100 text-slate-500 border-slate-200",
@@ -61,7 +61,7 @@ function eventTone(evt: PolicyEvent): { dot: string; icon: ReactNode } {
     };
   if (t.includes("active") || t.includes("issue") || t.includes("renew"))
     return {
-      dot: "bg-emerald-500",
+      dot: "bg-blue-500",
       icon: (
         <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" className="w-3 h-3">
           <polyline points="20 6 9 17 4 12" />
@@ -159,7 +159,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
 
         {loading ? (
           <div className="py-24 flex justify-center">
-            <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-emerald-500" />
+            <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-500" />
           </div>
         ) : error ? (
           <div className="m-6 bg-red-50 text-red-700 p-4 rounded-lg border border-red-200 text-sm">{error}</div>
@@ -252,7 +252,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
                         <button
                           onClick={() => downloadDocument(policyId, d.id).catch(err => alert("Failed to download document: " + err.message))}
                           title="Download Document"
-                          className="text-slate-400 hover:text-emerald-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-emerald-50"
+                          className="text-slate-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-blue-50"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
                             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
@@ -277,7 +277,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
                   <p className="text-sm font-bold text-slate-800">View Audit Trail</p>
                   <p className="text-[11px] text-slate-500 mt-0.5">Immutable record of all policy modifications and state transitions.</p>
                 </div>
-                <div className={`p-1.5 rounded-full ${showEvents ? "bg-emerald-100 text-emerald-600" : "bg-white border border-slate-200 text-slate-400"}`}>
+                <div className={`p-1.5 rounded-full ${showEvents ? "bg-blue-100 text-blue-600" : "bg-white border border-slate-200 text-slate-400"}`}>
                   <svg className={`w-4 h-4 transition-transform duration-300 ${showEvents ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -305,7 +305,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
                                 <>
                                   <span className="font-semibold text-slate-600">{evt.from_status}</span>
                                   <span className="mx-1 text-slate-300">→</span>
-                                  <span className="font-semibold text-emerald-700">{evt.to_status}</span>
+                                  <span className="font-semibold text-blue-700">{evt.to_status}</span>
                                   <span className="mx-1.5 text-slate-300">·</span>
                                 </>
                               ) : null}
@@ -326,15 +326,15 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
               <Section title="Stage B — Post-Issuance">
                 <Link
                   href={`/policy-management/post-issuance?highlight=${policyId}`}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-4 py-3 hover:bg-emerald-50 transition-colors group"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 hover:bg-blue-50 transition-colors group"
                 >
                   <div>
-                    <p className="text-sm font-semibold text-emerald-800">Manage this policy</p>
-                    <p className="text-[11px] text-emerald-700/80 mt-0.5">
+                    <p className="text-sm font-semibold text-blue-800">Manage this policy</p>
+                    <p className="text-[11px] text-blue-700/80 mt-0.5">
                       Free-look, servicing, renewals & claims.
                     </p>
                   </div>
-                  <span className="text-emerald-600 group-hover:translate-x-0.5 transition-transform" aria-hidden>→</span>
+                  <span className="text-blue-600 group-hover:translate-x-0.5 transition-transform" aria-hidden>→</span>
                 </Link>
               </Section>
             )}

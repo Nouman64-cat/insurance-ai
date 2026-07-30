@@ -473,7 +473,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             >
               {tab.label}
               {tab.id === "insurance_plan" && selectedPlanId && (
-                <span className="ml-1.5 inline-flex items-center justify-center w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="ml-1.5 inline-flex items-center justify-center w-1.5 h-1.5 rounded-full bg-blue-500" />
               )}
             </button>
           ))}
@@ -496,12 +496,12 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             </div>
           )}
           {success && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 text-xs text-emerald-600 font-medium flex justify-between items-center shadow-sm">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 text-xs text-blue-600 font-medium flex justify-between items-center shadow-sm">
               <span>{success}</span>
               <button
                 type="button"
                 onClick={() => setSuccess("")}
-                className="text-emerald-400 hover:text-emerald-700 font-bold ml-3 text-xs leading-none cursor-pointer hover:bg-emerald-100 p-1 rounded-md transition-colors"
+                className="text-blue-400 hover:text-blue-700 font-bold ml-3 text-xs leading-none cursor-pointer hover:bg-blue-100 p-1 rounded-md transition-colors"
                 title="Close"
               >
                 ✕
@@ -761,7 +761,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                     />
-                    {details.cnic_metadata.front_image_url && <p className="text-[10px] text-emerald-600 mt-1 font-semibold">Image selected for upload</p>}
+                    {details.cnic_metadata.front_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">Image selected for upload</p>}
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-semibold text-slate-600">CNIC Back Image</label>
@@ -774,7 +774,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       }}
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm file:mr-4 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 transition-all cursor-pointer"
                     />
-                    {details.cnic_metadata.back_image_url && <p className="text-[10px] text-emerald-600 mt-1 font-semibold">Image selected for upload</p>}
+                    {details.cnic_metadata.back_image_url && <p className="text-[10px] text-blue-600 mt-1 font-semibold">Image selected for upload</p>}
                   </div>
                 </div>
               </div>
@@ -1261,7 +1261,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
 
               <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                  <div className="w-8 h-8 rounded-lg bg-purple-50 flex items-center justify-center text-purple-500">
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center text-blue-500">
                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
@@ -1587,7 +1587,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                             >
                               {isSelected && (
                                 <>
-                                  <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500 text-white text-[9px] font-bold">✓</span>
+                                  <span className="absolute top-2 right-2 flex items-center justify-center w-4 h-4 rounded-full bg-blue-500 text-white text-[9px] font-bold">✓</span>
                                   <button
                                     type="button"
                                     onClick={(e) => {
@@ -1807,11 +1807,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     type="button"
                     onClick={handleSuggestPlan}
                     disabled={isSuggestingPlan || availablePlans.length === 0}
-                    className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:bg-indigo-300 transition-colors shadow-sm whitespace-nowrap"
+                    className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition-colors shadow-sm whitespace-nowrap"
                   >
                     {isSuggestingPlan ? (
                       <>
-                        <div className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-indigo-200 border-t-white" />
+                        <div className="animate-spin h-3.5 w-3.5 rounded-full border-2 border-blue-200 border-t-white" />
                         Analyzing Profile...
                       </>
                     ) : (
@@ -1826,14 +1826,14 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 </div>
 
                 {suggestedReasoning && (
-                  <div className="mb-6 p-4 rounded-xl bg-indigo-50 border border-indigo-200 shadow-sm animate-in fade-in slide-in-from-top-2">
+                  <div className="mb-6 p-4 rounded-xl bg-blue-50 border border-blue-200 shadow-sm animate-in fade-in slide-in-from-top-2">
                     <div className="flex gap-3">
-                      <svg className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                       <div>
-                        <h5 className="text-xs font-bold text-indigo-900 mb-1">AI Recommendation</h5>
-                        <p className="text-xs text-indigo-800 leading-relaxed">{suggestedReasoning}</p>
+                        <h5 className="text-xs font-bold text-blue-900 mb-1">AI Recommendation</h5>
+                        <p className="text-xs text-blue-800 leading-relaxed">{suggestedReasoning}</p>
                       </div>
                     </div>
                   </div>
@@ -1872,7 +1872,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                         >
                           {isSelected && (
                             <>
-                              <span className="absolute top-3 right-3 flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 text-white text-[10px] font-bold">✓</span>
+                              <span className="absolute top-3 right-3 flex items-center justify-center w-5 h-5 rounded-full bg-blue-500 text-white text-[10px] font-bold">✓</span>
                               <button
                                 type="button"
                                 onClick={(e) => {

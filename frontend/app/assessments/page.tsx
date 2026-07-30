@@ -49,7 +49,7 @@ function fmt(iso: string) {
 }
 
 function decisionColor(d: AIDecision) {
-  if (d === "Auto Approve") return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (d === "Auto Approve") return "bg-blue-50 text-blue-700 border-blue-200";
   if (d === "Approve with Loading") return "bg-amber-50 text-amber-700 border-amber-200";
   if (d === "Human Review") return "bg-blue-50 text-blue-700 border-blue-200";
   return "bg-red-50 text-red-700 border-red-200";
@@ -63,7 +63,7 @@ function decisionLabel(d: AIDecision) {
 }
 
 function compositeColor(score: number) {
-  if (score <= 40) return "text-emerald-600";
+  if (score <= 40) return "text-blue-600";
   if (score <= 65) return "text-amber-600";
   return "text-red-600";
 }
@@ -255,7 +255,7 @@ type Filter = (typeof DECISION_FILTERS)[number];
 // decision's semantic color used everywhere else (StatusBadge, table rows).
 const DECISION_META: Record<Filter, { label: string; dot: string; active: string }> = {
   All: { label: "All", dot: "bg-slate-400", active: "bg-slate-800 text-white border-slate-800" },
-  "Auto Approve": { label: "Approved", dot: "bg-emerald-500", active: "bg-emerald-50 text-emerald-700 border-emerald-300" },
+  "Auto Approve": { label: "Approved", dot: "bg-blue-500", active: "bg-blue-50 text-blue-700 border-blue-300" },
   "Approve with Loading": { label: "Approved +L", dot: "bg-amber-500", active: "bg-amber-50 text-amber-700 border-amber-300" },
   "Human Review": { label: "Referred", dot: "bg-blue-500", active: "bg-blue-50 text-blue-700 border-blue-300" },
   Decline: { label: "Declined", dot: "bg-red-500", active: "bg-red-50 text-red-700 border-red-300" },
@@ -503,7 +503,7 @@ export default function AssessmentHistoryPage() {
                             <div
                               className={`h-full rounded-full ${
                                 a.composite_risk_score <= 40
-                                  ? "bg-emerald-500"
+                                  ? "bg-blue-500"
                                   : a.composite_risk_score <= 65
                                   ? "bg-amber-500"
                                   : "bg-red-500"
@@ -523,21 +523,21 @@ export default function AssessmentHistoryPage() {
                     {/* Medical */}
                     <td className="px-4 py-3.5 text-center">
                       <span className={`font-semibold tabular-nums ${
-                        a.medical_score >= 70 ? "text-red-600" : a.medical_score >= 40 ? "text-amber-600" : "text-emerald-600"
+                        a.medical_score >= 70 ? "text-red-600" : a.medical_score >= 40 ? "text-amber-600" : "text-blue-600"
                       }`}>{a.medical_score}</span>
                     </td>
 
                     {/* Financial */}
                     <td className="px-4 py-3.5 text-center">
                       <span className={`font-semibold tabular-nums ${
-                        a.financial_score >= 70 ? "text-red-600" : a.financial_score >= 40 ? "text-amber-600" : "text-emerald-600"
+                        a.financial_score >= 70 ? "text-red-600" : a.financial_score >= 40 ? "text-amber-600" : "text-blue-600"
                       }`}>{a.financial_score}</span>
                     </td>
 
                     {/* Fraud */}
                     <td className="px-4 py-3.5 text-center">
                       <span className={`font-semibold tabular-nums ${
-                        a.fraud_probability >= 0.5 ? "text-red-600" : a.fraud_probability >= 0.25 ? "text-amber-600" : "text-emerald-600"
+                        a.fraud_probability >= 0.5 ? "text-red-600" : a.fraud_probability >= 0.25 ? "text-amber-600" : "text-blue-600"
                       }`}>{Math.round(a.fraud_probability * 100)}%</span>
                     </td>
 

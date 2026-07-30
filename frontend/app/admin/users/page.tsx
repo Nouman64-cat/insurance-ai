@@ -302,7 +302,7 @@ export default function UserManagementPage() {
         </div>
       )}
       {success && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">
           {success}
         </div>
       )}
@@ -362,7 +362,7 @@ export default function UserManagementPage() {
                     <td className="px-5 py-3.5 text-center">
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${user.status === "ACTIVE"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          ? "bg-blue-50 text-blue-700 border-blue-200"
                           : user.status === "SUSPENDED"
                             ? "bg-amber-50 text-amber-700 border-amber-200"
                             : user.status === "LOCKED"

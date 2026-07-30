@@ -20,13 +20,13 @@ const INPUTS = [
 ];
 
 const OUTPUTS = [
-  { label: "Underwriting Decision", value: "Auto Approve / Review / Decline", color: "bg-emerald-500" },
+  { label: "Underwriting Decision", value: "Auto Approve / Review / Decline", color: "bg-blue-500" },
   { label: "Risk Classification", value: "Low / Medium / High / Very High", color: "bg-blue-500" },
-  { label: "Medical Loading", value: "0% to 100% loading recommendation", color: "bg-violet-500" },
+  { label: "Medical Loading", value: "0% to 100% loading recommendation", color: "bg-blue-500" },
   { label: "Claim Approval", value: "Approve / Partial / Reject", color: "bg-amber-500" },
   { label: "Fraud Alert", value: "Flagged / Investigation / Clear", color: "bg-red-500" },
-  { label: "Reimbursement", value: "Eligible / Partial / Rejected", color: "bg-teal-500" },
-  { label: "Agent Commission", value: "10% / 12% / 15% / 18%", color: "bg-emerald-600" },
+  { label: "Reimbursement", value: "Eligible / Partial / Rejected", color: "bg-blue-500" },
+  { label: "Agent Commission", value: "10% / 12% / 15% / 18%", color: "bg-blue-600" },
   { label: "Quality Bonus", value: "Eligible / Not Eligible", color: "bg-blue-600" },
 ];
 
@@ -39,7 +39,7 @@ const SCENARIOS = [
 ];
 
 const DECISION_STYLE: Record<string, string> = {
-  emerald: "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  emerald: "bg-blue-50 text-blue-700 border border-blue-200",
   amber:   "bg-amber-50 text-amber-700 border border-amber-200",
   red:     "bg-red-50 text-red-700 border border-red-200",
 };
@@ -80,7 +80,7 @@ export default function ScoreEnginePage() {
                 </div>
                 <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
                   <div
-                    className={`h-full rounded-full ${inp.score >= 90 ? "bg-emerald-500" : inp.score >= 75 ? "bg-amber-400" : "bg-red-400"}`}
+                    className={`h-full rounded-full ${inp.score >= 90 ? "bg-blue-500" : inp.score >= 75 ? "bg-amber-400" : "bg-red-400"}`}
                     style={{ width: `${inp.score}%` }}
                   />
                 </div>
@@ -121,7 +121,7 @@ export default function ScoreEnginePage() {
                   <div className="flex items-center gap-3">
                     <span className="text-lg font-extrabold text-slate-800">{s.score}</span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${DECISION_STYLE[s.accent]}`}>{s.decision}</span>
-                    <span className="text-xs font-bold text-emerald-700">{s.commission}</span>
+                    <span className="text-xs font-bold text-blue-700">{s.commission}</span>
                   </div>
                 </div>
               ))}

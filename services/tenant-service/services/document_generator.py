@@ -547,3 +547,45 @@ def generate_lapse_warning(ctx: dict) -> dict:
     story += _footer(ss)
     _build(path, story)
     return {"document_name": "Lapse Warning Letter", "file_path": path}
+
+
+def generate_endorsement_letter(ctx: dict) -> dict:
+    """Render an endorsement letter PDF (what changed, effective date, premium
+    impact). Returns {document_name, file_path}."""
+    ss = _styles()
+    pid = ctx["policy_id"]
+    tenant_name = ctx.get("tenant_name", "Insurer")
+    eno = ctx.get("endorsement_no", "E1")
+    out_dir = os.path.join(MEDIA_ROOT, str(pid))
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, f"endorsement_{eno}.pdf")
+
+    delta = ctx.get("premium_delta") or 0.0
+    delta_line = ("No change to premium." if abs(delta) < 0.005
+                  else f"Premium {'increased' if delta > 0 else 'decreased'} by {_pkr(abs(delta))} per year.")
+
+    story: list = []
+    story += _header(ss, tenant_name, "Policy Endorsement",
+                     f"Endorsement {eno} · {ctx.get('endorsement_type', '')}")
+    story.append(Paragraph(f"Dear {ctx.get('customer_name') or 'Policyholder'},", ss["Body"]))
+    story.append(Paragraph(
+        "This endorsement records the following approved change to your policy. It forms part of your "
+        "policy contract and should be kept with your documents.", ss["Body"]))
+    story.append(Spacer(1, 6))
+    story.append(_kv_table([
+        ("Policy Number", ctx.get("policy_number") or "—"),
+        ("Endorsement No.", eno),
+        ("Type", ctx.get("endorsement_type", "—")),
+        ("Effective Date", str(ctx.get("effective_date") or "—")),
+    ]))
+    story.append(Spacer(1, 8))
+    story.append(Paragraph("Change", ss["H"]))
+    story.append(Paragraph(ctx.get("summary", "—"), ss["Body"]))
+    story.append(Paragraph(delta_line, ss["Body"]))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        "All other terms and conditions of the policy remain unchanged. If any detail above is incorrect, "
+        "please contact your servicing branch promptly.", ss["Fine"]))
+    story += _footer(ss)
+    _build(path, story)
+    return {"document_name": f"Endorsement {eno}", "file_path": path}

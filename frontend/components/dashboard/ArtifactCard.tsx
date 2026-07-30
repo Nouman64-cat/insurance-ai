@@ -17,18 +17,18 @@ export function ArtifactCard() {
     <PillarCard
       icon={<FileCheckIcon />}
       title="Artifact Intelligence"
-      barClass="bg-indigo-600"
-      iconBg="bg-indigo-50"
-      iconColor="text-indigo-600"
+      barClass="bg-blue-600"
+      iconBg="bg-blue-50"
+      iconColor="text-blue-600"
       alertCount={3}
     >
       {/* OCR ring + key scores */}
       <div className="flex items-start gap-4 mb-4">
         <RingGauge value={98} max={100} strokeHex="#4f46e5" label="OCR Confidence" sublabel="%" valueLabel="98.2%" size={82} />
         <div className="flex-1 space-y-2.5 pt-1">
-          <Bar label="Authenticity Score" pct={94.7} color="bg-indigo-500" badge="94.7%" />
-          <Bar label="Quality Score"      pct={91.3} color="bg-violet-500"  badge="91.3%" />
-          <Bar label="Auto-Accept Rate"   pct={94.4} color="bg-emerald-500" badge="94.4%" />
+          <Bar label="Authenticity Score" pct={94.7} color="bg-blue-500" badge="94.7%" />
+          <Bar label="Quality Score"      pct={91.3} color="bg-blue-500"  badge="91.3%" />
+          <Bar label="Auto-Accept Rate"   pct={94.4} color="bg-blue-500" badge="94.4%" />
         </div>
       </div>
 
@@ -43,7 +43,7 @@ export function ArtifactCard() {
         </div>
         <div className="text-center">
           <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Accepted</p>
-          <p className="text-xl font-extrabold text-emerald-600 mt-0.5">389</p>
+          <p className="text-xl font-extrabold text-blue-600 mt-0.5">389</p>
           <p className="text-[10px] text-slate-400">94.4%</p>
         </div>
         <div className="text-center">

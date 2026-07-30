@@ -18,7 +18,7 @@ const TOP_AGENTS = [
 
 const QUALITY_METRICS = [
   { label: "Sales Quality Score",  pct: 78.4, color: "bg-amber-500",   badge: "78.4 / 100" },
-  { label: "Policy Activation Rate", pct: 91, color: "bg-emerald-500", badge: "91.0%"      },
+  { label: "Policy Activation Rate", pct: 91, color: "bg-blue-500", badge: "91.0%"      },
   { label: "Complaint Ratio",      pct: 2.1,  color: "bg-red-400",     badge: "2.1%"       },
 ] as const;
 
@@ -86,7 +86,7 @@ export function AgentCard() {
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100">
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Bonus Eligible</p>
-            <p className="text-base font-extrabold text-emerald-600 mt-0.5">18 agents</p>
+            <p className="text-base font-extrabold text-blue-600 mt-0.5">18 agents</p>
           </div>
         </div>
       </div>

@@ -55,7 +55,7 @@ const OPTIONS: SegmentOption[] = [
     value: "family",
     label: "Family",
     description: "Members under a family floater",
-    dot: "bg-violet-500",
+    dot: "bg-blue-500",
     icon: (
       <svg {...ICON_PROPS}>
         <circle cx="8" cy="8" r="3" />
@@ -88,7 +88,7 @@ export const SEGMENT_LABEL: Record<CustomerSegment, string> = {
 
 export const SEGMENT_BADGE_STYLE: Record<CustomerSegment, string> = {
   individual: "bg-blue-50 text-blue-700 border-blue-200",
-  family: "bg-violet-50 text-violet-700 border-violet-200",
+  family: "bg-blue-50 text-blue-700 border-blue-200",
   organization: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
@@ -126,7 +126,7 @@ export function SegmentDropdown({ value, onChange, counts, className = "" }: Seg
   const textColors: Record<SegmentFilter, string> = {
     all: "text-slate-600",
     individual: "text-blue-600",
-    family: "text-violet-600",
+    family: "text-blue-600",
     organization: "text-amber-600",
   };
 

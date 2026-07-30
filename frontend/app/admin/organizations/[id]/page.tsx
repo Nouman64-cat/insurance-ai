@@ -93,14 +93,14 @@ const EMPTY_ROW: CensusRow = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  Active: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  Proposed: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  Active: "bg-blue-50 text-blue-700 border-blue-200",
+  Proposed: "bg-blue-50 text-blue-700 border-blue-200",
   Pending: "bg-blue-50 text-blue-700 border-blue-200",
   Review: "bg-amber-50 text-amber-700 border-amber-200",
 };
 
 const POLICY_STATUS_STYLE: Record<string, string> = {
-  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Approved: "bg-blue-50 text-blue-700 border-blue-200",
   UnderReview: "bg-amber-50 text-amber-700 border-amber-200",
   Declined: "bg-red-50 text-red-700 border-red-200",
   Quoted: "bg-slate-100 text-slate-700 border-slate-200",
@@ -550,7 +550,7 @@ export default function OrganizationDetailPage() {
         } catch (e) {}
         return <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">{error}</div>;
       })()}
-      {success && <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium">{success}</div>}
+      {success && <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">{success}</div>}
 
       {loading ? (
         <div className="py-20 flex flex-col items-center justify-center gap-2">
@@ -715,7 +715,7 @@ export default function OrganizationDetailPage() {
 
                 {censusResult && (
                   <div className={`rounded-lg border p-3 text-xs space-y-1 ${
-                    censusResult.is_valid ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-700"
+                    censusResult.is_valid ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-amber-50 border-amber-200 text-amber-700"
                   }`}>
                     <p className="font-bold">
                       {censusResult.is_valid ? "✓ Census Valid" : "⚠ Census has issues"} — {censusResult.total} row(s)
@@ -823,8 +823,8 @@ export default function OrganizationDetailPage() {
                           <td className="px-5 py-3 text-right font-semibold text-slate-700">PKR {emp.declared_income.toLocaleString()}</td>
                           <td className="px-5 py-3">
                             {employeeHasFullDetails(emp) ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
                                 Full Details
                               </span>
                             ) : (
@@ -835,7 +835,7 @@ export default function OrganizationDetailPage() {
                             )}
                           </td>
                           <td className="px-5 py-3 text-right space-x-3 whitespace-nowrap">
-                            <button onClick={() => handleEditEmployee(emp)} className="text-xs font-bold text-emerald-600 hover:text-emerald-800 transition-colors">Edit</button>
+                            <button onClick={() => handleEditEmployee(emp)} className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors">Edit</button>
                             <button onClick={() => handleDeleteEmployee(emp.id, emp.name)} className="text-xs font-bold text-red-600 hover:text-red-800 transition-colors">Delete</button>
                           </td>
                         </tr>

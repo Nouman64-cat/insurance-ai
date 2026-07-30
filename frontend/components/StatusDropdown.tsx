@@ -26,9 +26,9 @@ const OPTIONS: StatusOption[] = [
   { value: "Proposed", label: "Submitted", description: "Customer committed to this offer", dot: "bg-blue-500" },
   { value: "UnderReview", label: "Under Review", description: "Underwriter is assessing risk", dot: "bg-amber-500" },
   { value: "InformationRequested", label: "Info Requested", description: "Paused within review, pending customer", dot: "bg-amber-300", nested: true },
-  { value: "Approved", label: "Approved", description: "Underwriting decision: accepted", dot: "bg-emerald-500" },
+  { value: "Approved", label: "Approved", description: "Underwriting decision: accepted", dot: "bg-blue-500" },
   { value: "Declined", label: "Rejected", description: "Underwriting decision: declined", dot: "bg-rose-500" },
-  { value: "Issued", label: "Issued", description: "Policy issued and in force", dot: "bg-violet-500" },
+  { value: "Issued", label: "Issued", description: "Policy issued and in force", dot: "bg-blue-500" },
 ];
 
 const ACTIVE_STYLE: Record<StatusFilter, string> = {
@@ -37,9 +37,9 @@ const ACTIVE_STYLE: Record<StatusFilter, string> = {
   Proposed: "text-blue-700 bg-blue-50",
   UnderReview: "text-amber-700 bg-amber-50",
   InformationRequested: "text-amber-600 bg-amber-50/50",
-  Approved: "text-emerald-700 bg-emerald-50",
+  Approved: "text-blue-700 bg-blue-50",
   Declined: "text-rose-700 bg-rose-50",
-  Issued: "text-violet-700 bg-violet-50",
+  Issued: "text-blue-700 bg-blue-50",
 };
 
 const MAIN_PATH: StatusOption[] = [

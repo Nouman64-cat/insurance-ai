@@ -699,7 +699,7 @@ class Policy(SQLModel, table=True):
     status: PolicyStatusEnum = Field(default=PolicyStatusEnum.QUOTED, max_length=50)
 
     # ── Issuance / Contract fields (populated at issue time) ──────────────────
-    # Unique human-readable policy number — e.g. "POL-2026-0001". Null until issued.
+    # Unique human-readable policy number — e.g. "PL-2026-0001". Null until issued.
     policy_number: Optional[str] = Field(default=None, max_length=50, index=True)
     # Coverage window set when the policy is bound and activated.
     expiry_date: Optional[date] = Field(default=None)
@@ -722,6 +722,12 @@ class Policy(SQLModel, table=True):
     demo_bypass_flags: Optional[str] = Field(default="NotFlagged", max_length=50)
     # Stage B recurring collection — mock standing instruction / auto-debit mandate.
     autopay_enabled: bool = Field(default=False)
+    # ── Issuance formalities ──────────────────────────────────────────────────
+    # Contract maturity date (effective_date + term, capped by product max age).
+    maturity_date: Optional[date] = Field(default=None)
+    # Authorising officer + timestamp captured when the policy is issued/bound.
+    issued_by: Optional[str] = Field(default=None, max_length=255)
+    issued_at: Optional[datetime] = Field(default=None)
     # ─────────────────────────────────────────────────────────────────────────
 
     effective_date: Optional[date] = Field(default=None)
@@ -1898,4 +1904,52 @@ class PremiumReceipt(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
 
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE B — POLICY SERVICING & ENDORSEMENTS (mid-term changes)
+# Each approved change creates a new PolicyVersion (1.x) and a PolicyEndorsement
+# record. Riders are attached benefits that carry their own premium. Status
+# columns are plain strings (no new PG enum types). Queried by policy_id.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class PolicyRider(SQLModel, table=True):
+    """An optional benefit attached to a policy (e.g. Accidental Death, Waiver of
+    Premium). Added/removed via an endorsement; carries its own annual premium."""
+    __tablename__ = "policy_riders"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    name: str = Field(max_length=120)
+    sum_assured: float = Field(default=0.0, ge=0)
+    annual_premium: float = Field(default=0.0, ge=0)
+    status: str = Field(default="Active", max_length=20)   # Active | Removed
+    added_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    removed_at: Optional[datetime] = Field(default=None)
+
+
+class PolicyEndorsement(SQLModel, table=True):
+    """One approved mid-term change. The immutable servicing ledger — nominee,
+    address, sum-assured and rider changes each create a row here plus a new
+    PolicyVersion (financial ones re-price)."""
+    __tablename__ = "policy_endorsements"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    endorsement_no: str = Field(max_length=20, index=True)        # E1, E2, ...
+    endorsement_type: str = Field(max_length=30)                  # Nominee | Address | SumAssured | Rider
+    summary: str = Field(max_length=500)                          # human-readable "what changed"
+    effective_date: date = Field(nullable=False)
+
+    old_version_id: Optional[UUID] = Field(default=None, nullable=True)
+    new_version_id: Optional[UUID] = Field(default=None, nullable=True)
+    premium_delta: float = Field(default=0.0)                     # +/- change to annual premium
+    detail_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    actor: Optional[str] = Field(default=None, max_length=255)
+    document_path: Optional[str] = Field(default=None, max_length=1000)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
     policy: Optional[Policy] = Relationship(back_populates="premium_receipts")

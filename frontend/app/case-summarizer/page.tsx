@@ -17,9 +17,9 @@ import type { Customer, CaseItem, Artifact, TokenUsage, SumStatus, EvalStatus, E
 const PIPELINE_NODES = [
   { key: "validate_input",       label: "Input\nValidation",     dotColor: "bg-slate-500"   },
   { key: "medical_scoring",      label: "Medical\nScoring",      dotColor: "bg-blue-500"    },
-  { key: "financial_scoring",    label: "Financial\nScoring",    dotColor: "bg-violet-500"  },
+  { key: "financial_scoring",    label: "Financial\nScoring",    dotColor: "bg-blue-500"  },
   { key: "fraud_detection",      label: "Fraud\nDetection",      dotColor: "bg-red-500"     },
-  { key: "decision_aggregation", label: "Decision\nAggregation", dotColor: "bg-emerald-500" },
+  { key: "decision_aggregation", label: "Decision\nAggregation", dotColor: "bg-blue-500" },
 ] as const;
 
 const VALID_DECISIONS = new Set(["Auto Approve", "Approve with Loading", "Human Review", "Decline"]);
@@ -768,7 +768,7 @@ export default function CaseSummarizerPage() {
                   const hasOCR = !!a.ocr_result && a.status !== "Processing";
                   const chipCls =
                     a.status === "Processing"   ? "bg-blue-50 text-blue-600 border-blue-200" :
-                    a.status === "Accepted"      ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                    a.status === "Accepted"      ? "bg-blue-50 text-blue-700 border-blue-200" :
                                                    "bg-amber-50 text-amber-700 border-amber-200";
                   return (
                     <label
@@ -860,8 +860,8 @@ export default function CaseSummarizerPage() {
                     </span>
                   )}
                   {sumStatus === "done" && (
-                    <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                       Complete
                     </span>
                   )}
@@ -904,7 +904,7 @@ export default function CaseSummarizerPage() {
                 >
                   <div className="flex items-center gap-2.5">
                     <p className="text-sm font-semibold text-slate-700">Risk Engine Proposal</p>
-                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-600 border border-violet-200">
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-200">
                       Auto-filled
                     </span>
                   </div>
@@ -999,8 +999,8 @@ export default function CaseSummarizerPage() {
                       </span>
                     )}
                     {evalStatus === "done" && (
-                      <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                         Complete
                       </span>
                     )}
@@ -1073,7 +1073,7 @@ export default function CaseSummarizerPage() {
                     {evalResult.financialScore !== null && (
                       <div>
                         <RiskScoreBar label="Financial Score" score={evalResult.financialScore} />
-                        <ReasonList reasons={evalResult.financialReasons} accent="text-violet-400" />
+                        <ReasonList reasons={evalResult.financialReasons} accent="text-blue-400" />
                       </div>
                     )}
                     {evalResult.fraudProbability !== null && (

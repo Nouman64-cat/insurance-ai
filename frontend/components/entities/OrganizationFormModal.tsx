@@ -168,7 +168,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="text" required value={name} onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. TechPak Solutions"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
@@ -176,7 +176,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="text" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)}
                 placeholder="e.g. Ali Raza (HR Manager)"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
@@ -184,7 +184,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="text" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)}
                 placeholder="+92 300 1234567"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <p className="text-[11px] text-slate-400">
@@ -199,7 +199,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               </button>
               <button
                 type="submit" disabled={saving}
-                className="px-4 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 rounded-lg transition-colors"
+                className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
               >
                 {saving ? "Saving…" : "Add Organization"}
               </button>
@@ -230,7 +230,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
             <input
               type="text" required value={name} onChange={(e) => setName(e.target.value)}
               placeholder="e.g. TechPak Solutions"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
           </div>
 
@@ -240,7 +240,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="text" value={registrationNumber} onChange={(e) => setRegistrationNumber(e.target.value)}
                 placeholder="e.g. 1234567-8"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
@@ -248,7 +248,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="text" value={industry} onChange={(e) => setIndustry(e.target.value)}
                 placeholder="e.g. Textiles"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
           </div>
@@ -258,7 +258,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
             <input
               type="text" value={contactPerson} onChange={(e) => setContactPerson(e.target.value)}
               placeholder="e.g. Ali Raza (HR Manager)"
-              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
             />
           </div>
 
@@ -268,7 +268,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)}
                 placeholder="hr@company.com"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
@@ -276,7 +276,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="text" value={contactPhone} onChange={(e) => setContactPhone(e.target.value)}
                 placeholder="+92 300 1234567"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
           </div>
@@ -287,14 +287,14 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <input
                 type="text" value={city} onChange={(e) => setCity(e.target.value)}
                 placeholder="e.g. Karachi"
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
             <div className="space-y-1.5">
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Province</label>
               <select
                 value={province} onChange={(e) => setProvince(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
                 <option value="">Select province</option>
                 {PAKISTAN_PROVINCES.map((p) => (
@@ -309,7 +309,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Branch</label>
               <select
                 value={branchId} onChange={(e) => setBranchId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
                 <option value="">Unassigned</option>
                 {branchOptions.map((b) => (
@@ -321,7 +321,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
               <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Assigned Agent</label>
               <select
                 value={assignedAgentId} onChange={(e) => setAssignedAgentId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               >
                 <option value="">Unassigned</option>
                 {agentOptions.map((a) => (
@@ -340,7 +340,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
             </button>
             <button
               type="submit" disabled={saving}
-              className="px-5 py-2.5 text-sm font-bold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 rounded-xl transition-colors flex items-center gap-2 shadow-sm"
+              className="px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-xl transition-colors flex items-center gap-2 shadow-sm"
             >
               {saving && (
                 <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">

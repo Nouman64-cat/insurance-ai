@@ -2,10 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
+import { useNotify } from "@/components/NotificationContext";
 import {
   getPolicyStats,
   listPolicies,
   issuePolicy,
+  getIssuancePreview,
   initiatePayment,
   confirmPayment,
   listPolicyDocuments,
@@ -13,12 +15,12 @@ import {
   PolicyListItem,
   PolicyStats,
   IssuanceResult,
+  IssuancePreview,
   PaymentMethod,
   PaymentConfirmResult,
   fmtPKR,
 } from "@/app/services/policies";
 import { fmtCoverage } from "@/lib/mock-data";
-import { getReadiness } from "@/app/services/preIssuance";
 
 import { PolicyLifecycleDrawer } from "@/components/policy/PolicyLifecycleDrawer";
 import { LifecycleStepper } from "@/components/policy/LifecycleStepper";
@@ -26,18 +28,52 @@ import { MetricCard } from "@/components/MetricCard";
 import FiltersPanel from "@/components/FiltersPanel";
 
 const STATUS_BADGE: Record<string, string> = {
-  APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  APPROVED: "bg-blue-50 text-blue-700 border-blue-200",
   ACCEPTEDWITHLOADINGS: "bg-amber-50 text-amber-700 border-amber-200",
-  PENDINGPAYMENT: "bg-violet-50 text-violet-700 border-violet-200",
+  PENDINGPAYMENT: "bg-blue-50 text-blue-700 border-blue-200",
   ACTIVE: "bg-blue-50 text-blue-700 border-blue-200",
   ISSUED: "bg-blue-50 text-blue-700 border-blue-200",
   QUOTED: "bg-slate-50 text-slate-600 border-slate-200",
   LAPSED: "bg-red-50 text-red-700 border-red-200",
   CANCELLED: "bg-red-50 text-red-700 border-red-200",
   POSTPONED: "bg-amber-50 text-amber-700 border-amber-200",
-  REINSURERREFERRED: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  REINSURERREFERRED: "bg-blue-50 text-blue-700 border-blue-200",
   NOTTAKENUP: "bg-slate-50 text-red-700 border-slate-200",
 };
+
+// ── Shared issuance stepper ──────────────────────────────────────────────────
+const ISSUE_STEPS = ["Review", "Bind & Pay", "Policy Pack"] as const;
+
+function IssueStepper({ current }: Readonly<{ current: number }>) {
+  return (
+    <div className="flex items-center gap-2">
+      {ISSUE_STEPS.map((s, i) => {
+        const done = i < current, active = i === current;
+        return (
+          <div key={s} className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
+                done ? "bg-white text-blue-600" : active ? "bg-white/90 text-blue-700" : "bg-white/25 text-white"}`}>
+                {done ? "✓" : i + 1}
+              </span>
+              <span className={`text-[11px] font-semibold ${active || done ? "text-white" : "text-white/60"}`}>{s}</span>
+            </div>
+            {i < ISSUE_STEPS.length - 1 && <span className="w-5 h-px bg-white/30" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Field({ label, value }: Readonly<{ label: string; value: React.ReactNode }>) {
+  return (
+    <div>
+      <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">{label}</p>
+      <p className="text-sm font-semibold text-slate-800 mt-0.5">{value}</p>
+    </div>
+  );
+}
 
 interface IssuanceModalProps {
   policy: PolicyListItem;
@@ -45,193 +81,167 @@ interface IssuanceModalProps {
   onIssued: (result: IssuanceResult, policyId: string) => void;
 }
 
+// Step 1 — Review & confirm the contract before binding.
 function IssuanceModal({ policy, onClose, onIssued }: IssuanceModalProps) {
-  const [loading, setLoading] = useState(false);
+  const { notify } = useNotify();
+  const [preview, setPreview] = useState<IssuancePreview | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(true);
+  const [issuing, setIssuing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
-  const [warningsAcknowledged, setWarningsAcknowledged] = useState(false);
-  const [checkingReadiness, setCheckingReadiness] = useState(true);
 
-  // Fetch readiness on open to surface demo warnings
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const r = await getReadiness(policy.id);
-        if (alive) setWarnings(r.warnings ?? []);
-      } catch {
-        // readiness fetch failure is non-blocking
+        const p = await getIssuancePreview(policy.id);
+        if (alive) setPreview(p);
+      } catch (e: any) {
+        if (alive) setError(e?.response?.data?.detail ?? "Failed to load issuance preview.");
       } finally {
-        if (alive) setCheckingReadiness(false);
+        if (alive) setLoadingPreview(false);
       }
     })();
     return () => { alive = false; };
   }, [policy.id]);
 
   const handleIssue = async () => {
-    setLoading(true);
-    setError(null);
+    setIssuing(true); setError(null);
     try {
       const result = await issuePolicy(policy.id);
+      notify("Policy issued successfully!", true);
       onIssued(result, policy.id);
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Failed to issue policy.");
+      const msg = e?.response?.data?.detail ?? "Failed to issue policy.";
+      setError(msg);
+      notify(msg, false);
     } finally {
-      setLoading(false);
+      setIssuing(false);
     }
   };
 
-  // Show warnings acknowledgement screen before issuing
-  const showWarningsGate = warnings.length > 0 && !warningsAcknowledged;
-
-  // Rough estimate for modal display
-  const baseRate = 3.5;
-  const basePremium = (baseRate / 1000) * policy.coverage_amount * policy.term_years;
-  const fee = 500;
-  const tax = (basePremium + fee) * 0.01;
-  const total = basePremium + fee + tax;
-
-  // ── Demo-warnings gate modal ──────────────────────────────────────────────
-  if (checkingReadiness) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md border border-slate-200 p-8 flex flex-col items-center gap-4">
-          <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-          <p className="text-slate-500 text-sm">Checking issuance readiness…</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (showWarningsGate) {
-    return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-amber-200 overflow-hidden">
-          {/* Warning Header */}
-          <div className="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-5 flex items-start gap-3">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6 text-white flex-shrink-0 mt-0.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126Z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 15.75h.007v.008H12v-.008Z" />
-            </svg>
-            <div>
-              <p className="text-amber-100 text-xs font-medium uppercase tracking-widest">Demo Mode</p>
-              <h2 className="text-white text-lg font-bold mt-0.5">Issuance Warnings</h2>
-            </div>
-          </div>
-
-          <div className="px-6 py-5 space-y-4">
-            <p className="text-sm text-slate-700">
-              The following checks are <strong>required in a production environment</strong> but are being bypassed for this demo:
-            </p>
-
-            <div className="space-y-2">
-              {warnings.map((w, i) => (
-                <div key={i} className="flex items-start gap-2.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5">
-                    <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
-                  <p className="text-xs text-amber-800 leading-relaxed">{w}</p>
-                </div>
-              ))}
-            </div>
-
-            <p className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
-              ⚠️ In a live deployment, this issuance would be <strong>blocked</strong> until all the above are resolved. Proceeding only because this is a demo environment.
-            </p>
-
-            <div className="flex gap-3 pt-1">
-              <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-                Cancel
-              </button>
-              <button
-                onClick={() => setWarningsAcknowledged(true)}
-                className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all shadow-sm"
-              >
-                I Understand, Proceed →
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const pb = preview?.premium_breakdown;
+  const ready = preview?.readiness.ready_to_issue ?? false;
+  const blockers = preview?.readiness.blockers ?? [];
+  const warnings = preview?.readiness.warnings ?? [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-6 py-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-emerald-100 text-xs font-medium uppercase tracking-widest">Contract Factory</p>
-              <h2 className="text-white text-lg font-bold mt-0.5">Issue Policy</h2>
-            </div>
-            <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5">
-                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+        {/* Header + stepper */}
+        <div className="bg-gradient-to-r from-blue-600 to-blue-600 px-6 py-4 flex items-center justify-between">
+          <div>
+            <h2 className="text-white text-lg font-bold">Issue Policy</h2>
+            <div className="mt-2"><IssueStepper current={0} /></div>
           </div>
+          <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-5 h-5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
         </div>
 
-        <div className="px-6 py-5 space-y-5">
-          {/* Policy Summary */}
-          <div className="bg-slate-50 rounded-xl p-4 space-y-1.5">
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Policy to be Bound</p>
-            <p className="text-sm font-bold text-slate-900">{policy.customer_name}</p>
-            <p className="text-xs text-slate-500">{policy.product_name} · {policy.term_years} year{policy.term_years > 1 ? "s" : ""} · Sum Assured {fmtCoverage(policy.coverage_amount)}</p>
-            <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[(policy.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
-              {policy.status}
-            </span>
-          </div>
-
-          {/* Premium Breakdown */}
-          <div>
-            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-3">Estimated Premium Breakdown</p>
-            <div className="space-y-2">
-              {[
-                { label: "Base Premium", value: basePremium, sub: "Rate × Sum Assured × Term" },
-                { label: "Loading Applied", value: 0, sub: "From underwriting decision" },
-                { label: "Policy Fee", value: fee, sub: "Flat PKR 500" },
-                { label: "Stamp Duty (1%)", value: tax, sub: "Federal tax" },
-              ].map(row => (
-                <div key={row.label} className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs font-medium text-slate-700">{row.label}</p>
-                    <p className="text-[10px] text-slate-400">{row.sub}</p>
-                  </div>
-                  <p className="text-sm font-semibold text-slate-800">{fmtPKR(row.value)}</p>
+        <div className="px-6 py-5 space-y-5 overflow-y-auto">
+          {loadingPreview ? (
+            <div className="py-12 flex justify-center"><div className="w-7 h-7 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" /></div>
+          ) : !preview ? (
+            <p className="text-sm text-red-600">{error ?? "Preview unavailable."}</p>
+          ) : (
+            <>
+              {/* Readiness banner */}
+              {ready ? (
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-xs font-semibold text-blue-700">✓ All pre-issuance gates cleared — ready to bind.</div>
+              ) : (
+                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+                  <p className="text-xs font-bold text-red-700">{blockers.length} gate(s) block issuance</p>
+                  <ul className="mt-1 space-y-0.5">{blockers.map((b) => <li key={b} className="text-[11px] text-red-600">• {b}</li>)}</ul>
                 </div>
-              ))}
-              <div className="border-t border-slate-200 pt-2 flex items-center justify-between">
-                <p className="text-sm font-bold text-slate-900">Total Annual Premium</p>
-                <p className="text-base font-bold text-emerald-700">{fmtPKR(total)}</p>
+              )}
+              {warnings.length > 0 && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                  <p className="text-xs font-bold text-amber-700">Demo bypass — required in production</p>
+                  <ul className="mt-1 space-y-0.5">{warnings.map((w) => <li key={w} className="text-[11px] text-amber-700">• {w}</li>)}</ul>
+                </div>
+              )}
+
+              {/* Insured */}
+              <div>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Insured</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 rounded-xl p-4">
+                  <Field label="Name" value={preview.insured.name} />
+                  <Field label="CNIC" value={preview.insured.cnic ?? "—"} />
+                  <Field label="Date of birth" value={preview.insured.dob ?? "—"} />
+                  <Field label="Smoker" value={preview.insured.is_smoker ? "Yes" : "No"} />
+                </div>
               </div>
-            </div>
-          </div>
 
-          {/* Payment-gate notice */}
-          <div className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5">
-              <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
-            </svg>
-            <p className="text-xs text-amber-700">Issuing drafts the contract and generates the policy number, then moves it to <span className="font-semibold">Pending Payment</span>. Coverage only activates once the first premium is confirmed.</p>
-          </div>
+              {/* Contract terms */}
+              <div>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Contract terms</p>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 rounded-xl p-4">
+                  <Field label="Product" value={preview.contract.product_name} />
+                  <Field label="Sum assured" value={fmtCoverage(preview.contract.coverage_amount)} />
+                  <Field label="Term" value={`${preview.contract.term_years} years`} />
+                  <Field label="Commencement" value={preview.contract.effective_date} />
+                  <Field label="Maturity date" value={<span className="text-blue-700">{preview.contract.maturity_date}</span>} />
+                  <Field label="Billing" value={preview.contract.billing_frequency} />
+                </div>
+              </div>
 
-          {error && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+              {/* Premium breakdown */}
+              {pb && (
+                <div>
+                  <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Premium breakdown</p>
+                  <div className="rounded-xl border border-slate-200 divide-y divide-slate-50">
+                    {[
+                      ["Base premium", pb.base_premium],
+                      ["Loading", pb.loading_amount],
+                      ["Policy fee", pb.policy_fee],
+                      ["Tax / stamp duty", pb.tax_amount],
+                    ].map(([l, v]) => (
+                      <div key={l as string} className="flex justify-between px-4 py-2">
+                        <span className="text-xs text-slate-600">{l}</span>
+                        <span className="text-xs font-semibold text-slate-800">{fmtPKR(v as number)}</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between px-4 py-2.5 bg-blue-50/50">
+                      <span className="text-sm font-bold text-slate-900">Total annual premium</span>
+                      <span className="text-sm font-bold text-blue-700">{fmtPKR(pb.total_premium)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
-          <div className="flex gap-3 pt-1">
-            <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">
-              Cancel
-            </button>
-            <button
-              onClick={handleIssue}
-              disabled={loading}
-              className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 transition-all shadow-sm"
-            >
-              {loading ? "Drafting…" : "Draft & Send to Payment"}
-            </button>
-          </div>
+              {/* Beneficiaries */}
+              <div>
+                <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mb-2">Beneficiaries</p>
+                {preview.beneficiaries.length === 0 ? (
+                  <p className="text-xs text-slate-400 italic">None captured.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {preview.beneficiaries.map((b) => (
+                      <span key={b.name} className="text-xs bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700">
+                        {b.name} <span className="text-slate-400">· {b.relationship} · {b.share_pct}%</span>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                Issuing mints the policy number and drafts the contract, then moves to <b>Pending Payment</b>. Cover activates once the first premium is confirmed.
+              </p>
+            </>
+          )}
+
+          {error && !loadingPreview && preview && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{error}</p>}
+        </div>
+
+        {/* Footer actions */}
+        <div className="border-t border-slate-100 px-6 py-4 flex gap-3">
+          <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
+          <button onClick={handleIssue} disabled={issuing || loadingPreview || !ready}
+            title={!ready ? "Clear the blocking gates first" : undefined}
+            className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all shadow-sm">
+            {issuing ? "Binding…" : "Issue & bind →"}
+          </button>
         </div>
       </div>
     </div>
@@ -249,36 +259,35 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-        <div className={`px-6 py-5 text-center bg-gradient-to-r ${isPending ? "from-amber-500 to-orange-500" : "from-emerald-500 to-teal-500"}`}>
-          <div className="w-14 h-14 rounded-full bg-white/20 flex items-center justify-center mx-auto mb-3">
-            <svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" className="w-7 h-7">
-              {isPending
-                ? <><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 15 14" /></>
-                : <polyline points="20 6 9 17 4 12" />}
-            </svg>
+        <div className={`px-6 py-5 bg-gradient-to-r ${isPending ? "from-amber-500 to-orange-500" : "from-blue-500 to-blue-500"}`}>
+          <div className="flex justify-center mb-3"><IssueStepper current={1} /></div>
+          <div className="text-center">
+            <h2 className="text-white text-xl font-bold">{isPending ? "Policy Drafted & Number Assigned" : "Policy Issued!"}</h2>
+            <p className={`text-sm mt-1 ${isPending ? "text-amber-100" : "text-blue-100"}`}>
+              {policyName}{isPending ? " — next: collect the first premium" : ""}
+            </p>
           </div>
-          <h2 className="text-white text-xl font-bold">{isPending ? "Policy Drafted" : "Policy Issued!"}</h2>
-          <p className={`text-sm mt-1 ${isPending ? "text-amber-100" : "text-emerald-100"}`}>
-            {isPending ? `${policyName} — awaiting first premium` : policyName}
-          </p>
         </div>
         <div className="px-6 py-5 space-y-3">
           {[
             { label: "Policy Number", value: result.policy_number },
             { label: "Status", value: result.status },
             { label: "Effective Date", value: result.effective_date },
-            { label: "Expiry Date", value: result.expiry_date },
+            { label: "Maturity Date", value: result.maturity_date ?? result.expiry_date },
             { label: isPending ? "Amount Due" : "Total Annual Premium", value: fmtPKR(result.amount_due ?? result.premium_breakdown.total_premium) },
             ...(isPending && result.payment ? [{ label: "Payment Reference", value: result.payment.reference }] : []),
-            { label: "Documents Generated", value: `${result.documents_generated} documents (stubbed)` },
           ].map(row => (
             <div key={row.label} className="flex justify-between items-center py-1.5 border-b border-slate-50 last:border-0">
               <p className="text-xs text-slate-500">{row.label}</p>
               <p className="text-xs font-bold text-slate-900">{row.value}</p>
             </div>
           ))}
-          <button onClick={onClose} className="w-full mt-2 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all shadow-sm">
-            Done
+          <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5 mt-1">
+            <span aria-hidden>📄</span>
+            <p className="text-[11px] text-blue-800">The Policy Schedule, Certificate & Wording are generated and become downloadable once the first premium is confirmed (Bind & Pay).</p>
+          </div>
+          <button onClick={onClose} className="w-full mt-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 transition-all shadow-sm">
+            {isPending ? "Continue to payment →" : "Done"}
           </button>
         </div>
       </div>
@@ -293,6 +302,7 @@ interface PaymentModalProps {
 }
 
 function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
+  const { notify } = useNotify();
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [selected, setSelected] = useState<string>("");
   const [amountDue, setAmountDue] = useState<number | null>(null);
@@ -333,9 +343,12 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
     setError(null);
     try {
       const result = await confirmPayment(policy.id, { method: selected, reference });
+      notify("Payment confirmed successfully!", true);
       onConfirmed(result, policy.id);
     } catch (e: any) {
-      setError(e?.response?.data?.detail ?? "Payment confirmation failed.");
+      const msg = e?.response?.data?.detail ?? "Payment confirmation failed.";
+      setError(msg);
+      notify(msg, false);
     } finally {
       setConfirming(false);
     }
@@ -347,8 +360,10 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
     setError(null);
     try {
       await downloadDocument(policy.id, premiumNoticeId);
+      notify("Notice downloaded successfully.", true);
     } catch (e: any) {
       setError("Failed to download Premium Notice.");
+      notify("Failed to download Premium Notice.", false);
     } finally {
       setDownloading(false);
     }
@@ -615,7 +630,7 @@ export default function PolicyIssuancePage() {
             placeholder="Search customer, policy, product…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
+            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
           />
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
 
@@ -656,18 +671,18 @@ export default function PolicyIssuancePage() {
           {activeFilterChips.map((chip) => (
             <span
               key={chip.key}
-              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-medium"
+              className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
             >
               {chip.label}
               <button
                 onClick={chip.onRemove}
-                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700"
+                className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
               >
                 ✕
               </button>
             </span>
           ))}
-          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-emerald-600 hover:underline ml-1">
+          <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
             Clear all
           </button>
         </div>
@@ -676,7 +691,7 @@ export default function PolicyIssuancePage() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
-          <div className="py-16 flex justify-center"><div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-emerald-500" /></div>
+          <div className="py-16 flex justify-center"><div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-500" /></div>
         ) : filtered.length === 0 ? (
           <div className="py-20 flex flex-col items-center text-center">
             <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mb-3">
@@ -731,7 +746,7 @@ export default function PolicyIssuancePage() {
                     )}
                     {tab === "active" && (
                       <td className="px-5 py-3">
-                        <p className="font-mono text-[10px] text-emerald-700 font-bold inline-block">{p.policy_number ?? "—"}</p>
+                        <p className="font-mono text-[10px] text-blue-700 font-bold inline-block">{p.policy_number ?? "—"}</p>
                       </td>
                     )}
                     <td className="px-5 py-3 text-xs text-slate-600">{p.product_name}</td>
@@ -786,7 +801,7 @@ export default function PolicyIssuancePage() {
                             e.stopPropagation();
                             setViewPolicy(p);
                           }}
-                          className="text-xs font-semibold text-emerald-600 hover:text-emerald-800 transition-colors"
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors"
                         >
                           View Details
                         </button>
@@ -802,7 +817,7 @@ export default function PolicyIssuancePage() {
 
       {/* Activation toast */}
       {activatedMsg && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-emerald-600 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-lg animate-in slide-in-from-bottom-4">
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 bg-blue-600 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow-lg animate-in slide-in-from-bottom-4">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
             <polyline points="20 6 9 17 4 12" />
           </svg>

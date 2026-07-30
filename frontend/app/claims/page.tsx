@@ -8,17 +8,17 @@ const KPIS = [
 ] as const;
 
 const ROWS = [
-  { ref: "CLM-2026-C1", policy: "POL-2021-0441", claimant: "Ali Hassan", type: "Hospitalization", amount: "PKR 500,000", limit: "PKR 500,000", approved: "PKR 500,000", fraudProb: "2%", status: "Approved", score: 94 },
-  { ref: "CLM-2026-C2", policy: "POL-2022-0123", claimant: "Sara Khalid", type: "Hospitalization", amount: "PKR 150,000", limit: "PKR 300,000", approved: "—", fraudProb: "92%", status: "Fraud Rejected", score: 18 },
-  { ref: "CLM-2026-C3", policy: "POL-2020-0887", claimant: "Imran Nawaz", type: "Surgery", amount: "PKR 500,000", limit: "PKR 300,000", approved: "PKR 300,000", fraudProb: "5%", status: "Partial Approval", score: 88 },
-  { ref: "CLM-2026-D1", policy: "POL-2023-0214", claimant: "Fatima Shah", type: "Hospitalization", amount: "PKR 300,000", limit: "PKR 500,000", approved: "PKR 300,000", fraudProb: "3%", status: "Approved", score: 96 },
-  { ref: "CLM-2026-D2", policy: "POL-2021-0762", claimant: "Tariq Jameel", type: "Hospitalization", amount: "PKR 80,000", limit: "PKR 300,000", approved: "—", fraudProb: "94%", status: "Duplicate Rejected", score: 12 },
+  { ref: "CLM-2026-C1", policy: "PL-2021-0441", claimant: "Ali Hassan", type: "Hospitalization", amount: "PKR 500,000", limit: "PKR 500,000", approved: "PKR 500,000", fraudProb: "2%", status: "Approved", score: 94 },
+  { ref: "CLM-2026-C2", policy: "PL-2022-0123", claimant: "Sara Khalid", type: "Hospitalization", amount: "PKR 150,000", limit: "PKR 300,000", approved: "—", fraudProb: "92%", status: "Fraud Rejected", score: 18 },
+  { ref: "CLM-2026-C3", policy: "PL-2020-0887", claimant: "Imran Nawaz", type: "Surgery", amount: "PKR 500,000", limit: "PKR 300,000", approved: "PKR 300,000", fraudProb: "5%", status: "Partial Approval", score: 88 },
+  { ref: "CLM-2026-D1", policy: "PL-2023-0214", claimant: "Fatima Shah", type: "Hospitalization", amount: "PKR 300,000", limit: "PKR 500,000", approved: "PKR 300,000", fraudProb: "3%", status: "Approved", score: 96 },
+  { ref: "CLM-2026-D2", policy: "PL-2021-0762", claimant: "Tariq Jameel", type: "Hospitalization", amount: "PKR 80,000", limit: "PKR 300,000", approved: "—", fraudProb: "94%", status: "Duplicate Rejected", score: 12 },
   { ref: "CLM-2026-E4", policy: "CORP-2022-0031", claimant: "Raheel Ahmed", type: "Death Claim", amount: "PKR 1,200,000", limit: "PKR 1,200,000", approved: "PKR 1,200,000", fraudProb: "1%", status: "Approved", score: 98 },
   { ref: "CLM-2026-E5", policy: "CORP-2022-0031", claimant: "Estate of M. Zubair", type: "Death Claim", amount: "PKR 900,000", limit: "PKR 900,000", approved: "—", fraudProb: "61%", status: "Investigation", score: 47 },
 ];
 
 const STATUS_STYLE: Record<string, string> = {
-  "Approved":          "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  "Approved":          "bg-blue-50 text-blue-700 border border-blue-200",
   "Partial Approval":  "bg-blue-50 text-blue-700 border border-blue-200",
   "Fraud Rejected":    "bg-red-50 text-red-700 border border-red-200",
   "Duplicate Rejected":"bg-red-50 text-red-700 border border-red-200",
@@ -27,13 +27,13 @@ const STATUS_STYLE: Record<string, string> = {
 
 function FraudBar({ pct }: { pct: string }) {
   const n = parseInt(pct);
-  const color = n >= 80 ? "bg-red-500" : n >= 50 ? "bg-amber-400" : "bg-emerald-500";
+  const color = n >= 80 ? "bg-red-500" : n >= 50 ? "bg-amber-400" : "bg-blue-500";
   return (
     <div className="flex items-center gap-2">
       <div className="w-14 h-1.5 rounded-full bg-slate-100 overflow-hidden">
         <div className={`h-full rounded-full ${color}`} style={{ width: pct }} />
       </div>
-      <span className={`text-xs font-bold ${n >= 80 ? "text-red-600" : n >= 50 ? "text-amber-600" : "text-emerald-600"}`}>{pct}</span>
+      <span className={`text-xs font-bold ${n >= 80 ? "text-red-600" : n >= 50 ? "text-amber-600" : "text-blue-600"}`}>{pct}</span>
     </div>
   );
 }
@@ -60,7 +60,7 @@ export default function ClaimsPage() {
             <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-2">{s.label}</p>
             <p className="text-3xl font-extrabold text-slate-800 mb-2">{s.score}</p>
             <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div className="h-full rounded-full bg-emerald-500" style={{ width: `${s.score}%` }} />
+              <div className="h-full rounded-full bg-blue-500" style={{ width: `${s.score}%` }} />
             </div>
             <p className="text-[10px] text-slate-400 mt-1.5">{s.sub}</p>
           </div>
@@ -70,7 +70,7 @@ export default function ClaimsPage() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
           <p className="text-sm font-semibold text-slate-700">Claims Register</p>
-          <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">Overall Score 94 · Renewal Bonus Eligible · Agent Incentive +2%</span>
+          <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200">Overall Score 94 · Renewal Bonus Eligible · Agent Incentive +2%</span>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -94,7 +94,7 @@ export default function ClaimsPage() {
                   <td className="px-5 py-3 text-slate-600 text-xs">{r.type}</td>
                   <td className="px-5 py-3 text-right font-semibold text-slate-700">{r.amount}</td>
                   <td className="px-5 py-3 text-right text-slate-500">{r.limit}</td>
-                  <td className="px-5 py-3 text-right font-bold text-emerald-700">{r.approved}</td>
+                  <td className="px-5 py-3 text-right font-bold text-blue-700">{r.approved}</td>
                   <td className="px-5 py-3"><FraudBar pct={r.fraudProb} /></td>
                   <td className="px-5 py-3">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${STATUS_STYLE[r.status]}`}>{r.status}</span>
