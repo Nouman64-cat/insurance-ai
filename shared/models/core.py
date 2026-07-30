@@ -1904,6 +1904,7 @@ class PremiumReceipt(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
 
+    policy: Optional["Policy"] = Relationship(back_populates="premium_receipts")
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STAGE B — POLICY SERVICING & ENDORSEMENTS (mid-term changes)
@@ -1952,4 +1953,3 @@ class PolicyEndorsement(SQLModel, table=True):
     actor: Optional[str] = Field(default=None, max_length=255)
     document_path: Optional[str] = Field(default=None, max_length=1000)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
-    policy: Optional[Policy] = Relationship(back_populates="premium_receipts")

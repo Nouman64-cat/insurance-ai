@@ -281,12 +281,6 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
                           <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Approve</Btn>
                           <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review", "officer"))}>Reject</Btn>
                         </div>
-                        <>
-                          <Btn tone="amber" disabled={locked} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Clear flag</Btn>
-                          <div className="flex gap-1.5 flex-shrink-0">
-                            <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Approve</Btn>
-                          </div>
-                        </>
                       )}
                     </div>
                   );

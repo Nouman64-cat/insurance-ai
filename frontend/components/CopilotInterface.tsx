@@ -1001,9 +1001,6 @@ export function CopilotInterface() {
 
            {/* Bottom Input Area for ongoing chat (when not empty state) */}
            {messages.length > 1 || (messages.length === 1 && messages[0].role !== "assistant") ? (
-             <div className="absolute bottom-4 left-0 w-full px-4 z-20">
-               <div className="max-w-3xl mx-auto relative">
-                 <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all duration-300">
              <div className="w-full px-4 z-20 pb-4 bg-[#fdfdfe]">
                <div className="max-w-3xl mx-auto relative flex flex-col gap-2">
                  
@@ -1543,8 +1540,6 @@ export function CopilotInterface() {
                     }
                   </button>
                 </div>
-                <button type="submit" disabled={!input.trim() || isLoading}
-                  className="p-3 bg-gradient-to-br from-blue-500 to-fuchsia-500 hover:from-blue-600 hover:to-fuchsia-600 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-full transition-all shadow-lg shadow-fuchsia-500/30 active:scale-90 shrink-0">
                 <button type="submit" disabled={!input.trim() || isLoading || isUploading}
                   className="p-3 bg-gradient-to-br from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-full transition-all shadow-lg shadow-fuchsia-500/30 active:scale-90 shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
@@ -1563,8 +1558,6 @@ export function CopilotInterface() {
                     <button
                       key={idx}
                       onClick={() => handleQuickAction(action)}
-                      className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${action.actionType === "navigate"
-                          ? "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
                       disabled={isLoading || isUploading}
                       className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${
                         (isLoading || isUploading) ? "opacity-60 cursor-not-allowed pointer-events-none " : ""

@@ -259,11 +259,11 @@ function SuccessModal({ result, policyName, onClose }: SuccessModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-        <div className={`px-6 py-5 bg-gradient-to-r ${isPending ? "from-amber-500 to-orange-500" : "from-blue-500 to-blue-500"}`}>
+        <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-600">
           <div className="flex justify-center mb-3"><IssueStepper current={1} /></div>
           <div className="text-center">
             <h2 className="text-white text-xl font-bold">{isPending ? "Policy Drafted & Number Assigned" : "Policy Issued!"}</h2>
-            <p className={`text-sm mt-1 ${isPending ? "text-amber-100" : "text-blue-100"}`}>
+            <p className="text-sm mt-1 text-blue-100">
               {policyName}{isPending ? " — next: collect the first premium" : ""}
             </p>
           </div>
