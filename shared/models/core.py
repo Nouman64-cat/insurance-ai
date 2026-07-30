@@ -759,6 +759,33 @@ class Policy(SQLModel, table=True):
     policy_documents: List["PolicyDocument"] = Relationship(
         back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+    policy_events: List["PolicyEvent"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    counter_offers: List["CounterOffer"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    policy_requirements: List["PolicyRequirement"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    compliance_checks: List["ComplianceCheck"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    beneficiaries: List["Beneficiary"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    beneficiary_versions: List["BeneficiaryVersion"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    policy_onboarding: Optional["PolicyOnboarding"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    premium_reminders: List["PremiumReminder"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    premium_receipts: List["PremiumReceipt"] = Relationship(
+        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1537,6 +1564,8 @@ class PolicyEvent(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)
 
+    policy: Optional[Policy] = Relationship(back_populates="policy_events")
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STAGE A — PRE-ISSUANCE GATES
@@ -1601,6 +1630,8 @@ class CounterOffer(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+    policy: Optional[Policy] = Relationship(back_populates="counter_offers")
+
 
 class RequirementTypeEnum(str, Enum):
     MEDICAL_REPORT = "MedicalReport"
@@ -1643,6 +1674,8 @@ class PolicyRequirement(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+    policy: Optional[Policy] = Relationship(back_populates="policy_requirements")
+
 
 class ComplianceCheckTypeEnum(str, Enum):
     AML = "AML"                 # anti-money-laundering risk scoring
@@ -1684,6 +1717,8 @@ class ComplianceCheck(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+    policy: Optional[Policy] = Relationship(back_populates="compliance_checks")
+
 
 class Beneficiary(SQLModel, table=True):
     """
@@ -1708,6 +1743,8 @@ class Beneficiary(SQLModel, table=True):
     guardian_name: Optional[str] = Field(default=None, max_length=255)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    policy: Optional[Policy] = Relationship(back_populates="beneficiaries")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1738,6 +1775,8 @@ class BeneficiaryVersion(SQLModel, table=True):
     change_reason: Optional[str] = Field(default=None, max_length=500)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+    policy: Optional[Policy] = Relationship(back_populates="beneficiary_versions")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1802,6 +1841,8 @@ class PolicyOnboarding(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+    policy: Optional[Policy] = Relationship(back_populates="policy_onboarding")
+
 
 # ═════════════════════════════════════════════════════════════════════════════
 # STAGE B — RECURRING PREMIUM COLLECTION (step 3 authenticity)
@@ -1827,6 +1868,8 @@ class PremiumReminder(SQLModel, table=True):
     sent_by: Optional[str] = Field(default=None, max_length=255)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+    policy: Optional[Policy] = Relationship(back_populates="premium_reminders")
 
 
 class PremiumReceipt(SQLModel, table=True):
@@ -1854,3 +1897,5 @@ class PremiumReceipt(SQLModel, table=True):
     document_path: Optional[str] = Field(default=None, max_length=1000)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+    policy: Optional[Policy] = Relationship(back_populates="premium_receipts")

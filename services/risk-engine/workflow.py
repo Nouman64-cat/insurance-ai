@@ -389,8 +389,8 @@ def decision_aggregation(state: RiskState) -> Dict[str, Any]:
 # Graph assembly
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _should_continue(state: RiskState) -> str:
-    return "medical_scoring" if state["is_valid"] else END
+def _should_continue(state: RiskState) -> list[str]:
+    return ["medical_scoring", "financial_scoring", "fraud_detection"] if state["is_valid"] else [END]
 
 
 _graph = StateGraph(RiskState)
@@ -402,9 +402,7 @@ _graph.add_node("decision_aggregation", decision_aggregation)
 
 _graph.add_edge(START, "validate_input")
 _graph.add_conditional_edges("validate_input", _should_continue)
-_graph.add_edge("medical_scoring",     "financial_scoring")
-_graph.add_edge("financial_scoring",   "fraud_detection")
-_graph.add_edge("fraud_detection",     "decision_aggregation")
+_graph.add_edge(["medical_scoring", "financial_scoring", "fraud_detection"], "decision_aggregation")
 _graph.add_edge("decision_aggregation", END)
 
 _workflow = _graph.compile()
