@@ -210,7 +210,35 @@ const NAV_ITEMS = [
 
   },
 
-  {
+{
+    group: "Policy Management",
+    links: [
+      {
+        href: "/policy-issuance",
+        label: "Pre Policy Issuance",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <path d="M9 15l2 2 4-4" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/policy-management/post-issuance",
+        label: "Post Policy Issuance",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="M9 12l2 2 4-4" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
+{
     group: "Customer Management",
     links: [
 
@@ -231,18 +259,6 @@ const NAV_ITEMS = [
   {
     group: "Insurance Operations",
     links: [
-      {
-        href: "/policy-issuance",
-        label: "Policy Issuance",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <polyline points="9 15 11 17 15 13" />
-          </svg>
-        ),
-        badge: null,
-      },
       {
         href: "/renewals",
         label: "Renewals",
@@ -817,7 +833,15 @@ export function Sidebar() {
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
-        // Merge missing links from NAV_ITEMS if any new ones were added
+        // Append any groups added to NAV_ITEMS since the order was saved, so new
+        // sections (e.g. Policy Management) still surface for returning users.
+        const savedGroups = new Set(parsed.map((g: any) => g.group));
+        NAV_ITEMS.forEach((g: any) => {
+          if (g.group && !savedGroups.has(g.group)) {
+            parsed.push({ group: g.group, links: g.links.map((l: any) => l.href) });
+          }
+        });
+        // Merge any remaining new links (from existing groups) into the first group.
         const allSavedHrefs = new Set(parsed.flatMap((g: any) => g.links));
         const missingLinks = NAV_ITEMS.flatMap((g: any) => g.links).filter((l: any) => !allSavedHrefs.has(l.href));
         if (missingLinks.length > 0 && parsed.length > 0) {

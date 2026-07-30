@@ -473,6 +473,9 @@ class Customer(SQLModel, table=True):
     # Identity
     cnic: Optional[str] = Field(default=None, index=True, max_length=15, nullable=True)        # Pakistani National Identity Card
     name: str = Field(max_length=255)
+    # Permanent policyholder / client number, minted at Stage B onboarding and
+    # reused across every policy this customer holds (e.g. "PH-2026-000123").
+    policyholder_id: Optional[str] = Field(default=None, index=True, max_length=50, nullable=True)
     dob: Optional[date] = Field(default=None, nullable=True)
     gender: Optional[Gender] = Field(default=None, max_length=50, nullable=True)
     marital_status: Optional[MaritalStatus] = Field(default=None, max_length=50, nullable=True)
@@ -704,6 +707,21 @@ class Policy(SQLModel, table=True):
     grace_period_end_date: Optional[date] = Field(default=None)
     # Points to the latest PolicyVersion snapshot for this policy.
     current_version_id: Optional[UUID] = Field(default=None, nullable=True)
+
+    # ── Free-look / cooling-off (Stage B step 1 anchor, captured at binding) ───
+    # Date the policy documents reached the customer. Set when cover binds
+    # (PENDING_PAYMENT → ACTIVE). The statutory free-look window is counted from
+    # HERE, not from effective_date — the two can differ.
+    delivery_date: Optional[date] = Field(default=None)
+    # End of the free-look window (delivery_date + FREE_LOOK_DAYS). A cancellation
+    # on or before this date is a full-refund exit; Stage B enforces that.
+    free_look_end_date: Optional[date] = Field(default=None)
+    # Which mandatory Stage A gates were bypassed in DEMO mode at issuance:
+    # NotFlagged | ComplianceBypassed | BeneficiaryBypassed | BothBypassed.
+    # In production those gates are hard blockers, so a real issue stays NotFlagged.
+    demo_bypass_flags: Optional[str] = Field(default="NotFlagged", max_length=50)
+    # Stage B recurring collection — mock standing instruction / auto-debit mandate.
+    autopay_enabled: bool = Field(default=False)
     # ─────────────────────────────────────────────────────────────────────────
 
     effective_date: Optional[date] = Field(default=None)
@@ -1401,6 +1419,11 @@ class PremiumSchedule(SQLModel, table=True):
     paid_at: Optional[datetime] = Field(default=None)
     payment_reference: Optional[str] = Field(default=None, max_length=255)
 
+    # Stage B recurring collection (step 3) — installment position + reminder log.
+    installment_no: int = Field(default=1, ge=1)          # 1,2,3… within the policy year
+    reminder_count: int = Field(default=0, ge=0)
+    last_reminder_at: Optional[datetime] = Field(default=None)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -1685,3 +1708,149 @@ class Beneficiary(SQLModel, table=True):
     guardian_name: Optional[str] = Field(default=None, max_length=255)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# BeneficiaryVersion  —  immutable audit trail of the beneficiary roster
+# Every replace_beneficiaries call snapshots the full roster here with an
+# incrementing sequence, so a nominee change during Stage A (and, later, a
+# Stage B endorsement) leaves a queryable "who/what/when" history instead of
+# silently overwriting rows. Queried by policy_id directly (like Beneficiary,
+# no SQLModel relationship needed).
+# ─────────────────────────────────────────────────────────────────────────────
+
+class BeneficiaryVersion(SQLModel, table=True):
+    __tablename__ = "beneficiary_versions"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    # 1 = initial capture, 2 = first change, 3 = second change, ...
+    version_sequence: int = Field(ge=1)
+
+    # Full roster snapshot at this version: list of
+    # {name, cnic, relationship, share_pct, date_of_birth, is_minor, guardian_name}.
+    beneficiaries_json: list = Field(sa_column=Column(JSON, nullable=False))
+    total_share: float = Field(default=0.0, ge=0.0, le=100.0)
+
+    changed_by: Optional[str] = Field(default=None, max_length=255)  # user_id or "system"
+    change_reason: Optional[str] = Field(default=None, max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE B — POST-ISSUANCE ONBOARDING (step 2: Welcome & Onboarding)
+# Policyholder ID lives on Customer (one per person); the portal account is also
+# per-customer; the welcome kit + delivery + acknowledgment are per-policy. Status
+# columns are plain strings (like Policy.demo_bypass_flags) to avoid new native
+# PG enum types. Values are documented inline and mirrored in Python constants
+# on the router / gate for readability.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class CustomerPortalAccount(SQLModel, table=True):
+    """Simulated self-service portal account for a customer (one per customer).
+
+    The portal itself is mocked (like payment_gateway) — this row holds the
+    credentials ops issues at onboarding. Only the bcrypt hash is stored; the
+    temporary password is returned once by the API and never persisted.
+    """
+    __tablename__ = "customer_portal_accounts"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False, unique=True)
+
+    username: str = Field(max_length=255)
+    password_hash: str = Field(max_length=255)
+    status: str = Field(default="Pending", max_length=30)   # Pending | Active | Suspended
+    must_reset: bool = Field(default=True)                  # temp password → force change on first login
+    invite_token: Optional[str] = Field(default=None, max_length=64)
+    invite_expires_at: Optional[datetime] = Field(default=None)
+    last_login_at: Optional[datetime] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class PolicyOnboarding(SQLModel, table=True):
+    """Per-policy Stage B onboarding record: welcome kit + delivery + acknowledgment.
+
+    Policyholder ID (Customer.policyholder_id) and the portal account
+    (CustomerPortalAccount) are customer-level; this row tracks the parts specific
+    to one contract. Queried by policy_id directly (mirrors Beneficiary).
+    """
+    __tablename__ = "policy_onboarding"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False, unique=True)
+
+    welcome_kit_name: Optional[str] = Field(default=None, max_length=255)
+    welcome_kit_path: Optional[str] = Field(default=None, max_length=1000)
+    welcome_kit_generated_at: Optional[datetime] = Field(default=None)
+
+    welcome_sent_at: Optional[datetime] = Field(default=None)
+    welcome_channel: Optional[str] = Field(default=None, max_length=30)   # Email | SMS | Both | Manual
+
+    acknowledged_at: Optional[datetime] = Field(default=None)
+    acknowledgment_method: Optional[str] = Field(default=None, max_length=50)
+
+    status: str = Field(default="Pending", max_length=30)   # Pending | InProgress | Completed
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# STAGE B — RECURRING PREMIUM COLLECTION (step 3 authenticity)
+# Reminder log + payment receipts (with late-payment surcharge and per-collection
+# agent commission). Category columns are plain strings to avoid new PG enum
+# types. Queried by policy_id / schedule_id directly.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class PremiumReminder(SQLModel, table=True):
+    """One row per premium reminder sent — the reminder history/audit log."""
+    __tablename__ = "premium_reminders"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    schedule_id: Optional[UUID] = Field(default=None, index=True, nullable=True)
+
+    kind: str = Field(max_length=30)        # Upcoming | Due | Overdue | GraceWarning | FinalNotice
+    channel: str = Field(max_length=20)     # Email | SMS | WhatsApp | Letter
+    template: str = Field(max_length=30)    # Friendly | Standard | FinalNotice
+    to_address: Optional[str] = Field(default=None, max_length=255)
+    message: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    sent_by: Optional[str] = Field(default=None, max_length=255)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+
+class PremiumReceipt(SQLModel, table=True):
+    """A payment receipt for one collected installment, incl. any grace surcharge
+    and the agent commission earned on that collection."""
+    __tablename__ = "premium_receipts"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    schedule_id: Optional[UUID] = Field(default=None, index=True, nullable=True)
+
+    receipt_no: str = Field(max_length=50, index=True)
+    base_amount: float = Field(ge=0)
+    surcharge_amount: float = Field(default=0.0, ge=0)
+    total_amount: float = Field(ge=0)
+
+    method: Optional[str] = Field(default=None, max_length=30)
+    payment_reference: Optional[str] = Field(default=None, max_length=255)
+
+    commission_agent_id: Optional[str] = Field(default=None, max_length=100)
+    commission_pct: float = Field(default=0.0, ge=0.0, le=100.0)
+    commission_amount: float = Field(default=0.0, ge=0)
+
+    document_path: Optional[str] = Field(default=None, max_length=1000)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)

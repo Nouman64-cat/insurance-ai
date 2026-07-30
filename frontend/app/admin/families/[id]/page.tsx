@@ -81,6 +81,7 @@ const EMPTY_ROW: MemberFormRow = {
 
 const FAMILY_POLICY_STATUS_STYLE: Record<string, string> = {
   Active: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Proposed: "bg-indigo-50 text-indigo-700 border-indigo-200",
   Pending: "bg-blue-50 text-blue-700 border-blue-200",
   Review: "bg-amber-50 text-amber-700 border-amber-200",
 };

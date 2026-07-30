@@ -211,3 +211,20 @@ async def generate_and_store_premium_notice(session: AsyncSession, policy: Polic
     )
     session.add(doc)
     return doc
+
+
+async def render_welcome_kit(session: AsyncSession, policy: Policy, extra: Optional[dict] = None) -> dict:
+    """Render the Stage B welcome-kit PDF and return {document_name, file_path}.
+
+    The caller (post_issuance onboarding endpoint) persists the path on
+    PolicyOnboarding — the kit is an onboarding artifact, not a legal
+    PolicyDocument, so no document row / enum value is created here.
+    ``extra`` carries the onboarding-only context (policyholder_id, portal_url,
+    portal_username, free_look_end_date) not present in the base document context.
+    """
+    ctx = await build_document_context(session, policy)
+    if policy.free_look_end_date:
+        ctx["free_look_end_date"] = policy.free_look_end_date.isoformat()
+    if extra:
+        ctx.update(extra)
+    return document_generator.generate_welcome_kit(ctx)

@@ -776,6 +776,51 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v32-enum-draft — add DRAFT to profilestatusenum",
         "ALTER TYPE profilestatusenum ADD VALUE IF NOT EXISTS 'DRAFT'",
     ),
+    # ── Stage A hardening (pre Stage B) ──────────────────────────────────────
+    # Free-look anchor + demo-bypass audit on the existing policies table.
+    # (beneficiary_versions is a brand-new table → create_all handles it.)
+    (
+        "v33a — add delivery_date to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS delivery_date DATE",
+    ),
+    (
+        "v33b — add free_look_end_date to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS free_look_end_date DATE",
+    ),
+    (
+        "v33c — add demo_bypass_flags to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS demo_bypass_flags VARCHAR(50) DEFAULT 'NotFlagged'",
+    ),
+    # ── Stage B step 2 — Welcome & Onboarding ────────────────────────────────
+    # Policyholder / client number on the existing customers table.
+    # (customer_portal_accounts & policy_onboarding are brand-new tables →
+    # create_all builds them; their status columns are plain VARCHAR, so no new
+    # native enum types are introduced.)
+    (
+        "v34a — add policyholder_id to customers",
+        "ALTER TABLE customers ADD COLUMN IF NOT EXISTS policyholder_id VARCHAR(50)",
+    ),
+    (
+        "v34b — index policyholder_id",
+        "CREATE INDEX IF NOT EXISTS ix_customers_policyholder_id ON customers (policyholder_id)",
+    ),
+    # ── Stage B step 3 — Recurring Premium Collection ────────────────────────
+    (
+        "v35a — add installment_no to premium_schedules",
+        "ALTER TABLE premium_schedules ADD COLUMN IF NOT EXISTS installment_no INTEGER NOT NULL DEFAULT 1",
+    ),
+    (
+        "v35b — add reminder_count to premium_schedules",
+        "ALTER TABLE premium_schedules ADD COLUMN IF NOT EXISTS reminder_count INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "v35c — add last_reminder_at to premium_schedules",
+        "ALTER TABLE premium_schedules ADD COLUMN IF NOT EXISTS last_reminder_at TIMESTAMP",
+    ),
+    (
+        "v35d — add autopay_enabled to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS autopay_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+    ),
     # NOTE: The renewal scheduler (renewal_scheduler.py) MUST run in a single-worker
     # deployment to avoid duplicate RenewalTransactions. Enforce via:
     #   CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]

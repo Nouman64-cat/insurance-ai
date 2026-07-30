@@ -10,7 +10,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from decision_status import DECISION_CASE_STATUS, DECISION_POLICY_STATUS
+from decision_status import DECISION_CASE_STATUS
 from group_underwriting import (
     average_age,
     age_from_dob,
@@ -631,6 +631,10 @@ async def confirm_employee_census(
         coverage_amount = row["_coverage_amount"]
         above_fcl = coverage_amount > free_cover_limit
 
+        # Starts as a Quoted DRAFT — the employee is still risk-scored below (and
+        # the guaranteed-issue vs above-FCL split is recorded on the Case), but
+        # the proposal surfaces in the Proposal Draft section and is advanced to
+        # Under Review / Approved manually via the status control, not auto-set.
         policy = Policy(
             tenant_id=tenant_id,
             customer_id=customer.id,
@@ -639,7 +643,7 @@ async def confirm_employee_census(
             insurance_type=master_policy.insurance_type,
             coverage_amount=coverage_amount,
             term_years=master_policy.term_years,
-            status=PolicyStatusEnum.UNDER_REVIEW if above_fcl else PolicyStatusEnum.APPROVED,
+            status=PolicyStatusEnum.QUOTED,
         )
         session.add(policy)
         await session.flush()
@@ -681,11 +685,8 @@ async def confirm_employee_census(
                 risk_assessment_id = assessment.id
                 suggested_loading = assessment.suggested_loading
 
-                new_policy_status = DECISION_POLICY_STATUS.get(ai_result["ai_decision"])
-                if new_policy_status is not None:
-                    policy.status = new_policy_status
-                    session.add(policy)
-
+                # AI decision is recorded on the Case (below); the proposal Policy
+                # stays a Quoted DRAFT and is advanced via the Proposal status control.
                 new_case_status = DECISION_CASE_STATUS.get(ai_result["ai_decision"])
                 if new_case_status is not None and new_case_status != case.caseStatus:
                     if audit_user is not None:
@@ -700,8 +701,8 @@ async def confirm_employee_census(
                     case.caseStatus = new_case_status
                     session.add(case)
             # else: risk-engine unreachable/errored (or returned a non-200) —
-            # Policy stays UnderReview, Case stays New; an underwriter can
-            # still work it manually. Logged inside risk_client.py.
+            # Case stays New; an underwriter can still work it manually. The
+            # proposal Policy is a Quoted DRAFT regardless. Logged in risk_client.py.
 
         # Always price — both guaranteed-issue and above-FCL members get an
         # indicative premium, same reuse of calculate_premium() as
@@ -737,19 +738,23 @@ async def confirm_employee_census(
             risk_assessment_id=risk_assessment_id,
         ))
 
-    master_policy.status = "Active"
+    # Confirming the employee census produces a PROPOSAL, not an in-force group
+    # contract — the MasterPolicy is "Proposed" so the org stays on the Leads
+    # board (category in_progress) with its quotes in the Proposal Draft section.
+    # profile_status is left as-is (LEAD) so the org keeps its manual "In Progress"
+    # button, just like an individual lead. Only a later issuance step marks the
+    # master policy "Active" / the org a POLICYHOLDER.
+    master_policy.status = "Proposed"
     if master_policy.free_cover_limit is None:
         master_policy.free_cover_limit = free_cover_limit
     session.add(master_policy)
 
-    from shared.models.core import ProfileStatusEnum, Organization
+    from shared.models.core import Organization
     org = await session.get(Organization, org_id)
     if org:
-        org.profile_status = ProfileStatusEnum.POLICYHOLDER
         session.add(org)
-        
+
     for cust in customers_to_promote:
-        cust.profile_status = ProfileStatusEnum.POLICYHOLDER
         session.add(cust)
 
     await session.commit()

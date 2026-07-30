@@ -40,6 +40,7 @@ from services.pre_issuance_gate import compute_readiness
 from routers.policies import _get_policy, _publish_policy_event, _st
 from shared.models.core import (
     Beneficiary,
+    BeneficiaryVersion,
     ComplianceCheck,
     ComplianceCheckTypeEnum,
     ComplianceStatusEnum,
@@ -65,6 +66,27 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["Stage A — Pre-Issuance"])
 
 DEFAULT_OFFER_VALID_DAYS = 21
+
+# The statuses during which Stage A mutations (requirements, compliance,
+# beneficiary capture, document (re)generation) are legal. Once a policy leaves
+# this set — i.e. it has been drafted (PendingPayment) or bound (Active) or
+# beyond — these endpoints must refuse: a live contract is only changed through a
+# Stage B endorsement, never by silently overwriting Stage A rows.
+PRE_ISSUANCE_STATUSES = frozenset({
+    "Proposed", "UnderReview", "InformationRequested",
+    "CounterOffer", "Approved", "AcceptedWithLoadings",
+})
+
+
+def _assert_stage_a(policy: Policy, action: str) -> None:
+    """Guard a Stage A mutation. Raises 409 once the policy has left pre-issuance."""
+    st = _st(policy)
+    if st not in PRE_ISSUANCE_STATUSES:
+        raise HTTPException(
+            409,
+            f"{action} is only allowed during pre-issuance (Stage A). "
+            f"Policy is '{st}' — use a Stage B endorsement instead.",
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -121,6 +143,8 @@ class BeneficiaryIn(BaseModel):
 
 class BeneficiariesReplace(BaseModel):
     beneficiaries: List[BeneficiaryIn]
+    changed_by: Optional[str] = None
+    change_reason: Optional[str] = None
 
 
 class ComplianceClearBody(BaseModel):
@@ -423,6 +447,7 @@ async def create_requirements(
     """Create the requirement checklist. With no body, seeds the standard default
     set for the policy; idempotent — skips requirement types already present."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_stage_a(policy, "Creating requirements")
     existing = {
         (r.requirement_type.value if hasattr(r.requirement_type, "value") else str(r.requirement_type))
         for r in (await session.exec(select(PolicyRequirement).where(PolicyRequirement.policy_id == policy_id))).all()
@@ -548,6 +573,7 @@ async def run_compliance(
 ):
     """Re-run all three screenings, replacing any prior results for this policy."""
     policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_stage_a(policy, "Running compliance screening")
     customer = await session.get(Customer, policy.customer_id)
     if customer is None:
         raise HTTPException(404, "Customer not found")
@@ -660,8 +686,14 @@ async def replace_beneficiaries(
     body: BeneficiariesReplace,
     session: AsyncSession = Depends(get_session),
 ):
-    """Replace the full beneficiary set. Shares must sum to 100%."""
+    """Replace the full beneficiary set. Shares must sum to 100%.
+
+    Stage A only. Every replace snapshots the resulting roster into
+    BeneficiaryVersion (incrementing sequence) so the change history survives —
+    a Stage B nominee change will build on this same audit trail via endorsement.
+    """
     policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_stage_a(policy, "Replacing beneficiaries")
     if not body.beneficiaries:
         raise HTTPException(400, "At least one beneficiary is required")
     total = round(sum(b.share_pct for b in body.beneficiaries), 2)
@@ -672,6 +704,7 @@ async def replace_beneficiaries(
         await session.delete(old)
 
     created = []
+    snapshot: list[dict] = []
     for b in body.beneficiaries:
         row = Beneficiary(
             tenant_id=tenant_id, policy_id=policy_id, name=b.name, cnic=b.cnic,
@@ -680,6 +713,28 @@ async def replace_beneficiaries(
         )
         session.add(row)
         created.append(row)
+        snapshot.append({
+            "name": b.name, "cnic": b.cnic, "relationship": b.relationship,
+            "share_pct": b.share_pct,
+            "date_of_birth": b.date_of_birth.isoformat() if b.date_of_birth else None,
+            "is_minor": b.is_minor, "guardian_name": b.guardian_name,
+        })
+
+    # Append an immutable version snapshot (sequence = previous max + 1).
+    last_seq = (await session.exec(
+        select(BeneficiaryVersion.version_sequence)
+        .where(BeneficiaryVersion.policy_id == policy_id)
+        .order_by(BeneficiaryVersion.version_sequence.desc())  # type: ignore[arg-type]
+    )).first()
+    next_seq = (last_seq or 0) + 1
+    session.add(BeneficiaryVersion(
+        tenant_id=tenant_id, policy_id=policy_id,
+        version_sequence=next_seq,
+        beneficiaries_json=snapshot,
+        total_share=total,
+        changed_by=body.changed_by,
+        change_reason=body.change_reason or ("Initial capture" if next_seq == 1 else "Roster updated"),
+    ))
 
     # Mirror the primary (largest share) nominee onto the policy for back-compat.
     primary = max(body.beneficiaries, key=lambda x: x.share_pct)
@@ -690,7 +745,32 @@ async def replace_beneficiaries(
     await session.commit()
     for r in created:
         await session.refresh(r)
-    return {"beneficiaries": [_ben_dict(r) for r in created], "total_share": total}
+    return {
+        "beneficiaries": [_ben_dict(r) for r in created],
+        "total_share": total,
+        "version_sequence": next_seq,
+    }
+
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/beneficiaries/history")
+async def beneficiary_history(
+    tenant_id: UUID, policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Audit trail of every beneficiary roster snapshot, newest version first."""
+    await _get_policy(session, tenant_id, policy_id)
+    res = await session.exec(
+        select(BeneficiaryVersion).where(BeneficiaryVersion.policy_id == policy_id)
+        .order_by(BeneficiaryVersion.version_sequence.desc())  # type: ignore[arg-type]
+    )
+    return [{
+        "version_sequence": v.version_sequence,
+        "total_share": v.total_share,
+        "beneficiaries": v.beneficiaries_json,
+        "changed_by": v.changed_by,
+        "change_reason": v.change_reason,
+        "created_at": v.created_at.isoformat(),
+    } for v in res.all()]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -703,6 +783,7 @@ async def generate_documents(
     session: AsyncSession = Depends(get_session),
 ):
     policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_stage_a(policy, "Generating documents")
     rows = await generate_and_store_documents(session, policy, policy.current_version_id)
     await session.commit()
     for r in rows:

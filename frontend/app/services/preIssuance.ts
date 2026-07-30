@@ -62,9 +62,25 @@ export interface Beneficiary {
   guardian_name?: string | null;
 }
 
+export type DemoBypassFlag =
+  | "NotFlagged"
+  | "ComplianceBypassed"
+  | "BeneficiaryBypassed"
+  | "BothBypassed";
+
+export interface BeneficiaryVersion {
+  version_sequence: number;
+  total_share: number;
+  beneficiaries: Beneficiary[];
+  changed_by: string | null;
+  change_reason: string | null;
+  created_at: string;
+}
+
 export interface Readiness {
   policy_id: string;
   status: string;
+  demo_bypass_flags: DemoBypassFlag;
   steps: {
     revised_terms: { status: string; offer: { id: string; offer_type: string; valid_until: string } | null };
     requirements: { status: string; total: number; cleared: number; outstanding: string[] };
@@ -174,9 +190,23 @@ export async function getBeneficiaries(policyId: string): Promise<{ beneficiarie
   return res.data;
 }
 
-export async function replaceBeneficiaries(policyId: string, beneficiaries: Beneficiary[]) {
+export async function replaceBeneficiaries(
+  policyId: string,
+  beneficiaries: Beneficiary[],
+  meta?: { changed_by?: string; change_reason?: string },
+) {
   const tid = tenantId();
-  const res = await api.put(`/tenants/${tid}/policies/${policyId}/beneficiaries`, { beneficiaries });
+  const res = await api.put(`/tenants/${tid}/policies/${policyId}/beneficiaries`, {
+    beneficiaries,
+    changed_by: meta?.changed_by,
+    change_reason: meta?.change_reason,
+  });
+  return res.data;
+}
+
+export async function getBeneficiaryHistory(policyId: string): Promise<BeneficiaryVersion[]> {
+  const tid = tenantId();
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/beneficiaries/history`);
   return res.data;
 }
 
