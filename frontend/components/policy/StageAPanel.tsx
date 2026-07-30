@@ -14,7 +14,7 @@ import { getPolicyDetail, type PolicyDocument } from "@/app/services/policies";
 
 // Statuses during which Stage A mutations are legal (mirrors the backend
 // PRE_ISSUANCE_STATUSES guard). Outside this set the contract is drafted/bound
-// and Stage A is read-only — changes go through a Stage B endorsement.
+// and Stage A is read-only - changes go through a Stage B endorsement.
 const PRE_ISSUANCE_STATUSES = new Set([
   "Proposed", "UnderReview", "InformationRequested",
   "CounterOffer", "Approved", "AcceptedWithLoadings",
@@ -27,7 +27,7 @@ const BYPASS_LABEL: Record<string, string> = {
 };
 
 const fmtPKR = (n: number | null | undefined) =>
-  n == null ? "—" : `PKR ${Math.round(n).toLocaleString()}`;
+  n == null ? "-" : `PKR ${Math.round(n).toLocaleString()}`;
 
 const PILL: Record<string, string> = {
   done: "bg-blue-50 text-blue-700 border-blue-200",
@@ -36,9 +36,15 @@ const PILL: Record<string, string> = {
   idle: "bg-slate-100 text-slate-500 border-slate-200",
 };
 
-function StepShell({
-  n, title, state, hint, children,
-}: Readonly<{ n: number; title: string; state: "done" | "blocked" | "current" | "idle"; hint: string; children?: React.ReactNode }>) {
+interface StepShellProps {
+  n: number;
+  title: string;
+  state: "done" | "blocked" | "current" | "idle";
+  hint: string;
+  children?: React.ReactNode;
+}
+
+function StepShell({ n, title, state, hint, children }: StepShellProps) {
   return (
     <div className="relative pl-9">
       <span className={`absolute left-0 top-0 flex items-center justify-center w-6 h-6 rounded-full border text-[11px] font-bold ${PILL[state]}`}>
@@ -55,7 +61,14 @@ function StepShell({
   );
 }
 
-const Btn = ({ onClick, children, tone = "slate", disabled }: Readonly<{ onClick: () => void; children: React.ReactNode; tone?: "slate" | "emerald" | "red" | "amber"; disabled?: boolean }>) => {
+interface BtnProps {
+  onClick: () => void;
+  children: React.ReactNode;
+  tone?: "slate" | "emerald" | "red" | "amber";
+  disabled?: boolean;
+}
+
+const Btn = ({ onClick, children, tone = "slate", disabled }: BtnProps) => {
   const tones: Record<string, string> = {
     slate: "bg-slate-800 hover:bg-slate-900 text-white",
     emerald: "bg-blue-600 hover:bg-blue-700 text-white",
@@ -70,7 +83,12 @@ const Btn = ({ onClick, children, tone = "slate", disabled }: Readonly<{ onClick
   );
 };
 
-export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string; onChanged?: () => void }>) {
+interface StageAPanelProps {
+  policyId: string;
+  onChanged?: () => void;
+}
+
+export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [offer, setOffer] = useState<CounterOffer | null>(null);
   const [reqs, setReqs] = useState<RequirementItem[]>([]);
@@ -104,7 +122,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
 
   useEffect(() => { load(); }, [load]);
 
-  const run = async (fn: () => Promise<unknown>) => {
+  const run = async (fn: () => Promise<any>) => {
     setBusy(true); setErr(null);
     try { await fn(); await load(); onChanged?.(); }
     catch (e: any) { setErr(e?.message ?? "Action failed"); }
@@ -116,7 +134,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
   }
   const s = readiness.steps;
 
-  // Once the policy leaves the pre-issuance statuses it is drafted/bound — Stage A
+  // Once the policy leaves the pre-issuance statuses it is drafted/bound - Stage A
   // mutations are locked (backend enforces the same via _assert_stage_a).
   const stageALocked = !PRE_ISSUANCE_STATUSES.has(readiness.status);
   const locked = busy || stageALocked;
@@ -136,37 +154,37 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
 
   return (
     <div className="space-y-5">
-      {/* Stage A locked — the contract is drafted/bound; edits are read-only here */}
+
       {stageALocked ? (
         <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-600 space-y-1">
           <p className="font-semibold flex items-center gap-2">
             <span aria-hidden>🔒</span>
-            Stage A is finalized (policy is <b>{readiness.status}</b>). These steps are read-only — mid-term changes now go through a Stage B endorsement.
+            Stage A is finalized (policy is <b>{readiness.status}</b>). These steps are read-only - mid-term changes now go through a Stage B endorsement.
           </p>
           {freeLookEnd && (
             <p className="text-[11px] text-slate-500 pl-6">
-              Free-look period ends <b className="text-slate-700">{freeLookEnd}</b> — cancel by then for a full refund.
+              Free-look period ends <b className="text-slate-700">{freeLookEnd}</b> - cancel by then for a full refund.
             </p>
           )}
         </div>
       ) : (
         <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${readiness.ready_to_issue ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
           {readiness.ready_to_issue
-            ? "✓ All pre-issuance gates cleared — ready to issue."
+            ? "✓ All pre-issuance gates cleared - ready to issue."
             : `${readiness.blockers.length} gate(s) remaining before issuance.`}
         </div>
       )}
 
-      {/* Demo-bypass audit — mandatory gates waved through in demo mode */}
+      {/* Demo-bypass audit - mandatory gates waved through in demo mode */}
       {bypass && bypass !== "NotFlagged" && (
         <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
-          <span className="font-semibold">⚠ Demo bypass:</span> {BYPASS_LABEL[bypass] ?? bypass}. Blocked in production — backfill before this contract is treated as production-grade.
+          <span className="font-semibold">⚠ Demo bypass:</span> {BYPASS_LABEL[bypass] ?? bypass}. Blocked in production - backfill before this contract is treated as production-grade.
         </div>
       )}
       {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">{err}</div>}
 
       <div className="space-y-5">
-        {/* 1 — Revised terms */}
+        {/* 1 - Revised terms */}
         <StepShell n={1} title="Accept Revised Terms" state={termState}
           hint={s.revised_terms.status.replace("_", " ")}>
           {offer && offer.status === "Pending" ? (
@@ -198,11 +216,11 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
           ) : offer ? (
             <p className="text-xs text-slate-500">Counter-offer <b>{offer.status.toLowerCase()}</b>{offer.responded_at ? ` on ${offer.responded_at.slice(0, 10)}` : ""}.</p>
           ) : (
-            <p className="text-xs text-slate-400 italic">Clean approval — no revised terms to accept.</p>
+            <p className="text-xs text-slate-400 italic">Clean approval - no revised terms to accept.</p>
           )}
         </StepShell>
 
-        {/* 2 — Requirements */}
+        {/* 2 - Requirements */}
         <StepShell n={2} title="Clear Pending Requirements" state={reqState}
           hint={reqs.length ? `${s.requirements.cleared}/${s.requirements.total}` : "none"}>
           {reqs.length === 0 ? (
@@ -227,7 +245,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
           )}
         </StepShell>
 
-        {/* 3 — First premium */}
+        {/* 3 - First premium */}
         <StepShell n={3} title="Collect First Premium" state={premState}
           hint={s.premium.status}>
           <p className="text-xs text-slate-400 italic">
@@ -237,7 +255,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
           </p>
         </StepShell>
 
-        {/* 4 — Compliance */}
+        {/* 4 - Compliance */}
         <StepShell n={4} title="Compliance Checks" state={compState} hint={s.compliance.status.replace("_", " ")}>
           <div className="space-y-1.5">
             {checks.length === 0 ? (
@@ -263,6 +281,12 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                           <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Approve</Btn>
                           <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review", "officer"))}>Reject</Btn>
                         </div>
+                        <>
+                          <Btn tone="amber" disabled={locked} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Clear flag</Btn>
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Approve</Btn>
+                          </div>
+                        </>
                       )}
                     </div>
                   );
@@ -339,7 +363,8 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
           </div>
         </StepShell> */}
 
-        {/* 6 — Documents */}
+
+        {/* 6 - Documents */}
         <StepShell n={5} title="Generate & Validate Documents" state={docState}
           hint={docs.length ? `${s.documents.generated}/${s.documents.total}` : "none"}>
           <div className="space-y-1.5">

@@ -78,6 +78,17 @@ async def create_case(
         policy = await session.get(Policy, body.policy_id)
         if not policy or policy.tenant_id != tenant_id or policy.customer_id != body.customer_id:
             raise HTTPException(status_code=404, detail="Policy not found for this customer.")
+        
+        # Prevent creating multiple cases for the same policy (of the same type)
+        existing_case = (await session.execute(
+            select(Case).where(
+                Case.policy_id == body.policy_id, 
+                Case.tenant_id == tenant_id,
+                Case.caseType == body.caseType
+            )
+        )).scalars().first()
+        if existing_case:
+            return existing_case
 
     case = Case(
         tenant_id=tenant_id,
@@ -201,6 +212,17 @@ async def list_cases(
     for a in (await session.execute(assessments_stmt)).scalars().all():
         latest_by_case.setdefault(a.case_id, a)
 
+    # Fetch Family groups to include the true group name
+    family_group_ids = list({c.family_group_id for c in customers.values() if c.family_group_id})
+    family_groups = {}
+    if family_group_ids:
+        from shared.models.core import FamilyGroup
+        family_groups = {
+            f.id: f for f in (await session.execute(
+                select(FamilyGroup).where(FamilyGroup.id.in_(family_group_ids))
+            )).scalars().all()
+        }
+
     out = []
     for c in cases:
         customer = customers.get(c.customer_id)
@@ -211,8 +233,12 @@ async def list_cases(
         row["customer_cnic"] = customer.cnic if customer else None
         if customer and customer.organization_id:
             row["customer_segment"] = "organization"
+            row["organization_id"] = str(customer.organization_id)
         elif customer and customer.family_group_id:
             row["customer_segment"] = "family"
+            row["family_group_id"] = str(customer.family_group_id)
+            if customer.family_group_id in family_groups:
+                row["family_group_name"] = family_groups[customer.family_group_id].name
         else:
             row["customer_segment"] = "individual"
         row["product_name"] = policy.product_name if policy else None
@@ -311,6 +337,40 @@ async def get_case_detail(
                 pp = await session.get(Customer, family_group.primary_member_customer_id)
                 if pp:
                     principal_participant_name = pp.name
+                    
+    family_members: List[dict] = []
+    if customer and customer.family_group_id:
+        family_peers = (await session.execute(
+            select(Customer).where(
+                Customer.tenant_id == tenant_id,
+                Customer.family_group_id == customer.family_group_id,
+            )
+        )).scalars().all()
+        family_peer_ids = [p.id for p in family_peers]
+        
+        latest_case_by_family_customer: dict = {}
+        if family_peer_ids:
+            family_peer_cases = (await session.execute(
+                select(Case)
+                .where(Case.tenant_id == tenant_id, Case.customer_id.in_(family_peer_ids))
+                .order_by(Case.createdAt.desc())
+            )).scalars().all()
+            for c in family_peer_cases:
+                latest_case_by_family_customer.setdefault(c.customer_id, c)
+                
+        for p in family_peers:
+            peer_case = latest_case_by_family_customer.get(p.id)
+            if not peer_case:
+                continue
+            family_members.append({
+                "customer_id": str(p.id),
+                "name": p.name,
+                "cnic": p.cnic,
+                "case_id": str(peer_case.caseld),
+                "case_number": peer_case.caseNumber,
+                "case_status": peer_case.caseStatus.value,
+                "is_current": peer_case.caseld == case.caseld,
+            })
 
     organization_name = None
     organization_members: List[dict] = []
@@ -363,6 +423,7 @@ async def get_case_detail(
         "principal_participant_name": principal_participant_name,
         "is_principal_participant": is_principal_participant,
         "family_relationship": family_relationship,
+        "family_members": family_members,
         "organization_name": organization_name,
         "organization_members": organization_members,
         "policy": PolicyRead.model_validate(policy) if policy else None,

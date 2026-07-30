@@ -9,6 +9,7 @@ class ChatStreamRequest(BaseModel):
     # interrupt?" check (e.g. after a page reload) without sending a new turn.
     message: Optional[str] = None
     role: str = "Agent"
+    attachments: Optional[list[dict[str, Any]]] = None
 
 
 class ChatResumeRequest(BaseModel):

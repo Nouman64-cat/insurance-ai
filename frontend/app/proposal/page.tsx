@@ -439,6 +439,23 @@ export default function QuotePage() {
   // globally unique whether the customer sits under an org or a family).
   const [viewMode, setViewMode] = useState<'list'|'grid'>('list');
 
+  const [expandedOrgIds, setExpandedOrgIds] = useState<Set<string>>(new Set());
+  const [expandedFamilyIds, setExpandedFamilyIds] = useState<Set<string>>(new Set());
+  
+  const toggleOrg = (orgId: string) => setExpandedOrgIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(orgId)) next.delete(orgId);
+    else next.add(orgId);
+    return next;
+  });
+  
+  const toggleFamily = (famId: string) => setExpandedFamilyIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(famId)) next.delete(famId);
+    else next.add(famId);
+    return next;
+  });
+
 
 
   const toggleSelection = (quoteId: string) => {
@@ -682,11 +699,23 @@ export default function QuotePage() {
     return activeTab === "ALL" ? quotes : quotes.filter((q) => q.status === activeTab);
   }, [quotes, activeTab]);
 
+  const countEntities = (qs: QuoteListItem[]) => {
+    const indQuotes = qs.filter((q) => quoteSegment(q) === "individual");
+    const orgQuotes = qs.filter((q) => quoteSegment(q) === "organization");
+    const famQuotes = qs.filter((q) => quoteSegment(q) === "family");
+    
+    const numInd = dedupeQuotesByCustomer(indQuotes).length;
+    const numOrg = new Set(orgQuotes.map((q) => q.organization_id).filter(Boolean)).size;
+    const numFam = new Set(famQuotes.map((q) => q.family_group_id).filter(Boolean)).size;
+    
+    return numInd + numOrg + numFam;
+  };
+
   const statusCounts = useMemo(() => {
-    const counts: Partial<Record<StatusFilter, number>> = { ALL: dedupeQuotesByCustomer(quotes).length };
+    const counts: Partial<Record<StatusFilter, number>> = { ALL: countEntities(quotes) };
     for (const tab of STATUS_TABS) {
       if (tab.id === "ALL") continue;
-      counts[tab.id as StatusFilter] = dedupeQuotesByCustomer(quotes.filter((q) => q.status === tab.id)).length;
+      counts[tab.id as StatusFilter] = countEntities(quotes.filter((q) => q.status === tab.id));
     }
     return counts;
   }, [quotes]);
@@ -699,11 +728,25 @@ export default function QuotePage() {
   }, [statusFilteredQuotes, segment]);
 
   const segmentCounts = useMemo(() => {
-    const counts: Partial<Record<SegmentFilter, number>> = { all: dedupeQuotesByCustomer(statusFilteredQuotes).length };
-    for (const s of ["individual", "family", "organization"] as const) {
-      const filtered = statusFilteredQuotes.filter((q) => quoteSegment(q) === s);
-      counts[s] = dedupeQuotesByCustomer(filtered).length;
-    }
+    const counts: Partial<Record<SegmentFilter, number>> = {};
+    
+    // Individual: count unique customers
+    const indQuotes = statusFilteredQuotes.filter((q) => quoteSegment(q) === "individual");
+    counts["individual"] = dedupeQuotesByCustomer(indQuotes).length;
+
+    // Organization: count unique organizations
+    const orgQuotes = statusFilteredQuotes.filter((q) => quoteSegment(q) === "organization");
+    const uniqueOrgs = new Set(orgQuotes.map((q) => q.organization_id).filter(Boolean));
+    counts["organization"] = uniqueOrgs.size;
+
+    // Family: count unique families
+    const famQuotes = statusFilteredQuotes.filter((q) => quoteSegment(q) === "family");
+    const uniqueFams = new Set(famQuotes.map((q) => q.family_group_id).filter(Boolean));
+    counts["family"] = uniqueFams.size;
+
+    // All: sum of unique entities
+    counts["all"] = (counts["individual"] || 0) + (counts["organization"] || 0) + (counts["family"] || 0);
+
     return counts;
   }, [statusFilteredQuotes]);
 
@@ -1039,47 +1082,73 @@ export default function QuotePage() {
                     {organizationGroups.reduce((n, o) => n + o.policies.reduce((m, p) => m + p.customers.length, 0), 0)} insured
                   </span>
                 </p>
-                {(() => {
-                  const allOrgQuotes = organizationGroups.flatMap(org => org.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
+                {organizationGroups.map((org) => {
+                  const allOrgQuotes = org.policies.flatMap(p => p.customers.flatMap(c => c.quotes));
                   const selectedQuotes = allOrgQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
                   const selectedOrgCount = selectedQuotes.length;
                   const allSelected = allOrgQuotes.length > 0 && selectedOrgCount === allOrgQuotes.length;
+                  const isExpanded = expandedOrgIds.has(org.organization_id);
+
                   return (
-                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
-                      <BatchActionBar
-                        selectedCount={selectedOrgCount}
-                        totalCount={allOrgQuotes.length}
-                        allSelected={allSelected}
-                        onToggleAll={() => toggleAllInFolder(allOrgQuotes.map(q => q.quote_id))}
-                        options={batchOptions}
-                        onApply={(value) => handleBatchApply(value, allOrgQuotes)}
-                        getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedOrgCount)}
-                        disabled={isBulkProceeding || selectedOrgCount === 0}
-                        canAct={canActOnProposals}
-                        canDecide={canDecideProposals}
-                      />
-                      {viewMode === 'grid' ? (
-                        <div className="p-4 bg-slate-50/30">
-                          <ProposalsGrid
-                            quotes={allOrgQuotes}
-                            selectedQuoteIds={selectedQuoteIds}
-                            toggleSelection={toggleSelection}
-                            toggleAllInFolder={toggleAllInFolder}
-                            openQuote={openQuote}
-                          />
+                    <div key={org.organization_id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col mb-4">
+                      <div 
+                        className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-100"
+                        onClick={() => toggleOrg(org.organization_id)}
+                      >
+                        <div className="flex items-center gap-3">
+                           <div className="flex items-center justify-center w-8 h-8 rounded-md bg-amber-50 text-amber-600 border border-amber-100/50 shadow-sm">
+                             <OrgIcon className="w-4 h-4" />
+                           </div>
+                           <div>
+                             <h4 className="text-sm font-bold text-slate-900">{org.organization_name}</h4>
+                             <p className="text-[11px] font-medium text-slate-500 mt-0.5">{allOrgQuotes.length} {allOrgQuotes.length === 1 ? 'insured' : 'insured'}</p>
+                           </div>
                         </div>
-                      ) : (
-                        <ProposalsTable
-                          quotes={allOrgQuotes}
-                          selectedQuoteIds={selectedQuoteIds}
-                          toggleSelection={toggleSelection}
-                          toggleAllInFolder={toggleAllInFolder}
-                          openQuote={openQuote}
-                        />
+                        <div>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                             <polyline points="6 9 12 15 18 9"></polyline>
+                          </svg>
+                        </div>
+                      </div>
+                      
+                      {isExpanded && (
+                        <div className="flex flex-col bg-slate-50/50">
+                          <BatchActionBar
+                            selectedCount={selectedOrgCount}
+                            totalCount={allOrgQuotes.length}
+                            allSelected={allSelected}
+                            onToggleAll={() => toggleAllInFolder(allOrgQuotes.map(q => q.quote_id))}
+                            options={batchOptions}
+                            onApply={(value) => handleBatchApply(value, allOrgQuotes)}
+                            getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedOrgCount)}
+                            disabled={isBulkProceeding || selectedOrgCount === 0}
+                            canAct={canActOnProposals}
+                            canDecide={canDecideProposals}
+                          />
+                          {viewMode === 'grid' ? (
+                            <div className="p-4">
+                              <ProposalsGrid
+                                quotes={allOrgQuotes}
+                                selectedQuoteIds={selectedQuoteIds}
+                                toggleSelection={toggleSelection}
+                                toggleAllInFolder={toggleAllInFolder}
+                                openQuote={openQuote}
+                              />
+                            </div>
+                          ) : (
+                            <ProposalsTable
+                              quotes={allOrgQuotes}
+                              selectedQuoteIds={selectedQuoteIds}
+                              toggleSelection={toggleSelection}
+                              toggleAllInFolder={toggleAllInFolder}
+                              openQuote={openQuote}
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
                   );
-                })()}
+                })}
               </div>
             )}
 
@@ -1093,47 +1162,73 @@ export default function QuotePage() {
                     {familyGroups.reduce((n, f) => n + f.policies.reduce((m, p) => m + p.customers.length, 0), 0)} insured
                   </span>
                 </p>
-                {(() => {
-                  const allFamQuotes = familyGroups.flatMap(family => family.policies.flatMap(p => p.customers.flatMap(c => c.quotes)));
+                {familyGroups.map((family) => {
+                  const allFamQuotes = family.policies.flatMap(p => p.customers.flatMap(c => c.quotes));
                   const selectedQuotes = allFamQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
                   const selectedFamCount = selectedQuotes.length;
                   const allSelected = allFamQuotes.length > 0 && selectedFamCount === allFamQuotes.length;
+                  const isExpanded = expandedFamilyIds.has(family.family_group_id);
+
                   return (
-                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
-                      <BatchActionBar
-                        selectedCount={selectedFamCount}
-                        totalCount={allFamQuotes.length}
-                        allSelected={allSelected}
-                        onToggleAll={() => toggleAllInFolder(allFamQuotes.map(q => q.quote_id))}
-                        options={batchOptions}
-                        onApply={(value) => handleBatchApply(value, allFamQuotes)}
-                        getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedFamCount)}
-                        disabled={isBulkProceeding || selectedFamCount === 0}
-                        canAct={canActOnProposals}
-                        canDecide={canDecideProposals}
-                      />
-                      {viewMode === 'grid' ? (
-                        <div className="p-4 bg-slate-50/30">
-                          <ProposalsGrid
-                            quotes={allFamQuotes}
-                            selectedQuoteIds={selectedQuoteIds}
-                            toggleSelection={toggleSelection}
-                            toggleAllInFolder={toggleAllInFolder}
-                            openQuote={openQuote}
-                          />
+                    <div key={family.family_group_id} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col mb-4">
+                      <div 
+                        className="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-slate-50 transition-colors border-b border-slate-100"
+                        onClick={() => toggleFamily(family.family_group_id)}
+                      >
+                        <div className="flex items-center gap-3">
+                           <div className="flex items-center justify-center w-8 h-8 rounded-md bg-violet-50 text-violet-600 border border-violet-100/50 shadow-sm">
+                             <FamilyIcon className="w-4 h-4" />
+                           </div>
+                           <div>
+                             <h4 className="text-sm font-bold text-slate-900">{family.family_group_name}</h4>
+                             <p className="text-[11px] font-medium text-slate-500 mt-0.5">{allFamQuotes.length} {allFamQuotes.length === 1 ? 'insured' : 'insured'}</p>
+                           </div>
                         </div>
-                      ) : (
-                        <ProposalsTable
-                          quotes={allFamQuotes}
-                          selectedQuoteIds={selectedQuoteIds}
-                          toggleSelection={toggleSelection}
-                          toggleAllInFolder={toggleAllInFolder}
-                          openQuote={openQuote}
-                        />
+                        <div>
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                             <polyline points="6 9 12 15 18 9"></polyline>
+                          </svg>
+                        </div>
+                      </div>
+                      
+                      {isExpanded && (
+                        <div className="flex flex-col bg-slate-50/50">
+                          <BatchActionBar
+                            selectedCount={selectedFamCount}
+                            totalCount={allFamQuotes.length}
+                            allSelected={allSelected}
+                            onToggleAll={() => toggleAllInFolder(allFamQuotes.map(q => q.quote_id))}
+                            options={batchOptions}
+                            onApply={(value) => handleBatchApply(value, allFamQuotes)}
+                            getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedFamCount)}
+                            disabled={isBulkProceeding || selectedFamCount === 0}
+                            canAct={canActOnProposals}
+                            canDecide={canDecideProposals}
+                          />
+                          {viewMode === 'grid' ? (
+                            <div className="p-4">
+                              <ProposalsGrid
+                                quotes={allFamQuotes}
+                                selectedQuoteIds={selectedQuoteIds}
+                                toggleSelection={toggleSelection}
+                                toggleAllInFolder={toggleAllInFolder}
+                                openQuote={openQuote}
+                              />
+                            </div>
+                          ) : (
+                            <ProposalsTable
+                              quotes={allFamQuotes}
+                              selectedQuoteIds={selectedQuoteIds}
+                              toggleSelection={toggleSelection}
+                              toggleAllInFolder={toggleAllInFolder}
+                              openQuote={openQuote}
+                            />
+                          )}
+                        </div>
                       )}
                     </div>
                   );
-                })()}
+                })}
               </div>
             )}
 

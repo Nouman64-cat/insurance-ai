@@ -844,6 +844,9 @@ class CaseRead(BaseModel):
     customer_name:        Optional[str] = None
     customer_cnic:        Optional[str] = None
     customer_segment:     Optional[str] = None
+    family_group_id:      Optional[str] = None
+    family_group_name:    Optional[str] = None
+    organization_id:      Optional[str] = None
     product_name:           Optional[str] = None
     coverage_amount:         Optional[float] = None
     latest_ai_decision:      Optional[str] = None

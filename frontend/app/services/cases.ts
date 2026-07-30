@@ -20,6 +20,9 @@ export interface CaseQueueItem {
   coverage_amount: number | null;
   latest_ai_decision: "Auto Approve" | "Approve with Loading" | "Human Review" | "Decline" | null;
   latest_composite_score: number | null;
+  family_group_id?: string;
+  family_group_name?: string;
+  organization_id?: string;
 }
 
 export async function listCases(

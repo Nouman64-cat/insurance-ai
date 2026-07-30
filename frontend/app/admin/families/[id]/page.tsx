@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
@@ -413,8 +413,11 @@ export default function FamilyDetailPage() {
     }
   };
 
+  const submittingMembersRef = useRef(false);
+
   const handleConfirmMembers = async () => {
-    if (!selectedPolicy) return;
+    if (!selectedPolicy || submittingMembersRef.current || memberLoading) return;
+    submittingMembersRef.current = true;
     setError("");
     setSuccess("");
     setMemberLoading(true);
@@ -442,6 +445,7 @@ export default function FamilyDetailPage() {
       }
     } finally {
       setMemberLoading(false);
+      submittingMembersRef.current = false;
     }
   };
 

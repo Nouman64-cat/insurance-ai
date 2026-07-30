@@ -131,10 +131,22 @@ export default function UnderwritingPage() {
   }, [cases, segment, filterStatus, dateFrom, dateTo]);
 
   const segmentCounts = useMemo(() => {
-    const counts: Partial<Record<SegmentFilter, number>> = { all: cases.length };
-    for (const s of ["individual", "family", "organization"] as const) {
-      counts[s] = cases.filter(c => (c.customer_segment ?? "individual") === s).length;
-    }
+    const counts: Partial<Record<SegmentFilter, number>> = {};
+    
+    // Individual
+    const ind = cases.filter(c => (c.customer_segment ?? "individual") === "individual");
+    counts["individual"] = new Set(ind.map(c => c.customer_id)).size;
+
+    // Organization
+    const org = cases.filter(c => c.customer_segment === "organization");
+    counts["organization"] = new Set(org.map(c => c.organization_id).filter(Boolean)).size;
+
+    // Family
+    const fam = cases.filter(c => c.customer_segment === "family");
+    counts["family"] = new Set(fam.map(c => c.family_group_id).filter(Boolean)).size;
+
+    counts["all"] = (counts["individual"] || 0) + (counts["organization"] || 0) + (counts["family"] || 0);
+
     return counts;
   }, [cases]);
 
@@ -151,27 +163,36 @@ export default function UnderwritingPage() {
 
     const grouped = new Map<string, CustomerFolder>();
     for (const c of filteredList) {
-      if (!grouped.has(c.customer_id)) {
-        grouped.set(c.customer_id, {
-          customer_id: c.customer_id,
-          customer_name: c.customer_name ?? "Unknown Customer",
-          customer_cnic: c.customer_cnic ?? "—",
+      const groupId = c.customer_segment === "organization" && c.organization_id ? c.organization_id
+        : c.customer_segment === "family" && c.family_group_id ? c.family_group_id
+        : c.customer_id;
+
+      if (!grouped.has(groupId)) {
+        grouped.set(groupId, {
+          customer_id: groupId, // use groupId as the folder's id
+          customer_name: c.customer_segment === "organization" ? "Corporate Account" 
+                         : c.customer_segment === "family" ? (c.family_group_name ?? `${c.customer_name} & Family`)
+                         : c.customer_name ?? "Unknown Customer",
+          customer_cnic: c.customer_segment === "individual" ? (c.customer_cnic ?? "—") : "Multiple",
           customer_segment: c.customer_segment ?? "individual",
           cases: [],
         });
       }
-      grouped.get(c.customer_id)!.cases.push(c);
+      grouped.get(groupId)!.cases.push(c);
     }
     return Array.from(grouped.values());
   }, [segmentCases, search]);
 
   const leadDisplayIds = useMemo(() => {
-    const groupedBySegment = new Map<string, Array<{ customerId: string; createdAt: string }>>();
+    const groupedBySegment = new Map<string, Array<{ groupId: string; createdAt: string }>>();
     for (const c of cases) {
       const segment = (c.customer_segment ?? "individual") as "individual" | "family" | "organization";
+      const groupId = segment === "organization" && c.organization_id ? c.organization_id
+        : segment === "family" && c.family_group_id ? c.family_group_id
+        : c.customer_id;
       if (!groupedBySegment.has(segment)) groupedBySegment.set(segment, []);
-      if (!groupedBySegment.get(segment)!.some(item => item.customerId === c.customer_id)) {
-        groupedBySegment.get(segment)!.push({ customerId: c.customer_id, createdAt: c.createdAt });
+      if (!groupedBySegment.get(segment)!.some(item => item.groupId === groupId)) {
+        groupedBySegment.get(segment)!.push({ groupId, createdAt: c.createdAt });
       }
     }
 
@@ -183,36 +204,35 @@ export default function UnderwritingPage() {
         const dt = new Date(item.createdAt);
         const yymm = `${dt.getFullYear().toString().slice(-2)}${(dt.getMonth() + 1).toString().padStart(2, "0")}`;
         const seq = (index + 1).toString().padStart(3, "0");
-        displayIds[item.customerId] = `${prefix}-${yymm}-${seq}`;
+        displayIds[item.groupId] = `${prefix}-${yymm}-${seq}`;
       });
     }
     return displayIds;
   }, [cases]);
 
   const kpis = useMemo(() => {
-    // Apply search filter to KPIs so they perfectly match the visible cards
-    let fullyFilteredCases = segmentCases;
-    const q = search.trim().toLowerCase();
-    if (q) {
-      fullyFilteredCases = segmentCases.filter((c) => {
-        const idStr = c.customer_id ? String(c.customer_id).toLowerCase() : "";
-        const nameStr = c.customer_name ? String(c.customer_name).toLowerCase() : "";
-        const productStr = c.product_name ? String(c.product_name).toLowerCase() : "";
-        return idStr.includes(q) || nameStr.includes(q) || productStr.includes(q);
-      });
+    let pendingDocs = 0;
+    let underReview = 0;
+    let approved = 0;
+    
+    for (const folder of folders) {
+      const statuses = folder.cases.map(c => c.caseStatus);
+      if (statuses.includes("Pending Documents")) {
+        pendingDocs++;
+      } else if (statuses.every(s => s === "Approved")) {
+        approved++;
+      } else {
+        underReview++;
+      }
     }
-
-    const pendingDocs = fullyFilteredCases.filter(c => c.caseStatus === "Pending Documents").length;
-    const underReview = fullyFilteredCases.filter(c => c.caseStatus === "Under Review" || c.caseStatus === "New" || c.caseStatus === "InProgress").length;
-    const approved = fullyFilteredCases.filter(c => c.caseStatus === "Approved").length;
     
     return [
-      { title: "Cases", value: fullyFilteredCases.length, subtitle: "total cases", accent: "blue" as const },
+      { title: "Cases", value: folders.length, subtitle: "total cases", accent: "blue" as const },
       { title: "Awaiting Documents", value: pendingDocs, subtitle: "checklist incomplete", accent: "amber" as const },
       { title: "In Underwriting", value: underReview, subtitle: "not yet decided", accent: "slate" as const },
       { title: "Approved", value: approved, subtitle: "ready to issue", accent: "emerald" as const },
     ];
-  }, [segmentCases, search]);
+  }, [folders]);
 
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
@@ -401,7 +421,10 @@ export default function UnderwritingPage() {
                         <tbody className="divide-y divide-slate-50">
                           {folder.cases.map(c => (
                             <tr key={c.caseld} onClick={() => router.push(`/case/${c.caseld}`)} className="hover:bg-slate-50 cursor-pointer transition-colors">
-                              <td className="px-5 py-3 font-mono text-xs text-slate-500">{c.caseNumber}</td>
+                              <td className="px-5 py-3">
+                                <p className="text-xs font-semibold text-slate-900 truncate max-w-[150px]">{c.customer_name}</p>
+                                <p className="font-mono text-[10px] text-slate-500 mt-0.5">{c.caseNumber}</p>
+                              </td>
                               <td className="px-5 py-3 text-slate-600 text-xs">{c.product_name ?? "—"}</td>
                               <td className="px-5 py-3 text-right font-semibold text-slate-700">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</td>
                               <td className="px-5 py-3">
