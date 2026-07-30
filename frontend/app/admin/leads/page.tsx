@@ -473,7 +473,7 @@ export default function LeadsHubPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Manage and track your prospects across all segments.
+            Manage & track your prospects across all segments.
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
