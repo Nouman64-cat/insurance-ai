@@ -90,8 +90,10 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
         "total": len(reqs), "cleared": len(cleared_req),
         "outstanding": [r.label for r in outstanding],
     }
+    requirement_bypassed = False
     if outstanding:
-        blockers.append(f"{len(outstanding)} requirement(s) not yet cleared")
+        warnings.append(f"{len(outstanding)} requirement(s) not yet cleared (demo bypass — required in production)")
+        requirement_bypassed = True
 
     # ── Step 3 — First premium (post-draft; informational) ────────────────────
     paid = [s for s in schedules if s.status == PremiumScheduleStatusEnum.PAID]
@@ -104,14 +106,17 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
     by_type = {_v(c.check_type): c for c in checks}
     missing = _REQUIRED_COMPLIANCE - set(by_type)
     bad = [c for c in checks if c.status in (ComplianceStatusEnum.FLAGGED, ComplianceStatusEnum.FAILED)]
+    compliance_bypassed = False  # would this gate block a real (non-demo) issuance?
     if missing:
         comp_status = "not_run"
         # DEMO: downgraded from hard blocker to warning
         warnings.append("Compliance screening not yet run (demo bypass — required in production)")
+        compliance_bypassed = True
     elif bad:
         comp_status = "flagged"
         # DEMO: downgraded from hard blocker to warning
         warnings.append(f"{len(bad)} compliance check(s) need clearance (demo bypass — required in production)")
+        compliance_bypassed = True
     else:
         comp_status = "clear"
     compliance = {
@@ -127,6 +132,7 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
         "status": "valid" if ben_valid else ("invalid" if bens else "none"),
         "total_share": total_share, "count": len(bens),
     }
+    beneficiary_bypassed = not ben_valid  # would this gate block a real issuance?
     if not ben_valid:
         # DEMO: downgraded from hard blocker to warning
         warnings.append("Beneficiaries must be captured and sum to 100% (demo bypass — required in production)")
@@ -138,9 +144,19 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
         "total": len(docs), "generated": len(non_stub),
     }
 
+    # Which mandatory gates are being waved through in DEMO mode. Persisted onto
+    # the policy at issuance so Stage B (and audit) knows what to backfill before
+    # this contract can be treated as production-grade.
+    demo_flags = []
+    if compliance_bypassed: demo_flags.append("ComplianceBypassed")
+    if beneficiary_bypassed: demo_flags.append("BeneficiaryBypassed")
+    if requirement_bypassed: demo_flags.append("RequirementBypassed")
+    demo_bypass_flags = ",".join(demo_flags) if demo_flags else "NotFlagged"
+
     return {
         "policy_id": str(pid),
         "status": _v(policy.status),
+        "demo_bypass_flags": demo_bypass_flags,
         "steps": {
             "revised_terms": revised,
             "requirements": requirements,

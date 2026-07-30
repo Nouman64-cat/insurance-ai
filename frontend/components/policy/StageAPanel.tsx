@@ -5,10 +5,26 @@ import {
   getReadiness, getCounterOffer, acceptCounterOffer, declineCounterOffer,
   getRequirements, seedRequirements, actOnRequirement,
   getCompliance, runCompliance, clearCompliance,
-  getBeneficiaries, replaceBeneficiaries, generateDocuments, documentDownloadUrl,
-  type Readiness, type CounterOffer, type RequirementItem, type ComplianceCheck, type Beneficiary,
+  getBeneficiaries, replaceBeneficiaries, getBeneficiaryHistory,
+  generateDocuments, documentDownloadUrl,
+  type Readiness, type CounterOffer, type RequirementItem, type ComplianceCheck,
+  type Beneficiary, type BeneficiaryVersion,
 } from "@/app/services/preIssuance";
 import { getPolicyDetail, type PolicyDocument } from "@/app/services/policies";
+
+// Statuses during which Stage A mutations are legal (mirrors the backend
+// PRE_ISSUANCE_STATUSES guard). Outside this set the contract is drafted/bound
+// and Stage A is read-only — changes go through a Stage B endorsement.
+const PRE_ISSUANCE_STATUSES = new Set([
+  "Proposed", "UnderReview", "InformationRequested",
+  "CounterOffer", "Approved", "AcceptedWithLoadings",
+]);
+
+const BYPASS_LABEL: Record<string, string> = {
+  ComplianceBypassed: "Compliance screening was bypassed",
+  BeneficiaryBypassed: "Beneficiaries were bypassed",
+  BothBypassed: "Compliance & beneficiaries were bypassed",
+};
 
 const fmtPKR = (n: number | null | undefined) =>
   n == null ? "—" : `PKR ${Math.round(n).toLocaleString()}`;
@@ -59,21 +75,26 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
   const [checks, setChecks] = useState<ComplianceCheck[]>([]);
   const [bens, setBens] = useState<Beneficiary[]>([]);
   const [docs, setDocs] = useState<PolicyDocument[]>([]);
+  const [history, setHistory] = useState<BeneficiaryVersion[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [freeLookEnd, setFreeLookEnd] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [r, o, rq, c, b, d] = await Promise.all([
+      const [r, o, rq, c, b, d, h] = await Promise.all([
         getReadiness(policyId),
         getCounterOffer(policyId).catch(() => null),
         getRequirements(policyId).catch(() => []),
         getCompliance(policyId).catch(() => []),
         getBeneficiaries(policyId).catch(() => ({ beneficiaries: [], total_share: 0 })),
-        getPolicyDetail(policyId).then((p) => p.documents).catch(() => []),
+        getPolicyDetail(policyId).catch(() => null),
+        getBeneficiaryHistory(policyId).catch(() => []),
       ]);
       setReadiness(r); setOffer(o); setReqs(rq); setChecks(c);
-      setBens(b.beneficiaries.length ? b.beneficiaries : []); setDocs(d);
+      setBens(b.beneficiaries.length ? b.beneficiaries : []);
+      setDocs(d?.documents ?? []); setFreeLookEnd(d?.free_look_end_date ?? null); setHistory(h);
     } catch (e: any) {
       setErr(e?.message ?? "Failed to load pre-issuance status");
     }
@@ -93,6 +114,12 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
   }
   const s = readiness.steps;
 
+  // Once the policy leaves the pre-issuance statuses it is drafted/bound — Stage A
+  // mutations are locked (backend enforces the same via _assert_stage_a).
+  const stageALocked = !PRE_ISSUANCE_STATUSES.has(readiness.status);
+  const locked = busy || stageALocked;
+  const bypass = readiness.demo_bypass_flags;
+
   const reqState = s.requirements.status === "complete" ? "done"
     : s.requirements.status === "none" ? "idle" : "blocked";
   const compState = s.compliance.status === "clear" ? "done"
@@ -107,12 +134,33 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
 
   return (
     <div className="space-y-5">
-      {/* Readiness banner */}
-      <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${readiness.ready_to_issue ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
-        {readiness.ready_to_issue
-          ? "✓ All pre-issuance gates cleared — ready to issue."
-          : `${readiness.blockers.length} gate(s) remaining before issuance.`}
-      </div>
+      {/* Stage A locked — the contract is drafted/bound; edits are read-only here */}
+      {stageALocked ? (
+        <div className="rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-xs text-slate-600 space-y-1">
+          <p className="font-semibold flex items-center gap-2">
+            <span aria-hidden>🔒</span>
+            Stage A is finalized (policy is <b>{readiness.status}</b>). These steps are read-only — mid-term changes now go through a Stage B endorsement.
+          </p>
+          {freeLookEnd && (
+            <p className="text-[11px] text-slate-500 pl-6">
+              Free-look period ends <b className="text-slate-700">{freeLookEnd}</b> — cancel by then for a full refund.
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${readiness.ready_to_issue ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+          {readiness.ready_to_issue
+            ? "✓ All pre-issuance gates cleared — ready to issue."
+            : `${readiness.blockers.length} gate(s) remaining before issuance.`}
+        </div>
+      )}
+
+      {/* Demo-bypass audit — mandatory gates waved through in demo mode */}
+      {bypass && bypass !== "NotFlagged" && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-xs text-orange-800">
+          <span className="font-semibold">⚠ Demo bypass:</span> {BYPASS_LABEL[bypass] ?? bypass}. Blocked in production — backfill before this contract is treated as production-grade.
+        </div>
+      )}
       {err && <div className="rounded-lg bg-red-50 border border-red-200 text-red-700 text-xs px-3 py-2">{err}</div>}
 
       <div className="space-y-5">
@@ -141,8 +189,8 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
               </div>
               <p className="text-[10px] text-slate-400">Valid until {offer.valid_until}</p>
               <div className="flex gap-2">
-                <Btn tone="emerald" disabled={busy} onClick={() => run(() => acceptCounterOffer(policyId))}>Accept terms</Btn>
-                <Btn tone="red" disabled={busy} onClick={() => run(() => declineCounterOffer(policyId))}>Decline</Btn>
+                <Btn tone="emerald" disabled={locked} onClick={() => run(() => acceptCounterOffer(policyId))}>Accept terms</Btn>
+                <Btn tone="red" disabled={locked} onClick={() => run(() => declineCounterOffer(policyId))}>Decline</Btn>
               </div>
             </div>
           ) : offer ? (
@@ -156,7 +204,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
         <StepShell n={2} title="Clear Pending Requirements" state={reqState}
           hint={reqs.length ? `${s.requirements.cleared}/${s.requirements.total}` : "none"}>
           {reqs.length === 0 ? (
-            <Btn disabled={busy} onClick={() => run(() => seedRequirements(policyId))}>Create requirement checklist</Btn>
+            <Btn disabled={locked} onClick={() => run(() => seedRequirements(policyId))}>Create requirement checklist</Btn>
           ) : (
             <div className="space-y-1.5">
               {reqs.map((r) => (
@@ -167,8 +215,8 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                   </div>
                   {r.status !== "Verified" && r.status !== "Waived" && (
                     <div className="flex gap-1.5 flex-shrink-0">
-                      <Btn tone="emerald" disabled={busy} onClick={() => run(() => actOnRequirement(r.id, "verify", "officer"))}>Verify</Btn>
-                      <Btn tone="slate" disabled={busy} onClick={() => run(() => actOnRequirement(r.id, "waive", "officer"))}>Waive</Btn>
+                      <Btn tone="emerald" disabled={locked} onClick={() => run(() => actOnRequirement(r.id, "verify", "officer"))}>Verify</Btn>
+                      <Btn tone="slate" disabled={locked} onClick={() => run(() => actOnRequirement(r.id, "waive", "officer"))}>Waive</Btn>
                     </div>
                   )}
                 </div>
@@ -191,7 +239,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
         <StepShell n={4} title="Compliance Checks" state={compState} hint={s.compliance.status.replace("_", " ")}>
           <div className="space-y-1.5">
             {checks.length === 0 ? (
-              <Btn disabled={busy} onClick={() => run(() => runCompliance(policyId))}>Run AML / Sanctions / SECP</Btn>
+              <Btn disabled={locked} onClick={() => run(() => runCompliance(policyId))}>Run AML / Sanctions / SECP</Btn>
             ) : (
               <>
                 {checks.map((c) => {
@@ -207,12 +255,12 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                         {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
                       </div>
                       {c.status === "Flagged" && (
-                        <Btn tone="amber" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Clear flag</Btn>
+                        <Btn tone="amber" disabled={locked} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Clear flag</Btn>
                       )}
                     </div>
                   );
                 })}
-                <button onClick={() => run(() => runCompliance(policyId))} disabled={busy}
+                <button onClick={() => run(() => runCompliance(policyId))} disabled={locked}
                   className="text-[11px] text-slate-500 hover:text-slate-700 underline">Re-run screening</button>
               </>
             )}
@@ -223,6 +271,37 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
         <StepShell n={5} title="Capture Beneficiaries" state={benState}
           hint={bens.length ? `${benTotal}%` : "none"}>
           <div className="space-y-1.5">
+            {history.length > 0 && (
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 rounded-full px-2 py-0.5">
+                  v{history[0].version_sequence} · {history.length} revision{history.length > 1 ? "s" : ""}
+                </span>
+                <button onClick={() => setShowHistory((v) => !v)}
+                  className="text-[11px] text-slate-500 hover:text-slate-700 underline">
+                  {showHistory ? "Hide history" : "View history"}
+                </button>
+              </div>
+            )}
+            {showHistory && history.length > 0 && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 divide-y divide-slate-200 max-h-52 overflow-y-auto">
+                {history.map((v) => (
+                  <div key={v.version_sequence} className="px-2.5 py-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-semibold text-slate-700">
+                        v{v.version_sequence}
+                        <span className="ml-1.5 font-normal text-slate-400">{v.change_reason ?? "—"}</span>
+                      </span>
+                      <span className="text-[10px] text-slate-400">
+                        {v.changed_by ?? "system"} · {v.created_at.slice(0, 10)}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-slate-500">
+                      {v.beneficiaries.map((b) => `${b.name} (${b.share_pct}%)`).join(", ")}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {bens.map((b, i) => (
               <div key={i} className="flex gap-1.5 items-center">
                 <input value={b.name} placeholder="Name"
@@ -244,7 +323,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
               <span className={`text-[11px] font-semibold ${Math.abs(benTotal - 100) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>Σ {benTotal}%</span>
             </div>
             <div className="flex items-center gap-2">
-              <Btn tone="emerald" disabled={busy || Math.abs(benTotal - 100) > 0.01 || bens.some((b) => !b.name || !b.relationship)}
+              <Btn tone="emerald" disabled={locked || Math.abs(benTotal - 100) > 0.01 || bens.some((b) => !b.name || !b.relationship)}
                 onClick={() => run(() => replaceBeneficiaries(policyId, bens))}>Save beneficiaries</Btn>
               {Math.abs(benTotal - 100) > 0.01 && bens.length > 0 && (
                 <span className="text-[10px] text-amber-600">Total share must equal 100% to save</span>
@@ -273,7 +352,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
               ))
             )}
             {docs.length > 0 && (
-              <button onClick={() => run(() => generateDocuments(policyId))} disabled={busy}
+              <button onClick={() => run(() => generateDocuments(policyId))} disabled={locked}
                 className="text-[11px] text-slate-500 hover:text-slate-700 underline">Regenerate documents</button>
             )}
           </div>

@@ -134,8 +134,8 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.LAPSED,
         PolicyStatusEnum.CANCELLED,
     },
-    # Terminal (for now) — Phase 4c adds LAPSED → ACTIVE (reinstatement).
-    PolicyStatusEnum.LAPSED: set(),
+    # Reinstatement (Step 5) and the demo reset both revive a lapsed policy.
+    PolicyStatusEnum.LAPSED: {PolicyStatusEnum.ACTIVE},
     PolicyStatusEnum.CANCELLED: set(),
     PolicyStatusEnum.DECLINED: {
         # Allow underwriters to override a previous decline decision (AI or manual)

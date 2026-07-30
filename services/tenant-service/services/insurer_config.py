@@ -76,3 +76,43 @@ NOTICE_GRIEVANCE = (
     "the Compliance Officer. Unresolved grievances may be escalated to SECP at "
     "secp.gov.pk/complaint."
 )
+
+
+# ── Stage B recurring collection (step 3) ─────────────────────────────────────
+import os as _os  # noqa: E402
+
+# Late-payment surcharge applied when an installment is paid during the grace
+# period (percentage of the base premium).
+LATE_PAYMENT_SURCHARGE_PCT: float = float(_os.environ.get("LATE_PAYMENT_SURCHARGE_PCT", "2.0"))
+
+# Agent commission earned per collected installment (percentage of base premium).
+AGENT_COMMISSION_PCT: float = float(_os.environ.get("AGENT_COMMISSION_PCT", "5.0"))
+
+# The planned reminder cadence around each due date (day offsets + kind).
+REMINDER_SCHEDULE: list[dict] = [
+    {"key": "T-7", "offset": -7, "kind": "Upcoming", "label": "7 days before"},
+    {"key": "T-0", "offset": 0, "kind": "Due", "label": "On due date"},
+    {"key": "T+3", "offset": 3, "kind": "Overdue", "label": "3 days overdue"},
+    {"key": "T+7", "offset": 7, "kind": "FinalNotice", "label": "7 days overdue"},
+]
+
+REMINDER_CHANNELS: list[str] = ["Email", "SMS", "WhatsApp", "Letter"]
+REMINDER_TEMPLATES: list[str] = ["Friendly", "Standard", "FinalNotice"]
+
+# Reminder body templates keyed by template name. {name}/{amount}/{due}/{policy}
+# are substituted at send time.
+REMINDER_BODIES: dict[str, str] = {
+    "Friendly": (
+        "Hi {name}, just a friendly reminder that your premium of PKR {amount} for "
+        "policy {policy} is due on {due}. Thank you for staying protected with us!"
+    ),
+    "Standard": (
+        "Dear {name}, this is a reminder that a premium of PKR {amount} on policy "
+        "{policy} is due on {due}. Please pay on time to keep your cover in force."
+    ),
+    "FinalNotice": (
+        "FINAL NOTICE — Dear {name}, the premium of PKR {amount} on policy {policy} "
+        "(due {due}) remains unpaid. Pay before the grace period ends to avoid lapse "
+        "of cover. Reinstatement afterwards may require fresh underwriting."
+    ),
+}

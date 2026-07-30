@@ -26,7 +26,7 @@ from routers.users import verify_admin   # reuse existing Admin guard
 # APPROVED is intentionally excluded — it means "approved by underwriting but not yet issued",
 # i.e. still sitting in the Policy Issuance queue. Including it caused customers to appear
 # in the Policyholders page before they had any real coverage.
-ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.ISSUED, PolicyStatusEnum.ACTIVE)
+ACTIVE_POLICY_STATUSES = (PolicyStatusEnum.ACTIVE,)
 
 CustomerCategory = Literal["active", "full_details", "quick_lead", "not_interested"]
 
@@ -185,6 +185,12 @@ async def list_customers(
     query = (
         select(Customer)
         .where(Customer.tenant_id == tenant_id)
+        # Members enrolled under a family group or a corporate organization are
+        # surfaced through their FamilyGroup / Organization lead on the Leads
+        # board, not as standalone individuals — excluding them here keeps a
+        # family/corporate member from also appearing as its own INDIVIDUAL lead.
+        .where(Customer.organization_id.is_(None))
+        .where(Customer.family_group_id.is_(None))
         .options(selectinload(Customer.acquisition_source))
     )
 

@@ -35,6 +35,7 @@ class PaymentStatusEnum(str, Enum):
     INITIATED = "Initiated"       # intent created, awaiting settlement
     REALIZED = "Realized"         # funds settled — safe to bind cover
     FAILED = "Failed"
+    REFUNDED = "Refunded"         # a previously-realized payment reversed to the payer
 
 
 # Reference prefix per channel — mirrors the real PSP short-code conventions.
@@ -128,4 +129,24 @@ def confirm_payment(
         intent.realized_at = datetime.utcnow()
     else:
         intent.status = PaymentStatusEnum.FAILED
+    return intent
+
+
+def refund_payment(amount: float, method=None) -> PaymentIntent:
+    """Simulate a reversal of a settled payment back to the original payer.
+
+    Used by the free-look full-refund exit. The mock always succeeds and settles
+    immediately; a real PSP would return a pending refund the webhook later
+    confirms. The returned intent carries a fresh RFND-prefixed reference so it is
+    traceable independently of the original charge (the router links it to the
+    original payment in the PolicyEvent audit detail).
+    """
+    m = _coerce_method(method)
+    intent = PaymentIntent(
+        reference=f"RFND-{secrets.token_hex(4).upper()}",
+        method=m,
+        amount=float(amount),
+    )
+    intent.status = PaymentStatusEnum.REFUNDED
+    intent.realized_at = datetime.utcnow()
     return intent

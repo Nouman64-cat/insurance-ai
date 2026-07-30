@@ -61,6 +61,7 @@ from routers.acquisition_sources import router as acquisition_sources_router
 from routers.agent import router as agent_router
 from routers.policies import router as policies_router
 from routers.pre_issuance import router as pre_issuance_router
+from routers.post_issuance import router as post_issuance_router
 from routers.demo import router as demo_router
 # STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
 # from routers.renewal_scheduler import start_renewal_scheduler
@@ -174,6 +175,7 @@ app.include_router(acquisition_sources_router)
 app.include_router(agent_router)
 app.include_router(policies_router)
 app.include_router(pre_issuance_router)
+app.include_router(post_issuance_router)
 app.include_router(demo_router)
 
 

@@ -27,6 +27,7 @@ export interface PolicyStats {
   active: number;
   grace_period: number;
   lapsed: number;
+  cancelled: number;
   expiring_30d: number;
 }
 
@@ -128,7 +129,13 @@ export interface PolicyEvent {
 
 export interface PolicyDetail extends PolicyListItem {
   nominee_name: string | null;
+  nominee_relationship: string | null;
+  dependent_name: string | null;
+  dependent_dob: string | null;
   grace_period_end_date: string | null;
+  delivery_date: string | null;
+  free_look_end_date: string | null;
+  demo_bypass_flags: string | null;
   current_version_id: string | null;
   versions: PolicyVersion[];
   premium_schedules: PremiumScheduleItem[];
@@ -141,6 +148,23 @@ export interface PolicyDetail extends PolicyListItem {
     created_at: string;
   }>;
   documents: PolicyDocument[];
+  customer?: {
+    cnic: string | null;
+    dob: string | null;
+    gender: string | null;
+    marital_status: string | null;
+    phone: string | null;
+    email: string | null;
+    city: string | null;
+    province: string | null;
+    occupation: string | null;
+    declared_income: number | null;
+    is_smoker: boolean | null;
+    height_cm: number | null;
+    weight_kg: number | null;
+    policyholder_id: string | null;
+    created_at: string | null;
+  } | null;
 }
 
 export async function getPolicyStats(): Promise<PolicyStats> {

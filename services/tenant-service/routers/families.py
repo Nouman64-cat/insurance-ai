@@ -10,7 +10,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from decision_status import DECISION_CASE_STATUS, DECISION_POLICY_STATUS, most_conservative_decision
+from decision_status import DECISION_CASE_STATUS
 from family_underwriting import (
     age_from_dob,
     eldest_age,
@@ -708,9 +708,10 @@ async def confirm_floater_members(
     session.add(family_group)
 
     # One shared Policy for the whole pool — see FamilyPolicy's docstring.
-    # Starts UnderReview (every floater member always goes through
-    # risk-engine — there's no guaranteed-issue branch here) and is
-    # reassigned below once every member's decision is in.
+    # Starts as a Quoted DRAFT: every floater member is still risk-scored below
+    # (assessments/cases are created), but the proposal itself surfaces in the
+    # Proposal page's Draft section and is advanced to Under Review manually via
+    # the status control — it does not jump straight to Under Review.
     eldest_row = next(r for r in parsed_rows if age_from_dob(r["_dob"]) == eldest)
     shared_policy = Policy(
         tenant_id=tenant_id,
@@ -720,7 +721,7 @@ async def confirm_floater_members(
         insurance_type=InsuranceTypeEnum.FAMILY_FLOATER,
         coverage_amount=family_policy.total_sum_insured,
         term_years=family_policy.term_years,
-        status=PolicyStatusEnum.UNDER_REVIEW,
+        status=PolicyStatusEnum.QUOTED,
     )
     session.add(shared_policy)
     await session.flush()
@@ -795,19 +796,10 @@ async def confirm_floater_members(
             risk_assessment_id=risk_assessment_id,
         )
 
-    # Conflict rule: N members can each independently return a different AI
-    # decision, but there is only one Policy.status for the shared pool —
-    # apply the most conservative decision across all members (Decline >
-    # Human Review > Approve with Loading > Auto Approve), mirroring how a
-    # real floater is underwritten: any one member's adverse risk affects the
-    # whole pool's issuability. If risk-engine was unreachable for every
-    # member, the Policy stays UnderReview (its initial value above).
-    if successful_decisions:
-        final_decision = most_conservative_decision(successful_decisions)
-        new_policy_status = DECISION_POLICY_STATUS.get(final_decision)
-        if new_policy_status is not None:
-            shared_policy.status = new_policy_status
-            session.add(shared_policy)
+    # Each member's AI decision is surfaced on its own Case above, but the
+    # shared proposal Policy stays a Quoted DRAFT — it is advanced out of Draft
+    # via the Proposal page's status control, not auto-promoted to the pool's
+    # aggregated decision status.
 
     # Always price — one calculation for the whole pool, off the eldest life.
     breakdown = calculate_premium(
@@ -836,14 +828,18 @@ async def confirm_floater_members(
         outcome.premium_total = breakdown.total_premium
         outcomes.append(outcome)
 
-    family_policy.status = "Active"
+    # Enrolling & underwriting members produces a PROPOSAL, not an in-force
+    # policy. The FamilyPolicy is marked "Proposed" so the group stays on the
+    # Leads board (category in_progress) and its quote surfaces on the Proposal
+    # page's Draft section. The group's profile_status is deliberately left as-is
+    # (LEAD) so it keeps the manual "In Progress" button on the Leads board, just
+    # like an individual lead — the underwriter advances it explicitly. Only a
+    # later issuance step marks the policy "Active" / the group a POLICYHOLDER.
+    family_policy.status = "Proposed"
     session.add(family_policy)
 
-    from shared.models.core import ProfileStatusEnum
-    family_group.profile_status = ProfileStatusEnum.POLICYHOLDER
     session.add(family_group)
     for cust in created_customers.values():
-        cust.profile_status = ProfileStatusEnum.POLICYHOLDER
         session.add(cust)
 
     await session.commit()
@@ -996,6 +992,9 @@ async def confirm_life_bundle_members(
             family_group.primary_member_customer_id = customer.id
             session.add(family_group)
 
+        # Starts as a Quoted DRAFT — the member is still risk-scored below, but
+        # the proposal surfaces in the Proposal Draft section and is advanced to
+        # Under Review manually via the status control, not auto-promoted.
         policy = Policy(
             tenant_id=tenant_id,
             customer_id=customer.id,
@@ -1004,7 +1003,7 @@ async def confirm_life_bundle_members(
             insurance_type=plan.insurance_type,
             coverage_amount=row["_coverage_amount"],
             term_years=family_policy.term_years,
-            status=PolicyStatusEnum.UNDER_REVIEW,
+            status=PolicyStatusEnum.QUOTED,
         )
         session.add(policy)
         await session.flush()
@@ -1045,11 +1044,8 @@ async def confirm_life_bundle_members(
             risk_assessment_id = assessment.id
             suggested_loading = assessment.suggested_loading
 
-            new_policy_status = DECISION_POLICY_STATUS.get(ai_result["ai_decision"])
-            if new_policy_status is not None:
-                policy.status = new_policy_status
-                session.add(policy)
-
+            # AI decision is recorded on the Case (below); the proposal Policy
+            # stays a Quoted DRAFT and is advanced via the Proposal status control.
             new_case_status = DECISION_CASE_STATUS.get(ai_result["ai_decision"])
             if new_case_status is not None and new_case_status != case.caseStatus:
                 if audit_user is not None:
@@ -1098,14 +1094,16 @@ async def confirm_life_bundle_members(
             risk_assessment_id=risk_assessment_id,
         ))
 
-    family_policy.status = "Active"
+    # Life-bundle enrollment is a PROPOSAL too — the FamilyPolicy is "Proposed"
+    # so the group stays on the Leads board (category in_progress) with its quote
+    # in the Proposal Draft section. profile_status is left as-is (LEAD) so the
+    # group keeps its manual "In Progress" button, just like an individual lead.
+    # (See the floater confirm above for the full rationale.)
+    family_policy.status = "Proposed"
     session.add(family_policy)
 
-    from shared.models.core import ProfileStatusEnum
-    family_group.profile_status = ProfileStatusEnum.POLICYHOLDER
     session.add(family_group)
     for cust in customers_to_promote:
-        cust.profile_status = ProfileStatusEnum.POLICYHOLDER
         session.add(cust)
 
     await session.commit()

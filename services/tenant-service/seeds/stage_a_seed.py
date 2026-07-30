@@ -64,6 +64,8 @@ from shared.models.core import (
     RiskAssessment,
     SourceChannelEnum,
     Tenant,
+    PolicyOnboarding,
+    CustomerPortalAccount,
 )
 from seeds.acquisition_sources_seed import get_or_seed_sources
 
@@ -415,10 +417,15 @@ async def purge_tenant(session: AsyncSession, tenant_id: UUID) -> int:
 
     # 2. Delete no-cascade policy children for every policy in the tenant.
     if policy_ids:
-        for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent):
+        for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent, PolicyOnboarding):
             await session.exec(sa_delete(model).where(model.policy_id.in_(policy_ids)))  # type: ignore[attr-defined]
 
-    # 3. Delete every customer — ORM cascade clears the rest.
+    # 3. Delete no-cascade customer children.
+    customer_ids = list((await session.exec(select(Customer.id).where(Customer.tenant_id == tenant_id))).all())
+    if customer_ids:
+        await session.exec(sa_delete(CustomerPortalAccount).where(CustomerPortalAccount.customer_id.in_(customer_ids)))
+
+    # 4. Delete every customer — ORM cascade clears the rest.
     customers = (await session.exec(select(Customer).where(Customer.tenant_id == tenant_id))).all()
     for cust in customers:
         await session.delete(cust)
@@ -437,9 +444,14 @@ async def reset_stage_a(session: AsyncSession, tenant_id: UUID) -> int:
     )).all()
     removed = 0
     for cust in custs:
+        # Delete no-cascade customer children
+        portals = (await session.exec(select(CustomerPortalAccount).where(CustomerPortalAccount.customer_id == cust.id))).all()
+        for portal in portals:
+            await session.delete(portal)
+
         pols = (await session.exec(select(Policy).where(Policy.customer_id == cust.id))).all()
         for p in pols:
-            for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent):
+            for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent, PolicyOnboarding):
                 for row in (await session.exec(select(model).where(model.policy_id == p.id))).all():
                     await session.delete(row)
         await session.delete(cust)

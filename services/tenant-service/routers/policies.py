@@ -10,6 +10,7 @@ Policy Issuance & Renewals router — v2 (architectural refinements applied):
 """
 
 import logging
+import os
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 from uuid import UUID
@@ -157,6 +158,51 @@ async def _pending_schedule(session: AsyncSession, policy_id: UUID) -> Optional[
     return unpaid[0] if unpaid else None
 
 
+# Days the customer has to walk away for a full refund after delivery. Config via
+# env so different regulators (PK default: 14) can be honoured without a redeploy.
+FREE_LOOK_DAYS = int(os.environ.get("FREE_LOOK_DAYS", "14"))
+
+# Number of installments in one policy year, by billing frequency.
+_INSTALLMENTS_PER_YEAR = {
+    BillingFrequencyEnum.ANNUAL: 1,
+    BillingFrequencyEnum.SEMI_ANNUAL: 2,
+    BillingFrequencyEnum.QUARTERLY: 4,
+    BillingFrequencyEnum.MONTHLY: 12,
+}
+
+
+def _build_premium_schedule(
+    policy_id: UUID, version_id: UUID, total_annual_premium: float,
+    effective: date, billing_frequency: BillingFrequencyEnum, first_reference: Optional[str],
+) -> list[PremiumSchedule]:
+    """Build the first policy-year installment ledger for a billing frequency.
+
+    ANNUAL (today's default) yields a single installment identical to the old
+    inline behaviour; the finer cadences split the annual premium evenly and space
+    the due dates across the year. All rows start PENDING — confirm_payment marks
+    the earliest one PAID to bind cover, and Stage B collects the remainder.
+    """
+    n = _INSTALLMENTS_PER_YEAR.get(billing_frequency, 1)
+    per = round(total_annual_premium / n, 2)
+    step_days = 365 // n
+    rows: list[PremiumSchedule] = []
+    for i in range(n):
+        # Absorb rounding drift into the first installment so the year still sums.
+        amount = round(total_annual_premium - per * (n - 1), 2) if i == 0 else per
+        rows.append(PremiumSchedule(
+            policy_id=policy_id,
+            policy_version_id=version_id,
+            billing_frequency=billing_frequency,
+            due_date=effective + timedelta(days=step_days * i),
+            amount_due=amount,
+            amount_paid=0.0,
+            status=PremiumScheduleStatusEnum.PENDING,
+            payment_reference=first_reference if i == 0 else None,
+            installment_no=i + 1,
+        ))
+    return rows
+
+
 async def _close_cases_and_promote(session: AsyncSession, policy: Policy) -> None:
     """Close underwriting cases for a policy and promote the customer (and their
     family/org) to POLICYHOLDER. Runs at payment confirmation — cover is now
@@ -219,6 +265,7 @@ async def policy_stats(tenant_id: UUID, session: AsyncSession = Depends(get_sess
         "active": sum(1 for p in all_policies if _st(p).upper() == "ACTIVE"),
         "grace_period": sum(1 for p in all_policies if _st(p).upper() == "GRACEPERIOD"),
         "lapsed": sum(1 for p in all_policies if _st(p).upper() == "LAPSED"),
+        "cancelled": sum(1 for p in all_policies if _st(p).upper() == "CANCELLED"),
         "expiring_30d": sum(
             1 for p in all_policies
             if _st(p).upper() == "ACTIVE" and p.expiry_date and 0 <= (p.expiry_date - today).days <= 30
@@ -362,14 +409,36 @@ async def get_policy_detail(
         "product_name": policy.product_name,
         "insurance_type": policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type),
         "coverage_amount": policy.coverage_amount, "term_years": policy.term_years,
-        "nominee_name": policy.nominee_name, "status": _st(policy),
+        "nominee_name": policy.nominee_name, "nominee_relationship": policy.nominee_relationship,
+        "dependent_name": policy.dependent_name, "dependent_dob": policy.dependent_dob.isoformat() if policy.dependent_dob else None,
+        "status": _st(policy),
         "effective_date": policy.effective_date.isoformat() if policy.effective_date else None,
         "expiry_date": policy.expiry_date.isoformat() if policy.expiry_date else None,
         "grace_period_end_date": policy.grace_period_end_date.isoformat() if policy.grace_period_end_date else None,
+        "delivery_date": policy.delivery_date.isoformat() if policy.delivery_date else None,
+        "free_look_end_date": policy.free_look_end_date.isoformat() if policy.free_look_end_date else None,
+        "demo_bypass_flags": policy.demo_bypass_flags,
         "current_version_id": str(policy.current_version_id) if policy.current_version_id else None,
         "versions": versions, "premium_schedules": schedules,
         "renewal_transactions": renewals, "documents": documents,
         "created_at": policy.created_at.isoformat(),
+        "customer": {
+            "cnic": cust.cnic if cust else None,
+            "dob": cust.dob.isoformat() if cust and cust.dob else None,
+            "gender": cust.gender.value if cust and hasattr(cust.gender, "value") else str(cust.gender) if cust and cust.gender else None,
+            "marital_status": cust.marital_status.value if cust and hasattr(cust.marital_status, "value") else str(cust.marital_status) if cust and cust.marital_status else None,
+            "phone": cust.details.get("phone") if cust and cust.details else None,
+            "email": cust.details.get("email") if cust and cust.details else None,
+            "city": cust.city if cust else None,
+            "province": cust.province if cust else None,
+            "occupation": cust.occupation if cust else None,
+            "declared_income": cust.declared_income if cust else None,
+            "is_smoker": cust.is_smoker if cust else False,
+            "height_cm": cust.height_cm if cust else None,
+            "weight_kg": cust.weight_kg if cust else None,
+            "policyholder_id": cust.policyholder_id if cust else None,
+            "created_at": cust.created_at.isoformat() if cust else None,
+        } if cust else None,
     }
 
 
@@ -400,9 +469,12 @@ async def issue_policy(
     # satisfied (revised terms accepted, requirements cleared, compliance passed,
     # beneficiaries capturing 100%). Same rules the /pre-issuance checklist shows.
     try:
-        await assert_ready_to_issue(session, policy)
+        readiness = await assert_ready_to_issue(session, policy)
     except NotReadyToIssue as exc:
         raise HTTPException(400, f"Pre-issuance checklist incomplete: {exc}") from exc
+    # Record which mandatory gates (compliance / beneficiaries) were waved through
+    # in DEMO mode so Stage B and audit know this contract still needs backfilling.
+    demo_bypass_flags = readiness.get("demo_bypass_flags", "NotFlagged")
 
     cust = await session.get(Customer, policy.customer_id)
     is_smoker = bool(getattr(cust, "is_smoker", False))
@@ -462,18 +534,15 @@ async def issue_policy(
         session.add(version)
         await session.flush()  # get version.id before FK usage
 
-        # First premium installment — PENDING until the gateway confirms it.
-        schedule = PremiumSchedule(
-            policy_id=policy_id,
-            policy_version_id=version.id,
-            billing_frequency=BillingFrequencyEnum.ANNUAL,
-            due_date=effective,
-            amount_due=breakdown.total_premium,
-            amount_paid=0.0,
-            status=PremiumScheduleStatusEnum.PENDING,
-            payment_reference=intent.reference,
-        )
-        session.add(schedule)
+        # First policy-year installment ledger. ANNUAL (default) = one PENDING row,
+        # exactly as before; finer cadences seed the whole year so Stage B has a
+        # ledger to collect against. The earliest row must be PAID to bind cover.
+        billing_frequency = BillingFrequencyEnum.ANNUAL
+        for schedule in _build_premium_schedule(
+            policy_id, version.id, breakdown.total_premium,
+            effective, billing_frequency, intent.reference,
+        ):
+            session.add(schedule)
 
         # Draft the contract fields and move to PENDING_PAYMENT (no cover yet).
         policy.policy_number = policy_number
@@ -481,6 +550,7 @@ async def issue_policy(
         policy.expiry_date = expiry
         policy.grace_period_end_date = grace_end
         policy.current_version_id = version.id
+        policy.demo_bypass_flags = demo_bypass_flags
 
         # Generate the Premium Notice (bill) now that the contract fields are set.
         await generate_and_store_premium_notice(session, policy, version.id)
@@ -626,6 +696,12 @@ async def confirm_payment(
             },
         )
 
+        # Start the free-look clock. Delivery = the moment cover binds and docs
+        # go out; the statutory window runs from here (NOT effective_date). Stage B
+        # step 1 reads these to allow a full-refund cancellation inside the window.
+        policy.delivery_date = date.today()
+        policy.free_look_end_date = policy.delivery_date + timedelta(days=FREE_LOOK_DAYS)
+
         # Finalize the pre-issuance workflow now that cover is in force.
         await _close_cases_and_promote(session, policy)
 
@@ -653,6 +729,8 @@ async def confirm_payment(
         "effective_date": policy.effective_date.isoformat() if policy.effective_date else None,
         "expiry_date": policy.expiry_date.isoformat() if policy.expiry_date else None,
         "grace_period_end_date": policy.grace_period_end_date.isoformat() if policy.grace_period_end_date else None,
+        "delivery_date": policy.delivery_date.isoformat() if policy.delivery_date else None,
+        "free_look_end_date": policy.free_look_end_date.isoformat() if policy.free_look_end_date else None,
         "payment": intent.to_dict(),
     }
 
