@@ -19,9 +19,11 @@ import json
 import os
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from langchain_google_genai import ChatGoogleGenerativeAI
+from pydantic import BaseModel, Field
 
 from journey import register_journey
 
@@ -59,7 +61,7 @@ update_case_status first for the decision, then continue.
 
 1. add_customer → register the applicant
 2. create_case → open the underwriting case
-3. create_proposal → define product, coverage, term
+3. create_proposal → NEVER ask the user to type product details manually. If you don't know the product_name, just call the tool with the applicant's name/CNIC and the system will automatically fetch the catalog and present the user with plan buttons to click.
 4. get_document_checklist / upload_document → collect required docs
 5. run_risk_assessment → AI medical/financial/fraud scoring
 6. update_case_status → InProgress → Under Review → Approved/Rejected
@@ -159,6 +161,9 @@ def _tool_result_message(name: str, call_id: str, result: dict) -> ToolMessage:
 JOURNEY_TOOLS = {"start_underwriting_journey", "continue_underwriting_journey"}
 
 
+class Top5PlansOutput(BaseModel):
+    plan_names: list[str] = Field(description="List of top 5 exact plan names (the 'name' or 'label' field), sorted from most to least recommended.")
+
 async def permission_gate(state: ChatState) -> Command:
     last = state["messages"][-1]
     # One action per turn — matches the platform's existing "ask, then act"
@@ -173,6 +178,68 @@ async def permission_gate(state: ChatState) -> Command:
     if not is_role_allowed(name, state["user_role"]):
         result = {"success": False, "error": "You do not have permission to perform this action."}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
+
+    if name == "create_proposal":
+        provided_plan = args.get("product_name")
+        plans_res = await execute_tool("list_insurance_plans", {}, ctx)
+        plans = plans_res.get("items", [])
+        if not plans:
+            return back_to_agent({"messages": [_tool_result_message(name, call_id, {"success": False, "error": "No insurance plans found in the catalog. Please ask an Admin to set up the catalog."})]})
+        
+        valid_options = [p.get("label") or p.get("name") for p in plans if p.get("label") or p.get("name")]
+        if provided_plan and provided_plan.lower() in ("any", "random", "auto"):
+            args["product_name"] = valid_options[0] if valid_options else "Term Life Plus"
+        elif not provided_plan or provided_plan not in valid_options:
+            options = []
+            customer_name_or_cnic = args.get("applicant_name") or args.get("customer_name") or args.get("cnic")
+            if customer_name_or_cnic:
+                try:
+                    cust_res = await execute_tool("list_customers", {}, ctx)
+                    query = customer_name_or_cnic.lower()
+                    customer_data = None
+                    for c in cust_res.get("items", []):
+                        if query in (c.get("first_name", "") + " " + c.get("last_name", "")).lower() or query == c.get("cnic"):
+                            customer_data = c
+                            break
+                    if customer_data:
+                        llm = _llm().with_structured_output(Top5PlansOutput)
+                        prompt = ChatPromptTemplate.from_messages([
+                            ("system", "You are an expert life insurance advisor. You will be provided with a customer's details and a list of available insurance plans. Your task is to recommend the top 5 most suitable plans for this customer based on their demographics, age, and occupation. Return ONLY the exact plan names from the provided list, ordered by suitability."),
+                            ("user", "Customer Data: {customer}\n\nAvailable Plans: {plans}")
+                        ])
+                        result = await (prompt | llm).ainvoke({"customer": customer_data, "plans": plans})
+                        options = [opt for opt in result.plan_names if opt in valid_options]
+                except Exception as e:
+                    print(f"Failed to use AI for plan suggestion: {e}")
+            
+            if not options:
+                options = valid_options[:5]
+                
+            if options:
+                answer = interrupt({
+                    "kind": "clarify",
+                    "tool_call": {"name": name, "args": args},
+                    "question": "Which insurance plan would you like to propose? I've analyzed the customer's profile and recommend these top options:",
+                    "options": options[:5],
+                })
+                # Inject the selected plan directly into args and execute immediately —
+                # avoids a second LLM round-trip that sometimes misparses the choice.
+                selected = str(answer).strip()
+                if selected in valid_options:
+                    args["product_name"] = selected
+                else:
+                    # Fuzzy-match: pick the first option that starts with or contains the answer
+                    for opt in valid_options:
+                        if selected.lower() in opt.lower() or opt.lower() in selected.lower():
+                            args["product_name"] = opt
+                            break
+                    else:
+                        args["product_name"] = options[0]  # default to first recommendation
+                result = await execute_tool(name, args, ctx)
+                update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
+                if result.get("last_action"):
+                    update["last_action"] = result["last_action"]
+                return back_to_agent(update)
 
     missing = missing_args(name, args)
     if missing:
@@ -255,26 +322,59 @@ async def permission_gate(state: ChatState) -> Command:
 
     if name in CLIENT_EXECUTED_TOOLS:
         # The browser holds the attached File object — chat-agent can't
-        # execute this itself. The confirmation above already ran; now hand
-        # execution back to the frontend and wait for it to resume with the
-        # upload's result.
-        upload_result = interrupt({
+        # execute this itself. Route to the dedicated client executor node
+        # to avoid LangGraph multiple-interrupt bleeding.
+        payload = {
             "kind": "client_execute",
             "tool_call": {"name": name, "args": args},
-        })
-        result = upload_result if isinstance(upload_result, dict) else {"success": False, "error": "Upload failed."}
-        return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
+        }
+        pending = {"name": name, "args": args, "id": call_id, "client_payload": payload}
+        return Command(goto="client_executor", update={"pending_call": pending})
 
     result = await execute_tool(name, args, ctx)
+    
+    if isinstance(result, dict) and result.get("__client_execute__"):
+        payload = result
+        pending = {"name": name, "args": args, "id": call_id, "client_payload": payload}
+        return Command(goto="client_executor", update={"pending_call": pending})
+        
     update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
     if result.get("last_action"):
         update["last_action"] = result["last_action"]
+    if result.get("assessment"):
+        update["assessment"] = result["assessment"]
     return back_to_agent(update)
+
+
+async def client_executor_node(state: ChatState) -> Command:
+    pending = state.get("pending_call") or {}
+    payload = pending.get("client_payload")
+    if not payload:
+        payload = {
+            "kind": "client_execute",
+            "tool_call": {"name": pending.get("name"), "args": pending.get("args")},
+        }
+        
+    client_result = interrupt(payload)
+    
+    result = client_result if isinstance(client_result, dict) else {"success": False, "error": "Client execution failed or interrupted."}
+    
+    update: dict = {"messages": [_tool_result_message(pending.get("name", ""), pending.get("id", ""), result)], "pending_call": None}
+    if result.get("last_action"):
+        update["last_action"] = result["last_action"]
+    if result.get("assessment"):
+        update["assessment"] = result["assessment"]
+    if result.get("quick_actions"):
+        # For tools that return quick actions via client execute
+        pass # Not natively supported in state, but frontend reads it from the result if we had a way.
+        
+    return Command(goto="agent", update=update)
 
 
 _graph_builder = StateGraph(ChatState)
 _graph_builder.add_node("agent", agent_node)
 _graph_builder.add_node("permission_gate", permission_gate)
+_graph_builder.add_node("client_executor", client_executor_node)
 _graph_builder.add_edge(START, "agent")
 _graph_builder.add_conditional_edges("agent", _route_after_agent, {"permission_gate": "permission_gate", END: END})
 # permission_gate routes itself via Command (agent | j_intake | j_resume) —

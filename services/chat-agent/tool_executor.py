@@ -23,6 +23,7 @@ frontend rather than the LLM:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import random
@@ -33,6 +34,8 @@ from typing import Any, Awaitable, Callable, Optional
 import httpx
 
 from pages import build_route, page_for_record, page_for_route
+from langgraph.types import interrupt
+from langgraph.errors import GraphInterrupt
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
 API_GATEWAY_URL = os.environ.get("API_GATEWAY_URL", "http://api-gateway:8000")
@@ -399,32 +402,47 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
 
 @handles("get_document_checklist")
 async def _get_document_checklist(args: dict, ctx: Ctx) -> dict:
-    case = await _resolve_case(args, ctx)
-    case_id = _case_id(case)
-    res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
-    res.raise_for_status()
-    cl = res.json()
-    missing = cl.get("missing") or []
-    received = cl.get("received") or []
+    while True:
+        case = await _resolve_case(args, ctx)
+        case_id = _case_id(case)
+        res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
+        res.raise_for_status()
+        cl = res.json()
+        missing = cl.get("missing") or []
+        received = cl.get("received") or []
 
-    body = f"Documents for **{case.get('caseNumber')}**:\n"
-    body += "".join(f"- ✅ {d}\n" for d in received)
-    body += "".join(f"- ❌ {d} (missing)\n" for d in missing)
-    body += "\nAll required documents are in — the assessment can run." if not missing else \
-            f"\n{len(missing)} document(s) still needed before the assessment can run."
+        body = f"Documents for **{case.get('caseNumber')}**:\n"
+        body += "".join(f"- ✅ {d}\n" for d in received)
+        body += "".join(f"- ❌ {d} (missing)\n" for d in missing)
+        body += "\nAll required documents are in — the assessment can run." if not missing else \
+                f"\n{len(missing)} document(s) still needed before the assessment can run."
 
-    return {
-        "success": True,
-        "message": body,
-        "checklist": cl,
-        "quick_actions": (
-            [{"label": f"Upload {d}", "actionType": "upload",
-              "payload": json.dumps({"document_type": d, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
-             for d in missing[:3]]
-            or [{"label": "Run Risk Assessment", "actionType": "submit",
-                 "payload": f"Run risk assessment for case {case.get('caseNumber')}"}]
-        ),
-    }
+        if not missing:
+            return {
+                "success": True,
+                "message": body,
+                "checklist": cl,
+                "quick_actions": [
+                    {"label": "Run Risk Assessment", "actionType": "submit",
+                     "payload": f"Run risk assessment for case {case.get('caseNumber')}"}
+                ],
+            }
+
+        upload_actions = [
+            {"label": f"Upload {doc}", "actionType": "upload",
+             "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
+            for doc in missing[:3]
+        ]
+        answer = interrupt({
+            "kind": "clarify",
+            "tool_call": {"name": "get_document_checklist", "args": args},
+            "question": body,
+            "custom_actions": upload_actions + [{"label": "Proceed", "actionType": "submit", "payload": "Proceed"}]
+        })
+        if str(answer).lower() not in ("proceed", "yes", "true"):
+            return {"success": True, "message": "Document check completed."}
+        # Brief pause to let the backend fully persist the uploaded document
+        await asyncio.sleep(1.5)
 
 
 @handles("list_artifacts")
@@ -553,7 +571,15 @@ async def _get_risk_assessment(args: dict, ctx: Ctx) -> dict:
             f"- **Decision: {a.get('ai_decision')}**\n"
             + (f"\nReasons:\n{reasons}" if reasons else "")
         ),
-        "assessment": a,
+        "assessment": {
+            "scores": a,
+            "case_id": case_id,
+            "ai_decision": a.get("ai_decision"),
+            "reasons": a.get("reasons", []),
+            "medical_reasons": a.get("medical_reasons", []),
+            "financial_reasons": a.get("financial_reasons", []),
+            "fraud_reasons": a.get("fraud_reasons", []),
+        },
         "navigate": {"route": results_route, "entity_id": "", "highlight": False},
         "quick_actions": [{"label": "View Full Results", "actionType": "navigate", "payload": results_route}],
     }
@@ -1023,48 +1049,27 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
 
     missing = checklist.get("missing") or []
     if missing:
+        upload_actions = [
+            {"label": f"Upload {doc}", "actionType": "upload",
+             "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
+            for doc in missing[:3]
+        ]
         return {
             "success": False,
             "message": f"Missing {len(missing)} required document(s): {', '.join(missing)}.",
-            "quick_actions": [
-                {"label": f"Upload {doc}", "actionType": "upload",
-                 "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
-                for doc in missing[:3]
-            ],
+            "quick_actions": upload_actions + [{"label": "Retry Risk Assessment", "actionType": "submit", "payload": f"Run risk assessment for CNIC {case.get('customer_cnic') or args.get('cnic')}"}]
         }
 
-    eval_res = await ctx.client.post(
-        ctx.gateway("/evaluate"),
-        json={"customer": customer, "policy": policy, "case_id": case_id},
-    )
-    eval_res.raise_for_status()
-    result = eval_res.json() if eval_res.content else {}
-
-    scores = result.get("scores") or {}
-    decision = result.get("ai_decision")
-    summary = (
-        f"Assessment complete for **{case.get('caseNumber')}**\n"
-        f"- Medical: {scores.get('medical_score', '—')}/100\n"
-        f"- Financial: {scores.get('financial_score', '—')}/100\n"
-        f"- Fraud: {scores.get('fraud_probability', '—')}\n"
-        f"- **Decision: {decision}**"
-    ) if decision else (
-        f"Evaluation for **{case.get('caseNumber')}** is running — results land in a few moments."
-    )
-
-    # The assessment RESULTS live on the case detail page (/case/{id} — scores,
-    # decision, reasons); cases?case_id= opens the documents view instead.
-    results_route = f"case/{case_id}"
+    # Offload the execution to the client so it can stream the live steps to the UI.
+    # Return a special marker so graph.py routes to the client_executor node
+    # to avoid the LangGraph multiple-interrupt broadcast bug.
     return {
-        "success": True,
-        "message": summary,
-        "assessment": result,
-        "last_action": _action("run_risk_assessment", "case", case_id, results_route, "Risk assessment complete"),
-        "quick_actions": [
-            {"label": "View Results", "actionType": "navigate", "payload": results_route},
-            {"label": "Move to Review", "actionType": "submit",
-             "payload": f"Move case {case.get('caseNumber')} to Under Review"},
-        ],
+        "__client_execute__": True,
+        "kind": "client_execute",
+        "tool_call": {
+            "name": "run_risk_assessment", 
+            "args": {"case_id": case_id, "customer": customer, "policy": policy}
+        }
     }
 
 
@@ -1202,6 +1207,11 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
         }
 
     demo = _demo_customer()
+    if args.get("applicant_name"):
+        parts = args["applicant_name"].strip().split(maxsplit=1)
+        demo["first_name"] = parts[0]
+        demo["last_name"] = parts[1] if len(parts) > 1 else parts[0]
+        
     birth_year = demo.pop("_birth_year")
 
     cust_res = await ctx.client.post(ctx.tsvc("/customers"), json=_customer_payload(demo))
@@ -1297,6 +1307,9 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
         # Expected "couldn't find it" paths — surfaced verbatim so the model can
         # relay a useful sentence instead of an HTTP trace.
         return {"success": False, "error": str(exc)}
+    except GraphInterrupt:
+        # Allow LangGraph interrupts to bubble up and pause execution
+        raise
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code in (401, 403):
             return {

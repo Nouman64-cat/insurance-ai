@@ -11,6 +11,7 @@ import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import type { AgentMessage, QuickAction } from "@/lib/agent/types";
 import { useCopilot } from "./CopilotContext";
+import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -134,7 +135,22 @@ export function CopilotInterface() {
   const [isRecording, setIsRecording] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFileUrl, setSelectedFileUrl] = useState<string | null>(null);
   const [autoSubmitPrompt, setAutoSubmitPrompt] = useState("");
+  const [riskSteps, setRiskSteps] = useState<ProcessStep[]>([]);
+  const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const interruptRiskRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (selectedFile && selectedFile.type.startsWith("image/")) {
+      const url = URL.createObjectURL(selectedFile);
+      setSelectedFileUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setSelectedFileUrl(null);
+    }
+  }, [selectedFile]);
   const [suggestedActions, setSuggestedActions] = useState<string[]>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -256,12 +272,162 @@ export function CopilotInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingInterrupt]);
 
-  // ── Submit — a plain new turn, or the answer to a pending "clarify" question
-  const handleSubmit = useCallback((e?: React.FormEvent, overrideText?: string) => {
+  // Client-executed risk assessment (so we can stream the live steps to the UI)
+  useEffect(() => {
+    if (pendingInterrupt?.kind !== "client_execute") return;
+    if (pendingInterrupt.toolCall.name !== "run_risk_assessment") return;
+    
+    if (interruptRiskRef.current) return;
+    interruptRiskRef.current = true;
+    
+    setRiskSteps([
+      { id: "medical", label: "Analyzing medical history", status: "active" }
+    ]);
+    
+    const args = pendingInterrupt.toolCall.args;
+    
+    (async () => {
+      try {
+        const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
+        
+        const payload = {
+          customer: args.customer,
+          policy: args.policy,
+          case_id: args.case_id,
+        };
+
+        const res = await fetch(`${API_BASE}/evaluate/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) throw new Error("Stream failed");
+
+        const reader = res.body!.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        
+        let finalScores: any = {};
+        let finalDecision = "";
+        
+        const updateStep = (id: string, label: string, status: "active" | "done" | "error") => {
+          setRiskSteps(prev => {
+            const copy = [...prev];
+            const idx = copy.findIndex(s => s.id === id);
+            if (idx >= 0) copy[idx] = { id, label, status };
+            else copy.push({ id, label, status });
+            return copy;
+          });
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() ?? "";
+
+          for (const part of parts) {
+            const line = part.trim();
+            if (!line.startsWith("data: ")) continue;
+            let evt: any;
+            try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+            if (evt.type === "progress") {
+              const node = evt.node;
+              const data = evt.data || {};
+              if (node === "medical_scoring") {
+                 updateStep("medical", "Analyzing medical history", "done");
+                 updateStep("financial", "Evaluating financial profile", "active");
+                 finalScores.medical_score = data.medical_score;
+                 finalScores.medical_reasons = data.medical_reasons ?? [];
+              } else if (node === "financial_scoring") {
+                 updateStep("financial", "Evaluating financial profile", "done");
+                 updateStep("fraud", "Checking fraud signals", "active");
+                 finalScores.financial_score = data.financial_score;
+                 finalScores.financial_reasons = data.financial_reasons ?? [];
+              } else if (node === "fraud_detection") {
+                 updateStep("fraud", "Checking fraud signals", "done");
+                 updateStep("decision", "Calculating composite risk", "active");
+                 finalScores.fraud_probability = data.fraud_probability;
+                 finalScores.fraud_reasons = data.fraud_reasons ?? [];
+              } else if (node === "decision_aggregation") {
+                 updateStep("decision", "Calculating composite risk", "done");
+                 finalScores.composite_risk_score = data.composite_risk_score;
+                 finalDecision = data.ai_decision;
+                 finalScores.reasons = data.reasons ?? [];
+              }
+            } else if (evt.type === "invalid" || evt.type === "error") {
+               updateStep("error", "Assessment failed", "error");
+               throw new Error(evt.message || "Validation failed");
+            }
+          }
+        }
+        
+        const summary = `Assessment complete for **${args.case_id}**\n- Medical: ${finalScores.medical_score ?? '—'}/100\n- Financial: ${finalScores.financial_score ?? '—'}/100\n- Fraud: ${finalScores.fraud_probability ?? '—'}\n- **Decision: ${finalDecision}**`;
+        const results_route = `case/${args.case_id}`;
+
+        resolveInterrupt({
+          success: true,
+          message: summary,
+          assessment: {
+            scores: finalScores,
+            ai_decision: finalDecision,
+            case_id: args.case_id,
+            reasons: finalScores.reasons ?? [],
+            medical_reasons: finalScores.medical_reasons ?? [],
+            financial_reasons: finalScores.financial_reasons ?? [],
+            fraud_reasons: finalScores.fraud_reasons ?? [],
+          },
+          last_action: {
+            toolName: "run_risk_assessment",
+            entityType: "case",
+            entityId: args.case_id,
+            route: results_route,
+            label: "Risk assessment complete"
+          },
+          quick_actions: [
+            { label: "View Results", actionType: "navigate", payload: results_route },
+            { label: "Move to Review", actionType: "submit", payload: `Move case ${args.case_id} to Under Review` }
+          ]
+        });
+      } catch (err: any) {
+        resolveInterrupt({ success: false, message: `Assessment failed: ${err.message}` });
+      } finally {
+        interruptRiskRef.current = false;
+        setRiskSteps([]);
+      }
+    })();
+  }, [pendingInterrupt, resolveInterrupt]);
+
+  const getBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
+  const handleSubmit = useCallback(async (e?: React.FormEvent, overrideText?: string) => {
     e?.preventDefault();
     const text = overrideText ?? input;
-    if (!text.trim() || isLoading) return;
+    if ((!text.trim() && !selectedFile) || isLoading || isUploading) return;
     if (!overrideText) setInput("");
+    setUploadedDocs([]);
+
+    let attachments = undefined;
+    if (selectedFile) {
+        try {
+            const base64Url = await getBase64(selectedFile);
+            attachments = [{ name: selectedFile.name, url: base64Url }];
+            setSelectedFile(null);
+        } catch (error) {
+            console.error("Error converting file to base64", error);
+        }
+    }
 
     if (pendingInterrupt?.kind === "clarify") {
       resolveInterrupt(text.trim());
@@ -272,12 +438,12 @@ export function CopilotInterface() {
       } else if (lowerText === "no" || lowerText === "n" || lowerText === "cancel") {
         resolveInterrupt(false);
       } else {
-        send(text.trim());
+        send(text.trim(), attachments);
       }
     } else {
-      send(text.trim());
+      send(text.trim(), attachments);
     }
-  }, [input, isLoading, pendingInterrupt, send, resolveInterrupt]);
+  }, [input, isLoading, pendingInterrupt, send, resolveInterrupt, selectedFile]);
 
   const handleQuickAction = useCallback((action: QuickAction) => {
     if (action.actionType === "navigate") {
@@ -301,6 +467,48 @@ export function CopilotInterface() {
       handleSubmit(undefined, action.payload);
     }
   }, [router, resolveInterrupt, handleSubmit]);
+
+  const handleDownloadPDF = async (caseId: string) => {
+    try {
+      const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
+      
+      notify("Generating PDF report...", true);
+      const listRes = await fetch(`${API_BASE}/assessments?case_id=${caseId}`, {
+        headers: { "X-Tenant-Id": tenantId }
+      });
+      if (!listRes.ok) throw new Error("Failed to fetch assessment list");
+      const list = await listRes.json();
+      if (!list || list.length === 0) throw new Error("No assessment found for this case");
+      
+      const a = list[0];
+      const detailRes = await fetch(`${API_BASE}/assessments/${a.id}`, {
+        headers: { "X-Tenant-Id": tenantId }
+      });
+      if (!detailRes.ok) throw new Error("Failed to fetch assessment details");
+      const detail = await detailRes.json();
+      
+      const { generateAssessmentPDF } = await import("@/lib/pdf-export");
+      await generateAssessmentPDF({
+        customer_name: detail.customer_name,
+        customer_cnic: detail.customer_cnic,
+        case_id: detail.case_id,
+        created_at: detail.created_at,
+        medical_score: detail.medical_score,
+        financial_score: detail.financial_score,
+        fraud_probability: detail.fraud_probability,
+        composite_risk_score: detail.composite_risk_score,
+        ai_decision: detail.ai_decision,
+        suggested_loading: detail.suggested_loading,
+        reasons: detail.reasons,
+        ai_summary: detail.ai_summary,
+        product_name: a.product_name,
+      });
+      notify("✅ PDF downloaded successfully", true);
+    } catch (err: any) {
+      notify(`⚠️ Could not download PDF: ${err.message}`, false);
+    }
+  };
 
   // Fire RAG "next best action" suggestions once a turn finishes — fire-and-
   // forget, completely off the critical path.
@@ -433,6 +641,7 @@ export function CopilotInterface() {
             if (!file) return;
             setSelectedFile(file);
             selectedFileRef.current = file;
+            setIsUploading(true);
 
             if (interruptUploadRef.current) {
               const { args } = interruptUploadRef.current;
@@ -451,15 +660,26 @@ export function CopilotInterface() {
               try {
                 const result = await uploadDocument(args, file);
                 notify(`✅ ${result.message}`, true);
-                send(`I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`);
+                if (pendingInterrupt) {
+                  setUploadedDocs((prev) => [...prev, args.document_type]);
+                  // Do NOT resolve the interrupt yet — the user might need to upload multiple
+                  // documents. They will click the 'Proceed' button when they are done.
+                } else {
+                  const msg = `I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`;
+                  send(msg);
+                }
               } catch (err: any) {
                 notify(`⚠️ ${err.message || "Upload failed."}`, false);
               } finally {
                 setSelectedFile(null);
+                setIsUploading(false);
               }
             } else if (autoSubmitPrompt) {
               handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
               setAutoSubmitPrompt("");
+              setIsUploading(false);
+            } else {
+              setIsUploading(false);
             }
           }}
           className="hidden"
@@ -515,7 +735,8 @@ export function CopilotInterface() {
           </div>
         </div>
         
-        {/* Main Chat Area */}
+        {/* Main Chat Area + Right Suggestions Panel */}
+        <div className="flex-1 flex flex-row relative h-full min-w-0 min-h-0">
         <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0 bg-[#fdfdfe]">
            {/* Subtle ambient glowing orbs */}
            <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-indigo-400/10 rounded-full blur-[100px] pointer-events-none" />
@@ -555,12 +776,27 @@ export function CopilotInterface() {
                      {/* Input Box - Perplexity style */}
                      <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
                        {selectedFile && (
-                         <div className="px-4 pt-4 pb-1 flex items-center gap-2">
-                           <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
-                             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                             {selectedFile.name}
-                             <button type="button" onClick={() => setSelectedFile(null)} className="ml-1 text-slate-400 hover:text-slate-700 transition-colors">
-                               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                         <div className="px-4 pt-4 pb-0 flex items-center gap-2">
+                           <div className="relative group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3 p-2 pr-3 min-w-[160px] max-w-[260px]">
+                             {selectedFile.type.startsWith("image/") && selectedFileUrl ? (
+                               <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-slate-200">
+                                 <img src={selectedFileUrl} alt="preview" className="w-full h-full object-cover" />
+                               </div>
+                             ) : (
+                               <div className="w-10 h-10 rounded-lg flex-shrink-0 bg-red-100 text-red-500 flex items-center justify-center">
+                                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                               </div>
+                             )}
+                             <div className="flex flex-col min-w-0 flex-1">
+                               <span className="text-sm font-semibold text-slate-700 truncate">{selectedFile.name}</span>
+                               <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{selectedFile.type.startsWith("image/") ? "Image" : "Document"}</span>
+                             </div>
+                             <button
+                               type="button"
+                               onClick={() => setSelectedFile(null)}
+                               className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-500 hover:text-red-500"
+                             >
+                               <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                              </button>
                            </div>
                          </div>
@@ -589,7 +825,7 @@ export function CopilotInterface() {
                              </button>
                            </div>
                            <div className="flex items-center gap-2">
-                             <button type="submit" disabled={!input.trim() || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
+                             <button type="submit" disabled={(!input.trim() && !selectedFile) || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
                                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
                              </button>
                            </div>
@@ -626,7 +862,7 @@ export function CopilotInterface() {
                    </div>
                  </div>
                ) : (
-                 <div className="flex flex-col pb-48 pt-8">
+                 <div className="flex flex-col pb-8 pt-8">
                    {messages.map((msg) => (
                      <div key={msg.id} className="w-full px-4 py-4 md:py-6">
                        <div className={`max-w-3xl mx-auto flex gap-4 md:gap-5 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
@@ -641,20 +877,83 @@ export function CopilotInterface() {
                          )}
 
                          <div className={`flex-1 min-w-0 flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
-                           {msg.role !== "user" && (
-                             <div className="font-bold text-slate-800 mb-1 text-[15px]">Rizviz Copilot</div>
-                           )}
                            
-                           <div className={`${
-                             msg.role === "user" 
-                               ? "bg-slate-100 text-slate-800 border border-slate-200/60 px-5 py-3.5 rounded-[24px] rounded-tr-sm shadow-sm max-w-[85%] text-[15px] leading-relaxed whitespace-pre-wrap"
-                               : "prose prose-slate max-w-none text-[15px] leading-relaxed break-words text-slate-700 w-full"
-                           }`}>
+                           <div className={`flex flex-col gap-2 ${msg.role === "user" ? "items-end max-w-[85%]" : "items-start w-full"}`}>
                              {msg.role === "user" ? (
-                               msg.text
+                               <>
+                                 {msg.text && (
+                                   <div className="group/usermsg relative">
+                                     <div className="bg-[#f3f4f6] text-slate-900 px-5 py-3 rounded-[24px] rounded-tr-md text-[15px] leading-relaxed whitespace-pre-wrap">
+                                       {msg.text}
+                                     </div>
+                                     <button
+                                       type="button"
+                                       title="Copy"
+                                       onClick={() => navigator.clipboard.writeText(msg.text)}
+                                       className="absolute -bottom-6 right-0 p-1 opacity-0 group-hover/usermsg:opacity-100 transition-opacity text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded"
+                                     >
+                                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                     </button>
+                                   </div>
+                                 )}
+                                 {msg.attachments && msg.attachments.length > 0 && (
+                                   <div className="flex flex-wrap gap-2 justify-end">
+                                     {msg.attachments.map((att, idx) => (
+                                       <div key={idx} className="flex items-center gap-2.5 p-1 pr-3.5 bg-white border border-slate-200/80 shadow-sm rounded-full max-w-[220px]">
+                                         {att.url.startsWith("data:image/") ? (
+                                           <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 border border-slate-100">
+                                             <img src={att.url} alt={att.name} className="w-full h-full object-cover" />
+                                           </div>
+                                         ) : (
+                                           <div className="w-7 h-7 rounded-full flex-shrink-0 bg-slate-100 text-slate-500 flex items-center justify-center border border-slate-200/50">
+                                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                                           </div>
+                                         )}
+                                         <span className="text-[13px] font-medium text-slate-700 truncate">{att.name}</span>
+                                       </div>
+                                     ))}
+                                   </div>
+                                 )}
+                               </>
                              ) : (
-                               <div className="copilot-markdown">
-                                 <ReactMarkdown>{msg.text}</ReactMarkdown>
+                               <div className="w-full flex flex-col gap-3">
+                                 {msg.steps && msg.steps.length > 0 && (
+                                   <div className="mb-1 max-w-[85%]">
+                                     <ProcessGraph steps={msg.steps} compact={true} />
+                                   </div>
+                                 )}
+                                 <div className="prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-800 w-full copilot-markdown prose-p:font-serif prose-headings:font-serif prose-li:font-serif">
+                                   <ReactMarkdown>{msg.text}</ReactMarkdown>
+                                 </div>
+                                 
+                                 {/* AI Message Action Bar (Perplexity Style) */}
+                                 <div className="flex items-center justify-between w-full mt-1 pt-1 text-slate-400 max-w-3xl">
+                                   <div className="flex items-center gap-3 md:gap-4">
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Share">
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+                                     </button>
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Download">
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                     </button>
+                                     <button type="button" title="Copy" onClick={() => navigator.clipboard.writeText(msg.text)} className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                     </button>
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Rewrite">
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                     </button>
+                                   </div>
+                                   <div className="flex items-center gap-2">
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Helpful">
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5"></path></svg>
+                                     </button>
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Unhelpful">
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M10 14H5.236a2 2 0 01-1.789-2.894l3.5-7A2 2 0 018.736 3h4.018a2 2 0 01.485.06l3.76.94m-7 10v5a2 2 0 002 2h.096c.5 0 .905-.405.905-.904 0-.715.211-1.413.608-2.008L17 13V4m-7 10h2m5-10h2a2 2 0 012 2v6a2 2 0 01-2 2h-2.5"></path></svg>
+                                     </button>
+                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="More">
+                                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M5 12h.01M12 12h.01M19 12h.01M6 12a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0zm7 0a1 1 0 11-2 0 1 1 0 012 0z"></path></svg>
+                                     </button>
+                                   </div>
+                                 </div>
                                </div>
                              )}
                            </div>
@@ -662,15 +961,28 @@ export function CopilotInterface() {
                            {/* Quick Actions */}
                            {msg.quickActions && msg.quickActions.length > 0 && (
                              <div className={`flex flex-wrap gap-2 mt-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                               {msg.quickActions.map((action, idx) => (
-                                 <button
-                                   key={`${action.actionType}-${action.label}-${idx}`}
-                                   onClick={() => handleQuickAction(action)}
-                                   className="px-3 py-1.5 text-xs font-semibold rounded-full bg-white border border-slate-200 hover:bg-slate-50 hover:border-indigo-200 hover:text-indigo-700 shadow-sm transition-all flex items-center gap-1.5"
-                                 >
-                                   {action.label}
-                                 </button>
-                               ))}
+                               {msg.quickActions.map((action, idx) => {
+                                 let isUploaded = false;
+                                 if (action.actionType === "upload" && action.payload) {
+                                   try { const p = JSON.parse(action.payload); isUploaded = uploadedDocs.includes(p.document_type); } catch(e) {}
+                                 }
+                                 return (
+                                   <button
+                                     key={`${action.actionType}-${action.label}-${idx}`}
+                                     onClick={() => handleQuickAction(action)}
+                                     className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                                       isUploaded ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                                       : action.actionType === "navigate" ? "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-indigo-200 hover:text-indigo-700"
+                                       : action.actionType === "upload" ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                                       : action.actionType === "confirm" ? "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200"
+                                       : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
+                                     }`}
+                                   >
+                                     {isUploaded && <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M20 6L9 17l-5-5" /></svg>}
+                                     {isUploaded ? `Uploaded ${action.label.replace('Upload ', '')}` : action.label}
+                                   </button>
+                                 );
+                               })}
                              </div>
                            )}
                          </div>
@@ -699,19 +1011,73 @@ export function CopilotInterface() {
                )}
              </div>
            </div>
-           
+
            {/* Bottom Input Area for ongoing chat (when not empty state) */}
            {messages.length > 1 || (messages.length === 1 && messages[0].role !== "assistant") ? (
-             <div className="absolute bottom-4 left-0 w-full px-4 z-20">
-               <div className="max-w-3xl mx-auto relative">
+             <div className="w-full px-4 z-20 pb-4 bg-[#fdfdfe]">
+               <div className="max-w-3xl mx-auto relative flex flex-col gap-2">
+                 
+                 {/* Suggestions are now shown in the right panel (below) */}
+                 {(() => {
+                   const actionsToShow = turnActions.length > 0
+                     ? turnActions
+                     : (messages[messages.length - 1]?.role === "assistant" 
+                         ? getRecommendedActions(messages[messages.length - 1]) 
+                         : []);
+                   
+                   const extraActions = suggestedActions
+                     .filter((s) => !actionsToShow.some((a) => a.label === s))
+                     .map((s) => ({ label: s, actionType: "submit", payload: s } as QuickAction));
+                   
+                   const finalActions = [...actionsToShow, ...extraActions];
+                   
+                   if (finalActions.length === 0) return null;
+                   
+                   return (
+                     <div className="flex flex-wrap gap-2 px-1 pb-1 hidden">
+                       {finalActions.slice(0, 5).map((action, idx) => (
+                         <button
+                           key={`${action.actionType}-${idx}`}
+                           onClick={() => handleQuickAction(action)}
+                           className="px-3.5 py-1.5 text-xs font-semibold rounded-full bg-white/90 backdrop-blur-md border border-slate-200/80 hover:bg-white hover:border-indigo-300 hover:text-indigo-700 hover:shadow-sm text-slate-700 transition-all flex items-center gap-1.5 shadow-[0_2px_8px_rgb(0,0,0,0.04)]"
+                         >
+                           {action.actionType === "navigate" ? (
+                             <svg className="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                           ) : action.actionType === "upload" ? (
+                             <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                           ) : (
+                             <svg className="w-3.5 h-3.5 text-violet-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                           )}
+                           {action.label}
+                         </button>
+                       ))}
+                     </div>
+                   );
+                 })()}
+
                  <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
                    {selectedFile && (
-                     <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-                       <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                         {selectedFile.name}
-                         <button type="button" onClick={() => setSelectedFile(null)} className="ml-1 text-slate-400 hover:text-slate-700 transition-colors">
-                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                     <div className="px-4 pt-4 pb-0 flex items-center gap-2">
+                       <div className="relative group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3 p-2 pr-3 min-w-[160px] max-w-[260px]">
+                         {selectedFile.type.startsWith("image/") && selectedFileUrl ? (
+                           <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-slate-200">
+                             <img src={selectedFileUrl} alt="preview" className="w-full h-full object-cover" />
+                           </div>
+                         ) : (
+                           <div className="w-10 h-10 rounded-lg flex-shrink-0 bg-red-100 text-red-500 flex items-center justify-center">
+                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                           </div>
+                         )}
+                         <div className="flex flex-col min-w-0 flex-1">
+                           <span className="text-sm font-semibold text-slate-700 truncate">{selectedFile.name}</span>
+                           <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{selectedFile.type.startsWith("image/") ? "Image" : "Document"}</span>
+                         </div>
+                         <button
+                           type="button"
+                           onClick={() => setSelectedFile(null)}
+                           className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-500 hover:text-red-500"
+                         >
+                           <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                          </button>
                        </div>
                      </div>
@@ -740,7 +1106,7 @@ export function CopilotInterface() {
                          </button>
                        </div>
                        <div className="flex items-center">
-                         <button type="submit" disabled={!input.trim() || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
+                         <button type="submit" disabled={(!input.trim() && !selectedFile) || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
                          </button>
                        </div>
@@ -751,6 +1117,43 @@ export function CopilotInterface() {
              </div>
            ) : null}
         </div>
+        </div>
+        {/* Right Suggestions Panel */}
+        {(() => {
+          const actionsToShow = turnActions.length > 0
+            ? turnActions
+            : (messages[messages.length - 1]?.role === "assistant"
+                ? getRecommendedActions(messages[messages.length - 1])
+                : []);
+          const extraActions = suggestedActions
+            .filter((s) => !actionsToShow.some((a) => a.label === s))
+            .map((s) => ({ label: s, actionType: "submit", payload: s } as QuickAction));
+          const finalActions = [...actionsToShow, ...extraActions];
+          if (finalActions.length === 0 || (messages.length <= 1 && messages[0]?.role === "assistant")) return null;
+          return (
+            <div className="hidden xl:flex flex-col w-[220px] flex-shrink-0 bg-white/60 backdrop-blur-sm border-l border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">Suggested Actions</div>
+              {finalActions.slice(0, 8).map((action, idx) => (
+                <button
+                  key={`rp-${action.actionType}-${idx}`}
+                  onClick={() => handleQuickAction(action)}
+                  className="w-full text-left px-3 py-2.5 text-[12.5px] font-medium rounded-xl bg-white hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 hover:text-indigo-700 text-slate-700 transition-all shadow-sm flex items-start gap-2.5 group"
+                >
+                  <span className="mt-0.5 flex-shrink-0">
+                    {action.actionType === "navigate" ? (
+                      <svg className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                    ) : action.actionType === "upload" ? (
+                      <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                    ) : (
+                      <svg className="w-3.5 h-3.5 text-violet-400 group-hover:text-violet-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                    )}
+                  </span>
+                  <span className="leading-snug">{action.label}</span>
+                </button>
+              ))}
+            </div>
+          );
+        })()}
       </div>
     );
   }
@@ -821,7 +1224,27 @@ export function CopilotInterface() {
                         : "bg-white border border-slate-100 text-slate-700 rounded-2xl rounded-bl-md"
                       }`}>
                       {msg.role === "user" ? (
-                        <div className="whitespace-pre-wrap">{msg.text}</div>
+                        <div className="flex flex-col gap-2">
+                          <div className="whitespace-pre-wrap">{msg.text}</div>
+                          {msg.attachments && msg.attachments.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 justify-end mt-1">
+                              {msg.attachments.map((att, idx) => (
+                                <div key={idx} className="flex items-center gap-2 p-1 pr-2.5 bg-white/20 backdrop-blur-sm border border-white/30 rounded-full max-w-[200px]">
+                                  {att.url.startsWith("data:image/") ? (
+                                    <div className="w-5 h-5 rounded-full overflow-hidden flex-shrink-0">
+                                      <img src={att.url} alt={att.name} className="w-full h-full object-cover" />
+                                    </div>
+                                  ) : (
+                                    <div className="w-5 h-5 rounded-full flex-shrink-0 bg-white/40 text-white flex items-center justify-center">
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                                    </div>
+                                  )}
+                                  <span className="text-[11px] font-medium text-white truncate">{att.name}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <div className="copilot-markdown">
                           <ReactMarkdown>{msg.text}</ReactMarkdown>
@@ -830,33 +1253,192 @@ export function CopilotInterface() {
                               <ProcessGraph steps={msg.steps} compact={true} />
                             </div>
                           )}
+                          {msg.assessment && (() => {
+                            const aScores = msg.assessment.scores ?? {} as any;
+                            const medicalPct = aScores.medical_score || 0;
+                            const financialPct = aScores.financial_score || 0;
+                            const fraudPct = aScores.fraud_probability ? Math.round(aScores.fraud_probability * 100) : 0;
+                            const compositePct = aScores.composite_score || aScores.composite_risk_score || 0;
+                            const scoreTier = (s: number) => s <= 25 ? { label: "Low Risk", text: "text-emerald-600", bar: "#22c55e" } : s <= 50 ? { label: "Moderate Risk", text: "text-amber-600", bar: "#f59e0b" } : s <= 75 ? { label: "Elevated Risk", text: "text-orange-500", bar: "#f97316" } : { label: "High Risk", text: "text-red-600", bar: "#ef4444" };
+                            const ringColor = (s: number) => s <= 25 ? "border-emerald-500" : s <= 50 ? "border-amber-400" : s <= 75 ? "border-orange-500" : "border-red-500";
+                            const dec = msg.assessment.ai_decision || "";
+                            const decStyle = dec.toLowerCase().includes("approv") ? { bg: "bg-emerald-50", border: "border-emerald-200", icon: "text-emerald-600", title: "text-emerald-900", desc: "text-emerald-700" }
+                              : dec.toLowerCase().includes("review") || dec.toLowerCase().includes("human") ? { bg: "bg-blue-50", border: "border-blue-200", icon: "text-blue-600", title: "text-blue-900", desc: "text-blue-700" }
+                              : { bg: "bg-rose-50", border: "border-rose-200", icon: "text-rose-600", title: "text-rose-900", desc: "text-rose-700" };
+                            const compTier = scoreTier(compositePct);
+                            // Merge all reasons into one list with category tag
+                            const allReasons: any[] = [
+                              ...(msg.assessment.medical_reasons ?? []).map((r: any) => ({ ...r, _cat: "MEDICAL" })),
+                              ...(msg.assessment.financial_reasons ?? []).map((r: any) => ({ ...r, _cat: "FINANCIAL" })),
+                              ...(msg.assessment.fraud_reasons ?? []).map((r: any) => ({ ...r, _cat: "FRAUD" })),
+                              ...(msg.assessment.reasons ?? []).filter((r: any) => !String(r?.observation || r?.reason || "").includes("->") && !String(r?.observation || r?.reason || "").toLowerCase().includes("composite")),
+                            ];
+                            const catIcon: Record<string, string> = { MEDICAL: "🩺", FINANCIAL: "💰", FRAUD: "🛡️" };
+                            const ratingDot = (rating: string = "") => rating.toLowerCase().includes("high") ? "bg-red-500" : rating.toLowerCase().includes("moderate") || rating.toLowerCase().includes("elevated") ? "bg-amber-400" : "bg-emerald-500";
+                            const ratingText = (rating: string = "") => rating.toLowerCase().includes("high") ? "text-red-600" : rating.toLowerCase().includes("moderate") || rating.toLowerCase().includes("elevated") ? "text-amber-600" : "text-emerald-600";
+                            return (
+                              <div className="mt-4 flex flex-col gap-3 text-[13px]">
+                                {/* Block 1: Scores */}
+                                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-4">AI Risk Assessment</div>
+                                  <div className="flex flex-col gap-4 mb-5">
+                                    {[
+                                      { label: "Medical Risk Score", pct: medicalPct },
+                                      { label: "Financial Risk Score", pct: financialPct },
+                                      { label: "Fraud Risk Score", pct: fraudPct },
+                                    ].map(({ label, pct }) => {
+                                      const t = scoreTier(pct);
+                                      return (
+                                        <div key={label}>
+                                          <div className="flex justify-between items-center mb-1.5">
+                                            <span className="font-semibold text-slate-800">{label}</span>
+                                            <span className={`font-semibold ${t.text}`}>{t.label} <span className="font-black text-slate-900 ml-1">{pct}%</span></span>
+                                          </div>
+                                          <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: t.bar }} />
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  {/* Composite ring */}
+                                  <div className="flex items-center gap-5 pt-4 border-t border-slate-100">
+                                    <div className={`relative w-20 h-20 rounded-full border-[5px] ${ringColor(compositePct)} flex items-center justify-center flex-shrink-0`}>
+                                      <div className="text-center">
+                                        <span className="block text-xl font-extrabold text-slate-900 leading-none">{compositePct}<span className="text-sm">%</span></span>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Composite Risk Score</p>
+                                      <p className={`text-[15px] font-bold mt-1 ${compTier.text}`}>{compTier.label}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                                {/* Block 2: AI Recommendation */}
+                                <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                  <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">AI Recommendation</div>
+                                  <div className={`p-3 rounded-xl border flex items-start gap-3 ${decStyle.bg} ${decStyle.border}`}>
+                                    <svg className={`w-5 h-5 mt-0.5 flex-shrink-0 ${decStyle.icon}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d={dec.toLowerCase().includes("approv") ? "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" : "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"} /></svg>
+                                    <div>
+                                      <div className={`text-[11px] font-black uppercase tracking-wide ${decStyle.title}`}>{dec || "Pending"}</div>
+                                      <div className={`text-[11px] mt-0.5 ${decStyle.desc}`}>
+                                        {compositePct <= 25 ? "Low composite risk. Eligible for auto-approval." : compositePct <= 50 ? `Composite risk at ${compositePct}. Moderate risk factors detected.` : compositePct <= 75 ? `Composite risk at ${compositePct}. Departmental review required.` : `High composite risk at ${compositePct}. Manual underwriting required.`}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                                {/* Block 3: AI Analysis table (only if reasons available) */}
+                                {allReasons.length > 0 && (
+                                  <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                                    <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">AI Analysis</div>
+                                    <div className="overflow-x-auto -mx-1">
+                                      <table className="w-full min-w-[420px] text-[11.5px]">
+                                        <thead>
+                                          <tr className="border-b border-slate-100">
+                                            <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400 w-[90px]">Category</th>
+                                            <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400 w-[110px]">Parameter</th>
+                                            <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Observation</th>
+                                            <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400 w-[80px]">Risk</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {allReasons.slice(0, 12).map((r: any, i: number) => {
+                                            const cat = r._cat || r.category || "GENERAL";
+                                            const param = r.parameter || r.factor || "—";
+                                            const obs = r.observation || r.reason || "—";
+                                            const rating = r.risk_rating || r.risk_level || "Low";
+                                            return (
+                                              <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
+                                                <td className="py-2 px-2 align-top">
+                                                  <span className="font-bold text-slate-600">{catIcon[cat] || "📋"} {cat}</span>
+                                                </td>
+                                                <td className="py-2 px-2 align-top font-semibold text-slate-800">{param}</td>
+                                                <td className="py-2 px-2 align-top text-slate-500 leading-snug">{obs}</td>
+                                                <td className="py-2 px-2 align-top">
+                                                  <span className={`flex items-center gap-1.5 font-semibold ${ratingText(rating)}`}>
+                                                    <span className={`w-2 h-2 rounded-full flex-shrink-0 ${ratingDot(rating)}`} />
+                                                    {rating}
+                                                  </span>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                    {/* Download button always at bottom of analysis table */}
+                                    {msg.assessment.case_id && (
+                                      <div className="flex justify-end mt-3 pt-3 border-t border-slate-100">
+                                        <button
+                                          onClick={() => handleDownloadPDF(msg.assessment?.case_id as string)}
+                                          className="flex items-center gap-2 px-4 py-2 text-[12px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors shadow-sm"
+                                        >
+                                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                          Download PDF Report
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                                {/* Download button when no reasons table */}
+                                {allReasons.length === 0 && msg.assessment.case_id && (
+                                  <div className="flex justify-end">
+                                    <button
+                                      onClick={() => handleDownloadPDF(msg.assessment?.case_id as string)}
+                                      className="flex items-center gap-2 px-4 py-2 text-[12px] font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-xl transition-colors shadow-sm"
+                                    >
+                                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                      Download PDF Report
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
                       {msg.quickActions && msg.quickActions.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-1">
-                          {msg.quickActions.map((action, idx) => (
+                          {msg.quickActions.map((action, idx) => {
+                            let isUploaded = false;
+                            if (action.actionType === "upload" && action.payload) {
+                              try {
+                                const payload = JSON.parse(action.payload);
+                                isUploaded = uploadedDocs.includes(payload.document_type);
+                              } catch(e) {}
+                            }
+                            return (
                             <button
                               key={`${action.actionType}-${action.label}-${idx}`}
                               onClick={() => handleQuickAction(action)}
-                              className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${action.actionType === "navigate"
+                              disabled={isLoading || isUploading}
+                              className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                                (isLoading || isUploading) ? "opacity-60 cursor-not-allowed pointer-events-none " : ""
+                              }${
+                                isUploaded
                                   ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
-                                  : action.actionType === "upload"
-                                    ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
-                                    : action.actionType === "confirm"
-                                      ? "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200"
-                                      : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
+                                  : action.actionType === "navigate"
+                                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                                    : action.actionType === "upload"
+                                      ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                                      : action.actionType === "confirm"
+                                        ? "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200"
+                                        : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
                                 }`}
                             >
-                              {action.actionType === "navigate" ? (
+                              {isUploaded ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M20 6L9 17l-5-5" /></svg>
+                              ) : action.actionType === "navigate" ? (
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
                               ) : action.actionType === "upload" ? (
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
                               ) : (
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><circle cx="12" cy="12" r="10" /><path d="M12 8v8" /></svg>
                               )}
-                              {action.label}
+                              {isUploaded ? `Uploaded ${action.label.replace('Upload ', '')}` : action.label}
                             </button>
-                          ))}
+                            );
+                          })}
                         </div>
                       )}
                     </div>
@@ -864,13 +1446,13 @@ export function CopilotInterface() {
                 ))}
                 {/* Live process graph — the agent narrating its own state
                     machine, node by node, while (and after) it works. */}
-                {steps.length > 0 && (
+                {(steps.length > 0 || riskSteps.length > 0) && (
                   <div className="flex justify-start items-start gap-2">
                     <div className="w-7 h-7 rounded-full bg-white logo-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                     </div>
                     <div className="max-w-[82%] flex-1">
-                      <ProcessGraph steps={steps} />
+                      <ProcessGraph steps={riskSteps.length > 0 ? riskSteps : steps} />
                     </div>
                   </div>
                 )}
@@ -894,11 +1476,26 @@ export function CopilotInterface() {
             <div className="flex-shrink-0 px-3 pt-2.5 pb-3 bg-white border-t border-slate-100">
               {selectedFile && (
                 <div className="mb-2 flex items-center gap-2">
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-violet-50 text-violet-700 text-xs font-semibold rounded-full border border-violet-100">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                    {selectedFile.name}
-                    <button type="button" onClick={() => setSelectedFile(null)} className="ml-1 hover:text-violet-900 transition-colors">
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  <div className="relative group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3 p-2 pr-3 min-w-[160px] max-w-[260px]">
+                    {selectedFile.type.startsWith("image/") && selectedFileUrl ? (
+                      <div className="w-10 h-10 rounded-lg overflow-hidden flex-shrink-0 bg-slate-200">
+                        <img src={selectedFileUrl} alt="preview" className="w-full h-full object-cover" />
+                      </div>
+                    ) : (
+                      <div className="w-10 h-10 rounded-lg flex-shrink-0 bg-red-100 text-red-500 flex items-center justify-center">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                      </div>
+                    )}
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <span className="text-sm font-semibold text-slate-700 truncate">{selectedFile.name}</span>
+                      <span className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">{selectedFile.type.startsWith("image/") ? "Image" : "Document"}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFile(null)}
+                      className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-500 hover:text-red-500"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                   </div>
                 </div>
@@ -961,7 +1558,8 @@ export function CopilotInterface() {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     placeholder={pendingInterrupt?.kind === "clarify" ? "Type your answer…" : "Message…"}
-                    className="flex-1 bg-transparent text-slate-900 py-1.5 focus:outline-none text-[14px] placeholder:text-slate-400 min-w-0"
+                    className="flex-1 bg-transparent text-slate-900 py-1.5 focus:outline-none text-[14px] placeholder:text-slate-400 min-w-0 disabled:opacity-50"
+                    disabled={isLoading || isUploading}
                   />
                   <button type="button" onClick={() => setShowVoice(true)} title="Live Voice Agent"
                     className="p-2 text-slate-400 hover:text-violet-600 rounded-full transition-all shrink-0">
@@ -976,7 +1574,7 @@ export function CopilotInterface() {
                     }
                   </button>
                 </div>
-                <button type="submit" disabled={!input.trim() || isLoading}
+                <button type="submit" disabled={!input.trim() || isLoading || isUploading}
                   className="p-3 bg-gradient-to-br from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-full transition-all shadow-lg shadow-fuchsia-500/30 active:scale-90 shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                 </button>
@@ -994,7 +1592,10 @@ export function CopilotInterface() {
                     <button
                       key={idx}
                       onClick={() => handleQuickAction(action)}
-                      className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${action.actionType === "navigate"
+                      disabled={isLoading || isUploading}
+                      className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${
+                        (isLoading || isUploading) ? "opacity-60 cursor-not-allowed pointer-events-none " : ""
+                      }${action.actionType === "navigate"
                           ? "text-emerald-600 hover:text-white hover:bg-emerald-600 border-emerald-200"
                           : action.actionType === "upload"
                             ? "text-amber-600 hover:text-white hover:bg-amber-600 border-amber-200"

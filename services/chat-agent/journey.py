@@ -243,6 +243,10 @@ async def j_risk(state: ChatState) -> dict:
         "fraud_probability": scores.get("fraud_probability"),
         "composite_score": scores.get("composite_risk_score") or assessment.get("composite_risk_score"),
         "recommendation": assessment.get("ai_decision") or "Human Review",
+        "reasons": scores.get("reasons") or assessment.get("reasons") or [],
+        "medical_reasons": scores.get("medical_reasons") or assessment.get("medical_reasons") or [],
+        "financial_reasons": scores.get("financial_reasons") or assessment.get("financial_reasons") or [],
+        "fraud_reasons": scores.get("fraud_reasons") or assessment.get("fraud_reasons") or [],
     }
     return {
         "journey_stage": "underwriting_decision",
@@ -396,7 +400,16 @@ async def j_finish(state: ChatState) -> dict:
                 {"label": "View Case", "actionType": "navigate", "payload": route},
             ],
         })
+        if r:
+            result["assessment"] = {
+                "scores": r, "ai_decision": r.get("recommendation", "Unknown"), "case_id": case_id,
+                "reasons": r.get("reasons", []),
+                "medical_reasons": r.get("medical_reasons", []),
+                "financial_reasons": r.get("financial_reasons", []),
+                "fraud_reasons": r.get("fraud_reasons", []),
+            }
     else:
+        r = state.get("journey_risk") or {}
         result.update({
             "success": True,
             "message": f"Underwriting journey complete — {case_no} finished as **{outcome or 'Closed'}**.",
@@ -405,6 +418,14 @@ async def j_finish(state: ChatState) -> dict:
                 {"label": "Start another journey", "actionType": "submit", "payload": "Run the underwriting journey with demo data"},
             ],
         })
+        if r:
+            result["assessment"] = {
+                "scores": r, "ai_decision": r.get("recommendation", "Unknown"), "case_id": case_id,
+                "reasons": r.get("reasons", []),
+                "medical_reasons": r.get("medical_reasons", []),
+                "financial_reasons": r.get("financial_reasons", []),
+                "fraud_reasons": r.get("fraud_reasons", []),
+            }
 
     if state.get("journey_case_id"):
         result["last_action"] = {

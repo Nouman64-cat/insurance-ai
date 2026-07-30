@@ -18,8 +18,34 @@ export interface ActionResult {
   label: string;
 }
 
+export interface RiskFactor {
+  category?: string;
+  factor?: string;
+  parameter?: string;
+  observation?: string;
+  risk_rating?: string;
+  risk_level?: string;
+}
+
+export interface AssessmentScores {
+  scores: {
+    medical_score: number;
+    financial_score: number;
+    fraud_probability: number;
+    composite_score?: number;
+    composite_risk_score?: number;
+  };
+  recommendation?: string;
+  ai_decision?: string;
+  case_id?: string;
+  reasons?: RiskFactor[];
+  medical_reasons?: RiskFactor[];
+  financial_reasons?: RiskFactor[];
+  fraud_reasons?: RiskFactor[];
+}
+
 export type PendingInterrupt =
-  | { kind: "clarify"; question: string; toolCall: { name: string; args: Record<string, any> } }
+  | { kind: "clarify"; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
   | { kind: "confirm"; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
   | { kind: "client_execute"; toolCall: { name: string; args: Record<string, any> } };
 
@@ -27,9 +53,11 @@ export interface AgentMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  attachments?: { name: string; url: string }[];
   quickActions?: QuickAction[];
   actionResult?: ActionResult;
   steps?: ProcessStep[];
+  assessment?: AssessmentScores;
 }
 
 // One node in the live process graph the agent narrates while working.
@@ -50,6 +78,7 @@ export type AgentStreamEvent =
       kind: "clarify" | "confirm" | "client_execute";
       question?: string;
       options?: string[];
+      custom_actions?: QuickAction[];
       tool_call: { name: string; args: Record<string, any> };
     }
   | {
@@ -63,5 +92,6 @@ export type AgentStreamEvent =
   | { type: "quick_actions"; actions: QuickAction[] }
   | { type: "step"; id: string; label: string; status: ProcessStep["status"] }
   | { type: "navigate"; route: string; entity_id: string; highlight: boolean }
+  | { type: "assessment"; assessment: AssessmentScores }
   | { type: "done"; thread_id: string }
   | { type: "error"; message: string };
