@@ -296,7 +296,7 @@ function TokenManagementContent() {
             
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
               <p className="text-sm font-semibold text-slate-500 mb-1">Total Output Tokens</p>
-              <h3 className="text-2xl font-bold text-emerald-600">{totalOutputTokens.toLocaleString()}</h3>
+              <h3 className="text-2xl font-bold text-blue-600">{totalOutputTokens.toLocaleString()}</h3>
               <div className="flex items-center justify-between mt-2">
                 <p className="text-xs text-slate-400">${OUTPUT_COST_PER_MILLION} / 1M</p>
                 <p className="text-xs font-semibold text-slate-600">Cost: ${((totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION).toFixed(5)}</p>
@@ -305,7 +305,7 @@ function TokenManagementContent() {
             
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
               <p className="text-sm font-semibold text-slate-500 mb-1">Total API Requests</p>
-              <h3 className="text-2xl font-bold text-indigo-600">{totalRequests.toLocaleString()}</h3>
+              <h3 className="text-2xl font-bold text-blue-600">{totalRequests.toLocaleString()}</h3>
               <p className="text-xs text-slate-400 mt-2">Successful generations</p>
             </div>
           </div>
@@ -416,7 +416,7 @@ function TokenManagementContent() {
                             </div>
                             <div className="flex justify-between">
                               <span className="text-slate-500">Output Tokens:</span>
-                              <span className="font-medium text-emerald-600">{svc.total_output.toLocaleString()}</span>
+                              <span className="font-medium text-blue-600">{svc.total_output.toLocaleString()}</span>
                             </div>
                             <div className="flex justify-between pt-2 mt-2 border-t border-slate-100">
                               <span className="font-bold text-slate-700">Cost:</span>

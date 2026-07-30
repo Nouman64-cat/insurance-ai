@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   getReadiness, getCounterOffer, acceptCounterOffer, declineCounterOffer,
   getRequirements, seedRequirements, actOnRequirement,
-  getCompliance, runCompliance, clearCompliance,
+  getCompliance, runCompliance, clearCompliance, failCompliance,
   getBeneficiaries, replaceBeneficiaries, getBeneficiaryHistory,
   generateDocuments, documentDownloadUrl,
   type Readiness, type CounterOffer, type RequirementItem, type ComplianceCheck,
@@ -30,7 +30,7 @@ const fmtPKR = (n: number | null | undefined) =>
   n == null ? "—" : `PKR ${Math.round(n).toLocaleString()}`;
 
 const PILL: Record<string, string> = {
-  done: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  done: "bg-blue-50 text-blue-700 border-blue-200",
   blocked: "bg-red-50 text-red-700 border-red-200",
   current: "bg-amber-50 text-amber-700 border-amber-200",
   idle: "bg-slate-100 text-slate-500 border-slate-200",
@@ -46,7 +46,7 @@ function StepShell({
       </span>
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm font-semibold text-slate-800">
-          {title} {state === "done" && <span className="text-emerald-500 ml-1">✓</span>}
+          {title} {state === "done" && <span className="text-blue-500 ml-1">✓</span>}
         </p>
         <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border ${PILL[state]}`}>{hint}</span>
       </div>
@@ -58,7 +58,7 @@ function StepShell({
 const Btn = ({ onClick, children, tone = "slate", disabled }: Readonly<{ onClick: () => void; children: React.ReactNode; tone?: "slate" | "emerald" | "red" | "amber"; disabled?: boolean }>) => {
   const tones: Record<string, string> = {
     slate: "bg-slate-800 hover:bg-slate-900 text-white",
-    emerald: "bg-emerald-600 hover:bg-emerald-700 text-white",
+    emerald: "bg-blue-600 hover:bg-blue-700 text-white",
     red: "bg-white border border-red-200 text-red-700 hover:bg-red-50",
     amber: "bg-amber-500 hover:bg-amber-600 text-white",
   };
@@ -112,7 +112,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
   };
 
   if (!readiness) {
-    return <div className="py-6 flex justify-center"><div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-emerald-500" /></div>;
+    return <div className="py-6 flex justify-center"><div className="animate-spin h-5 w-5 rounded-full border-2 border-slate-100 border-t-blue-500" /></div>;
   }
   const s = readiness.steps;
 
@@ -150,7 +150,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
           )}
         </div>
       ) : (
-        <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${readiness.ready_to_issue ? "bg-emerald-50 border-emerald-200 text-emerald-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+        <div className={`rounded-lg border px-3 py-2 text-xs font-semibold ${readiness.ready_to_issue ? "bg-blue-50 border-blue-200 text-blue-700" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
           {readiness.ready_to_issue
             ? "✓ All pre-issuance gates cleared — ready to issue."
             : `${readiness.blockers.length} gate(s) remaining before issuance.`}
@@ -178,8 +178,8 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                   <p className="font-semibold text-slate-700">{fmtPKR(offer.original_premium)}/yr</p>
                   <p className="text-slate-500">{fmtPKR(offer.original_coverage_amount)} cover</p>
                 </div>
-                <div className="bg-white rounded p-2 border border-emerald-200">
-                  <p className="text-[10px] uppercase text-emerald-500 font-semibold">Revised</p>
+                <div className="bg-white rounded p-2 border border-blue-200">
+                  <p className="text-[10px] uppercase text-blue-500 font-semibold">Revised</p>
                   <p className="font-semibold text-slate-800">{fmtPKR(offer.revised_premium)}/yr</p>
                   <p className="text-slate-500">
                     {offer.offer_type === "Loading" && `+${offer.revised_loading_pct}% loading`}
@@ -245,7 +245,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
             ) : (
               <>
                 {checks.map((c) => {
-                  const tone = c.status === "Passed" ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                  const tone = c.status === "Passed" ? "text-blue-700 bg-blue-50 border-blue-200"
                     : c.status === "Flagged" ? "text-amber-700 bg-amber-50 border-amber-200"
                       : c.status === "Failed" ? "text-red-700 bg-red-50 border-red-200" : "text-slate-500 bg-slate-50 border-slate-200";
                   return (
@@ -259,7 +259,6 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                         {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
                       </div>
                       {c.status === "Flagged" && (
-                        <Btn tone="amber" disabled={locked} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Clear flag</Btn>
                         <div className="flex gap-1.5 flex-shrink-0">
                           <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Approve</Btn>
                           <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review", "officer"))}>Reject</Btn>
@@ -327,8 +326,8 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
             ))}
             <div className="flex items-center justify-between pt-1">
               <button onClick={() => setBens((p) => [...p, { name: "", relationship: "", share_pct: 0 }])}
-                className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold">+ Add beneficiary</button>
-              <span className={`text-[11px] font-semibold ${Math.abs(benTotal - 100) < 0.01 ? "text-emerald-600" : "text-amber-600"}`}>Σ {benTotal}%</span>
+                className="text-[11px] text-blue-600 hover:text-blue-700 font-semibold">+ Add beneficiary</button>
+              <span className={`text-[11px] font-semibold ${Math.abs(benTotal - 100) < 0.01 ? "text-blue-600" : "text-amber-600"}`}>Σ {benTotal}%</span>
             </div>
             <div className="flex items-center gap-2">
               <Btn tone="emerald" disabled={locked || Math.abs(benTotal - 100) > 0.01 || bens.some((b) => !b.name || !b.relationship)}
@@ -354,7 +353,7 @@ export function StageAPanel({ policyId, onChanged }: Readonly<{ policyId: string
                     <span className="text-[10px] text-amber-600 font-semibold">stub</span>
                   ) : (
                     <a href={documentDownloadUrl(policyId, d.id)} target="_blank" rel="noreferrer"
-                      className="text-[11px] font-semibold text-emerald-600 hover:text-emerald-700">Download PDF</a>
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700">Download PDF</a>
                   )}
                 </div>
               ))

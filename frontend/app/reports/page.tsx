@@ -23,18 +23,18 @@ const REPORTS = [
 const MODULE_STYLE: Record<string, string> = {
   Underwriting: "bg-blue-50 text-blue-700",
   Fraud:        "bg-red-50 text-red-700",
-  Agents:       "bg-violet-50 text-violet-700",
-  Claims:       "bg-emerald-50 text-emerald-700",
+  Agents:       "bg-blue-50 text-blue-700",
+  Claims:       "bg-blue-50 text-blue-700",
   "Score Engine":"bg-slate-100 text-slate-600",
   Financial:    "bg-amber-50 text-amber-700",
-  Corporate:    "bg-teal-50 text-teal-700",
+  Corporate:    "bg-blue-50 text-blue-700",
   Reimbursements:"bg-orange-50 text-orange-700",
   Medical:      "bg-pink-50 text-pink-700",
   Admin:        "bg-slate-100 text-slate-600",
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  Ready:      "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  Ready:      "bg-blue-50 text-blue-700 border border-blue-200",
   Processing: "bg-blue-50 text-blue-700 border border-blue-200",
 };
 

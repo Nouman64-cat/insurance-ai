@@ -183,6 +183,12 @@ export async function clearCompliance(checkId: string, note?: string, clearedBy?
   return res.data;
 }
 
+export async function failCompliance(checkId: string, note?: string, clearedBy?: string): Promise<ComplianceCheck> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/compliance/${checkId}/fail`, { note, cleared_by: clearedBy });
+  return res.data;
+}
+
 // ── Beneficiaries ──────────────────────────────────────────────────────────
 export async function getBeneficiaries(policyId: string): Promise<{ beneficiaries: Beneficiary[]; total_share: number }> {
   const tid = tenantId();

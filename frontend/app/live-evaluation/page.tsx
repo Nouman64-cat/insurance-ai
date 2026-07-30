@@ -45,9 +45,9 @@ interface EvalState {
 const PIPELINE_NODES = [
   { key: "validate_input",       label: "Input\nValidation",    dotColor: "bg-slate-500"   },
   { key: "medical_scoring",      label: "Medical\nScoring",     dotColor: "bg-blue-500"    },
-  { key: "financial_scoring",    label: "Financial\nScoring",   dotColor: "bg-violet-500"  },
+  { key: "financial_scoring",    label: "Financial\nScoring",   dotColor: "bg-blue-500"  },
   { key: "fraud_detection",      label: "Fraud\nDetection",     dotColor: "bg-red-500"     },
-  { key: "decision_aggregation", label: "Decision\nAggregation",dotColor: "bg-emerald-500" },
+  { key: "decision_aggregation", label: "Decision\nAggregation",dotColor: "bg-blue-500" },
 ] as const;
 
 const INITIAL_EVAL: EvalState = {
@@ -478,8 +478,8 @@ export default function LiveEvaluationPage() {
                 </span>
               )}
               {status === "done" && (
-                <span className="text-[10px] font-semibold text-emerald-600 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
                   Complete
                 </span>
               )}
@@ -561,7 +561,7 @@ export default function LiveEvaluationPage() {
                 {result.financialScore !== null && (
                   <div>
                     <RiskScoreBar label="Financial Score" score={result.financialScore} />
-                    <ReasonList reasons={result.financialReasons} accent="text-violet-400" />
+                    <ReasonList reasons={result.financialReasons} accent="text-blue-400" />
                   </div>
                 )}
 

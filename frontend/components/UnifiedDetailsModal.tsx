@@ -88,8 +88,8 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
           <div className="flex items-center gap-3">
             <div className={`p-2 rounded-xl ${
               entityType === 'INDIVIDUAL' ? 'bg-blue-100 text-blue-600' :
-              entityType === 'FAMILY' ? 'bg-purple-100 text-purple-600' :
-              'bg-emerald-100 text-emerald-600'
+              entityType === 'FAMILY' ? 'bg-blue-100 text-blue-600' :
+              'bg-blue-100 text-blue-600'
             }`}>
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
                 {entityType === 'INDIVIDUAL' ? <><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></> : null}
@@ -104,8 +104,8 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
                   entityType === 'INDIVIDUAL' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                  entityType === 'FAMILY' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                  'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  entityType === 'FAMILY' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                  'bg-blue-50 text-blue-700 border-blue-200'
                 }`}>
                   {entityType}
                 </span>
@@ -171,7 +171,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
         <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64 gap-4">
-              <div className="w-10 h-10 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
+              <div className="w-10 h-10 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin"></div>
               <p className="text-sm font-medium text-slate-500">Retrieving profile data...</p>
             </div>
           ) : error ? (
@@ -255,14 +255,14 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                 </div>
 
                 {/* Automation Quick Actions */}
-                <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-5 rounded-2xl border border-indigo-100 shadow-sm">
-                  <h3 className="text-xs font-bold text-indigo-800 uppercase tracking-wider mb-3">AI Quick Actions</h3>
+                <div className="bg-gradient-to-br from-blue-50 to-blue-50 p-5 rounded-2xl border border-blue-100 shadow-sm">
+                  <h3 className="text-xs font-bold text-blue-800 uppercase tracking-wider mb-3">AI Quick Actions</h3>
                   <div className="space-y-2">
-                    <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-indigo-50 rounded-xl border border-indigo-200 text-sm font-semibold text-indigo-700 transition-colors shadow-sm">
+                    <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-blue-50 rounded-xl border border-blue-200 text-sm font-semibold text-blue-700 transition-colors shadow-sm">
                       <span>Analyze Risk Profile</span>
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path><polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline><line x1="12" y1="22.08" x2="12" y2="12"></line></svg>
                     </button>
-                    <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-indigo-50 rounded-xl border border-indigo-200 text-sm font-semibold text-indigo-700 transition-colors shadow-sm">
+                    <button className="w-full flex items-center justify-between p-3 bg-white hover:bg-blue-50 rounded-xl border border-blue-200 text-sm font-semibold text-blue-700 transition-colors shadow-sm">
                       <span>Generate Proposal</span>
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                     </button>
@@ -281,7 +281,7 @@ export default function UnifiedDetailsModal({ isOpen, onClose, entityId, entityT
                       <p className="text-sm text-slate-600 font-medium">Auto-generated via risk engine parameters.</p>
                     </div>
                     <div className="text-center px-6 py-3 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className={`text-3xl font-black ${data.underwriting_score >= 80 ? 'text-emerald-500' : data.underwriting_score >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
+                      <span className={`text-3xl font-black ${data.underwriting_score >= 80 ? 'text-blue-500' : data.underwriting_score >= 50 ? 'text-amber-500' : 'text-red-500'}`}>
                         {data.underwriting_score}
                       </span>
                       <span className="text-xs font-bold text-slate-400 block mt-0.5">/ 100</span>

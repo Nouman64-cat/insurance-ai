@@ -61,14 +61,14 @@ const DOCUMENT_TYPES = ["CNIC", "Salary Slip", "Medical Report", "X-Ray", "MRI S
 const SUPPORTED_EXTS = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp"];
 
 const STATUS_CHIP: Record<string, string> = {
-  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Approved: "bg-blue-50 text-blue-700 border-blue-200",
   "Under Review": "bg-blue-50 text-blue-700 border-blue-200",
   InProgress: "bg-blue-50 text-blue-700 border-blue-200",
   "Pending Documents": "bg-amber-50 text-amber-700 border-amber-200",
   New: "bg-slate-100 text-slate-600 border-slate-200",
   Rejected: "bg-red-50 text-red-700 border-red-200",
   Closed: "bg-slate-200 text-slate-700 border-slate-300",
-  Accepted: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Accepted: "bg-blue-50 text-blue-700 border-blue-200",
   "Re-submission Requested": "bg-amber-50 text-amber-700 border-amber-200",
   Processing: "bg-blue-50 text-blue-700 border-blue-200",
 };
@@ -82,11 +82,11 @@ const PRIORITY_COLOR: Record<string, string> = {
 
 const FILE_COLOR: Record<string, { bg: string; ext: string; dot: string }> = {
   pdf:  { bg: "bg-red-500",    ext: "PDF", dot: "bg-red-400" },
-  png:  { bg: "bg-sky-500",    ext: "PNG", dot: "bg-sky-400" },
+  png:  { bg: "bg-blue-500",    ext: "PNG", dot: "bg-blue-400" },
   jpg:  { bg: "bg-amber-500",  ext: "JPG", dot: "bg-amber-400" },
   jpeg: { bg: "bg-amber-500",  ext: "JPG", dot: "bg-amber-400" },
-  tiff: { bg: "bg-teal-500",   ext: "TIF", dot: "bg-teal-400" },
-  bmp:  { bg: "bg-purple-500", ext: "BMP", dot: "bg-purple-400" },
+  tiff: { bg: "bg-blue-500",   ext: "TIF", dot: "bg-blue-400" },
+  bmp:  { bg: "bg-blue-500", ext: "BMP", dot: "bg-blue-400" },
 };
 const FILE_COLOR_DEFAULT = { bg: "bg-slate-400", ext: "DOC", dot: "bg-slate-300" };
 
@@ -688,8 +688,8 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
               {/* Scores */}
               <div className="space-y-2.5">
                 <ScoreBar label="OCR Confidence" value={artifact.ocr_confidence_score} color="bg-blue-500" />
-                <ScoreBar label="Authenticity" value={artifact.authenticity_score} color="bg-emerald-500" />
-                <ScoreBar label="Quality" value={artifact.quality_score} color="bg-violet-500" />
+                <ScoreBar label="Authenticity" value={artifact.authenticity_score} color="bg-blue-500" />
+                <ScoreBar label="Quality" value={artifact.quality_score} color="bg-blue-500" />
               </div>
 
               {/* Meta */}
@@ -704,7 +704,7 @@ function ArtifactDetailModal({ artifact: initial, tenantId, onClose, onUpdate }:
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">Tamper Flag</p>
-                  <p className={`font-semibold ${artifact.tampered_flag ? "text-red-600" : "text-emerald-600"}`}>
+                  <p className={`font-semibold ${artifact.tampered_flag ? "text-red-600" : "text-blue-600"}`}>
                     {artifact.tampered_flag ? "⚠ Flagged" : "Clean"}
                   </p>
                 </div>
@@ -875,7 +875,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function caseFolderColor(status: string): { color: string; accent: string } {
   switch (status) {
-    case "Approved": return { color: "#34D399", accent: "#059669" };
+    case "Approved": return { color: "#60a5fa", accent: "#2563eb" };
     case "Rejected": return { color: "#F87171", accent: "#DC2626" };
     case "Pending Documents": return { color: "#FBBF24", accent: "#D97706" };
     case "Under Review":
@@ -1133,7 +1133,7 @@ export default function CasesPage() {
                   });
                   router.push("/case-summarizer");
                 }} 
-                className="flex items-center gap-2 px-4 py-2 bg-white text-indigo-600 rounded-lg text-sm font-semibold border border-indigo-200 hover:bg-indigo-50 transition-all shadow-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-white text-blue-600 rounded-lg text-sm font-semibold border border-blue-200 hover:bg-blue-50 transition-all shadow-sm"
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
                   <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
@@ -1284,7 +1284,7 @@ export default function CasesPage() {
                     </p>
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${
                       missing.length === 0
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        ? "bg-blue-50 text-blue-700 border-blue-200"
                         : "bg-amber-50 text-amber-700 border-amber-200"
                     }`}>
                       {checklistRequired.length - missing.length}/{checklistRequired.length} received
@@ -1297,7 +1297,7 @@ export default function CasesPage() {
                         className={`text-xs px-2 py-1 rounded-lg border ${
                           missing.includes(doc)
                             ? "bg-amber-50 text-amber-700 border-amber-200"
-                            : "bg-emerald-50 text-emerald-700 border-emerald-200 line-through"
+                            : "bg-blue-50 text-blue-700 border-blue-200 line-through"
                         }`}
                       >
                         {doc}

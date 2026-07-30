@@ -97,7 +97,7 @@ export default function FinancialPage() {
                     </td>
                     <td className="px-3 py-2.5 text-right font-bold text-blue-700">{r.rate}</td>
                     <td className="px-3 py-2.5 text-right text-slate-600">{r.cases}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-emerald-700">{r.paidOut}</td>
+                    <td className="px-4 py-2.5 text-right font-bold text-blue-700">{r.paidOut}</td>
                   </tr>
                 ))}
               </tbody>

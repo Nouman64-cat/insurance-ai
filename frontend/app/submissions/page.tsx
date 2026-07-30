@@ -25,7 +25,7 @@ const STATUS_STYLE: Record<string, string> = {
 const PRIORITY_STYLE: Record<string, string> = {
   High:     "bg-red-50 text-red-600 border border-red-200",
   Standard: "bg-slate-100 text-slate-600 border border-slate-200",
-  Low:      "bg-emerald-50 text-emerald-700 border border-emerald-200",
+  Low:      "bg-blue-50 text-blue-700 border border-blue-200",
 };
 
 export default function SubmissionsPage() {

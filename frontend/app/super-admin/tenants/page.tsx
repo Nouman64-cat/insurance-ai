@@ -277,7 +277,7 @@ export default function TenantManagementPage() {
         </div>
       )}
       {success && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-600 font-medium">
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">
           {success}
         </div>
       )}
@@ -338,7 +338,7 @@ export default function TenantManagementPage() {
                           title="Copy full tenant ID"
                         >
                           {copiedId === tenant.id ? (
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-4 h-4 text-emerald-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2" stroke="currentColor" className="w-4 h-4 text-blue-600">
                               <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
                             </svg>
                           ) : (
@@ -358,7 +358,7 @@ export default function TenantManagementPage() {
                       <span
                         className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${
                           tenant.is_active
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            ? "bg-blue-50 text-blue-700 border-blue-200"
                             : "bg-slate-100 text-slate-700 border-slate-200"
                         }`}
                       >

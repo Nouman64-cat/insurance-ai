@@ -231,7 +231,7 @@ export default function PolicyholdersPage() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
@@ -265,13 +265,13 @@ export default function PolicyholdersPage() {
           </button>
           <button
             onClick={() => setActiveAdd({ type: "INDIVIDUAL" })}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
             + Add Individual
           </button>
           <button
             onClick={() => setActiveAdd({ type: "FAMILY" })}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
             + Add Family
           </button>
@@ -323,7 +323,7 @@ export default function PolicyholdersPage() {
                   onClick={() => setFilterType(ft as FilterType)}
                   className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${
                     filterType === ft
-                      ? "bg-white text-emerald-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
+                      ? "bg-white text-blue-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
                       : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                   }`}
                 >
@@ -341,7 +341,7 @@ export default function PolicyholdersPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, contact, identifier..."
-              className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 transition-shadow"
+              className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
             />
             {search && (
               <button
@@ -380,18 +380,18 @@ export default function PolicyholdersPage() {
             {activeFilterChips.map((chip) => (
               <span
                 key={chip.key}
-                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-medium"
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
               >
                 {chip.label}
                 <button
                   onClick={chip.onRemove}
-                  className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-emerald-100 text-emerald-400 hover:text-emerald-700"
+                  className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
                 >
                   ✕
                 </button>
               </span>
             ))}
-            <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-emerald-600 hover:underline ml-1">
+            <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
               Clear all
             </button>
           </div>
@@ -438,20 +438,20 @@ export default function PolicyholdersPage() {
                       <td className="px-6 py-4">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
                           p.type === 'INDIVIDUAL' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          p.type === 'FAMILY' ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                          'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          p.type === 'FAMILY' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          'bg-blue-50 text-blue-700 border-blue-200'
                         }`}>
                           {p.type}
                         </span>
                       </td>
                       <td className="px-6 py-4 text-slate-600">{p.contact_info}</td>
                       <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
-                      <td className="px-6 py-4 text-emerald-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
+                      <td className="px-6 py-4 text-blue-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
                       <td className="px-6 py-4 text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
                       <td className="px-6 py-4 text-right space-x-3">
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleRowClick(p); }} 
-                          className="text-emerald-600 hover:text-emerald-800 font-semibold text-xs"
+                          className="text-blue-600 hover:text-blue-800 font-semibold text-xs"
                         >
                           View Details
                         </button>

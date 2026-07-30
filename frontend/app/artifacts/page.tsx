@@ -63,7 +63,7 @@ const DOCUMENT_TYPES = [
 ];
 
 const STATUS_COLORS: Record<string, string> = {
-  "Accepted": "bg-emerald-50 text-emerald-700 border-emerald-200",
+  "Accepted": "bg-blue-50 text-blue-700 border-blue-200",
   "Re-submission Requested": "bg-amber-50 text-amber-700 border-amber-200",
   "Processing": "bg-blue-50 text-blue-700 border-blue-200",
 };
@@ -171,8 +171,8 @@ function ArtifactRow({ artifact, isExpanded, onToggle }: {
           {/* Scores */}
           <div className="space-y-2.5">
             <ConfidenceBar label="OCR Confidence" value={artifact.ocr_confidence_score} color="bg-blue-500" />
-            <ConfidenceBar label="Authenticity" value={artifact.authenticity_score} color="bg-emerald-500" />
-            <ConfidenceBar label="Quality" value={artifact.quality_score} color="bg-violet-500" />
+            <ConfidenceBar label="Authenticity" value={artifact.authenticity_score} color="bg-blue-500" />
+            <ConfidenceBar label="Quality" value={artifact.quality_score} color="bg-blue-500" />
           </div>
 
           {/* Download */}
@@ -445,20 +445,20 @@ function CaseUploadTab() {
           onClick={() => fileInputRef.current?.click()}
           className={`rounded-xl border-2 cursor-pointer transition-all duration-150 px-4 py-5 flex flex-col items-center gap-2 ${
             isDragging ? "border-blue-400 bg-blue-50" : uploadFile
-              ? "border-emerald-300 bg-emerald-50"
+              ? "border-blue-300 bg-blue-50"
               : "border-dashed border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/40"
           }`}
         >
           <input ref={fileInputRef} type="file" className="sr-only" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp" onChange={handleInput} />
           {uploadFile ? (
             <>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-emerald-500">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 text-blue-500">
                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
                 <polyline points="14 2 14 8 20 8" />
                 <polyline points="9 15 12 18 15 15" />
               </svg>
-              <p className="text-xs font-semibold text-emerald-700 text-center truncate max-w-full px-2">{uploadFile.name}</p>
-              <p className="text-[10px] text-emerald-600">{fmtSize(uploadFile.size)} · Click to replace</p>
+              <p className="text-xs font-semibold text-blue-700 text-center truncate max-w-full px-2">{uploadFile.name}</p>
+              <p className="text-[10px] text-blue-600">{fmtSize(uploadFile.size)} · Click to replace</p>
             </>
           ) : (
             <>
@@ -516,7 +516,7 @@ function CaseUploadTab() {
                 {uploadStatus === "polling" ? (
                   <><SpinnerIcon className="w-3.5 h-3.5 text-blue-500" /><span className="text-xs font-bold text-blue-700">OCR running — Kafka worker processing…</span></>
                 ) : (
-                  <><div className="w-2 h-2 rounded-full bg-emerald-400" /><span className="text-xs font-bold text-slate-700">Upload &amp; OCR Complete</span></>
+                  <><div className="w-2 h-2 rounded-full bg-blue-400" /><span className="text-xs font-bold text-slate-700">Upload &amp; OCR Complete</span></>
                 )}
               </div>
               <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${STATUS_COLORS[artifact.status] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
@@ -539,7 +539,7 @@ function CaseUploadTab() {
                 </div>
                 <div>
                   <p className="text-[10px] text-slate-400 uppercase tracking-wider font-bold mb-0.5">Tamper</p>
-                  <p className={`font-semibold ${artifact.tampered_flag ? "text-red-600" : "text-emerald-600"}`}>
+                  <p className={`font-semibold ${artifact.tampered_flag ? "text-red-600" : "text-blue-600"}`}>
                     {artifact.tampered_flag ? "⚠ Flagged" : "Clean"}
                   </p>
                 </div>
@@ -548,8 +548,8 @@ function CaseUploadTab() {
               {/* Scores */}
               <div className="space-y-2">
                 <ConfidenceBar label="OCR Confidence" value={artifact.ocr_confidence_score} color="bg-blue-500" />
-                <ConfidenceBar label="Authenticity" value={artifact.authenticity_score} color="bg-emerald-500" />
-                <ConfidenceBar label="Quality" value={artifact.quality_score} color="bg-violet-500" />
+                <ConfidenceBar label="Authenticity" value={artifact.authenticity_score} color="bg-blue-500" />
+                <ConfidenceBar label="Quality" value={artifact.quality_score} color="bg-blue-500" />
               </div>
 
               {/* Download */}
@@ -644,11 +644,11 @@ function CaseUploadTab() {
 
 const EXT_STYLE: Record<string, { chip: string; icon: string; glyph: string }> = {
   pdf:  { chip: "bg-red-100 text-red-700",    icon: "text-red-400",    glyph: "PDF" },
-  png:  { chip: "bg-sky-100 text-sky-700",    icon: "text-sky-400",    glyph: "PNG" },
+  png:  { chip: "bg-blue-100 text-blue-700",    icon: "text-blue-400",    glyph: "PNG" },
   jpg:  { chip: "bg-amber-100 text-amber-700", icon: "text-amber-400", glyph: "JPG" },
   jpeg: { chip: "bg-amber-100 text-amber-700", icon: "text-amber-400", glyph: "JPG" },
-  tiff: { chip: "bg-teal-100 text-teal-700",  icon: "text-teal-400",   glyph: "TIF" },
-  bmp:  { chip: "bg-purple-100 text-purple-700", icon: "text-purple-400", glyph: "BMP" },
+  tiff: { chip: "bg-blue-100 text-blue-700",  icon: "text-blue-400",   glyph: "TIF" },
+  bmp:  { chip: "bg-blue-100 text-blue-700", icon: "text-blue-400", glyph: "BMP" },
 };
 function extStyle(ext: string) {
   return EXT_STYLE[ext] ?? { chip: "bg-slate-100 text-slate-600", icon: "text-slate-400", glyph: ext.toUpperCase().slice(0, 3) };
@@ -699,7 +699,7 @@ const OCR_STATUS_CFG: Record<OcrStatus, { label: string; color: string; dot: str
   idle:       { label: "Awaiting upload",    color: "text-slate-500 bg-slate-100 border-slate-200",    dot: "bg-slate-400" },
   ready:      { label: "Ready to process",   color: "text-amber-700 bg-amber-50 border-amber-200",     dot: "bg-amber-400" },
   processing: { label: "Processing…",        color: "text-blue-700 bg-blue-50 border-blue-200",        dot: "bg-blue-400 animate-pulse" },
-  done:       { label: "Extraction done",    color: "text-emerald-700 bg-emerald-50 border-emerald-200", dot: "bg-emerald-400" },
+  done:       { label: "Extraction done",    color: "text-blue-700 bg-blue-50 border-blue-200", dot: "bg-blue-400" },
   error:      { label: "Error",              color: "text-red-700 bg-red-50 border-red-200",            dot: "bg-red-400" },
 };
 
@@ -721,9 +721,9 @@ function TokenCostBar({ usage }: { usage: TokenUsage }) {
         <div className="flex items-center gap-2 text-xs">
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" /><span className="text-slate-500">In</span><span className="font-semibold text-slate-800">{usage.input.toLocaleString()}</span></span>
           <span className="text-slate-300">·</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-slate-500">Out</span><span className="font-semibold text-slate-800">{usage.output.toLocaleString()}</span></span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" /><span className="text-slate-500">Out</span><span className="font-semibold text-slate-800">{usage.output.toLocaleString()}</span></span>
           <span className="text-slate-300">·</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-violet-400" /><span className="text-slate-500">Total</span><span className="font-semibold text-slate-800">{(usage.input + usage.output).toLocaleString()}</span></span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" /><span className="text-slate-500">Total</span><span className="font-semibold text-slate-800">{(usage.input + usage.output).toLocaleString()}</span></span>
         </div>
       </div>
       <span className="h-3 w-px bg-slate-200 hidden sm:block" />
@@ -732,7 +732,7 @@ function TokenCostBar({ usage }: { usage: TokenUsage }) {
         <div className="flex items-center gap-2 text-xs">
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" /><span className="text-slate-500">In</span><span className="font-semibold text-slate-700">{fmtCost(cost.input)}</span></span>
           <span className="text-slate-300">·</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-400" /><span className="text-slate-500">Out</span><span className="font-semibold text-slate-700">{fmtCost(cost.output)}</span></span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-400" /><span className="text-slate-500">Out</span><span className="font-semibold text-slate-700">{fmtCost(cost.output)}</span></span>
           <span className="text-slate-300">·</span>
           <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-amber-400" /><span className="text-slate-500">Total</span><span className="font-bold text-amber-700">{fmtCost(cost.total)}</span></span>
         </div>
@@ -941,8 +941,8 @@ function DirectOcrTab() {
             </button>
             {ocrStatus === "done" && (
               <div className="flex gap-2">
-                <input type="number" min={50} max={2000} placeholder="Max words (optional)" value={maxWords} onChange={e => setMaxWords(e.target.value)} className="flex-1 min-w-0 text-sm py-2.5 px-3 rounded-xl border border-slate-200 bg-white text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-transparent" />
-                <button onClick={runSummarizer} disabled={summaryStatus === "processing"} className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition-all duration-150 flex-shrink-0 ${summaryStatus === "processing" ? "bg-violet-100 text-violet-400 cursor-not-allowed" : "bg-violet-600 text-white hover:bg-violet-700 shadow-md hover:shadow-lg active:scale-[0.98]"}`}>
+                <input type="number" min={50} max={2000} placeholder="Max words (optional)" value={maxWords} onChange={e => setMaxWords(e.target.value)} className="flex-1 min-w-0 text-sm py-2.5 px-3 rounded-xl border border-slate-200 bg-white text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                <button onClick={runSummarizer} disabled={summaryStatus === "processing"} className={`flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-sm font-semibold transition-all duration-150 flex-shrink-0 ${summaryStatus === "processing" ? "bg-blue-100 text-blue-400 cursor-not-allowed" : "bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg active:scale-[0.98]"}`}>
                   {summaryStatus === "processing" ? <SpinnerIcon /> : <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>}
                   Summarize
                 </button>
@@ -958,9 +958,9 @@ function DirectOcrTab() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" /><polyline points="14 2 14 8 20 8" /><line x1="16" y1="13" x2="8" y2="13" /><line x1="16" y1="17" x2="8" y2="17" /></svg>
               Extracted Text {ocrStatus === "done" && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">{wordCount.toLocaleString()}w</span>}
             </button>
-            <button onClick={() => setActiveTab("summary")} className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === "summary" ? "border-violet-500 text-violet-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
+            <button onClick={() => setActiveTab("summary")} className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-colors ${activeTab === "summary" ? "border-blue-500 text-blue-600" : "border-transparent text-slate-400 hover:text-slate-600"}`}>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg>
-              AI Summary {summaryStatus === "done" && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600">{summaryWordCount.toLocaleString()}w</span>}
+              AI Summary {summaryStatus === "done" && <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600">{summaryWordCount.toLocaleString()}w</span>}
             </button>
             <div className="ml-auto flex items-center gap-3 px-4">
               {activeTab === "extracted" && result && <><span className="text-xs text-slate-400">{charCount.toLocaleString()} chars</span><button onClick={copyOcr} className="flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 transition-colors">{ocrCopied ? <CheckIcon /> : <CopyIcon />}{ocrCopied ? "Copied!" : "Copy"}</button></>}
@@ -987,10 +987,10 @@ function DirectOcrTab() {
             )}
             {activeTab === "summary" && (
               <>
-                {summaryStatus === "idle" && <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12 opacity-25"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg><p className="text-sm font-medium text-center max-w-xs">{ocrStatus !== "done" ? <>Run OCR first, then click <span className="font-bold text-violet-600">Summarize</span></> : <>Click <span className="font-bold text-violet-600">Summarize</span> in the left panel</>}</p></div>}
-                {summaryStatus === "processing" && !summary && <div className="flex flex-col items-center justify-center h-full gap-4"><div className="relative"><div className="w-14 h-14 rounded-full border-4 border-violet-100 border-t-violet-500 animate-spin" /><div className="absolute inset-0 flex items-center justify-center"><div className="w-3 h-3 rounded-full bg-violet-500 animate-pulse" /></div></div><div className="text-center"><p className="text-sm font-semibold text-slate-700">Summarizing document…</p><p className="text-xs text-slate-400 mt-1">Extracted text is being analyzed</p></div></div>}
+                {summaryStatus === "idle" && <div className="flex flex-col items-center justify-center h-full gap-3 text-slate-400"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-12 h-12 opacity-25"><path d="M12 20h9" /><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z" /></svg><p className="text-sm font-medium text-center max-w-xs">{ocrStatus !== "done" ? <>Run OCR first, then click <span className="font-bold text-blue-600">Summarize</span></> : <>Click <span className="font-bold text-blue-600">Summarize</span> in the left panel</>}</p></div>}
+                {summaryStatus === "processing" && !summary && <div className="flex flex-col items-center justify-center h-full gap-4"><div className="relative"><div className="w-14 h-14 rounded-full border-4 border-blue-100 border-t-blue-500 animate-spin" /><div className="absolute inset-0 flex items-center justify-center"><div className="w-3 h-3 rounded-full bg-blue-500 animate-pulse" /></div></div><div className="text-center"><p className="text-sm font-semibold text-slate-700">Summarizing document…</p><p className="text-xs text-slate-400 mt-1">Extracted text is being analyzed</p></div></div>}
                 {(summaryStatus === "processing" || summaryStatus === "done") && summary && <div className="text-sm text-slate-800 leading-relaxed"><ReactMarkdown components={mdComponents}>{summary}</ReactMarkdown></div>}
-                {summaryStatus === "error" && summaryError && <div className="flex flex-col items-center justify-center h-full gap-3"><div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-red-500"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><div className="text-center max-w-sm"><p className="text-sm font-semibold text-red-700">Summarization Failed</p><p className="text-xs text-slate-500 mt-1 leading-relaxed">{summaryError}</p></div><button onClick={runSummarizer} className="mt-2 text-xs font-semibold text-violet-600 hover:text-violet-700 underline underline-offset-2">Try again</button></div>}
+                {summaryStatus === "error" && summaryError && <div className="flex flex-col items-center justify-center h-full gap-3"><div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6 text-red-500"><circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" /></svg></div><div className="text-center max-w-sm"><p className="text-sm font-semibold text-red-700">Summarization Failed</p><p className="text-xs text-slate-500 mt-1 leading-relaxed">{summaryError}</p></div><button onClick={runSummarizer} className="mt-2 text-xs font-semibold text-blue-600 hover:text-blue-700 underline underline-offset-2">Try again</button></div>}
               </>
             )}
           </div>

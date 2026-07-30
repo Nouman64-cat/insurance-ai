@@ -32,7 +32,7 @@ export function PolicyProcessRail({ policies }: Readonly<RailProps>) {
         className="w-full flex items-center justify-between px-5 py-3 hover:bg-slate-50 transition-colors"
       >
         <div className="flex items-center gap-2">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-emerald-600">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4 text-blue-600">
             <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
           </svg>
           <span className="text-sm font-semibold text-slate-700">How policy issuance works</span>
@@ -57,13 +57,13 @@ export function PolicyProcessRail({ policies }: Readonly<RailProps>) {
             {/* issuance stages */}
             {ISSUANCE_STAGES.map((st, i) => (
               <div key={st.key} className="flex items-stretch gap-2">
-                <div className="flex-1 min-w-[130px] rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2.5">
+                <div className="flex-1 min-w-[130px] rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[10px] font-bold flex items-center justify-center">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
                       {i + 1}
                     </span>
                     {counts[i] > 0 && (
-                      <span className="text-[10px] font-bold text-emerald-700 bg-white border border-emerald-200 rounded-full px-2 py-0.5">
+                      <span className="text-[10px] font-bold text-blue-700 bg-white border border-blue-200 rounded-full px-2 py-0.5">
                         {counts[i]}
                       </span>
                     )}
@@ -97,7 +97,7 @@ function Arrow() {
 function PhaseNode({ label, blurb, muted }: Readonly<{ label: string; blurb: string; muted?: boolean }>) {
   return (
     <div
-      className={`flex-1 min-w-[120px] rounded-lg border px-3 py-2.5 ${muted ? "border-slate-200 bg-slate-50" : "border-emerald-100 bg-emerald-50/50"
+      className={`flex-1 min-w-[120px] rounded-lg border px-3 py-2.5 ${muted ? "border-slate-200 bg-slate-50" : "border-blue-100 bg-blue-50/50"
         }`}
     >
       <p className="text-[11px] font-semibold text-slate-600 leading-tight">{label}</p>

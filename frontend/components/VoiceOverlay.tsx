@@ -325,16 +325,16 @@ export default function VoiceOverlay({ onClose }: Props) {
   // ── Plasma Orb ─────────────────────────────────────────────────────────────
   const colors = {
     listening: {
-      core: "from-cyan-400 via-blue-500 to-indigo-600",
+      core: "from-blue-400 via-blue-500 to-blue-600",
       glow: "rgba(99,102,241,0.5)",
-      ring1: "border-cyan-400/30",
+      ring1: "border-blue-400/30",
       ring2: "border-blue-400/20",
-      ring3: "border-indigo-400/10",
+      ring3: "border-blue-400/10",
     },
     speaking: {
-      core: "from-violet-500 via-fuchsia-500 to-pink-500",
+      core: "from-blue-500 via-fuchsia-500 to-pink-500",
       glow: "rgba(217,70,239,0.6)",
-      ring1: "border-violet-400/40",
+      ring1: "border-blue-400/40",
       ring2: "border-fuchsia-400/30",
       ring3: "border-pink-400/20",
     },
@@ -349,14 +349,14 @@ export default function VoiceOverlay({ onClose }: Props) {
 
       {/* ── Ambient background glow ──────────────────────────────────────────── */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[1.75rem]">
-        <div className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full blur-[80px] opacity-25 transition-all duration-1000 ${status === "speaking" ? "bg-fuchsia-600 scale-125" : "bg-indigo-700 scale-100"}`} />
-        <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full blur-[60px] opacity-20 transition-all duration-700 ${status === "speaking" ? "bg-violet-500" : "bg-cyan-700"}`} />
+        <div className={`absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full blur-[80px] opacity-25 transition-all duration-1000 ${status === "speaking" ? "bg-fuchsia-600 scale-125" : "bg-blue-700 scale-100"}`} />
+        <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 rounded-full blur-[60px] opacity-20 transition-all duration-700 ${status === "speaking" ? "bg-blue-500" : "bg-blue-700"}`} />
       </div>
 
       {/* ── Top bar ──────────────────────────────────────────────────────────── */}
       <div className="relative z-10 flex items-center justify-between px-5 pt-5 pb-1">
         <div className="flex items-center gap-2">
-          <span className={`w-1.5 h-1.5 rounded-full ${status === "error" ? "bg-rose-400" : status === "connecting" ? "bg-amber-400 animate-pulse" : "bg-emerald-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.9)]"}`} />
+          <span className={`w-1.5 h-1.5 rounded-full ${status === "error" ? "bg-rose-400" : status === "connecting" ? "bg-amber-400 animate-pulse" : "bg-blue-400 animate-pulse shadow-[0_0_6px_rgba(52,211,153,0.9)]"}`} />
           <span className="text-white/50 text-[10px] font-semibold uppercase tracking-[0.18em]">
             {status === "connecting" ? "Initializing" : status === "error" ? "Failed" : `Live · ${fmt(elapsed)}`}
           </span>
@@ -376,12 +376,12 @@ export default function VoiceOverlay({ onClose }: Props) {
           {status === "connecting" && (
             <div className="absolute inset-0 flex items-center justify-center">
               {/* Outer plasma ring */}
-              <div className="absolute inset-[-20px] rounded-full border-[3px] border-indigo-400/20 border-t-cyan-400/80 animate-[spin_3s_linear_infinite]" />
+              <div className="absolute inset-[-20px] rounded-full border-[3px] border-blue-400/20 border-t-blue-400/80 animate-[spin_3s_linear_infinite]" />
               <div className="absolute inset-0 rounded-full border-[2px] border-blue-400/10 border-b-fuchsia-400/60 animate-[spin_2s_linear_infinite_reverse]" />
-              <div className="absolute inset-[20px] rounded-full border border-purple-400/10 border-l-cyan-300/50 animate-[spin_1.5s_linear_infinite]" />
+              <div className="absolute inset-[20px] rounded-full border border-blue-400/10 border-l-blue-300/50 animate-[spin_1.5s_linear_infinite]" />
               {/* Core glow */}
-              <div className="absolute inset-[30px] rounded-full bg-indigo-500/20 blur-2xl animate-pulse" />
-              <div className="w-48 h-48 rounded-full shadow-[0_0_40px_rgba(255,255,255,0.1)] overflow-hidden border-2 border-indigo-500/30 bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center">
+              <div className="absolute inset-[30px] rounded-full bg-blue-500/20 blur-2xl animate-pulse" />
+              <div className="w-48 h-48 rounded-full shadow-[0_0_40px_rgba(255,255,255,0.1)] overflow-hidden border-2 border-blue-500/30 bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center">
                 <svg className="w-24 h-24 text-white/90" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                   <rect x="4" y="8" width="16" height="12" rx="2" />
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8V4M8 4h.01" />
@@ -412,7 +412,7 @@ export default function VoiceOverlay({ onClose }: Props) {
                 }}>
 
                 {/* Agent Avatar (icon-based, no photo) */}
-                <div className="absolute inset-0 rounded-full overflow-hidden z-0 bg-gradient-to-br from-indigo-500 via-violet-600 to-fuchsia-600 flex items-center justify-center">
+                <div className="absolute inset-0 rounded-full overflow-hidden z-0 bg-gradient-to-br from-blue-500 via-blue-600 to-fuchsia-600 flex items-center justify-center">
                   <svg className={`w-32 h-32 text-white/90 transition-transform duration-500 ${status === "speaking" ? "scale-110" : "scale-100"}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={1.5}>
                     <rect x="4" y="8" width="16" height="12" rx="2" />
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8V4M8 4h.01" />
@@ -465,8 +465,8 @@ export default function VoiceOverlay({ onClose }: Props) {
         {/* Status label */}
         <div className="text-center min-h-[40px] flex flex-col items-center justify-center gap-1">
           <p className={`text-[13px] font-medium tracking-wide transition-all duration-500 ${status === "speaking" ? "text-fuchsia-200 drop-shadow-[0_0_8px_rgba(217,70,239,0.5)]" :
-            status === "listening" ? "text-cyan-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" :
-              status === "connecting" ? "text-indigo-200/80 animate-pulse" : "text-rose-300/80"
+            status === "listening" ? "text-blue-200 drop-shadow-[0_0_8px_rgba(34,211,238,0.5)]" :
+              status === "connecting" ? "text-blue-200/80 animate-pulse" : "text-rose-300/80"
             }`}>
             {status === "connecting" && "Connecting to AI Agent…"}
             {status === "listening" && "Listening — go ahead and speak"}
@@ -491,14 +491,14 @@ export default function VoiceOverlay({ onClose }: Props) {
             captions.map((c, i) => (
               <div key={i} className={`flex ${c.role === "user" ? "justify-end" : "justify-start"} animate-in fade-in slide-in-from-bottom-1 duration-200`}>
                 <div className={`max-w-[90%] px-3 py-2 rounded-xl text-[12px] leading-relaxed ${c.role === "user"
-                  ? "text-cyan-50 rounded-br-sm"
+                  ? "text-blue-50 rounded-br-sm"
                   : "text-fuchsia-50 rounded-bl-sm"
                   }`}
                   style={c.role === "user"
                     ? { background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.25)" }
                     : { background: "rgba(168,85,247,0.2)", border: "1px solid rgba(168,85,247,0.25)" }
                   }>
-                  <span className={`block text-[9px] uppercase font-bold tracking-widest mb-1 ${c.role === "user" ? "text-cyan-400/70" : "text-fuchsia-400/70"}`}>
+                  <span className={`block text-[9px] uppercase font-bold tracking-widest mb-1 ${c.role === "user" ? "text-blue-400/70" : "text-fuchsia-400/70"}`}>
                     {c.role === "user" ? "You" : "Insurance AI Agent"}
                   </span>
                   {c.text}

@@ -17,12 +17,12 @@ const PRE_ISSUANCE = new Set([
 const POST_ISSUANCE = new Set(["ACTIVE", "GRACEPERIOD", "LAPSED", "CANCELLED"]);
 
 const STATUS_BADGE: Record<string, string> = {
-  APPROVED: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  APPROVED: "bg-blue-50 text-blue-700 border-blue-200",
   ACCEPTEDWITHLOADINGS: "bg-amber-50 text-amber-700 border-amber-200",
   COUNTEROFFER: "bg-amber-50 text-amber-700 border-amber-200",
-  PENDINGPAYMENT: "bg-violet-50 text-violet-700 border-violet-200",
+  PENDINGPAYMENT: "bg-blue-50 text-blue-700 border-blue-200",
   ISSUED: "bg-blue-50 text-blue-700 border-blue-200",
-  ACTIVE: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  ACTIVE: "bg-blue-50 text-blue-700 border-blue-200",
   GRACEPERIOD: "bg-amber-50 text-amber-700 border-amber-200",
   LAPSED: "bg-red-50 text-red-700 border-red-200",
   CANCELLED: "bg-slate-100 text-slate-600 border-slate-300",
@@ -86,7 +86,7 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
       {/* Heading */}
       <div className="flex items-end justify-between gap-4 mb-6">
         <div>
-          <p className="text-[11px] font-semibold text-emerald-600 uppercase tracking-wider">
+          <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider">
             Policy Management
           </p>
           <h1 className="text-2xl font-bold text-slate-900 tracking-tight">{title}</h1>
@@ -106,7 +106,7 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, policy number or product…"
-          className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-100 focus:border-emerald-300"
+          className="w-full text-sm border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300"
         />
       </div>
 
@@ -115,7 +115,7 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
       {/* List */}
       {loading ? (
         <div className="py-24 flex justify-center">
-          <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-emerald-500" />
+          <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-100 border-t-blue-500" />
         </div>
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 py-16 text-center">
@@ -150,7 +150,7 @@ export function PolicyStageList({ variant, title, subtitle }: Readonly<Props>) {
               <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border flex-shrink-0 ${STATUS_BADGE[normStatus(p.status)] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
                 {p.status}
               </span>
-              <span className="text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all flex-shrink-0" aria-hidden>→</span>
+              <span className="text-slate-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all flex-shrink-0" aria-hidden>→</span>
             </button>
           ))}
         </div>

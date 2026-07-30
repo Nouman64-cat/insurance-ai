@@ -47,7 +47,7 @@ const CASE_STATUS_STYLE: Record<string, string> = {
   InProgress: "bg-blue-50 text-blue-700 border-blue-200",
   "Pending Documents": "bg-amber-50 text-amber-700 border-amber-200",
   "Under Review": "bg-blue-50 text-blue-700 border-blue-200",
-  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Approved: "bg-blue-50 text-blue-700 border-blue-200",
   Rejected: "bg-red-50 text-red-700 border-red-200",
   Closed: "bg-slate-200 text-slate-700 border-slate-300",
 };
@@ -285,7 +285,7 @@ function ReasonIcon({ kind, className = "w-3.5 h-3.5" }: { kind: "risk" | "clear
     );
   }
   return (
-    <svg className={`text-emerald-500 flex-shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+    <svg className={`text-blue-500 flex-shrink-0 ${className}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
     </svg>
   );
@@ -382,7 +382,7 @@ function ReasonTable({ sections }: { sections: ReasonSection[] }) {
                   <div className={`w-3 h-3 rounded-full ${row.risk_rating.toLowerCase().includes("high") ? "bg-red-500" :
                     row.risk_rating.toLowerCase().includes("moderate") ? "bg-amber-500" :
                       row.risk_rating.toLowerCase().includes("info") ? "bg-blue-500" :
-                        "bg-emerald-500"
+                        "bg-blue-500"
                     }`} />
                   <span className="text-sm text-slate-700">{row.risk_rating}</span>
                 </div>
@@ -1125,8 +1125,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   return (
     <div className="max-w-screen-2xl mx-auto px-6 py-6 space-y-5">
       {successMessage && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-emerald-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-in slide-in-from-top-5">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5 text-emerald-100">
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-6 py-4 rounded-xl shadow-2xl flex items-center gap-3 z-50 animate-in slide-in-from-top-5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5 text-blue-100">
             <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
           </svg>
           <div className="font-semibold text-sm">{successMessage}</div>
@@ -1181,7 +1181,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               onClick={() => overrideStatus("Approved")}
               disabled={overriding !== null || !hasAny}
               title={!hasAny ? "Run AI Underwriting before approving" : undefined}
-              className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
+              className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
             >
               {overriding === "Approved" ? <Spinner /> : "Override: Proceed"}
             </button>
@@ -1413,7 +1413,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                     return (
                       <li key={d} className="flex items-center justify-between text-xs">
                         <span className={got ? "text-slate-700" : "text-slate-400"}>{d}</span>
-                        <span className={`font-semibold ${got ? "text-emerald-600" : "text-amber-600"}`}>{got ? "Received" : "Missing"}</span>
+                        <span className={`font-semibold ${got ? "text-blue-600" : "text-amber-600"}`}>{got ? "Received" : "Missing"}</span>
                       </li>
                     );
                   })}
@@ -1428,7 +1428,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                         <p className="truncate text-slate-700 font-medium">{a.file_name}</p>
                         <p className="text-[10px] text-slate-400">{a.document_type} · {fmtFileSize(a.file_size)}</p>
                       </div>
-                      <span className={`font-semibold flex-shrink-0 ${a.status === "Processing" ? "text-amber-600 animate-pulse" : a.ocr_result ? "text-emerald-600" : "text-slate-400"}`}>
+                      <span className={`font-semibold flex-shrink-0 ${a.status === "Processing" ? "text-amber-600 animate-pulse" : a.ocr_result ? "text-blue-600" : "text-slate-400"}`}>
                         {a.status === "Processing" ? "OCR…" : a.ocr_result ? "OCR done" : a.status}
                       </span>
                     </div>
@@ -1640,7 +1640,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               placeholder="Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…"
             />
             <div className="flex items-center justify-end gap-2 mt-3">
-              {noteSent && <span className="text-xs text-emerald-600 font-semibold mr-auto">✓ Posted</span>}
+              {noteSent && <span className="text-xs text-blue-600 font-semibold mr-auto">✓ Posted</span>}
               <button
                 onClick={submitNote}
                 disabled={postingNote || !note.trim()}
@@ -1710,7 +1710,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   </div>
                   <div className="h-3.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
                     <div
-                      className={`h-full rounded-full transition-all duration-1000 ${compositeScore <= 30 ? "bg-emerald-500" :
+                      className={`h-full rounded-full transition-all duration-1000 ${compositeScore <= 30 ? "bg-blue-500" :
                         compositeScore <= 70 ? "bg-amber-500" : "bg-red-500"
                         }`}
                       style={{ width: `${compositeScore}%` }}

@@ -16,15 +16,15 @@ export function ClaimsCard() {
     <PillarCard
       icon={<ClipboardIcon />}
       title="Claims Intelligence"
-      barClass="bg-teal-600"
-      iconBg="bg-teal-50"
-      iconColor="text-teal-600"
+      barClass="bg-blue-600"
+      iconBg="bg-blue-50"
+      iconColor="text-blue-600"
     >
       {/* AI Confidence ring + status bars */}
       <div className="flex items-start gap-4 mb-4">
-        <RingGauge value={87} max={100} strokeHex="#0d9488" label="AI Confidence" sublabel="%" valueLabel="87.4%" size={82} />
+        <RingGauge value={87} max={100} strokeHex="#2563eb" label="AI Confidence" sublabel="%" valueLabel="87.4%" size={82} />
         <div className="flex-1 space-y-2.5 pt-1">
-          <Bar label="Approval Rate"      pct={63.8} color="bg-emerald-500" badge="63.8%" />
+          <Bar label="Approval Rate"      pct={63.8} color="bg-blue-500" badge="63.8%" />
           <Bar label="Rejection Rate"     pct={22.1} color="bg-red-500"     badge="22.1%" />
           <Bar label="Under Investigation" pct={14.1} color="bg-amber-400"  badge="14.1%" />
         </div>
@@ -41,12 +41,12 @@ export function ClaimsCard() {
         </div>
         <div className="text-center">
           <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Approved MTD</p>
-          <p className="text-xl font-extrabold text-emerald-600 mt-0.5">PKR 12.4M</p>
+          <p className="text-xl font-extrabold text-blue-600 mt-0.5">PKR 12.4M</p>
           <p className="text-[10px] text-slate-400">total payout</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Avg. Process</p>
-          <p className="text-xl font-extrabold text-teal-600 mt-0.5">2.3d</p>
+          <p className="text-xl font-extrabold text-blue-600 mt-0.5">2.3d</p>
           <p className="text-[10px] text-slate-400">end-to-end</p>
         </div>
       </div>

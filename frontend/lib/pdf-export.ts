@@ -17,8 +17,8 @@ export interface PDFReportData {
 }
 
 function getScoreColorRGB(score: number): [number, number, number] {
-  if (score <= 10) return [16, 185, 129]; // emerald-500
-  if (score <= 20) return [52, 211, 153]; // emerald-400
+  if (score <= 10) return [16, 185, 129]; // blue-500
+  if (score <= 20) return [52, 211, 153]; // blue-400
   if (score <= 30) return [163, 230, 53]; // lime-400
   if (score <= 40) return [250, 204, 21]; // yellow-400
   if (score <= 50) return [251, 191, 36]; // amber-400

@@ -457,7 +457,7 @@ export default function LeadsHubPage() {
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     );
   }
@@ -505,13 +505,13 @@ export default function LeadsHubPage() {
           </button>
           <button
             onClick={() => setChooserType("INDIVIDUAL")}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 transition-all shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
             + Add Individual
           </button>
           <button
             onClick={() => setChooserType("FAMILY")}
-            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-all shadow-sm hover:shadow active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow active:scale-95"
           >
             + Add Family
           </button>
@@ -561,7 +561,7 @@ export default function LeadsHubPage() {
                 key={ft}
                 onClick={() => setFilterType(ft as FilterType)}
                 className={`px-5 py-2 rounded-lg text-sm font-semibold transition-all duration-300 ${filterType === ft
-                  ? "bg-white text-indigo-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
+                  ? "bg-white text-blue-600 shadow-md ring-1 ring-black/5 scale-[1.02]"
                   : "text-slate-500 hover:text-slate-700 hover:bg-slate-200/50"
                   }`}
               >
@@ -579,7 +579,7 @@ export default function LeadsHubPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search by name, contact, identifier..."
-              className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-shadow"
+              className="w-full pl-9 pr-8 py-2 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-shadow"
             />
             {search && (
               <button
@@ -616,7 +616,7 @@ export default function LeadsHubPage() {
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className={`appearance-none px-4 py-2 pr-10 h-[38px] text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 shadow-sm bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22none%22%20stroke%3D%22%2364748b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%224%206%208%2010%2012%206%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[right_16px_center] bg-no-repeat ${statusFilter === 'ALL' ? 'bg-slate-100' : 'bg-white'}`}
+              className={`appearance-none px-4 py-2 pr-10 h-[38px] text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 shadow-sm bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22none%22%20stroke%3D%22%2364748b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%224%206%208%2010%2012%206%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[right_16px_center] bg-no-repeat ${statusFilter === 'ALL' ? 'bg-slate-100' : 'bg-white'}`}
             >
               <option value="ALL">All</option>
               <option value="LEAD">Leads</option>
@@ -633,7 +633,7 @@ export default function LeadsHubPage() {
               onClick={() => setViewMode("kanban")}
               title="Kanban Board"
               className={`p-2 rounded-lg transition-all ${viewMode === "kanban"
-                ? "bg-white text-indigo-600 shadow-sm"
+                ? "bg-white text-blue-600 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
                 }`}
             >
@@ -649,7 +649,7 @@ export default function LeadsHubPage() {
               onClick={() => setViewMode("table")}
               title="Tabular View"
               className={`p-2 rounded-lg transition-all ${viewMode === "table"
-                ? "bg-white text-indigo-600 shadow-sm"
+                ? "bg-white text-blue-600 shadow-sm"
                 : "text-slate-500 hover:text-slate-700"
                 }`}
             >
@@ -670,18 +670,18 @@ export default function LeadsHubPage() {
             {activeFilterChips.map((chip) => (
               <span
                 key={chip.key}
-                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 text-xs font-medium"
+                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-xs font-medium"
               >
                 {chip.label}
                 <button
                   onClick={chip.onRemove}
-                  className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-indigo-100 text-indigo-400 hover:text-indigo-700"
+                  className="w-3.5 h-3.5 flex items-center justify-center rounded-full hover:bg-blue-100 text-blue-400 hover:text-blue-700"
                 >
                   ✕
                 </button>
               </span>
             ))}
-            <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-indigo-600 hover:underline ml-1">
+            <button onClick={clearFilters} className="text-xs font-semibold text-slate-400 hover:text-blue-600 hover:underline ml-1">
               Clear all
             </button>
           </div>
@@ -689,9 +689,9 @@ export default function LeadsHubPage() {
       </div>
 
       {notice && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm font-medium flex justify-between items-center">
+        <div className="p-4 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium flex justify-between items-center">
           <span>{notice}</span>
-          <button onClick={() => setNotice("")} className="text-emerald-400 hover:text-emerald-700 font-bold ml-3">✕</button>
+          <button onClick={() => setNotice("")} className="text-blue-400 hover:text-blue-700 font-bold ml-3">✕</button>
         </div>
       )}
 
@@ -702,9 +702,9 @@ export default function LeadsHubPage() {
       )}
 
       {resetMsg && (
-        <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-sm font-medium">
+        <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-xl text-sm font-medium">
           <span>{resetMsg}</span>
-          <button onClick={() => setResetMsg(null)} className="text-emerald-500 hover:text-emerald-700 text-lg leading-none">×</button>
+          <button onClick={() => setResetMsg(null)} className="text-blue-500 hover:text-blue-700 text-lg leading-none">×</button>
         </div>
       )}
 
@@ -752,12 +752,12 @@ export default function LeadsHubPage() {
 
                   {/* IN PROGRESS COLUMN */}
                   <div className="flex flex-col gap-3 flex-1 min-w-[280px] w-full">
-                    <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-indigo-400">
+                    <div className="flex items-center justify-between px-2 pb-1 border-b-2 border-blue-400">
                       <h3 className="font-bold text-slate-700 flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                        <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
                         In Progress
                       </h3>
-                      <span className="bg-indigo-100 text-indigo-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length} of ${filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length}`}>
+                      <span className="bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded-full" title={`Showing ${paginated.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length} of ${filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length}`}>
                         {filtered.filter(l => l.status === "PROSPECT" || l.status === "UNDERWRITING_READY").length}
                       </span>
                     </div>
@@ -864,15 +864,15 @@ export default function LeadsHubPage() {
                             const isLead = lead.status === "LEAD";
                             const typeStyles = {
                               INDIVIDUAL: "bg-blue-50 text-blue-700 border-blue-200",
-                              FAMILY: "bg-purple-50 text-purple-700 border-purple-200",
-                              CORPORATE: "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              FAMILY: "bg-blue-50 text-blue-700 border-blue-200",
+                              CORPORATE: "bg-blue-50 text-blue-700 border-blue-200"
                             };
                             const statusStyles = {
                               LEAD: "bg-amber-50 text-amber-700 border-amber-200",
-                              PROSPECT: "bg-indigo-50 text-indigo-700 border-indigo-200",
-                              UNDERWRITING_READY: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                              PROSPECT: "bg-blue-50 text-blue-700 border-blue-200",
+                              UNDERWRITING_READY: "bg-blue-50 text-blue-700 border-blue-200",
                               NOT_INTERESTED: "bg-slate-100 text-slate-600 border-slate-200",
-                              POLICYHOLDER: "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              POLICYHOLDER: "bg-blue-50 text-blue-700 border-blue-200"
                             };
                             return (
                               <tr
@@ -922,7 +922,7 @@ export default function LeadsHubPage() {
                                           <button
                                             disabled={busy}
                                             onClick={() => handleMoveInProgress(lead)}
-                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors"
+                                            className="px-2.5 py-1 text-[11px] font-semibold rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
                                           >
                                             In Progress
                                           </button>
@@ -1091,8 +1091,8 @@ function LeadCard({
 }) {
   const typeStyles = {
     INDIVIDUAL: "bg-blue-50 text-blue-700 border-blue-200",
-    FAMILY: "bg-purple-50 text-purple-700 border-purple-200",
-    CORPORATE: "bg-emerald-50 text-emerald-700 border-emerald-200"
+    FAMILY: "bg-blue-50 text-blue-700 border-blue-200",
+    CORPORATE: "bg-blue-50 text-blue-700 border-blue-200"
   };
 
   const isDead = lead.status === "NOT_INTERESTED";
@@ -1109,9 +1109,9 @@ function LeadCard({
   return (
     <div
       onClick={onClick}
-      className="group relative bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-300 hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden"
+      className="group relative bg-white p-4 rounded-xl border border-slate-200 shadow-sm hover:shadow-xl hover:border-blue-300 hover:-translate-y-1 transition-all duration-300 cursor-pointer overflow-hidden"
     >
-      <div className="absolute top-0 left-0 w-1 h-full bg-slate-200 group-hover:bg-indigo-500 transition-colors"></div>
+      <div className="absolute top-0 left-0 w-1 h-full bg-slate-200 group-hover:bg-blue-500 transition-colors"></div>
 
       <div className="flex justify-between items-start mb-2">
         <div>
@@ -1138,7 +1138,7 @@ function LeadCard({
 
       <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400">
         <span>Added {new Date(lead.created_at).toLocaleDateString()}</span>
-        <span className="text-indigo-600 font-semibold group-hover:underline">View Details →</span>
+        <span className="text-blue-600 font-semibold group-hover:underline">View Details →</span>
       </div>
 
       {/* Contextual actions — depend on the lead's current pipeline stage */}
@@ -1150,7 +1150,7 @@ function LeadCard({
         ) : (
           <>
             {isLead && (
-              <button disabled={busy} onClick={act(onMoveInProgress)} className={`${btnBase} text-indigo-700 bg-indigo-50 hover:bg-indigo-100`}>
+              <button disabled={busy} onClick={act(onMoveInProgress)} className={`${btnBase} text-blue-700 bg-blue-50 hover:bg-blue-100`}>
                 In Progress
               </button>
             )}

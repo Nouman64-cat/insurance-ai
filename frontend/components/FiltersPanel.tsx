@@ -120,7 +120,7 @@ export default function FiltersPanel({
     };
   }, [open]);
 
-  const inputClass = "w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400";
+  const inputClass = "w-full text-sm border border-slate-200 rounded-lg px-2.5 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400";
 
   return (
     <div ref={containerRef} className="relative">
@@ -129,7 +129,7 @@ export default function FiltersPanel({
         onClick={() => setOpen((o) => !o)}
         className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-colors h-[42px] ${
           activeCount > 0
-            ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+            ? "bg-blue-50 border-blue-200 text-blue-700"
             : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50 shadow-sm"
         }`}
       >
@@ -138,7 +138,7 @@ export default function FiltersPanel({
         </svg>
         Filters
         {activeCount > 0 && (
-          <span className="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1.5 rounded-full bg-emerald-600 text-white text-[10px] font-bold shadow-sm">
+          <span className="inline-flex items-center justify-center min-w-[1.25rem] h-[1.25rem] px-1.5 rounded-full bg-blue-600 text-white text-[10px] font-bold shadow-sm">
             {activeCount}
           </span>
         )}
@@ -253,7 +253,7 @@ export default function FiltersPanel({
           {activeCount > 0 && (
             <button
               onClick={onClearAll}
-              className="w-full text-center text-xs font-semibold text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg py-2 transition-colors border border-transparent hover:border-emerald-100"
+              className="w-full text-center text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg py-2 transition-colors border border-transparent hover:border-blue-100"
             >
               Clear all filters
             </button>

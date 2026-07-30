@@ -11,8 +11,8 @@ const CONFIG: Record<
 > = {
   "Auto Approve": {
     label: "Auto Approved",
-    classes: "bg-emerald-50 text-emerald-800 border border-emerald-200",
-    dot: "bg-emerald-500",
+    classes: "bg-blue-50 text-blue-800 border border-blue-200",
+    dot: "bg-blue-500",
     icon: "✓",
   },
   "Approve with Loading": {
@@ -57,10 +57,10 @@ export function StatusBadge({ decision, size = "md" }: StatusBadgeProps) {
 export function DecisionBanner({ decision }: { decision: AIDecision }) {
   const BANNER: Record<AIDecision, { bg: string; border: string; text: string; sub: string; icon: string }> = {
     "Auto Approve": {
-      bg: "bg-emerald-50",
-      border: "border-emerald-300",
-      text: "text-emerald-800",
-      sub: "text-emerald-600",
+      bg: "bg-blue-50",
+      border: "border-blue-300",
+      text: "text-blue-800",
+      sub: "text-blue-600",
       icon: "✓",
     },
     "Approve with Loading": {

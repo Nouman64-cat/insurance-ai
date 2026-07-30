@@ -468,17 +468,17 @@ export function CopilotInterface() {
 
         {/* Sidebar */}
         <div className="w-[260px] flex-shrink-0 bg-[#0f1115] border-r border-slate-800 flex-col hidden md:flex relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-48 bg-gradient-to-b from-indigo-500/10 to-transparent pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-48 bg-gradient-to-b from-blue-500/10 to-transparent pointer-events-none" />
           
           <div className="p-5 flex items-center gap-3 font-bold text-lg text-white relative z-10">
-             <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_15px_rgba(99,102,241,0.4)]">
+             <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-[0_0_15px_rgba(99,102,241,0.4)]">
                <img src="/rizvi.png" alt="Rizviz" className="w-5 h-5 object-contain brightness-0 invert" />
              </div>
-             <span className="tracking-wide">Rizviz<span className="text-indigo-400">.ai</span></span>
+             <span className="tracking-wide">Rizviz<span className="text-blue-400">.ai</span></span>
           </div>
           <div className="px-4 pb-4 mt-2 relative z-10">
             <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-200 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 shadow-sm">
-              <svg className="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
+              <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
               New chat
             </button>
           </div>
@@ -518,19 +518,19 @@ export function CopilotInterface() {
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0 bg-[#fdfdfe]">
            {/* Subtle ambient glowing orbs */}
-           <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-indigo-400/10 rounded-full blur-[100px] pointer-events-none" />
+           <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-blue-400/10 rounded-full blur-[100px] pointer-events-none" />
            <div className="absolute bottom-[-10%] right-[-5%] w-[400px] h-[400px] bg-fuchsia-400/10 rounded-full blur-[120px] pointer-events-none" />
            
            {/* Chat Header */}
            <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200/60 bg-white/40 backdrop-blur-md relative z-20">
              <div className="flex items-center gap-3">
-               <button onClick={() => setAutomationMode(false)} className="md:hidden p-2 -ml-2 text-slate-600 hover:text-indigo-600 transition-colors">
+               <button onClick={() => setAutomationMode(false)} className="md:hidden p-2 -ml-2 text-slate-600 hover:text-blue-600 transition-colors">
                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                </button>
                <div className="flex items-center gap-2">
-                 <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+                 <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
                  <span className="font-bold text-sm text-slate-800 tracking-tight">Rizviz Copilot</span>
-                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[10px] font-bold uppercase tracking-widest ml-1 border border-indigo-100">Beta</span>
+                 <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 text-[10px] font-bold uppercase tracking-widest ml-1 border border-blue-100">Beta</span>
                </div>
              </div>
              <div className="flex items-center gap-3">
@@ -548,12 +548,12 @@ export function CopilotInterface() {
                  <div className="flex flex-col items-center justify-center h-full min-h-[60vh] px-4">
                    <div className="w-full max-w-3xl flex flex-col items-center mt-10">
                      <div className="text-slate-400 font-bold text-xs uppercase tracking-[0.2em] mb-3">Rizviz AI Copilot</div>
-                     <h2 className="text-4xl md:text-[50px] font-bold tracking-tight text-center mb-10 bg-clip-text text-transparent bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 pb-2 leading-tight">
+                     <h2 className="text-4xl md:text-[50px] font-bold tracking-tight text-center mb-10 bg-clip-text text-transparent bg-gradient-to-r from-blue-500 via-blue-500 to-fuchsia-500 pb-2 leading-tight">
                        How can I help you today?
                      </h2>
                      
                      {/* Input Box - Perplexity style */}
-                     <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
+                     <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all duration-300">
                        {selectedFile && (
                          <div className="px-4 pt-4 pb-1 flex items-center gap-2">
                            <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
@@ -606,9 +606,9 @@ export function CopilotInterface() {
                          <button
                            key={idx}
                            onClick={() => handleQuickAction(action)}
-                           className="flex flex-col items-start p-4 bg-white/60 backdrop-blur-sm hover:bg-white border border-white/60 hover:border-indigo-100 hover:shadow-[0_8px_20px_rgb(99,102,241,0.08)] rounded-2xl transition-all text-left group"
+                           className="flex flex-col items-start p-4 bg-white/60 backdrop-blur-sm hover:bg-white border border-white/60 hover:border-blue-100 hover:shadow-[0_8px_20px_rgb(99,102,241,0.08)] rounded-2xl transition-all text-left group"
                          >
-                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 group-hover:text-indigo-600 transition-colors">
+                           <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 group-hover:text-blue-600 transition-colors">
                              {action.actionType === "navigate" ? (
                                <svg className="w-4 h-4 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                              ) : (
@@ -634,7 +634,7 @@ export function CopilotInterface() {
                          {/* Avatar (only for Agent) */}
                          {msg.role !== "user" && (
                            <div className="flex-shrink-0 mt-1">
-                             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_12px_rgba(99,102,241,0.3)] flex items-center justify-center p-1.5 ring-2 ring-white">
+                             <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-[0_0_12px_rgba(99,102,241,0.3)] flex items-center justify-center p-1.5 ring-2 ring-white">
                                <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain brightness-0 invert" />
                              </div>
                            </div>
@@ -666,7 +666,7 @@ export function CopilotInterface() {
                                  <button
                                    key={`${action.actionType}-${action.label}-${idx}`}
                                    onClick={() => handleQuickAction(action)}
-                                   className="px-3 py-1.5 text-xs font-semibold rounded-full bg-white border border-slate-200 hover:bg-slate-50 hover:border-indigo-200 hover:text-indigo-700 shadow-sm transition-all flex items-center gap-1.5"
+                                   className="px-3 py-1.5 text-xs font-semibold rounded-full bg-white border border-slate-200 hover:bg-slate-50 hover:border-blue-200 hover:text-blue-700 shadow-sm transition-all flex items-center gap-1.5"
                                  >
                                    {action.label}
                                  </button>
@@ -682,7 +682,7 @@ export function CopilotInterface() {
                      <div className="w-full px-4 py-6">
                        <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">
                          <div className="flex-shrink-0 mt-1">
-                           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 shadow-[0_0_12px_rgba(99,102,241,0.3)] flex items-center justify-center p-1.5 ring-2 ring-white">
+                           <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-[0_0_12px_rgba(99,102,241,0.3)] flex items-center justify-center p-1.5 ring-2 ring-white">
                               <img src="/rizvi.png" alt="Agent" className="w-full h-full object-contain brightness-0 invert" />
                            </div>
                          </div>
@@ -704,7 +704,7 @@ export function CopilotInterface() {
            {messages.length > 1 || (messages.length === 1 && messages[0].role !== "assistant") ? (
              <div className="absolute bottom-4 left-0 w-full px-4 z-20">
                <div className="max-w-3xl mx-auto relative">
-                 <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
+                 <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all duration-300">
                    {selectedFile && (
                      <div className="px-4 pt-3 pb-1 flex items-center gap-2">
                        <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 text-xs font-medium rounded-lg border border-slate-200">
@@ -770,7 +770,7 @@ export function CopilotInterface() {
 
             {/* ── Status Bar ─────────────────────────────────────────── */}
             {!isAutomationMode && (
-              <div className="flex-shrink-0 relative bg-gradient-to-r from-violet-600 to-fuchsia-600 pt-2 pb-1 px-6 flex items-center justify-between text-white text-[11px] font-semibold">
+              <div className="flex-shrink-0 relative bg-gradient-to-r from-blue-600 to-fuchsia-600 pt-2 pb-1 px-6 flex items-center justify-between text-white text-[11px] font-semibold">
                 <span className="tabular-nums">{clock || "9:41"}</span>
                 {/* Notch */}
                 <div className="absolute left-1/2 -translate-x-1/2 top-1.5 w-24 h-5 bg-slate-900 rounded-full" />
@@ -783,18 +783,18 @@ export function CopilotInterface() {
             )}
 
             {/* ── Chat Header ────────────────────────────────────────── */}
-            <div className="flex-shrink-0 bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 pb-3 pt-1 flex items-center justify-between text-white shadow-lg">
+            <div className="flex-shrink-0 bg-gradient-to-r from-blue-600 to-fuchsia-600 px-4 pb-3 pt-1 flex items-center justify-between text-white shadow-lg">
               <div className="flex items-center gap-3">
                 <div className="relative">
                   <div className="w-10 h-10 rounded-full bg-white logo-white flex items-center justify-center shadow-md overflow-hidden ring-2 ring-white/40">
                     <img src="/rizvi.png" alt="Rizviz" className="w-7 h-7 object-contain" />
                   </div>
-                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-violet-600" />
+                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-blue-400 ring-2 ring-blue-600" />
                 </div>
                 <div className="flex flex-col leading-tight">
                   <span className="text-[15px] font-bold tracking-tight">Rizviz AI Agent</span>
                   <span className="text-[11px] text-white/80 font-medium flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" /> Online · Automation
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-300 animate-pulse" /> Online · Automation
                   </span>
                 </div>
               </div>
@@ -804,7 +804,7 @@ export function CopilotInterface() {
             </div>
 
             {/* ── Chat Feed ──────────────────────────────────────────── */}
-            <div className="flex-1 overflow-y-auto px-3.5 py-4 relative bg-gradient-to-b from-violet-50 via-white to-fuchsia-50" ref={scrollContainerRef}>
+            <div className="flex-1 overflow-y-auto px-3.5 py-4 relative bg-gradient-to-b from-blue-50 via-white to-fuchsia-50" ref={scrollContainerRef}>
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.04] z-0">
                 <img src="/rizvi.png" alt="" className="w-1/2 max-w-[200px] object-contain" />
               </div>
@@ -812,12 +812,12 @@ export function CopilotInterface() {
                 {messages.map((msg) => (
                   <div key={msg.id} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"} items-end gap-2 group animate-in slide-in-from-bottom-2 duration-300`}>
                     {msg.role === "assistant" && (
-                      <div className="w-7 h-7 rounded-full bg-white logo-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
+                      <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                         <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                       </div>
                     )}
                     <div className={`max-w-[82%] px-4 py-2.5 text-[14px] leading-relaxed shadow-sm flex flex-col gap-3 ${msg.role === "user"
-                        ? "bg-gradient-to-br from-violet-500 to-fuchsia-500 text-white rounded-2xl rounded-br-md"
+                        ? "bg-gradient-to-br from-blue-500 to-fuchsia-500 text-white rounded-2xl rounded-br-md"
                         : "bg-white border border-slate-100 text-slate-700 rounded-2xl rounded-bl-md"
                       }`}>
                       {msg.role === "user" ? (
@@ -839,12 +839,12 @@ export function CopilotInterface() {
                               key={`${action.actionType}-${action.label}-${idx}`}
                               onClick={() => handleQuickAction(action)}
                               className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${action.actionType === "navigate"
-                                  ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200"
+                                  ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
                                   : action.actionType === "upload"
                                     ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
                                     : action.actionType === "confirm"
-                                      ? "bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200"
-                                      : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
+                                      ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                      : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
                                 }`}
                             >
                               {action.actionType === "navigate" ? (
@@ -866,7 +866,7 @@ export function CopilotInterface() {
                     machine, node by node, while (and after) it works. */}
                 {steps.length > 0 && (
                   <div className="flex justify-start items-start gap-2">
-                    <div className="w-7 h-7 rounded-full bg-white logo-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
+                    <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                     </div>
                     <div className="max-w-[82%] flex-1">
@@ -876,7 +876,7 @@ export function CopilotInterface() {
                 )}
                 {isLoading && (
                   <div className="flex justify-start items-end gap-2">
-                    <div className="w-7 h-7 rounded-full bg-white logo-white border border-violet-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
+                    <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                     </div>
                     <div className="flex items-center gap-1.5 bg-white rounded-2xl rounded-bl-md px-4 py-3 shadow-sm border border-slate-100">
@@ -894,10 +894,10 @@ export function CopilotInterface() {
             <div className="flex-shrink-0 px-3 pt-2.5 pb-3 bg-white border-t border-slate-100">
               {selectedFile && (
                 <div className="mb-2 flex items-center gap-2">
-                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-violet-50 text-violet-700 text-xs font-semibold rounded-full border border-violet-100">
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-50 text-blue-700 text-xs font-semibold rounded-full border border-blue-100">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                     {selectedFile.name}
-                    <button type="button" onClick={() => setSelectedFile(null)} className="ml-1 hover:text-violet-900 transition-colors">
+                    <button type="button" onClick={() => setSelectedFile(null)} className="ml-1 hover:text-blue-900 transition-colors">
                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                     </button>
                   </div>
@@ -951,9 +951,9 @@ export function CopilotInterface() {
                   accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
                 />
                 {/* Pill input with inline actions */}
-                <div className="flex-1 flex items-center gap-0.5 bg-slate-100 rounded-full pl-1.5 pr-1 py-1 focus-within:ring-2 focus-within:ring-violet-400/50 transition-all">
+                <div className="flex-1 flex items-center gap-0.5 bg-slate-100 rounded-full pl-1.5 pr-1 py-1 focus-within:ring-2 focus-within:ring-blue-400/50 transition-all">
                   <button type="button" onClick={() => fileInputRef.current?.click()} title="Attach Document"
-                    className="p-2 text-slate-400 hover:text-violet-600 rounded-full transition-all shrink-0">
+                    className="p-2 text-slate-400 hover:text-blue-600 rounded-full transition-all shrink-0">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                   </button>
                   <input
@@ -964,12 +964,12 @@ export function CopilotInterface() {
                     className="flex-1 bg-transparent text-slate-900 py-1.5 focus:outline-none text-[14px] placeholder:text-slate-400 min-w-0"
                   />
                   <button type="button" onClick={() => setShowVoice(true)} title="Live Voice Agent"
-                    className="p-2 text-slate-400 hover:text-violet-600 rounded-full transition-all shrink-0">
+                    className="p-2 text-slate-400 hover:text-blue-600 rounded-full transition-all shrink-0">
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 18v-6a9 9 0 0118 0v6M3 18a2 2 0 002 2h1a2 2 0 002-2v-3a2 2 0 00-2-2H3v5zm16 0a2 2 0 01-2 2h-1a2 2 0 01-2-2v-3a2 2 0 012-2h3v5z" /></svg>
                   </button>
                   <button type="button" onMouseDown={startRecording} onMouseUp={stopRecording}
                     onMouseLeave={() => isRecording && stopRecording()} title="Hold to dictate"
-                    className={`p-2 rounded-full transition-all shrink-0 ${isRecording ? "bg-rose-100 text-rose-600 animate-pulse" : "text-slate-400 hover:text-violet-600"}`}>
+                    className={`p-2 rounded-full transition-all shrink-0 ${isRecording ? "bg-rose-100 text-rose-600 animate-pulse" : "text-slate-400 hover:text-blue-600"}`}>
                     {isRecording
                       ? <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
                       : <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
@@ -977,7 +977,7 @@ export function CopilotInterface() {
                   </button>
                 </div>
                 <button type="submit" disabled={!input.trim() || isLoading}
-                  className="p-3 bg-gradient-to-br from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-full transition-all shadow-lg shadow-fuchsia-500/30 active:scale-90 shrink-0">
+                  className="p-3 bg-gradient-to-br from-blue-500 to-fuchsia-500 hover:from-blue-600 hover:to-fuchsia-600 disabled:from-slate-300 disabled:to-slate-300 text-white rounded-full transition-all shadow-lg shadow-fuchsia-500/30 active:scale-90 shrink-0">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
                 </button>
               </form>
@@ -995,12 +995,12 @@ export function CopilotInterface() {
                       key={idx}
                       onClick={() => handleQuickAction(action)}
                       className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${action.actionType === "navigate"
-                          ? "text-emerald-600 hover:text-white hover:bg-emerald-600 border-emerald-200"
+                          ? "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
                           : action.actionType === "upload"
                             ? "text-amber-600 hover:text-white hover:bg-amber-600 border-amber-200"
                             : action.actionType === "confirm"
-                              ? "text-violet-600 hover:text-white hover:bg-violet-600 border-violet-200"
-                              : "text-indigo-600 hover:text-white hover:bg-indigo-600 border-indigo-200"
+                              ? "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
+                              : "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
                         }`}
                     >
                       {action.label}
@@ -1018,8 +1018,8 @@ export function CopilotInterface() {
         <div className="absolute bottom-[100px] right-full mr-6 w-[280px] z-50 animate-in slide-in-from-right-8 fade-in duration-500 pointer-events-auto">
           <div className="bg-white/95 backdrop-blur-xl rounded-2xl shadow-[0_15px_50px_-12px_rgba(0,0,0,0.15)] border border-slate-200 p-4 flex flex-col gap-3">
             <div className="flex items-center gap-2 px-1">
-              <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full bg-emerald-100">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="flex h-2.5 w-2.5 items-center justify-center rounded-full bg-blue-100">
+                <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
               </span>
               <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest">Suggested Next Actions</span>
             </div>
@@ -1028,7 +1028,7 @@ export function CopilotInterface() {
                 <button
                   key={`${action}-${idx}`}
                   onClick={() => { setSuggestedActions([]); handleSubmit(undefined, action); }}
-                  className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-violet-50 text-slate-700 hover:text-violet-700 text-[13px] font-semibold rounded-xl border border-transparent hover:border-violet-100 transition-all active:scale-[0.98]"
+                  className="w-full text-left px-4 py-2.5 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 text-[13px] font-semibold rounded-xl border border-transparent hover:border-blue-100 transition-all active:scale-[0.98]"
                 >
                   {action}
                 </button>

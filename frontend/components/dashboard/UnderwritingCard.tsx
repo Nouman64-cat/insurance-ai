@@ -9,7 +9,7 @@ function ShieldIcon() {
 }
 
 const DECISIONS = [
-  { label: "Auto Approve",       pct: 42, color: "bg-emerald-500" },
+  { label: "Auto Approve",       pct: 42, color: "bg-blue-500" },
   { label: "Approve w/ Loading", pct: 31, color: "bg-amber-400"   },
   { label: "Human Review",       pct: 18, color: "bg-blue-500"    },
   { label: "Decline",            pct:  9, color: "bg-red-500"     },
@@ -38,7 +38,7 @@ export function UnderwritingCard() {
         {/* Gauges */}
         <div className="flex gap-5 flex-shrink-0">
           <RingGauge value={68} strokeHex="#1d4ed8" label="Portfolio Risk" sublabel="/ 100" size={84} strokeW={9} />
-          <RingGauge value={73} strokeHex="#10b981" label="Approval Prob." sublabel="%" valueLabel="73%" size={84} strokeW={9} />
+          <RingGauge value={73} strokeHex="#3b82f6" label="Approval Prob." sublabel="%" valueLabel="73%" size={84} strokeW={9} />
         </div>
 
         {/* Decision distribution */}

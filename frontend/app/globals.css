@@ -249,7 +249,7 @@ html.dark .bg-red-50, html.dark .bg-rose-50 { background-color: rgba(239, 68, 68
 /* Semantic Badge Text (Pastel/Neon for readability) */
 /* Covers the deep 800/900 tints too — those are authored for light badge fills */
 html.dark .text-blue-800, html.dark .text-blue-700, html.dark .text-blue-600 { color: #93c5fd !important; }
-html.dark .text-emerald-800, html.dark .text-emerald-700, html.dark .text-emerald-600 { color: #6ee7b7 !important; }
+html.dark .text-emerald-800, html.dark .text-emerald-700, html.dark .text-emerald-600 { color: #93c5fd !important; }
 html.dark .text-purple-800, html.dark .text-purple-700, html.dark .text-purple-600 { color: #d8b4fe !important; }
 html.dark .text-violet-800, html.dark .text-violet-700, html.dark .text-violet-600 { color: #c4b5fd !important; }
 html.dark .text-indigo-800, html.dark .text-indigo-700, html.dark .text-indigo-600 { color: #a5b4fc !important; }

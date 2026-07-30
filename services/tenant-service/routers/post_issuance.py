@@ -39,15 +39,21 @@ from services.onboarding_gate import ONBOARDING_STATUSES, compute_onboarding
 from services.billing_gate import IN_FORCE_STATUSES, compute_billing, surcharge_for, _row_state
 from services.pricing_engine import GRACE_PERIOD_DAYS as _GRACE_DAYS
 from services.policy_documents import render_welcome_kit
-from routers.policies import _get_policy, _publish_policy_event, _st
+from services.email_templates import issuance_email, endorsement_email
+from services.endorsement_engine import create_endorsement
+from routers.policies import _get_policy, _publish_policy_event, _st, _price_breakdown
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from shared.models.core import (
+    Beneficiary,
+    BeneficiaryVersion,
     BillingFrequencyEnum,
     Customer,
     CustomerPortalAccount,
     Policy,
+    PolicyEndorsement,
     PolicyEvent,
     PolicyOnboarding,
+    PolicyRider,
     PolicyStatusEnum,
     PolicyVersion,
     PremiumReceipt,
@@ -604,6 +610,15 @@ class CollectBody(BaseModel):
     collected_by: Optional[str] = None
 
 
+class BulkCollectBody(BaseModel):
+    amount: float                      # Total amount received
+    method: Optional[str] = None
+    reference: Optional[str] = None
+    manual: bool = False
+    realize: bool = True
+    collected_by: Optional[str] = None
+
+
 class RemindBody(BaseModel):
     channel: Optional[str] = None      # Email | SMS | WhatsApp | Letter
     template: Optional[str] = None     # Friendly | Standard | FinalNotice
@@ -759,6 +774,145 @@ async def collect_installment(
     await session.commit()
     for ev in events:
         await _publish_policy_event(request, policy, ev)
+    return await compute_billing(session, policy)
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/premiums/bulk-collect")
+async def bulk_collect_premiums(
+    tenant_id: UUID, policy_id: UUID,
+    body: BulkCollectBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Settle an arbitrary lump sum sequentially across the policy's upcoming installments."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_in_force(policy)
+    
+    if body.amount <= 0:
+        raise HTTPException(400, "Collection amount must be greater than zero.")
+
+    # 1. Fetch pending/overdue installments sorted chronologically
+    schedules = (await session.exec(
+        select(PremiumSchedule)
+        .where(PremiumSchedule.policy_id == policy_id)
+        .where(PremiumSchedule.status.in_([PremiumScheduleStatusEnum.PENDING, PremiumScheduleStatusEnum.OVERDUE]))
+        .order_by(PremiumSchedule.due_date.asc(), PremiumSchedule.installment_no.asc()) # type: ignore[arg-type]
+    )).all()
+
+    if not schedules:
+        raise HTTPException(400, "No pending installments to collect against.")
+
+    remaining_budget = body.amount
+    events = []
+    
+    customer = await session.get(Customer, policy.customer_id)
+    tenant = await session.get(Tenant, policy.tenant_id)
+    commission_pct = insurer_config.AGENT_COMMISSION_PCT
+    agent_id = str(customer.assigned_agent_id) if (customer and customer.assigned_agent_id) else "unassigned"
+
+    for schedule in schedules:
+        if remaining_budget <= 0:
+            break
+
+        # Calculate how much is owed on THIS specific installment
+        base_owed = round(schedule.amount_due - schedule.amount_paid, 2)
+        surcharge = surcharge_for(schedule.amount_due, _row_state(schedule, date.today()))
+        total_owed = round(base_owed + surcharge, 2)
+
+        if total_owed <= 0:
+            continue
+
+        # Decide whether this is a full settlement or a partial one
+        if remaining_budget >= total_owed:
+            # Fully cover this installment
+            applied_base = base_owed
+            applied_surcharge = surcharge
+            applied_total = total_owed
+            
+            schedule.amount_paid = schedule.amount_due
+            schedule.status = PremiumScheduleStatusEnum.PAID
+            schedule.paid_at = datetime.utcnow()
+        else:
+            # Partially cover this installment (budget runs out here)
+            applied_total = round(remaining_budget, 2)
+            # Apply to surcharge first, then base
+            if applied_total >= surcharge:
+                applied_surcharge = surcharge
+                applied_base = round(applied_total - surcharge, 2)
+            else:
+                applied_surcharge = applied_total
+                applied_base = 0.0
+                
+            schedule.amount_paid = round(schedule.amount_paid + applied_base, 2)
+            # Status remains PENDING/OVERDUE because it's only a partial payment
+
+        # Gateway / Reference handling
+        if body.manual:
+            reference = body.reference or f"MANUAL-{schedule.id.hex[:8].upper()}"
+            method = body.method or "Manual"
+        else:
+            reference = body.reference or schedule.payment_reference or payment_gateway.generate_reference(
+                payment_gateway.PaymentMethodEnum.JAZZCASH
+            )
+            # Note: For real gateways, bulk capture is complex. We'll simulate capture here.
+            try:
+                intent = payment_gateway.confirm_payment(reference, applied_total, body.method, realize=body.realize)
+                reference = intent.reference
+                method = intent.method.value
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            
+            if intent.status != payment_gateway.PaymentStatusEnum.REALIZED:
+                raise HTTPException(402, f"Payment was not realized for installment {schedule.installment_no}")
+        
+        schedule.payment_reference = reference
+        session.add(schedule)
+
+        # Record receipt for this specific deduction
+        commission_amount = round(applied_base * commission_pct / 100.0, 2)
+        receipt_no = await _next_receipt_no(session, tenant_id)
+
+        kit = document_generator.generate_receipt({
+            "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
+            "customer_name": customer.name if customer else "—",
+            "policy_number": policy.policy_number, "installment_no": schedule.installment_no,
+            "paid_date": date.today().isoformat(), "method": method, "payment_reference": reference,
+            "base_amount": applied_base, "surcharge_amount": applied_surcharge, "total_amount": applied_total,
+        })
+        receipt = PremiumReceipt(
+            tenant_id=tenant_id, policy_id=policy_id, schedule_id=schedule.id,
+            receipt_no=receipt_no, base_amount=applied_base, surcharge_amount=applied_surcharge, total_amount=applied_total,
+            method=method, payment_reference=reference,
+            commission_agent_id=agent_id, commission_pct=commission_pct, commission_amount=commission_amount,
+            document_path=kit["file_path"],
+        )
+        session.add(receipt)
+
+        events.append(record_event(
+            session, policy, event_type="PremiumCollected",
+            actor=body.collected_by or ("manual" if body.manual else "gateway"),
+            detail={"schedule_id": str(schedule.id), "installment_no": schedule.installment_no,
+                    "base": applied_base, "surcharge": applied_surcharge, "total": applied_total, "reference": reference,
+                    "receipt_no": receipt_no, "commission": commission_amount, "bulk": True},
+        ))
+        
+        remaining_budget = round(remaining_budget - applied_total, 2)
+
+    # Revive grace-period policies if arrears cleared
+    if _st(policy) == PolicyStatusEnum.GRACE_PERIOD.value and not await _open_arrears(session, policy_id):
+        try:
+            events.append(apply_transition(
+                session, policy, PolicyStatusEnum.ACTIVE,
+                event_type="PolicyRevived", actor="system",
+                detail={"reason": "arrears_cleared_bulk"},
+            ))
+        except IllegalStateTransition:
+            pass
+
+    await session.commit()
+    for ev in events:
+        await _publish_policy_event(request, policy, ev)
+    
     return await compute_billing(session, policy)
 
 
@@ -1137,3 +1291,483 @@ async def lapse_warning_letter(
     await session.commit()
     await _publish_policy_event(request, policy, event)
     return FileResponse(letter["file_path"], media_type="application/pdf", filename="lapse_warning.pdf")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Policy-issuance confirmation email (customer communication)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/issuance/send-email")
+async def send_issuance_email(
+    tenant_id: UUID, policy_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Send the customer a professionally-formatted policy-issuance confirmation
+    email (HTML + text). Requires the policy to be issued and an email on record."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    if not policy.policy_number:
+        raise HTTPException(400, "Policy has not been issued yet")
+
+    customer = await session.get(Customer, policy.customer_id)
+    details = (customer.details if customer else None) or {}
+    email = details.get("contact_email") or details.get("email")
+    if not email:
+        raise HTTPException(400, "No email on record — add a contact before sending the issuance email")
+
+    tenant = await session.get(Tenant, policy.tenant_id)
+    version = (await session.exec(
+        select(PolicyVersion).where(PolicyVersion.policy_id == policy_id)
+        .order_by(PolicyVersion.created_at.desc())  # type: ignore[arg-type]
+    )).first()
+    schedule = (await session.exec(
+        select(PremiumSchedule).where(PremiumSchedule.policy_id == policy_id)
+    )).first()
+
+    subject, text, html = issuance_email(
+        customer_name=customer.name if customer else "Policyholder",
+        tenant_name=tenant.name if tenant else "Your Insurer",
+        policy_number=policy.policy_number,
+        product_name=policy.product_name,
+        sum_assured=policy.coverage_amount,
+        premium=version.total_premium if version else (schedule.amount_due if schedule else None),
+        billing_frequency=_v(schedule.billing_frequency) if schedule else "Annual",
+        effective_date=policy.effective_date.isoformat() if policy.effective_date else None,
+        maturity_date=policy.maturity_date.isoformat() if policy.maturity_date else None,
+        free_look_end_date=policy.free_look_end_date.isoformat() if policy.free_look_end_date else None,
+        policyholder_id=customer.policyholder_id if customer else None,
+        portal_url=portal_service.PORTAL_BASE_URL,
+        tenant_phone=tenant.contact_phone if tenant else None,
+        tenant_email=tenant.contact_email if tenant else None,
+    )
+
+    ok = await email_utils.send_email(email, subject, text, html)
+    event = record_event(
+        session, policy, event_type="IssuanceEmailSent", actor="ops",
+        detail={"to": email, "subject": subject, "delivered": ok},
+    )
+    await session.commit()
+    await _publish_policy_event(request, policy, event)
+    return {"sent_to": email, "sent_at": datetime.utcnow().isoformat(), "delivered": ok, "subject": subject}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# STEP — Policy Servicing & Endorsements (mid-term changes)
+#   Nominee / address (non-financial) and sum-assured / rider (financial) changes.
+#   Each creates a new PolicyVersion (1.x) + PolicyEndorsement + audit event.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NomineeIn(BaseModel):
+    name: str
+    cnic: Optional[str] = None
+    relationship: str
+    share_pct: float
+
+
+class EndorseNomineesBody(BaseModel):
+    beneficiaries: list[NomineeIn]
+    note: Optional[str] = None
+    actor: Optional[str] = None
+
+
+class EndorseAddressBody(BaseModel):
+    address: Optional[str] = None
+    city: Optional[str] = None
+    province: Optional[str] = None
+    note: Optional[str] = None
+    actor: Optional[str] = None
+
+
+class EndorseSumAssuredBody(BaseModel):
+    new_sum_assured: float
+    note: Optional[str] = None
+    actor: Optional[str] = None
+
+
+class EndorseRiderBody(BaseModel):
+    action: str                      # add | remove
+    name: Optional[str] = None       # for add
+    sum_assured: Optional[float] = None
+    annual_premium: Optional[float] = None
+    rider_id: Optional[UUID] = None  # for remove
+    note: Optional[str] = None
+    actor: Optional[str] = None
+
+
+def _assert_endorsable(policy: Policy) -> None:
+    if _st(policy) not in IN_FORCE_STATUSES:
+        raise HTTPException(409, f"Endorsements need an in-force policy (current: {_st(policy)}).")
+
+
+async def _active_riders(session: AsyncSession, policy_id: UUID) -> list[PolicyRider]:
+    rows = (await session.exec(select(PolicyRider).where(PolicyRider.policy_id == policy_id))).all()
+    return [r for r in rows if r.status == "Active"]
+
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/endorsements")
+async def endorsements_overview(
+    tenant_id: UUID, policy_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Current servicing snapshot (nominees, address, sum assured, riders) + the
+    endorsement history, newest first."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    customer = await session.get(Customer, policy.customer_id)
+    details = (customer.details if customer else None) or {}
+    bens = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == policy_id))).all()
+    riders = await _active_riders(session, policy_id)
+    history = (await session.exec(
+        select(PolicyEndorsement).where(PolicyEndorsement.policy_id == policy_id)
+        .order_by(PolicyEndorsement.created_at.desc())  # type: ignore[arg-type]
+    )).all()
+
+    return {
+        "policy_id": str(policy_id),
+        "policy_status": _st(policy),
+        "can_endorse": _st(policy) in IN_FORCE_STATUSES,
+        "sum_assured": policy.coverage_amount,
+        "address": {
+            "address": details.get("address"),
+            "city": customer.city if customer else None,
+            "province": customer.province if customer else None,
+        },
+        "contact": {
+            "email": details.get("contact_email") or details.get("email"),
+            "phone": details.get("contact_phone") or details.get("phone") or details.get("mobile_number"),
+        },
+        "beneficiaries": [
+            {"name": b.name, "cnic": b.cnic, "relationship": b.relationship, "share_pct": b.share_pct}
+            for b in bens
+        ],
+        "riders": [
+            {"id": str(r.id), "name": r.name, "sum_assured": r.sum_assured, "annual_premium": r.annual_premium}
+            for r in riders
+        ],
+        "history": [
+            {"id": str(e.id), "endorsement_no": e.endorsement_no, "type": e.endorsement_type,
+             "summary": e.summary, "effective_date": e.effective_date.isoformat(),
+             "premium_delta": e.premium_delta, "actor": e.actor,
+             "has_document": bool(e.document_path), "created_at": e.created_at.isoformat()}
+            for e in history
+        ],
+    }
+
+
+async def _finalize(session, policy, request, endorsement, extra_events=None):
+    """Commit, generate the endorsement letter, publish the audit event."""
+    ev = record_event(session, policy, event_type="PolicyEndorsed",
+                      actor=endorsement.actor,
+                      detail={"endorsement_no": endorsement.endorsement_no,
+                              "type": endorsement.endorsement_type,
+                              "premium_delta": endorsement.premium_delta})
+    await session.commit()
+    await session.refresh(endorsement)
+    await _publish_policy_event(request, policy, ev)
+    return await endorsements_overview(policy.tenant_id, policy.id, session)
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/nominees")
+async def endorse_nominees(
+    tenant_id: UUID, policy_id: UUID,
+    body: EndorseNomineesBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Mid-term nominee change — replaces the roster (Σ share = 100%) and versions
+    it via BeneficiaryVersion + a non-financial endorsement."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_endorsable(policy)
+    if not body.beneficiaries:
+        raise HTTPException(400, "At least one beneficiary is required")
+    total = round(sum(b.share_pct for b in body.beneficiaries), 2)
+    if abs(total - 100.0) > 0.01:
+        raise HTTPException(400, f"Beneficiary shares must sum to 100% (got {total}%)")
+
+    for old in (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == policy_id))).all():
+        await session.delete(old)
+    snapshot = []
+    for b in body.beneficiaries:
+        session.add(Beneficiary(tenant_id=tenant_id, policy_id=policy_id, name=b.name, cnic=b.cnic,
+                                relationship=b.relationship, share_pct=b.share_pct))
+        snapshot.append({"name": b.name, "cnic": b.cnic, "relationship": b.relationship, "share_pct": b.share_pct})
+
+    last_seq = (await session.exec(
+        select(BeneficiaryVersion.version_sequence).where(BeneficiaryVersion.policy_id == policy_id)
+        .order_by(BeneficiaryVersion.version_sequence.desc())  # type: ignore[arg-type]
+    )).first()
+    session.add(BeneficiaryVersion(tenant_id=tenant_id, policy_id=policy_id,
+                                   version_sequence=(last_seq or 0) + 1, beneficiaries_json=snapshot,
+                                   total_share=total, changed_by=body.actor, change_reason="Endorsement — nominee change"))
+    primary = max(body.beneficiaries, key=lambda x: x.share_pct)
+    policy.nominee_name = primary.name
+    policy.nominee_relationship = primary.relationship
+    session.add(policy)
+
+    endorsement = await create_endorsement(
+        session, policy, etype="Nominee",
+        summary=f"Nominee roster updated ({len(body.beneficiaries)} beneficiaries)",
+        actor=body.actor, detail={"beneficiaries": snapshot, "note": body.note},
+    )
+    return await _finalize(session, policy, request, endorsement)
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/address")
+async def endorse_address(
+    tenant_id: UUID, policy_id: UUID,
+    body: EndorseAddressBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Mid-term address update (non-financial endorsement)."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_endorsable(policy)
+    if not (body.address or body.city or body.province):
+        raise HTTPException(400, "Provide at least one address field")
+    customer = await session.get(Customer, policy.customer_id)
+    if customer is None:
+        raise HTTPException(404, "Customer not found")
+
+    details = dict(customer.details or {})
+    if body.address:
+        details["address"] = body.address
+    customer.details = details
+    if body.city:
+        customer.city = body.city
+    if body.province:
+        customer.province = body.province
+    session.add(customer)
+
+    parts = [p for p in [body.address, body.city, body.province] if p]
+    endorsement = await create_endorsement(
+        session, policy, etype="Address",
+        summary="Address updated — " + ", ".join(parts),
+        actor=body.actor, detail={"address": body.address, "city": body.city, "province": body.province, "note": body.note},
+    )
+    return await _finalize(session, policy, request, endorsement)
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/sum-assured")
+async def endorse_sum_assured(
+    tenant_id: UUID, policy_id: UUID,
+    body: EndorseSumAssuredBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Mid-term sum-assured change — re-prices the premium and versions it."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_endorsable(policy)
+    if body.new_sum_assured <= 0:
+        raise HTTPException(400, "Sum assured must be positive")
+
+    old_sum = policy.coverage_amount
+    breakdown, _ = await _price_breakdown(session, tenant_id, policy, coverage_override=body.new_sum_assured)
+    current = await session.get(PolicyVersion, policy.current_version_id) if policy.current_version_id else None
+    old_prem = current.total_premium if current else 0.0
+    delta = round(breakdown.total_premium - old_prem, 2)
+
+    policy.coverage_amount = body.new_sum_assured
+    session.add(policy)
+
+    endorsement = await create_endorsement(
+        session, policy, etype="SumAssured",
+        summary=f"Sum assured changed from PKR {old_sum:,.0f} to PKR {body.new_sum_assured:,.0f}",
+        actor=body.actor, breakdown=breakdown, premium_delta=delta,
+        detail={"old_sum_assured": old_sum, "new_sum_assured": body.new_sum_assured,
+                "old_premium": old_prem, "new_premium": breakdown.total_premium, "note": body.note},
+    )
+    return await _finalize(session, policy, request, endorsement)
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/riders")
+async def endorse_riders(
+    tenant_id: UUID, policy_id: UUID,
+    body: EndorseRiderBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Add or remove a rider — adjusts the premium and versions the change."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_endorsable(policy)
+    action = (body.action or "").lower()
+
+    current = await session.get(PolicyVersion, policy.current_version_id) if policy.current_version_id else None
+    base_prem = current.total_premium if current else 0.0
+
+    if action == "add":
+        if not body.name:
+            raise HTTPException(400, "Rider name is required")
+        rider_sa = body.sum_assured or 0.0
+        # Rider premium: use the supplied amount, else a nominal 1.5% of rider sum assured.
+        rider_prem = round(body.annual_premium if body.annual_premium is not None else rider_sa * 0.015, 2)
+        session.add(PolicyRider(tenant_id=tenant_id, policy_id=policy_id, name=body.name,
+                                sum_assured=rider_sa, annual_premium=rider_prem, status="Active"))
+        delta = rider_prem
+        summary = f"Rider added: {body.name} (+PKR {rider_prem:,.0f}/yr)"
+        detail = {"action": "add", "name": body.name, "sum_assured": rider_sa, "annual_premium": rider_prem, "note": body.note}
+    elif action == "remove":
+        if not body.rider_id:
+            raise HTTPException(400, "rider_id is required to remove a rider")
+        rider = await session.get(PolicyRider, body.rider_id)
+        if not rider or rider.policy_id != policy_id or rider.status != "Active":
+            raise HTTPException(404, "Active rider not found")
+        rider.status = "Removed"
+        rider.removed_at = datetime.utcnow()
+        session.add(rider)
+        delta = -round(rider.annual_premium, 2)
+        summary = f"Rider removed: {rider.name} (-PKR {rider.annual_premium:,.0f}/yr)"
+        detail = {"action": "remove", "name": rider.name, "annual_premium": rider.annual_premium, "note": body.note}
+    else:
+        raise HTTPException(400, "action must be 'add' or 'remove'")
+
+    # New total premium reflects the rider delta (carried premium + delta).
+    class _BD:
+        base_premium = current.base_premium if current else 0.0
+        loading_amount = current.loading_amount if current else 0.0
+        policy_fee = current.policy_fee if current else 0.0
+        tax_amount = current.tax_amount if current else 0.0
+        total_premium = round(base_prem + delta, 2)
+        rating_basis = (current.loadings_json or {}).get("rating_basis", "") if current and current.loadings_json else ""
+
+    endorsement = await create_endorsement(
+        session, policy, etype="Rider", summary=summary,
+        actor=body.actor, breakdown=_BD(), premium_delta=delta, detail=detail,
+    )
+    return await _finalize(session, policy, request, endorsement)
+
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/endorsements/{endorsement_id}/document/download")
+async def download_endorsement(
+    tenant_id: UUID, policy_id: UUID, endorsement_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Generate (on first request) and stream the endorsement letter PDF."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    endorsement = await session.get(PolicyEndorsement, endorsement_id)
+    if not endorsement or endorsement.policy_id != policy_id:
+        raise HTTPException(404, "Endorsement not found")
+
+    if not endorsement.document_path or not os.path.exists(endorsement.document_path):
+        customer = await session.get(Customer, policy.customer_id)
+        tenant = await session.get(Tenant, policy.tenant_id)
+        letter = document_generator.generate_endorsement_letter({
+            "policy_id": policy.id, "tenant_name": tenant.name if tenant else "Insurer",
+            "customer_name": customer.name if customer else "Policyholder",
+            "policy_number": policy.policy_number, "endorsement_no": endorsement.endorsement_no,
+            "endorsement_type": endorsement.endorsement_type, "summary": endorsement.summary,
+            "effective_date": endorsement.effective_date.isoformat(),
+            "premium_delta": endorsement.premium_delta,
+        })
+        endorsement.document_path = letter["file_path"]
+        session.add(endorsement)
+        await session.commit()
+    return FileResponse(endorsement.document_path, media_type="application/pdf",
+                        filename=f"endorsement_{endorsement.endorsement_no}.pdf")
+
+
+# ── Servicing extras: re-quote preview, contact update, email the letter ──────
+
+class EndorseContactBody(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    note: Optional[str] = None
+    actor: Optional[str] = None
+
+
+@router.get("/tenants/{tenant_id}/policies/{policy_id}/endorsements/quote")
+async def endorsement_quote(
+    tenant_id: UUID, policy_id: UUID,
+    sum_assured: Optional[float] = None,
+    rider_premium: Optional[float] = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Preview the premium impact of a proposed change WITHOUT applying it —
+    used for the live re-quote on sum-assured / rider changes."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    current = await session.get(PolicyVersion, policy.current_version_id) if policy.current_version_id else None
+    current_premium = current.total_premium if current else 0.0
+
+    new_premium = current_premium
+    if sum_assured is not None and sum_assured > 0:
+        breakdown, _ = await _price_breakdown(session, tenant_id, policy, coverage_override=sum_assured)
+        new_premium = breakdown.total_premium
+    if rider_premium:
+        new_premium = round(new_premium + rider_premium, 2)
+
+    return {
+        "current_premium": round(current_premium, 2),
+        "new_premium": round(new_premium, 2),
+        "delta": round(new_premium - current_premium, 2),
+    }
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/contact")
+async def endorse_contact(
+    tenant_id: UUID, policy_id: UUID,
+    body: EndorseContactBody,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Mid-term contact (email / phone) update — non-financial endorsement."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    _assert_endorsable(policy)
+    if not (body.email or body.phone):
+        raise HTTPException(400, "Provide an email or a phone number")
+    customer = await session.get(Customer, policy.customer_id)
+    if customer is None:
+        raise HTTPException(404, "Customer not found")
+
+    details = dict(customer.details or {})
+    changed = []
+    if body.email:
+        details["contact_email"] = body.email
+        changed.append(f"email → {body.email}")
+    if body.phone:
+        details["contact_phone"] = body.phone
+        changed.append(f"phone → {body.phone}")
+    customer.details = details
+    session.add(customer)
+
+    endorsement = await create_endorsement(
+        session, policy, etype="Contact",
+        summary="Contact updated — " + ", ".join(changed),
+        actor=body.actor, detail={"email": body.email, "phone": body.phone, "note": body.note},
+    )
+    return await _finalize(session, policy, request, endorsement)
+
+
+@router.post("/tenants/{tenant_id}/policies/{policy_id}/endorsements/{endorsement_id}/email")
+async def email_endorsement(
+    tenant_id: UUID, policy_id: UUID, endorsement_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Email the endorsement confirmation to the customer (best-effort)."""
+    policy = await _get_policy(session, tenant_id, policy_id)
+    endorsement = await session.get(PolicyEndorsement, endorsement_id)
+    if not endorsement or endorsement.policy_id != policy_id:
+        raise HTTPException(404, "Endorsement not found")
+    customer = await session.get(Customer, policy.customer_id)
+    details = (customer.details if customer else None) or {}
+    email = details.get("contact_email") or details.get("email")
+    if not email:
+        raise HTTPException(400, "No email on record — add a contact before emailing the endorsement")
+
+    tenant = await session.get(Tenant, policy.tenant_id)
+    subject, text, html = endorsement_email(
+        customer_name=customer.name if customer else "Policyholder",
+        tenant_name=tenant.name if tenant else "Your Insurer",
+        policy_number=policy.policy_number or "—",
+        endorsement_no=endorsement.endorsement_no,
+        endorsement_type=endorsement.endorsement_type,
+        summary=endorsement.summary,
+        effective_date=endorsement.effective_date.isoformat(),
+        premium_delta=endorsement.premium_delta,
+        tenant_phone=tenant.contact_phone if tenant else None,
+        tenant_email=tenant.contact_email if tenant else None,
+    )
+    ok = await email_utils.send_email(email, subject, text, html)
+    event = record_event(session, policy, event_type="EndorsementEmailed", actor="ops",
+                         detail={"endorsement_no": endorsement.endorsement_no, "to": email, "delivered": ok})
+    await session.commit()
+    await _publish_policy_event(request, policy, event)
+    return {"sent_to": email, "sent_at": datetime.utcnow().isoformat(), "delivered": ok}

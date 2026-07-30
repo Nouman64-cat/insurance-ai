@@ -59,6 +59,7 @@ export interface IssuanceResult {
   status: string;
   effective_date: string;
   expiry_date: string;
+  maturity_date?: string | null;
   grace_period_end_date: string;
   premium_breakdown: PremiumBreakdown;
   version: string;
@@ -66,6 +67,32 @@ export interface IssuanceResult {
   amount_due?: number;
   payment?: PaymentIntent;
   available_payment_methods?: PaymentMethod[];
+}
+
+export interface IssuancePreview {
+  policy_id: string;
+  status: string;
+  already_issued: boolean;
+  insured: {
+    name: string;
+    cnic: string | null;
+    dob: string | null;
+    policyholder_id: string | null;
+    is_smoker: boolean;
+  };
+  contract: {
+    product_name: string;
+    insurance_type: string;
+    coverage_amount: number;
+    term_years: number;
+    effective_date: string;
+    maturity_date: string;
+    billing_frequency: string;
+    loading_pct: number;
+  };
+  premium_breakdown: PremiumBreakdown;
+  beneficiaries: { name: string; relationship: string; share_pct: number }[];
+  readiness: { ready_to_issue: boolean; blockers: string[]; warnings: string[] };
 }
 
 export interface PaymentConfirmResult {
@@ -133,6 +160,9 @@ export interface PolicyDetail extends PolicyListItem {
   dependent_name: string | null;
   dependent_dob: string | null;
   grace_period_end_date: string | null;
+  maturity_date?: string | null;
+  issued_by?: string | null;
+  issued_at?: string | null;
   delivery_date: string | null;
   free_look_end_date: string | null;
   demo_bypass_flags: string | null;
@@ -199,6 +229,12 @@ export async function getPolicyDetail(policyId: string): Promise<PolicyDetail> {
   const res = await api.get(`/tenants/${tid}/policies/${policyId}`, {
     headers: { "X-Tenant-Id": tid },
   });
+  return res.data;
+}
+
+export async function getIssuancePreview(policyId: string): Promise<IssuancePreview> {
+  const tid = tenantId();
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/issuance-preview`);
   return res.data;
 }
 

@@ -90,9 +90,9 @@ TENANT_SEED_DATA: list[dict] = [
         "contact_person": "Client Services Desk",
     },
     {
-        "name": "Jubilee Life Insurance Company Limited",
-        "code": "JUBILEELIFE",
-        "head_office_address": "Jubilee Insurance House, I.I. Chundrigar Road, Karachi",
+        "name": "Adamjee Life Insurance",
+        "code": "ADAMJEELIFE",
+        "head_office_address": "Adamjee House, I.I. Chundrigar Road, Karachi",
         "city": "Karachi", "province": "Sindh",
         "contact_person": "Client Services Desk",
     },

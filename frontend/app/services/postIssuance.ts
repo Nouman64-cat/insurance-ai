@@ -148,7 +148,7 @@ export async function acknowledgeOnboarding(
 // ── Step 3 — Recurring Premium Collection ────────────────────────────────────
 
 export type InstallmentState =
-  | "paid" | "waived" | "upcoming" | "due_soon" | "due_today" | "grace" | "past_grace";
+  | "paid" | "partially_paid" | "waived" | "upcoming" | "due_soon" | "due_today" | "grace" | "past_grace";
 
 export interface ReminderPlanItem {
   key: string; kind: string; label: string; date: string; due: boolean; sent: boolean;
@@ -172,7 +172,7 @@ export interface Installment {
   reminder_plan: ReminderPlanItem[];
   paid_at: string | null;
   payment_reference: string | null;
-  receipt: { id: string; receipt_no: string; total_amount: number } | null;
+  receipt: { id: string; receipt_no: string; total_amount: number; method?: string } | null;
 }
 
 export interface BillingLedger {
@@ -237,6 +237,15 @@ export async function collectInstallment(
   return res.data;
 }
 
+export async function bulkCollectInstallments(
+  policyId: string,
+  body: { amount: number; method?: string; manual?: boolean; realize?: boolean; collected_by?: string },
+): Promise<BillingLedger> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/premiums/bulk-collect`, body);
+  return res.data;
+}
+
 export async function remindInstallment(
   policyId: string, scheduleId: string,
   body?: { channel?: string; template?: string; kind?: string; sent_by?: string },
@@ -264,10 +273,18 @@ export async function getReceipts(policyId: string): Promise<ReceiptRow[]> {
   return res.data;
 }
 
-export function receiptDownloadUrl(policyId: string, receiptId: string): string {
+export async function downloadReceipt(policyId: string, receiptId: string): Promise<void> {
   const tid = tenantId();
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "";
-  return `${base}/tenants/${tid}/policies/${policyId}/premiums/receipts/${receiptId}/download`;
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/premiums/receipts/${receiptId}/download`, {
+    responseType: "blob",
+  });
+  const name = res.headers["content-disposition"]?.split("filename=")[1]?.replace(/"/g, "") ?? "receipt.pdf";
+  const url = window.URL.createObjectURL(new Blob([res.data]));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  window.URL.revokeObjectURL(url);
 }
 
 export async function downloadLapseWarning(policyId: string): Promise<void> {
@@ -305,5 +322,108 @@ export async function setAutopay(policyId: string, enabled: boolean): Promise<Bi
 export async function demoSeedPremiums(policyId: string, scenario: "healthy" | "grace" | "lapse"): Promise<BillingLedger> {
   const tid = tenantId();
   const res = await api.post(`/tenants/${tid}/policies/${policyId}/premiums/demo-seed`, { scenario });
+  return res.data;
+}
+
+// ── Policy-issuance confirmation email ───────────────────────────────────────
+
+export async function sendIssuanceEmail(policyId: string): Promise<{ sent_to: string; sent_at: string; delivered: boolean; subject: string }> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/issuance/send-email`);
+  return res.data;
+}
+
+// ── Policy Servicing & Endorsements ──────────────────────────────────────────
+
+export interface EndorsementRecord {
+  id: string; endorsement_no: string; type: string; summary: string;
+  effective_date: string; premium_delta: number; actor: string | null;
+  has_document: boolean; created_at: string;
+}
+
+export interface RiderRow { id: string; name: string; sum_assured: number; annual_premium: number; }
+
+export interface EndorsementsOverview {
+  policy_id: string;
+  policy_status: string;
+  can_endorse: boolean;
+  sum_assured: number;
+  address: { address: string | null; city: string | null; province: string | null };
+  contact: { email: string | null; phone: string | null };
+  beneficiaries: { name: string; cnic: string | null; relationship: string; share_pct: number }[];
+  riders: RiderRow[];
+  history: EndorsementRecord[];
+}
+
+export interface EndorsementQuote { current_premium: number; new_premium: number; delta: number; }
+
+export async function getEndorsements(policyId: string): Promise<EndorsementsOverview> {
+  const tid = tenantId();
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/endorsements`);
+  return res.data;
+}
+
+export async function endorseNominees(
+  policyId: string,
+  beneficiaries: { name: string; cnic?: string; relationship: string; share_pct: number }[],
+  note?: string,
+): Promise<EndorsementsOverview> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/endorsements/nominees`, { beneficiaries, note });
+  return res.data;
+}
+
+export async function endorseAddress(
+  policyId: string, body: { address?: string; city?: string; province?: string; note?: string },
+): Promise<EndorsementsOverview> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/endorsements/address`, body);
+  return res.data;
+}
+
+export async function endorseSumAssured(
+  policyId: string, newSumAssured: number, note?: string,
+): Promise<EndorsementsOverview> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/endorsements/sum-assured`, { new_sum_assured: newSumAssured, note });
+  return res.data;
+}
+
+export async function endorseRider(
+  policyId: string,
+  body: { action: "add" | "remove"; name?: string; sum_assured?: number; annual_premium?: number; rider_id?: string; note?: string },
+): Promise<EndorsementsOverview> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/endorsements/riders`, body);
+  return res.data;
+}
+
+export function endorsementDocUrl(policyId: string, endorsementId: string): string {
+  const tid = tenantId();
+  const base = process.env.NEXT_PUBLIC_API_URL ?? "";
+  return `${base}/tenants/${tid}/policies/${policyId}/endorsements/${endorsementId}/document/download`;
+}
+
+export async function getEndorsementQuote(
+  policyId: string, params: { sum_assured?: number; rider_premium?: number },
+): Promise<EndorsementQuote> {
+  const tid = tenantId();
+  const res = await api.get(`/tenants/${tid}/policies/${policyId}/endorsements/quote`, { params });
+  return res.data;
+}
+
+export async function endorseContact(
+  policyId: string, body: { email?: string; phone?: string; note?: string },
+): Promise<EndorsementsOverview> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/endorsements/contact`, body);
+  return res.data;
+}
+
+export async function emailEndorsement(
+  policyId: string, endorsementId: string,
+): Promise<{ sent_to: string; sent_at: string; delivered: boolean }> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/policies/${policyId}/endorsements/${endorsementId}/email`);
   return res.data;
 }

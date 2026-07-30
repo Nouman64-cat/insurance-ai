@@ -71,12 +71,12 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
       <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl overflow-hidden border border-slate-100 transform transition-all">
-        <div className="px-6 py-5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white flex items-center justify-between">
+        <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex items-center justify-between">
           <div>
             <h3 className="text-base font-bold flex items-center gap-2">
               <span>🚀</span> Quick Lead Entry
             </h3>
-            <p className="text-xs text-emerald-100 mt-0.5">
+            <p className="text-xs text-blue-100 mt-0.5">
               Capture initial contact info. Diagnostic medical & financial details can be filled later.
             </p>
           </div>
@@ -103,7 +103,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
               placeholder="e.g. Tariq"
               value={firstName}
               onChange={(e) => setFirstName(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -116,7 +116,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
               placeholder="e.g. Mahmood"
               value={lastName}
               onChange={(e) => setLastName(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -129,7 +129,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
               placeholder="e.g. 0300-1234567"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-mono"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
             />
           </div>
 
@@ -140,7 +140,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
             <select
               value={acquisitionSourceId}
               onChange={(e) => setAcquisitionSourceId(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
             >
               <option value="">-- Direct / Unassigned --</option>
               {sources.map((src) => (
@@ -162,7 +162,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
             <button
               type="submit"
               disabled={saving}
-              className="px-5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-all shadow-md disabled:opacity-50"
+              className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all shadow-md disabled:opacity-50"
             >
               {saving ? "Capturing..." : "Register Lead"}
             </button>

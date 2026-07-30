@@ -214,7 +214,7 @@ export default function ProfilePage() {
             </div>
           )}
           {success && (
-            <div className="mx-5 mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-600 font-medium">
+            <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-600 font-medium">
               {success}
             </div>
           )}
@@ -349,7 +349,7 @@ export default function ProfilePage() {
             </div>
           )}
           {passwordSuccess && (
-            <div className="mx-5 mt-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-600 font-medium">
+            <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-600 font-medium">
               {passwordSuccess}
             </div>
           )}

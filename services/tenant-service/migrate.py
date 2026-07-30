@@ -821,6 +821,19 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v35d — add autopay_enabled to policies",
         "ALTER TABLE policies ADD COLUMN IF NOT EXISTS autopay_enabled BOOLEAN NOT NULL DEFAULT FALSE",
     ),
+    # ── Policy issuance formalities ──────────────────────────────────────────
+    (
+        "v36a — add maturity_date to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS maturity_date DATE",
+    ),
+    (
+        "v36b — add issued_by to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS issued_by VARCHAR(255)",
+    ),
+    (
+        "v36c — add issued_at to policies",
+        "ALTER TABLE policies ADD COLUMN IF NOT EXISTS issued_at TIMESTAMP",
+    ),
     # NOTE: The renewal scheduler (renewal_scheduler.py) MUST run in a single-worker
     # deployment to avoid duplicate RenewalTransactions. Enforce via:
     #   CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1"]

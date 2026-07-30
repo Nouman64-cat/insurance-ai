@@ -208,7 +208,7 @@ export function Chatbot() {
       <button
         onClick={() => setIsOpen(p => !p)}
         aria-label="Open AI Assistant"
-        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-[0_8px_30px_rgba(99,102,241,0.45)] hover:shadow-[0_8px_36px_rgba(99,102,241,0.65)] hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-indigo-300/50"
+        className="fixed bottom-6 right-6 z-50 w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-[0_8px_30px_rgba(99,102,241,0.45)] hover:shadow-[0_8px_36px_rgba(99,102,241,0.65)] hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-blue-300/50"
       >
         {isOpen ? <IconClose /> : (
           <div className="relative">
@@ -228,18 +228,18 @@ export function Chatbot() {
           {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
 
           {/* ── Header ──────────────────────────────────────────────────── */}
-          <div className="bg-gradient-to-r from-indigo-600 via-purple-600 to-violet-600 px-5 py-4 flex items-center justify-between flex-shrink-0">
+          <div className="bg-gradient-to-r from-blue-600 via-blue-600 to-blue-600 px-5 py-4 flex items-center justify-between flex-shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-white/15 border border-white/30 flex items-center justify-center flex-shrink-0 text-white">
                 <IconBot className="w-5 h-5" />
               </div>
               <div>
                 <p className="text-white font-semibold text-sm leading-none">Insurance AI Agent</p>
-                <p className="text-indigo-200 text-[10px] uppercase tracking-widest mt-0.5 font-medium">Insurance Expert</p>
+                <p className="text-blue-200 text-[10px] uppercase tracking-widest mt-0.5 font-medium">Insurance Expert</p>
               </div>
             </div>
             <div className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+              <span className="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
               <button onClick={handleNewChat} title="New Chat" className="ml-3 text-white/70 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors">
                 <IconRefresh />
               </button>
@@ -254,11 +254,11 @@ export function Chatbot() {
             {messages.map((m) => (
               <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
                 {m.role === "assistant" && (
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center mr-2 mt-1 flex-shrink-0 text-white">
+                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center mr-2 mt-1 flex-shrink-0 text-white">
                     <IconBot className="w-4 h-4" />
                   </div>
                 )}
-                <div className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed rounded-2xl flex flex-col gap-2 ${m.role === "user" ? "bg-gradient-to-br from-indigo-500 to-violet-600 text-white rounded-br-sm" : "bg-white text-slate-800 rounded-bl-sm shadow-sm ring-1 ring-slate-100"}`}>
+                <div className={`max-w-[78%] px-4 py-3 text-sm leading-relaxed rounded-2xl flex flex-col gap-2 ${m.role === "user" ? "bg-gradient-to-br from-blue-500 to-blue-600 text-white rounded-br-sm" : "bg-white text-slate-800 rounded-bl-sm shadow-sm ring-1 ring-slate-100"}`}>
                   {m.role === "user"
                     ? <p className="whitespace-pre-wrap">{m.text}</p>
                     : <div className="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0"><ReactMarkdown>{m.text}</ReactMarkdown></div>
@@ -269,7 +269,7 @@ export function Chatbot() {
                         <button
                           key={`${action.actionType}-${action.label}-${idx}`}
                           onClick={() => handleQuickAction(action)}
-                          className="px-3 py-1 text-[11px] font-semibold rounded-full border bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 transition-all active:scale-95"
+                          className="px-3 py-1 text-[11px] font-semibold rounded-full border bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 transition-all active:scale-95"
                         >
                           {action.label}
                         </button>
@@ -292,13 +292,13 @@ export function Chatbot() {
                 type="button"
                 onClick={() => setShowVoice(true)}
                 title="Start live voice conversation"
-                className="flex-shrink-0 w-10 h-10 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center transition-colors"
+                className="flex-shrink-0 w-10 h-10 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-600 flex items-center justify-center transition-colors"
               >
                 <IconHeadphones />
               </button>
 
               {/* Text input */}
-              <div className={`flex-1 flex items-end gap-2 rounded-xl bg-slate-100 px-3 py-2 ring-1 ring-transparent focus-within:ring-indigo-400 focus-within:bg-white transition-all duration-200 ${isRecording ? "opacity-50 pointer-events-none" : ""}`}>
+              <div className={`flex-1 flex items-end gap-2 rounded-xl bg-slate-100 px-3 py-2 ring-1 ring-transparent focus-within:ring-blue-400 focus-within:bg-white transition-all duration-200 ${isRecording ? "opacity-50 pointer-events-none" : ""}`}>
                 <textarea
                   ref={textareaRef}
                   value={isRecording ? "🎙 Listening…" : input}
@@ -324,7 +324,7 @@ export function Chatbot() {
               <button
                 type="submit"
                 disabled={!input.trim() || isLoading}
-                className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white flex items-center justify-center disabled:opacity-40 hover:opacity-90 active:scale-95 transition-all duration-150 shadow-md shadow-indigo-500/20"
+                className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white flex items-center justify-center disabled:opacity-40 hover:opacity-90 active:scale-95 transition-all duration-150 shadow-md shadow-blue-500/20"
               >
                 {isLoading ? (
                   <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
@@ -338,13 +338,13 @@ export function Chatbot() {
             {/* Legend */}
             <div className="flex justify-center gap-4 mt-2 pb-0.5">
               <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                <span className="text-indigo-400">⌨</span> Text → Gemini
+                <span className="text-blue-400">⌨</span> Text → Gemini
               </span>
               <span className="text-[10px] text-slate-400 flex items-center gap-1">
                 <span className="text-rose-400">🎙</span> Voice → Text
               </span>
               <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                <span className="text-violet-400">🎧</span> Live Agent
+                <span className="text-blue-400">🎧</span> Live Agent
               </span>
             </div>
           </div>

@@ -14,10 +14,10 @@ import {
 
 const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   blue: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
-  violet: { badge: "bg-violet-50 text-violet-700 border-violet-200", accent: "border-t-violet-500" },
+  violet: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
   amber: { badge: "bg-amber-50 text-amber-700 border-amber-200", accent: "border-t-amber-500" },
-  emerald: { badge: "bg-emerald-50 text-emerald-700 border-emerald-200", accent: "border-t-emerald-500" },
-  indigo: { badge: "bg-indigo-50 text-indigo-700 border-indigo-200", accent: "border-t-indigo-500" },
+  emerald: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
+  indigo: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
   rose: { badge: "bg-rose-50 text-rose-700 border-rose-200", accent: "border-t-rose-500" },
 };
 
@@ -35,13 +35,13 @@ const INSURANCE_TYPES = [
 const PRODUCT_CATEGORIES = ["Conventional", "Takaful", "Bancassurance"] as const;
 const PRODUCT_CATEGORY_BADGE: Record<string, string> = {
   Conventional: "bg-slate-100 text-slate-700 border-slate-200",
-  Takaful: "bg-teal-50 text-teal-700 border-teal-200",
-  Bancassurance: "bg-sky-50 text-sky-700 border-sky-200",
+  Takaful: "bg-blue-50 text-blue-700 border-blue-200",
+  Bancassurance: "bg-blue-50 text-blue-700 border-blue-200",
 };
 const STATUSES = ["Draft", "Active", "Archived"] as const;
 
 const STATUS_BADGE: Record<string, string> = {
-  Active: "bg-green-50 text-green-700 border-green-200",
+  Active: "bg-blue-50 text-blue-700 border-blue-200",
   Draft: "bg-slate-100 text-slate-600 border-slate-200",
   Archived: "bg-red-50 text-red-600 border-red-200",
 };

@@ -114,10 +114,10 @@ const STATUS_BADGE_STYLE: Record<string, string> = {
   Proposed: "bg-blue-50 text-blue-700 border-blue-200",
   UnderReview: "bg-amber-50 text-amber-700 border-amber-200",
   InformationRequested: "bg-amber-50 text-amber-600 border-amber-200",
-  Approved: "bg-emerald-50 text-emerald-700 border-emerald-200",
-  AcceptedWithLoadings: "bg-emerald-50 text-emerald-700 border-emerald-200",
+  Approved: "bg-blue-50 text-blue-700 border-blue-200",
+  AcceptedWithLoadings: "bg-blue-50 text-blue-700 border-blue-200",
   Declined: "bg-rose-50 text-rose-700 border-rose-200",
-  Issued: "bg-violet-50 text-violet-700 border-violet-200",
+  Issued: "bg-blue-50 text-blue-700 border-blue-200",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -125,10 +125,10 @@ const STATUS_DOT: Record<string, string> = {
   Proposed: "bg-blue-500",
   UnderReview: "bg-amber-500",
   InformationRequested: "bg-amber-300",
-  Approved: "bg-emerald-500",
-  AcceptedWithLoadings: "bg-emerald-500",
+  Approved: "bg-blue-500",
+  AcceptedWithLoadings: "bg-blue-500",
   Declined: "bg-rose-500",
-  Issued: "bg-violet-500",
+  Issued: "bg-blue-500",
 };
 
 function StatusBadge({ status, className = "" }: { status: string; className?: string }) {
@@ -145,7 +145,7 @@ function StatusBadge({ status, className = "" }: { status: string; className?: s
 }
 
 const SLA_STYLE: Record<string, { dot: string; text: string; label: string }> = {
-  within_sla: { dot: "bg-emerald-500", text: "text-emerald-600", label: "On track" },
+  within_sla: { dot: "bg-blue-500", text: "text-blue-600", label: "On track" },
   approaching_breach: { dot: "bg-amber-500", text: "text-amber-600", label: "Due soon" },
   breached: { dot: "bg-rose-500", text: "text-rose-600", label: "SLA breached" },
 };
@@ -862,7 +862,7 @@ export default function QuotePage() {
           </div>
         </div>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900 text-white text-[11px] font-bold tracking-wide font-mono shrink-0">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
           GET /quotes
         </span>
       </div>
@@ -1085,7 +1085,7 @@ export default function QuotePage() {
 
             {familyGroups.length > 0 && (
               <div className="space-y-3">
-                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-violet-600 px-1">
+                <p className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-blue-600 px-1">
                   <FamilyIcon className="w-3.5 h-3.5" />
                   Family Insurance
                   <span className="text-slate-400 font-medium normal-case tracking-normal">
@@ -1173,9 +1173,9 @@ export default function QuotePage() {
                           </div>
                         )}
                         {bulkProceedSuccess && (
-                          <div className="mx-4 mt-4 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
-                            <p className="text-xs text-emerald-700 font-semibold">Success</p>
-                            <p className="text-xs text-emerald-600">{bulkProceedSuccess}</p>
+                          <div className="mx-4 mt-4 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <p className="text-xs text-blue-700 font-semibold">Success</p>
+                            <p className="text-xs text-blue-600">{bulkProceedSuccess}</p>
                           </div>
                         )}
                         {viewMode === 'grid' ? (
@@ -1540,7 +1540,7 @@ function ProposalsTable({
               </td>
               <td className="px-2 py-3.5">
                 <p className="text-slate-700 font-medium">{row.plan_label}</p>
-                <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
+                <span className="inline-flex mt-0.5 px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
                   {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
                 </span>
               </td>
@@ -1618,7 +1618,7 @@ function ProposalsGrid({
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Plan</p>
               <p className="text-xs font-semibold text-slate-700 truncate">{row.plan_label}</p>
             </div>
-            <span className="flex-shrink-0 inline-flex px-1.5 py-0.5 rounded-[4px] text-[9px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">
+            <span className="flex-shrink-0 inline-flex px-1.5 py-0.5 rounded-[4px] text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
               {INSURANCE_TYPE_LABELS[row.insurance_type] ?? row.insurance_type}
             </span>
           </div>
@@ -1632,7 +1632,7 @@ function ProposalsGrid({
             </div>
             <div className="text-right">
               <p className="text-[10px] font-medium text-slate-500">Premium</p>
-              <p className="text-sm font-bold text-emerald-600">{formatPKR(row.total_premium)}</p>
+              <p className="text-sm font-bold text-blue-600">{formatPKR(row.total_premium)}</p>
             </div>
           </div>
         </div>
@@ -1789,7 +1789,7 @@ function QuoteDetailModal({
                 </p>
               )}
               {detail.family_group_name && (
-                <p className="flex items-center gap-1.5 text-[11px] text-violet-600 font-semibold">
+                <p className="flex items-center gap-1.5 text-[11px] text-blue-600 font-semibold">
                   <FamilyIcon className="w-3 h-3" />
                   Family — {detail.family_group_name}
                   {detail.family_policy_label ? ` · ${detail.family_policy_label}` : ""}

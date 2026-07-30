@@ -31,11 +31,11 @@ const PREMIUM_TREND = [120, 131, 118, 142, 138, 155, 143, 161, 158, 172, 168, 18
 const PORTFOLIO_METRICS = [
   { label: "Loss Ratio",         pct: 67.3, color: "bg-amber-500",   badge: "67.3%" },
   { label: "Combined Ratio",     pct: 94.2, color: "bg-blue-500",    badge: "94.2%" },
-  { label: "Reserve Adequacy",   pct: 100,  color: "bg-emerald-500", badge: "112%"  },
+  { label: "Reserve Adequacy",   pct: 100,  color: "bg-blue-500", badge: "112%"  },
 ] as const;
 
 const RISK_BANDS = [
-  { label: "Low Risk",    pct: 34, color: "bg-emerald-400" },
+  { label: "Low Risk",    pct: 34, color: "bg-blue-400" },
   { label: "Medium Risk", pct: 43, color: "bg-amber-400"   },
   { label: "High Risk",   pct: 23, color: "bg-red-500"     },
 ] as const;
@@ -45,20 +45,20 @@ export function FinancialCard() {
     <PillarCard
       icon={<TrendingUpIcon />}
       title="Financial Intelligence"
-      barClass="bg-emerald-700"
-      iconBg="bg-emerald-50"
-      iconColor="text-emerald-700"
+      barClass="bg-blue-700"
+      iconBg="bg-blue-50"
+      iconColor="text-blue-700"
     >
       <div className="flex flex-col sm:flex-row gap-5">
 
         {/* Left: Premium forecast + sparkline */}
         <div className="flex-1 space-y-4">
-          <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-emerald-500">Premium Forecast — This Month</p>
-            <p className="text-2xl font-extrabold text-emerald-800 mt-0.5">PKR 187M</p>
-            <p className="text-[10px] text-emerald-500 mt-0.5">↑ 12.3% vs last month</p>
+          <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-500">Premium Forecast — This Month</p>
+            <p className="text-2xl font-extrabold text-blue-800 mt-0.5">PKR 187M</p>
+            <p className="text-[10px] text-blue-500 mt-0.5">↑ 12.3% vs last month</p>
             <div className="mt-3">
-              <Sparkline points={PREMIUM_TREND} color="#059669" />
+              <Sparkline points={PREMIUM_TREND} color="#2563eb" />
               <p className="text-[9px] text-slate-400 mt-1 text-right">12-month trend (PKR M)</p>
             </div>
           </div>

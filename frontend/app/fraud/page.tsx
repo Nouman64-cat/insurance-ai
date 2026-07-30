@@ -22,19 +22,19 @@ const TYPE_STYLE: Record<string, string> = {
   "Duplicate Claim":    "bg-orange-50 text-orange-700",
   "Nominee Mismatch":   "bg-amber-50 text-amber-700",
   "Forged Death Cert.": "bg-red-50 text-red-700",
-  "Early Claim":        "bg-violet-50 text-violet-700",
+  "Early Claim":        "bg-blue-50 text-blue-700",
   "Income Mismatch":    "bg-blue-50 text-blue-700",
 };
 
 const STATUS_STYLE: Record<string, string> = {
   Rejected:              "bg-red-50 text-red-700 border border-red-200",
   "Under Investigation": "bg-amber-50 text-amber-700 border border-amber-200",
-  Flagged:               "bg-violet-50 text-violet-700 border border-violet-200",
+  Flagged:               "bg-blue-50 text-blue-700 border border-blue-200",
   "Review Required":     "bg-blue-50 text-blue-700 border border-blue-200",
 };
 
 const INV_STYLE: Record<string, string> = {
-  Complete:    "text-emerald-600 font-semibold",
+  Complete:    "text-blue-600 font-semibold",
   "In Progress":"text-amber-600 font-semibold",
   Pending:     "text-slate-400",
 };
@@ -58,7 +58,7 @@ export default function FraudPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Early Claim Detection", desc: "Claims within 30 days of issuance", count: "2 flagged", color: "border-violet-200 bg-violet-50" },
+          { label: "Early Claim Detection", desc: "Claims within 30 days of issuance", count: "2 flagged", color: "border-blue-200 bg-blue-50" },
           { label: "Document Forgery", desc: "Tampered PDFs and altered values", count: "3 detected", color: "border-red-200 bg-red-50" },
           { label: "Duplicate Claims", desc: "Cross-matched submission history", count: "4 rejected", color: "border-orange-200 bg-orange-50" },
           { label: "Suspicious Patterns", desc: "Behavioral & network anomalies", count: "8 monitored", color: "border-amber-200 bg-amber-50" },
