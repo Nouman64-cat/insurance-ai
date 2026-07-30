@@ -18,7 +18,7 @@ from family_underwriting import (
     validate_family_members,
     validate_life_bundle_members as validate_life_bundle_member_fields,
 )
-from risk_client import evaluate_group_member
+
 from routers.cases import generate_case_number
 from schemas import (
     FamilyConfirmResponse,
@@ -75,7 +75,7 @@ router = APIRouter(prefix="/tenants", tags=["Families"])
 # rather than failing enrollment outright, price at a conservative
 # placeholder rate. Same reasoning as organizations.py's _FALLBACK_GROUP_RATE.
 _FALLBACK_FLOATER_RATE = 4.0   # PKR per 1,000 sum assured per year
-_RISK_ENGINE_CONCURRENCY = 5   # families are <=8 members — generous headroom
+
 
 
 def _verify_tenant(tenant: Tenant | None, tenant_id: UUID) -> Tenant:
@@ -630,9 +630,7 @@ async def confirm_floater_members(
 
     household_income = family_group.household_declared_income or 0.0
 
-    # ── Pass 1: parse rows, resolve risk-engine calls ─────────────────────────
-    # No DB session/transaction held open across this — network I/O to
-    # risk-engine happens entirely before Pass 2 starts writing.
+    # ── Pass 1: parse rows ──────────────────────────────────────────────────
     parsed_rows: List[Dict[str, Any]] = []
     for row in body.members:
         try:
@@ -646,40 +644,6 @@ async def confirm_floater_members(
         parsed_rows.append({**row, "_dob": dob, "_declared_income": declared_income})
 
     eldest = eldest_age(body.members)
-    semaphore = asyncio.Semaphore(_RISK_ENGINE_CONCURRENCY)
-
-    async def _evaluate(row: Dict[str, Any]) -> Optional[dict]:
-        customer_payload = {
-            "cnic": normalize_cnic(row["cnic"]) or row["cnic"],
-            "name": row["name"],
-            "dob": row["_dob"].isoformat(),
-            "gender": row["gender"],
-            "occupation": row["occupation"],
-            # Household income, not this member's own — see FamilyGroup.
-            # household_declared_income's docstring and the design note in
-            # family_underwriting.py. NOTE: this does mean a child/non-earning
-            # member's payload can look like "an infant declared 3,000,000
-            # income" to risk-engine's fraud-scoring node, which may flag it
-            # as suspicious on its own terms — a known, accepted quirk of
-            # reusing the per-person evaluate_group_member() payload shape
-            # for a shared-pool product, not a bug in the FAMILY_FLOATER band
-            # itself (verified separately against services/risk-engine).
-            "declared_income": household_income,
-            "is_smoker": bool(row.get("is_smoker", False)),
-            "height_cm": float(row.get("height_cm", 170)),
-            "weight_kg": float(row.get("weight_kg", 70)),
-        }
-        policy_payload = {
-            "product_name": "Family Health Floater",
-            "insurance_type": InsuranceTypeEnum.FAMILY_FLOATER.value,
-            "coverage_amount": family_policy.total_sum_insured,   # the whole pool, not a per-member share
-            "term_years": 1,   # annually-renewable, independent of family_policy.term_years
-        }
-        async with semaphore:
-            return await evaluate_group_member(customer_payload, policy_payload, str(tenant_id))
-
-    results = await asyncio.gather(*[_evaluate(row) for row in parsed_rows])
-    risk_results: Dict[str, Optional[dict]] = {row["cnic"]: res for row, res in zip(parsed_rows, results)}
 
     # ── Pass 2: DB-only — build rows and commit once ─────────────────────────
     floater_plan = (await session.exec(
@@ -727,12 +691,10 @@ async def confirm_floater_members(
     await session.flush()
 
     member_outcomes: Dict[str, FamilyMemberOutcome] = {}
-    successful_decisions: List[str] = []
 
     for row in parsed_rows:
         cnic = row["cnic"]
         customer = created_customers[cnic]
-        ai_result = risk_results.get(cnic)
 
         case = Case(
             tenant_id=tenant_id,
@@ -747,53 +709,13 @@ async def confirm_floater_members(
         session.add(case)
         await session.flush()
 
-        risk_assessment_id: Optional[UUID] = None
-        suggested_loading: Optional[float] = None
-
-        if ai_result is not None:
-            assessment = RiskAssessment(
-                tenant_id=tenant_id,
-                customer_id=customer.id,
-                policy_id=shared_policy.id,
-                case_id=case.caseld,
-                medical_score=ai_result["medical_score"],
-                financial_score=ai_result["financial_score"],
-                fraud_probability=ai_result["fraud_probability"],
-                composite_risk_score=ai_result.get("composite_risk_score"),
-                ai_decision=AIDecision(ai_result["ai_decision"]),
-                suggested_loading=ai_result.get("suggested_loading"),
-                reasons=ai_result.get("reasons"),
-            )
-            session.add(assessment)
-            await session.flush()
-            risk_assessment_id = assessment.id
-            suggested_loading = assessment.suggested_loading
-            successful_decisions.append(ai_result["ai_decision"])
-
-            new_case_status = DECISION_CASE_STATUS.get(ai_result["ai_decision"])
-            if new_case_status is not None and new_case_status != case.caseStatus:
-                if audit_user is not None:
-                    session.add(CaseHistory(
-                        caseld=case.caseld,
-                        actionType=ActionTypeEnum.DECISION,
-                        fromStatus=case.caseStatus.value,
-                        toStatus=new_case_status.value,
-                        changedBy=audit_user.id,
-                        systemGeneratedFlag=True,
-                    ))
-                case.caseStatus = new_case_status
-                session.add(case)
-        # else: risk-engine unreachable/errored for this member — their Case
-        # stays New; doesn't contribute a decision to the aggregation below.
-        # Logged inside risk_client.py.
-
         member_outcomes[cnic] = FamilyMemberOutcome(
             customer_id=customer.id,
             policy_id=shared_policy.id,
             relationship=_relationship_enum(row["relationship"]),
             status=PolicyStatusEnum.UNDER_REVIEW,   # placeholder — overwritten below once aggregated
-            suggested_loading=suggested_loading,
-            risk_assessment_id=risk_assessment_id,
+            suggested_loading=None,
+            risk_assessment_id=None,
         )
 
     # Each member's AI decision is surfaced on its own Case above, but the
@@ -913,7 +835,7 @@ async def confirm_life_bundle_members(
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
-    # ── Pass 1: parse rows + resolve each member's own InsurancePlan ─────────
+    # ── Pass 1: parse rows ──────────────────────────────────────────────────
     parsed_rows: List[Dict[str, Any]] = []
     for row in body.members:
         try:
@@ -942,35 +864,6 @@ async def confirm_life_bundle_members(
             **row, "_dob": dob, "_declared_income": declared_income,
             "_coverage_amount": coverage_amount, "_plan": plan,
         })
-
-    # ── Pass 2: risk-engine calls — every member always goes through it,
-    # no FCL/guaranteed-issue branch exists for family policies ──────────────
-    semaphore = asyncio.Semaphore(_RISK_ENGINE_CONCURRENCY)
-
-    async def _evaluate(row: Dict[str, Any]) -> Optional[dict]:
-        plan: InsurancePlan = row["_plan"]
-        customer_payload = {
-            "cnic": normalize_cnic(row["cnic"]) or row["cnic"],
-            "name": row["name"],
-            "dob": row["_dob"].isoformat(),
-            "gender": row["gender"],
-            "occupation": row["occupation"],
-            "declared_income": row["_declared_income"],   # this member's own income, not household
-            "is_smoker": bool(row.get("is_smoker", False)),
-            "height_cm": float(row.get("height_cm", 170)),
-            "weight_kg": float(row.get("weight_kg", 70)),
-        }
-        policy_payload = {
-            "product_name": plan.label,
-            "insurance_type": plan.insurance_type.value,
-            "coverage_amount": row["_coverage_amount"],
-            "term_years": family_policy.term_years,
-        }
-        async with semaphore:
-            return await evaluate_group_member(customer_payload, policy_payload, str(tenant_id))
-
-    results = await asyncio.gather(*[_evaluate(row) for row in parsed_rows])
-    risk_results: Dict[str, Optional[dict]] = {row["cnic"]: res for row, res in zip(parsed_rows, results)}
 
     # ── Pass 3: DB-only — one Policy per member, commit once ─────────────────
     audit_user = (await session.exec(select(User).where(User.tenant_id == tenant_id))).first()
@@ -1008,10 +901,6 @@ async def confirm_life_bundle_members(
         session.add(policy)
         await session.flush()
 
-        risk_assessment_id: Optional[UUID] = None
-        suggested_loading: Optional[float] = None
-        ai_result = risk_results.get(row["cnic"])
-
         case = Case(
             tenant_id=tenant_id,
             customer_id=customer.id,
@@ -1024,43 +913,6 @@ async def confirm_life_bundle_members(
         )
         session.add(case)
         await session.flush()
-
-        if ai_result is not None:
-            assessment = RiskAssessment(
-                tenant_id=tenant_id,
-                customer_id=customer.id,
-                policy_id=policy.id,
-                case_id=case.caseld,
-                medical_score=ai_result["medical_score"],
-                financial_score=ai_result["financial_score"],
-                fraud_probability=ai_result["fraud_probability"],
-                composite_risk_score=ai_result.get("composite_risk_score"),
-                ai_decision=AIDecision(ai_result["ai_decision"]),
-                suggested_loading=ai_result.get("suggested_loading"),
-                reasons=ai_result.get("reasons"),
-            )
-            session.add(assessment)
-            await session.flush()
-            risk_assessment_id = assessment.id
-            suggested_loading = assessment.suggested_loading
-
-            # AI decision is recorded on the Case (below); the proposal Policy
-            # stays a Quoted DRAFT and is advanced via the Proposal status control.
-            new_case_status = DECISION_CASE_STATUS.get(ai_result["ai_decision"])
-            if new_case_status is not None and new_case_status != case.caseStatus:
-                if audit_user is not None:
-                    session.add(CaseHistory(
-                        caseld=case.caseld,
-                        actionType=ActionTypeEnum.DECISION,
-                        fromStatus=case.caseStatus.value,
-                        toStatus=new_case_status.value,
-                        changedBy=audit_user.id,
-                        systemGeneratedFlag=True,
-                    ))
-                case.caseStatus = new_case_status
-                session.add(case)
-        # else: risk-engine unreachable/errored — Policy stays UnderReview,
-        # Case stays New; an underwriter can still work it manually.
 
         # Discount baked into the effective rate (not loading_applied, which
         # has a DB ge=0 constraint and can't hold a negative discount).
@@ -1090,8 +942,8 @@ async def confirm_life_bundle_members(
             relationship=_relationship_enum(row["relationship"]),
             status=policy.status,
             premium_total=breakdown.total_premium,
-            suggested_loading=suggested_loading,
-            risk_assessment_id=risk_assessment_id,
+            suggested_loading=None,
+            risk_assessment_id=None,
         ))
 
     # Life-bundle enrollment is a PROPOSAL too — the FamilyPolicy is "Proposed"

@@ -77,10 +77,22 @@ export default function ApplicationsPage() {
   }, [cases, segment]);
 
   const segmentCounts = useMemo(() => {
-    const counts: Partial<Record<SegmentFilter, number>> = { all: cases.length };
-    for (const s of ["individual", "family", "organization"] as const) {
-      counts[s] = cases.filter((c) => (c.customer_segment ?? "individual") === s).length;
-    }
+    const counts: Partial<Record<SegmentFilter, number>> = {};
+    
+    // Individual
+    const ind = cases.filter(c => (c.customer_segment ?? "individual") === "individual");
+    counts["individual"] = new Set(ind.map(c => c.customer_id)).size;
+
+    // Organization
+    const org = cases.filter(c => c.customer_segment === "organization");
+    counts["organization"] = new Set(org.map(c => c.organization_id).filter(Boolean)).size;
+
+    // Family
+    const fam = cases.filter(c => c.customer_segment === "family");
+    counts["family"] = new Set(fam.map(c => c.family_group_id).filter(Boolean)).size;
+
+    counts["all"] = (counts["individual"] || 0) + (counts["organization"] || 0) + (counts["family"] || 0);
+
     return counts;
   }, [cases]);
 
@@ -99,16 +111,22 @@ export default function ApplicationsPage() {
 
     const grouped = new Map<string, CustomerFolder>();
     for (const c of filteredList) {
-      if (!grouped.has(c.customer_id)) {
-        grouped.set(c.customer_id, {
-          customer_id: c.customer_id,
-          customer_name: c.customer_name ?? "Unknown Customer",
-          customer_cnic: c.customer_cnic ?? "—",
+      const groupId = c.customer_segment === "organization" && c.organization_id ? c.organization_id
+        : c.customer_segment === "family" && c.family_group_id ? c.family_group_id
+        : c.customer_id;
+
+      if (!grouped.has(groupId)) {
+        grouped.set(groupId, {
+          customer_id: groupId,
+          customer_name: c.customer_segment === "organization" ? "Corporate Account" 
+                         : c.customer_segment === "family" ? `${c.customer_name} & Family` 
+                         : c.customer_name ?? "Unknown Customer",
+          customer_cnic: c.customer_segment === "individual" ? (c.customer_cnic ?? "—") : "Multiple",
           customer_segment: c.customer_segment ?? "individual",
           cases: [],
         });
       }
-      grouped.get(c.customer_id)!.cases.push(c);
+      grouped.get(groupId)!.cases.push(c);
     }
     return Array.from(grouped.values());
   }, [segmentCases, search]);

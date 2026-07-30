@@ -941,7 +941,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
       await fetchDetail();
       if (newStatus === "Approved") {
         setSuccessMessage("Case successfully approved and forwarded to Issuance Queue.");
-        setTimeout(() => router.push("/policy-issuance"), 1200);
+        if (!isGroup) {
+          setTimeout(() => router.push("/policy-issuance"), 1200);
+        }
       }
     } catch (err: any) {
       setError(err.message ?? "Failed to update case status.");
@@ -1284,6 +1286,28 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <p className="text-xs text-blue-600 mt-0.5 leading-snug">
                     <span className="font-bold">{customer.name}</span> ({detail.family_relationship || "Dependent"}) belongs to <span className="font-bold">{detail.principal_participant_name}</span>'s family policy.
                   </p>
+                </div>
+              )}
+              {detail?.family_members && detail.family_members.length > 1 && (
+                <div className="mb-4 bg-indigo-50 border border-indigo-200 rounded-lg p-3 space-y-2">
+                  <p className="text-xs font-semibold text-indigo-700">
+                    Family: <span className="font-bold">{detail.principal_participant_name || customer.name}'s Family</span>
+                  </p>
+                  <label className="block text-[11px] font-semibold text-indigo-500">Switch to another family member</label>
+                  <select
+                    value={detail.case.caseld ?? ""}
+                    onChange={(e) => {
+                      const target = e.target.value;
+                      if (target && target !== detail.case.caseld) router.push(`/case/${target}`);
+                    }}
+                    className="w-full bg-white border border-indigo-200 rounded-lg px-2.5 py-1.5 text-xs"
+                  >
+                    {detail.family_members.map((m: any) => (
+                      <option key={m.case_id} value={m.case_id}>
+                        {m.name} — {m.case_number} ({m.case_status})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
               {detail?.organization_name && (
