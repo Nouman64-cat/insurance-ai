@@ -69,7 +69,7 @@ function ChevronIcon({ collapsed }: { collapsed: boolean }) {
 
 
 const NAV_ITEMS = [
-{
+  {
 
     group: "Main",
 
@@ -96,7 +96,7 @@ const NAV_ITEMS = [
         badge: null,
 
       },
-{
+      {
         href: "/admin/leads",
         label: "Leads",
         icon: (
@@ -110,7 +110,7 @@ const NAV_ITEMS = [
         badge: null,
         adminOnly: true,
       },
-{
+      {
 
         href: "/proposal",
 
@@ -131,7 +131,7 @@ const NAV_ITEMS = [
         badge: null,
 
       },
-{
+      {
 
         href: "/underwriting",
 
@@ -150,7 +150,7 @@ const NAV_ITEMS = [
         badge: null,
 
       },
-{
+      {
 
         href: "/admin/acquisition-sources",
 
@@ -328,7 +328,7 @@ const NAV_ITEMS = [
 
       // },
 
-      
+
 
       {
 
@@ -398,13 +398,13 @@ const NAV_ITEMS = [
 
   },
 
-{
+  {
 
     group: "Underwriting",
 
     links: [
 
-      
+
 
       {
 
@@ -438,7 +438,7 @@ const NAV_ITEMS = [
 
   },
 
-{
+  {
 
     group: "Documents",
 
@@ -492,7 +492,7 @@ const NAV_ITEMS = [
 
   },
 
-{
+  {
 
     // group: "Claims",
 
@@ -552,7 +552,7 @@ const NAV_ITEMS = [
 
   },
 
-{
+  {
 
     // group: "Agents & Finance",
 
@@ -614,13 +614,13 @@ const NAV_ITEMS = [
 
   },
 
-{
+  {
 
     group: "Administration",
 
     links: [
 
-      
+
 
       {
 
@@ -725,7 +725,7 @@ const NAV_ITEMS = [
 
   },
 
-{
+  {
 
     group: "User",
 
@@ -759,7 +759,7 @@ const NAV_ITEMS = [
 
   },
 
-{
+  {
 
     group: "Profile",
 
@@ -811,8 +811,8 @@ export function Sidebar() {
   // Drag and Drop state
   const initialOrder = NAV_ITEMS.map((g: any) => ({ group: g.group, links: g.links.map((l: any) => l.href) }));
   const [navOrder, setNavOrder] = useState(initialOrder);
-  const [draggedItem, setDraggedItem] = useState<{groupIndex: number, linkIndex: number} | null>(null);
-  const [draggedOverItem, setDraggedOverItem] = useState<{groupIndex: number, linkIndex: number} | null>(null);
+  const [draggedItem, setDraggedItem] = useState<{ groupIndex: number, linkIndex: number } | null>(null);
+  const [draggedOverItem, setDraggedOverItem] = useState<{ groupIndex: number, linkIndex: number } | null>(null);
 
   useEffect(() => {
     setActiveHref(pathname);
@@ -848,7 +848,7 @@ export function Sidebar() {
           parsed[0].links.push(...missingLinks.map((l: any) => l.href));
         }
         setNavOrder(parsed);
-      } catch (e) {}
+      } catch (e) { }
     }
   }, []);
 
@@ -935,9 +935,14 @@ export function Sidebar() {
             <ShieldIcon />
           </span>
           {!collapsed && (
-            <span className="text-slate-900 font-bold text-[17px] tracking-tight whitespace-nowrap">
-              insurance<span className="text-blue-400">-ai</span>
-            </span>
+            <div className="flex flex-col justify-center">
+              <span className="text-slate-900 font-bold text-[16px] tracking-tight whitespace-nowrap leading-tight">
+                Life Insurance
+              </span>
+              <span className="text-blue-500 font-medium text-[11px] whitespace-nowrap leading-tight">
+                AI powered solutions
+              </span>
+            </div>
           )}
         </Link>
         <button
@@ -997,8 +1002,8 @@ export function Sidebar() {
                         {isDragEnabled && !collapsed && (
                           <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 mr-1 flex-shrink-0 transition-colors">
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                              <circle cx="9" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="19" r="1"/>
-                              <circle cx="15" cy="5" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="19" r="1"/>
+                              <circle cx="9" cy="5" r="1" /><circle cx="9" cy="12" r="1" /><circle cx="9" cy="19" r="1" />
+                              <circle cx="15" cy="5" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="19" r="1" />
                             </svg>
                           </div>
                         )}
@@ -1055,7 +1060,7 @@ export function Sidebar() {
             )}
           </Link>
           {!collapsed && (
-            <button 
+            <button
               type="button"
               title="Logout"
               onClick={(e) => {

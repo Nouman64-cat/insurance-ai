@@ -380,9 +380,9 @@ function ReasonTable({ sections }: { sections: ReasonSection[] }) {
               <td className="py-3 px-3">
                 <div className="flex items-center gap-2">
                   <div className={`w-3 h-3 rounded-full ${row.risk_rating.toLowerCase().includes("high") ? "bg-red-500" :
-                      row.risk_rating.toLowerCase().includes("moderate") ? "bg-amber-500" :
-                        row.risk_rating.toLowerCase().includes("info") ? "bg-blue-500" :
-                          "bg-emerald-500"
+                    row.risk_rating.toLowerCase().includes("moderate") ? "bg-amber-500" :
+                      row.risk_rating.toLowerCase().includes("info") ? "bg-blue-500" :
+                        "bg-emerald-500"
                     }`} />
                   <span className="text-sm text-slate-700">{row.risk_rating}</span>
                 </div>
@@ -403,7 +403,7 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
   tenantId: string; caseId: string; docTypes: string[]; onClose: () => void; onUploaded: () => void;
 }) {
   const [docType, setDocType] = useState(docTypes[0] ?? "Other");
-  const [fileItems, setFileItems] = useState<{file: File, type: string}[]>([]);
+  const [fileItems, setFileItems] = useState<{ file: File, type: string }[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
@@ -411,7 +411,7 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
 
   const addFiles = (newFiles: FileList | File[]) => {
     setErr("");
-    const valid: {file: File, type: string}[] = [];
+    const valid: { file: File, type: string }[] = [];
     for (let i = 0; i < newFiles.length; i++) {
       const f = newFiles[i];
       const ext = f.name.split(".").pop()?.toLowerCase() ?? "";
@@ -483,8 +483,8 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
               {fileItems.map((item, i) => (
                 <li key={i} className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                   <span className="truncate text-slate-700 flex-1" title={item.file.name}>{item.file.name}</span>
-                  <select 
-                    value={item.type} 
+                  <select
+                    value={item.type}
                     onChange={e => {
                       const newItems = [...fileItems];
                       newItems[i].type = e.target.value;
@@ -1183,7 +1183,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               title={!hasAny ? "Run AI Underwriting before approving" : undefined}
               className="px-4 py-2 text-sm font-semibold text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm"
             >
-              {overriding === "Approved" ? <Spinner /> : "Override: Approve"}
+              {overriding === "Approved" ? <Spinner /> : "Override: Proceed"}
             </button>
           </div>
         )}
@@ -1711,7 +1711,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <div className="h-3.5 w-full bg-slate-100 rounded-full overflow-hidden shadow-inner">
                     <div
                       className={`h-full rounded-full transition-all duration-1000 ${compositeScore <= 30 ? "bg-emerald-500" :
-                          compositeScore <= 70 ? "bg-amber-500" : "bg-red-500"
+                        compositeScore <= 70 ? "bg-amber-500" : "bg-red-500"
                         }`}
                       style={{ width: `${compositeScore}%` }}
                     />

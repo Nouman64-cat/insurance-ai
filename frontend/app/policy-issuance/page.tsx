@@ -19,7 +19,7 @@ import {
 } from "@/app/services/policies";
 import { fmtCoverage } from "@/lib/mock-data";
 import { getReadiness } from "@/app/services/preIssuance";
-import { PolicyProcessRail } from "@/components/policy/PolicyProcessRail";
+
 import { PolicyLifecycleDrawer } from "@/components/policy/PolicyLifecycleDrawer";
 import { LifecycleStepper } from "@/components/policy/LifecycleStepper";
 import { MetricCard } from "@/components/MetricCard";
@@ -316,7 +316,7 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
         setSelected(res.payment.method);
         setAmountDue(res.amount_due);
         setReference(res.payment.reference);
-        
+
         const notice = docs.find(d => d.document_type === "PremiumNotice");
         if (notice) setPremiumNoticeId(notice.id);
       } catch (e: any) {
@@ -507,8 +507,8 @@ export default function PolicyIssuancePage() {
     const label = dateFrom && dateTo
       ? (dateFrom === dateTo ? `On ${dateFrom}` : `${dateFrom} → ${dateTo}`)
       : dateFrom
-      ? `From ${dateFrom}`
-      : `Until ${dateTo}`;
+        ? `From ${dateFrom}`
+        : `Until ${dateTo}`;
     activeFilterChips.push({ key: "date", label, onRemove: () => { setDateFrom(""); setDateTo(""); } });
   }
 
@@ -575,7 +575,7 @@ export default function PolicyIssuancePage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900 tracking-tight">Policy Issuance</h1>
         <p className="text-sm text-slate-500 mt-0.5">
-          Bind approved proposals into active insurance contracts — calculate premiums, generate policy numbers, and issue legal documents.
+          {/* Bind approved proposals into active insurance contracts — calculate premiums, generate policy numbers, and issue legal documents. */}
         </p>
       </div>
 
@@ -605,8 +605,7 @@ export default function PolicyIssuancePage() {
         ))}
       </div>
 
-      {/* Process explainer rail */}
-      {!loading && <PolicyProcessRail policies={policies} />}
+
 
       {/* Tab Bar + Search */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -619,7 +618,7 @@ export default function PolicyIssuancePage() {
             className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400"
           />
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
-          
+
           <FiltersPanel
             dateFrom={dateFrom}
             dateTo={dateTo}
@@ -739,7 +738,7 @@ export default function PolicyIssuancePage() {
                     <td className="px-5 py-3 text-right font-semibold text-slate-700 text-xs">{fmtCoverage(p.coverage_amount)}</td>
                     <td className="px-5 py-3">
                       <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${STATUS_BADGE[(p.status || "").toUpperCase()] ?? "bg-slate-100 text-slate-600 border-slate-200"}`}>
-                        {p.status}
+                        {p.status === "Approved" || p.status === "AcceptedWithLoadings" ? "Pending Issuance" : p.status}
                       </span>
                     </td>
                     {tab === "queue" && (

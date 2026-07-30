@@ -137,7 +137,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
       <button className="flex-1 cursor-default" aria-label="Close" onClick={onClose} />
       <div className="w-full max-w-xl h-full bg-white shadow-2xl overflow-y-auto animate-in slide-in-from-right duration-300">
         {/* Header */}
-        <div className="sticky top-0 z-10 bg-white border-b border-slate-100 px-6 py-4 flex items-start justify-between">
+        <div className="sticky top-0 z-20 bg-white border-b border-slate-100 px-6 py-4 flex items-start justify-between">
           <div>
             <h2 className="text-lg font-bold text-slate-900 tracking-tight">
               {detail?.customer_name ?? fallbackName ?? "Policy"}

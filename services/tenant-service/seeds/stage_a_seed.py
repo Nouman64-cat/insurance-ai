@@ -426,6 +426,12 @@ async def purge_tenant(session: AsyncSession, tenant_id: UUID) -> int:
         await session.exec(sa_delete(CustomerPortalAccount).where(CustomerPortalAccount.customer_id.in_(customer_ids)))
 
     # 4. Delete every customer — ORM cascade clears the rest.
+    # 2.5 Delete no-cascade case children
+    await session.exec(sa_delete(RiskAssessment).where(RiskAssessment.tenant_id == tenant_id))
+    from shared.models.core import Artifact
+    await session.exec(sa_delete(Artifact).where(Artifact.tenant_id == tenant_id))
+
+    # 3. Delete every customer — ORM cascade clears the rest.
     customers = (await session.exec(select(Customer).where(Customer.tenant_id == tenant_id))).all()
     for cust in customers:
         await session.delete(cust)
