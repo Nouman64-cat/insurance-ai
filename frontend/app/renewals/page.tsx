@@ -175,9 +175,9 @@ export default function RenewalsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { title: "Renewing (90d)", value: loading ? "—" : totalRenewing, sub: "in renewal pipeline", color: "blue" as const },
-          { title: "Urgent (≤30d)", value: loading ? "—" : urgentCount, sub: "immediate action needed", color: "orange" as const },
-          { title: "Grace Period", value: loading ? "—" : (stats?.grace_period ?? graceCount), sub: "expired, claims honoured", color: "red" as const },
-          { title: "Active Policies", value: loading ? "—" : (stats?.active ?? "—"), sub: "total in-force", color: "emerald" as const },
+          { title: "Urgent (≤30d)", value: loading ? "—" : urgentCount, sub: "immediate action needed", color: "blue" as const },
+          { title: "Grace Period", value: loading ? "—" : (stats?.grace_period ?? graceCount), sub: "expired, claims honoured", color: "blue" as const },
+          { title: "Active Policies", value: loading ? "—" : (stats?.active ?? "—"), sub: "total in-force", color: "blue" as const },
         ].map(k => (
           <MetricCard
             key={k.title}

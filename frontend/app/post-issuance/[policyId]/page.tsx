@@ -709,8 +709,8 @@ function PremiumCollectionPanel({
                       <tr>
                         <th className="px-4 py-2.5">Due date</th>
                         <th className="px-4 py-2.5">INST Number</th>
-                        <th className="px-4 py-2.5 text-left">INST Due Premium Rs.</th>
-                        <th className="px-4 py-2.5 text-left">Outstanding Payment</th>
+                        <th className="px-4 py-2.5 text-left">INST Due Premium (Rupees)</th>
+                        <th className="px-4 py-2.5 text-left">Outstanding Payment (Rupees)</th>
                         <th className="px-4 py-2.5">Comments</th>
                         <th className="px-4 py-2.5">Status</th>
                         <th className="px-4 py-2.5 text-left">Actions</th>
@@ -731,14 +731,14 @@ function PremiumCollectionPanel({
                               {String(s.installment_no).padStart(2, '0')}
                             </td>
                             <td className="px-4 py-2.5 text-left font-mono text-xs text-slate-700">
-                              {fmtPKR(collectable ? s.payable : s.amount_due)}
-                              {s.surcharge > 0 && collectable && <span className="block text-[9px] text-orange-500">incl. {fmtPKR(s.surcharge)} surcharge</span>}
+                              {fmtPKR(collectable ? s.payable : s.amount_due).replace(/Rs\s*/, '')}
+                              {s.surcharge > 0 && collectable && <span className="block text-[9px] text-orange-500">incl. {fmtPKR(s.surcharge).replace(/Rs\s*/, '')} surcharge</span>}
                             </td>
                             <td className="px-4 py-2.5 text-left font-mono text-xs text-slate-700">
                               {s.outstanding > 0 ? (
-                                <span className="text-amber-600 font-semibold">{fmtPKR(s.outstanding)}</span>
+                                <span className="text-amber-600 font-semibold">{fmtPKR(s.outstanding).replace(/Rs\s*/, '')}</span>
                               ) : (
-                                <span className="text-slate-400">Rs 0</span>
+                                <span className="text-slate-400">0</span>
                               )}
                             </td>
                             <td className="px-4 py-2.5 text-xs text-slate-500">

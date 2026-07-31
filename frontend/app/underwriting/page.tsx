@@ -228,9 +228,9 @@ export default function UnderwritingPage() {
     
     return [
       { title: "Cases", value: folders.length, subtitle: "total cases", accent: "blue" as const },
-      { title: "Awaiting Documents", value: pendingDocs, subtitle: "checklist incomplete", accent: "amber" as const },
-      { title: "In Underwriting", value: underReview, subtitle: "not yet decided", accent: "slate" as const },
-      { title: "Approved", value: approved, subtitle: "ready to issue", accent: "emerald" as const },
+      { title: "Awaiting Documents", value: pendingDocs, subtitle: "checklist incomplete", accent: "blue" as const },
+      { title: "In Underwriting", value: underReview, subtitle: "not yet decided", accent: "blue" as const },
+      { title: "Approved", value: approved, subtitle: "ready to issue", accent: "blue" as const },
     ];
   }, [folders]);
 

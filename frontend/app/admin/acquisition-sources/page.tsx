@@ -268,13 +268,13 @@ export default function AcquisitionSourcesPage() {
         <MetricCard
           title="Total Sources"
           value={loading ? "—" : sources.length}
-          accent="slate"
+          accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>}
         />
         <MetricCard
           title="Active Channels"
           value={loading ? "—" : activeSources.length}
-          accent="emerald"
+          accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>}
         />
         <MetricCard
@@ -287,7 +287,7 @@ export default function AcquisitionSourcesPage() {
           title="Top Channel"
           value={loading ? "—" : (topChannel?.name ?? "None")}
           subtitle={loading ? "" : topChannel ? `${topChannel.customer_count} customers` : ""}
-          accent="amber"
+          accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>}
         />
       </div>
