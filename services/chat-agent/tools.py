@@ -451,6 +451,74 @@ def run_risk_assessment(**kwargs) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Policy lifecycle — approve, issue, activate (steps 5–7)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@tool(args_schema=CaseLookupArgs)
+def approve_case(**kwargs) -> str:
+    """Approve a case after risk assessment. This moves the case to 'Approved'
+    status and it appears in the Policy Issuance queue. Use when the user says
+    "approve this case", "approve it", "mark as approved"."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def get_pre_issuance_status(**kwargs) -> str:
+    """Fetch the pre-issuance readiness checklist for a case's policy. Shows the
+    4-step verification status: revised terms, requirements, compliance, and
+    beneficiaries. Use when the user asks "check issuance status" or "is it
+    ready to issue?"."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def run_pre_issuance_verification(**kwargs) -> str:
+    """Automatically run and clear all 4 pre-issuance verification steps:
+    seed/verify requirements, run/clear compliance checks. Use when the user
+    says "run verification", "verify for issuance", "complete pre-issuance
+    checks"."""
+    return "{}"
+
+
+class IssuePolicyArgs(BaseModel):
+    case_number: Optional[str] = None
+    applicant_name: Optional[str] = None
+    cnic: Optional[str] = None
+
+
+@tool(args_schema=IssuePolicyArgs)
+def issue_policy(**kwargs) -> str:
+    """Draft the policy contract — assign a policy number, generate documents,
+    compute the premium, and move to PendingPayment. Use when the user says
+    "issue the policy", "draft the contract", "bind coverage"."""
+    return "{}"
+
+
+class ConfirmPaymentArgs(BaseModel):
+    case_number: Optional[str] = None
+    applicant_name: Optional[str] = None
+    cnic: Optional[str] = None
+    payment_method: Optional[str] = Field(default=None, description="Payment method code, e.g. 'JazzCash', 'BankTransfer'. Defaults to JazzCash.")
+
+
+@tool(args_schema=ConfirmPaymentArgs)
+def confirm_policy_payment(**kwargs) -> str:
+    """Confirm the first premium payment, activating coverage. The policy moves
+    from PendingPayment to Active, the case is closed, and the customer is
+    promoted to Policyholder. Use when the user says "confirm payment",
+    "activate the policy", "complete payment"."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def get_active_policy_status(**kwargs) -> str:
+    """Check the status of an active policy in the post-issuance section. Shows
+    coverage details, documents, and management options. Use when the user asks
+    "show the active policy", "is it active?", "check post-issuance status"."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Workflow guidance
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -596,6 +664,13 @@ ALL_TOOLS = [
     create_proposal,
     upload_document,
     run_risk_assessment,
+    # policy lifecycle (steps 5–7)
+    approve_case,
+    get_pre_issuance_status,
+    run_pre_issuance_verification,
+    issue_policy,
+    confirm_policy_payment,
+    get_active_policy_status,
     # workflow
     get_workflow_recommendation,
     quick_start_workflow,

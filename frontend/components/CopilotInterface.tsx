@@ -12,6 +12,8 @@ import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import type { AgentMessage, QuickAction } from "@/lib/agent/types";
 import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
+import { IssuanceModal, SuccessModal, PaymentModal } from "./policy/IssuanceModals";
+import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/policies";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -144,6 +146,10 @@ export function CopilotInterface() {
   
   const [bulkSteps, setBulkSteps] = useState<ProcessStep[]>([]);
   const interruptBulkRef = useRef<boolean>(false);
+
+  const [issuanceModalPolicy, setIssuanceModalPolicy] = useState<any | null>(null);
+  const [successModalResult, setSuccessModalResult] = useState<{ result: IssuanceResult | PaymentConfirmResult, policyName: string, caseNumber: string, isPayment?: boolean } | null>(null);
+  const [paymentModalPolicy, setPaymentModalPolicy] = useState<any | null>(null);
 
   useEffect(() => {
     if (selectedFile && selectedFile.type.startsWith("image/")) {
@@ -506,6 +512,17 @@ export function CopilotInterface() {
       }
     })();
   }, [pendingInterrupt, resolveInterrupt]);
+
+  // Client-executed Policy Issuance and Payment
+  useEffect(() => {
+    if (pendingInterrupt?.kind !== "client_execute") return;
+    if (pendingInterrupt.toolCall.name === "issue_policy") {
+      setIssuanceModalPolicy(pendingInterrupt.toolCall.args.policy);
+    } else if (pendingInterrupt.toolCall.name === "confirm_policy_payment") {
+      setPaymentModalPolicy(pendingInterrupt.toolCall.args.policy);
+    }
+  }, [pendingInterrupt]);
+
   const getBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -738,6 +755,99 @@ export function CopilotInterface() {
   if (isAutomationMode) {
     return (
       <div className="flex h-full w-full bg-white text-slate-900 font-sans overflow-hidden">
+        <>
+          {issuanceModalPolicy && (
+            <IssuanceModal
+              policy={issuanceModalPolicy}
+              onClose={() => {
+                setIssuanceModalPolicy(null);
+                resolveInterrupt({ success: false, message: "User cancelled issuance." });
+              }}
+              onIssued={(result, policyId) => {
+                setIssuanceModalPolicy(null);
+                setSuccessModalResult({ result, policyName: issuanceModalPolicy.customer_name, caseNumber: pendingInterrupt?.toolCall.args.case_number, isPayment: false });
+              }}
+            />
+          )}
+          {paymentModalPolicy && (
+            <PaymentModal
+              policy={paymentModalPolicy}
+              onClose={() => {
+                setPaymentModalPolicy(null);
+                resolveInterrupt({ success: false, message: "User cancelled payment confirmation." });
+              }}
+              onConfirmed={(result, policyId) => {
+                setPaymentModalPolicy(null);
+                setSuccessModalResult({ result, policyName: paymentModalPolicy.customer_name, caseNumber: pendingInterrupt?.toolCall.args.case_number, isPayment: true });
+              }}
+            />
+          )}
+          {successModalResult && !successModalResult.isPayment && (
+            <SuccessModal
+              result={successModalResult.result as IssuanceResult}
+              policyName={successModalResult.policyName}
+              onClose={() => {
+                const res = successModalResult.result as IssuanceResult;
+                const caseNum = successModalResult.caseNumber;
+                setSuccessModalResult(null);
+                
+                const total = res.premium_breakdown?.total_premium || 0;
+                const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${res.effective_date}\n- Expiry: ${res.expiry_date}\n- Total Premium: PKR ${total.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || '—'}\n\nConfirm payment to activate coverage and bind the contract.`;
+                
+                resolveInterrupt({
+                  success: true,
+                  message: msg,
+                  policy_id: res.policy_id,
+                  policy_number: res.policy_number,
+                  issuance_result: res,
+                  last_action: {
+                    tool_name: "issue_policy",
+                    entity_type: "case",
+                    entity_id: pendingInterrupt?.toolCall.args.case_id,
+                    route: "policy-issuance",
+                    label: `Policy ${res.policy_number} drafted`
+                  },
+                  quick_actions: [
+                    { label: "Confirm Payment Now", actionType: "submit", payload: `Confirm payment for case ${caseNum}` },
+                    { label: "Open Policy Issuance", actionType: "navigate", payload: "policy-issuance" }
+                  ]
+                });
+              }}
+            />
+          )}
+          {successModalResult && successModalResult.isPayment && (
+            <SuccessModal
+              result={successModalResult.result as any}
+              policyName={successModalResult.policyName}
+              onClose={() => {
+                const res = successModalResult.result as PaymentConfirmResult;
+                const caseNum = successModalResult.caseNumber;
+                setSuccessModalResult(null);
+                
+                const msg = `🎉 Policy **${res.policy_number}** is now **Active**!\n\n- Coverage bound effective: ${res.effective_date}\n- Expiry: ${res.expiry_date}\n- Free-look period ends: ${res.free_look_end_date}\n- Payment: ${res.payment?.reference || '—'}\n\nThe case has been closed and the customer promoted to Policyholder.\nThis policy is now visible in the **Post-Issuance** section.`;
+                
+                resolveInterrupt({
+                  success: true,
+                  message: msg,
+                  policy_id: pendingInterrupt?.toolCall.args.policy.id,
+                  policy_number: res.policy_number,
+                  payment_result: res,
+                  last_action: {
+                    tool_name: "confirm_policy_payment",
+                    entity_type: "policy",
+                    entity_id: pendingInterrupt?.toolCall.args.policy.id,
+                    route: `post-issuance/${pendingInterrupt?.toolCall.args.policy.id}`,
+                    label: `Policy ${res.policy_number} activated`
+                  },
+                  quick_actions: [
+                    { label: "View Active Policy", actionType: "submit", payload: `Show me the active policy status for case ${caseNum}` },
+                    { label: "Open Post-Issuance", actionType: "navigate", payload: "policy-management/post-issuance" }
+                  ]
+                });
+              }}
+            />
+          )}
+        </>
         {/* Hidden File Input */}
         <input
           type="file"
@@ -745,43 +855,50 @@ export function CopilotInterface() {
           onChange={async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            setSelectedFile(file);
-            selectedFileRef.current = file;
-            setIsUploading(true);
-
-            if (interruptUploadRef.current) {
-              const { args } = interruptUploadRef.current;
-              interruptUploadRef.current = null;
-              try {
-                const result = await uploadDocument(args, file);
-                setSelectedFile(null);
-                resolveInterrupt(result);
-              } catch (err: any) {
-                setSelectedFile(null);
-                resolveInterrupt({ success: false, error: err.message || "Upload failed." });
-              }
-            } else if (pendingUploadRef.current) {
-              const args = pendingUploadRef.current;
-              pendingUploadRef.current = null;
-              try {
-                const result = await uploadDocument(args, file);
-                notify(`✅ ${result.message}`, true);
-                setUploadedDocs((prev) => [...prev, args.document_type]);
-                // Do not auto-send a message. The user can upload multiple docs
-                // and then click 'Retry Risk Assessment' manually.
-              } catch (err: any) {
-                notify(`⚠️ ${err.message || "Upload failed."}`, false);
-              } finally {
-                setSelectedFile(null);
+            
+            // For immediate uploads, don't show the preview to avoid DOM layout thrashing
+            if (interruptUploadRef.current || pendingUploadRef.current || autoSubmitPrompt) {
+              setIsUploading(true);
+              
+              if (interruptUploadRef.current) {
+                const { args } = interruptUploadRef.current;
+                interruptUploadRef.current = null;
+                try {
+                  const result = await uploadDocument(args, file);
+                  resolveInterrupt(result);
+                } catch (err: any) {
+                  resolveInterrupt({ success: false, error: err.message || "Upload failed." });
+                } finally {
+                  setIsUploading(false);
+                }
+              } else if (pendingUploadRef.current) {
+                const args = pendingUploadRef.current;
+                pendingUploadRef.current = null;
+                try {
+                  const result = await uploadDocument(args, file);
+                  notify(`✅ ${result.message}`, true);
+                  setUploadedDocs((prev) => [...prev, args.document_type]);
+                } catch (err: any) {
+                  notify(`⚠️ ${err.message || "Upload failed."}`, false);
+                } finally {
+                  setIsUploading(false);
+                }
+              } else if (autoSubmitPrompt) {
+                // To attach and immediately submit, we do set the file briefly
+                setSelectedFile(file);
+                handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
+                setAutoSubmitPrompt("");
                 setIsUploading(false);
               }
-            } else if (autoSubmitPrompt) {
-              handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
-              setAutoSubmitPrompt("");
-              setIsUploading(false);
-            } else {
-              setIsUploading(false);
+              
+              // Reset the file input
+              if (fileInputRef.current) fileInputRef.current.value = "";
+              return;
             }
+
+            // Normal attach (for chat message)
+            setSelectedFile(file);
+            selectedFileRef.current = file;
           }}
           className="hidden"
           accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"

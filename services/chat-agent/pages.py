@@ -56,6 +56,9 @@ PAGES: list[Page] = [
     Page("financial", "Financial", "Premium collection and financial reporting."),
     Page("reports", "Reports", "Exportable operational reports."),
     Page("plans", "Plans", "Insurance product catalogue.", lists="plan"),
+    # ── Policy lifecycle ───────────────────────────────────────────────────
+    Page("policy-issuance", "Policy Issuance", "Policy issuance queue — issue approved proposals and confirm payments.", lists="policy"),
+    Page("policy-management/post-issuance", "Post-Issuance Policies", "Active policies in the post-issuance management section.", lists="policy"),
     # ── Admin ───────────────────────────────────────────────────────────────
     Page("admin/leads", "Leads", "Prospective customers not yet converted.", lists="customer", highlight_param="cnic"),
     Page("admin/customers", "Customers", "All registered customers.", lists="customer", highlight_param="cnic"),
