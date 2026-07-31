@@ -289,7 +289,7 @@ export default function PolicyholdersPage() {
         <MetricCard
           title="Total Active"
           value={statsData.length}
-          accent="emerald"
+          accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>}
         />
         <MetricCard
@@ -301,13 +301,13 @@ export default function PolicyholdersPage() {
         <MetricCard
           title="Families"
           value={statsData.filter(p => p.type === "FAMILY").length}
-          accent="purple"
+          accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M12 3l9 7-9 7-9-7 9-7z"/><circle cx="8" cy="17" r="2"/><circle cx="16" cy="17" r="2"/><path d="M8 15v-2a4 4 0 018 0v2"/></svg>}
         />
         <MetricCard
           title="Corporates"
           value={statsData.filter(p => p.type === "CORPORATE").length}
-          accent="amber"
+          accent="blue"
           icon={<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5"><path d="M6 22V4a2 2 0 012-2h8a2 2 0 012 2v18z"/><path d="M6 12H4a2 2 0 00-2 2v8h4"/><path d="M18 9h2a2 2 0 012 2v11h-4"/></svg>}
         />
       </div>

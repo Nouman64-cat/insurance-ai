@@ -137,9 +137,9 @@ export default function ApplicationsPage() {
     const customerCount = new Set(segmentCases.map((c) => c.customer_id)).size;
     return [
       { title: "Customers", value: customerCount, subtitle: "application folders", accent: "blue" as const },
-      { title: "Ready to Generate", value: ready, subtitle: "underwriting complete", accent: "emerald" as const },
-      { title: "Awaiting Underwriting", value: segmentCases.length - ready, subtitle: "not yet decided", accent: "amber" as const },
-      { title: "Approved", value: approved, subtitle: "ready to issue", accent: "slate" as const },
+      { title: "Ready to Generate", value: ready, subtitle: "underwriting complete", accent: "blue" as const },
+      { title: "Awaiting Underwriting", value: segmentCases.length - ready, subtitle: "not yet decided", accent: "blue" as const },
+      { title: "Approved", value: approved, subtitle: "ready to issue", accent: "blue" as const },
     ];
   }, [segmentCases]);
 

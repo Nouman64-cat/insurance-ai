@@ -336,11 +336,11 @@ export default function AssessmentHistoryPage() {
     : undefined;
 
   const kpis = [
-    { title: "Total Assessments", value: stats?.total ?? "—", subtitle: "in this view", accent: "slate" as const },
-    { title: "Approved", value: stats?.by_decision["Auto Approve"] ?? "—", subtitle: "auto-approved", accent: "emerald" as const },
-    { title: "Approved +L", value: stats?.by_decision["Approve with Loading"] ?? "—", subtitle: "with loading", accent: "amber" as const },
+    { title: "Total Assessments", value: stats?.total ?? "—", subtitle: "in this view", accent: "blue" as const },
+    { title: "Approved", value: stats?.by_decision["Auto Approve"] ?? "—", subtitle: "auto-approved", accent: "blue" as const },
+    { title: "Approved +L", value: stats?.by_decision["Approve with Loading"] ?? "—", subtitle: "with loading", accent: "blue" as const },
     { title: "Referred", value: stats?.by_decision["Human Review"] ?? "—", subtitle: "human review", accent: "blue" as const },
-    { title: "Declined", value: stats?.by_decision["Decline"] ?? "—", subtitle: "declined", accent: "red" as const },
+    { title: "Declined", value: stats?.by_decision["Decline"] ?? "—", subtitle: "declined", accent: "blue" as const },
   ];
 
   const visible = assessments.filter((a) => {

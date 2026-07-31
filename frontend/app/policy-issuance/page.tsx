@@ -372,10 +372,10 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-        <div className="bg-gradient-to-r from-amber-600 to-orange-600 px-6 py-5">
+        <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-5">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-amber-100 text-xs font-medium uppercase tracking-widest">First Premium Collection</p>
+              <p className="text-blue-100 text-xs font-medium uppercase tracking-widest">First Premium Collection</p>
               <h2 className="text-white text-lg font-bold mt-0.5">Confirm Payment</h2>
             </div>
             <button onClick={onClose} className="text-white/60 hover:text-white transition-colors">
@@ -395,7 +395,7 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
 
           <div className="flex items-center justify-between border-y border-slate-100 py-3">
             <p className="text-sm font-semibold text-slate-700">Amount Due</p>
-            <p className="text-lg font-bold text-amber-700">
+            <p className="text-lg font-bold text-blue-700">
               {loading ? "…" : amountDue != null ? fmtPKR(amountDue) : "—"}
             </p>
           </div>
@@ -407,7 +407,7 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
                 <button
                   key={m.code}
                   onClick={() => setSelected(m.code)}
-                  className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${selected === m.code ? "bg-amber-50 border-amber-300 text-amber-800" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold border transition-all ${selected === m.code ? "bg-blue-50 border-blue-300 text-blue-800" : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"}`}
                 >
                   {m.label}
                 </button>
@@ -450,7 +450,7 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
             <button
               onClick={handleConfirm}
               disabled={loading || confirming || !selected}
-              className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-amber-600 to-orange-600 rounded-xl hover:from-amber-700 hover:to-orange-700 disabled:opacity-50 transition-all shadow-sm"
+              className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all shadow-sm"
             >
               {confirming ? "Confirming…" : "Confirm & Activate"}
             </button>
@@ -604,11 +604,11 @@ export default function PolicyIssuancePage() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         {[
-          { title: "Pending Issuance", value: stats?.pending_issuance ?? "—", sub: "approved, not yet bound", color: "amber" as const },
-          { title: "Pending Payment", value: loading ? "—" : pendingPaymentCount, sub: "awaiting first premium", color: "violet" as const },
-          { title: "Active Policies", value: stats?.active ?? "—", sub: "in-force coverage", color: "emerald" as const },
+          { title: "Pending Issuance", value: stats?.pending_issuance ?? "—", sub: "approved, not yet bound", color: "blue" as const },
+          { title: "Pending Payment", value: loading ? "—" : pendingPaymentCount, sub: "awaiting first premium", color: "blue" as const },
+          { title: "Active Policies", value: stats?.active ?? "—", sub: "in-force coverage", color: "blue" as const },
           { title: "Expiring (30d)", value: stats?.expiring_30d ?? "—", sub: "renewal due soon", color: "blue" as const },
-          { title: "Lapsed", value: stats?.lapsed ?? "—", sub: "coverage terminated", color: "red" as const },
+          { title: "Lapsed", value: stats?.lapsed ?? "—", sub: "coverage terminated", color: "blue" as const },
         ].map(k => (
           <MetricCard
             key={k.title}
@@ -774,7 +774,7 @@ export default function PolicyIssuancePage() {
                               e.stopPropagation();
                               setPaymentPolicy(p);
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-bold hover:bg-amber-700 transition-colors shadow-sm"
+                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-sm hover:from-blue-700 hover:to-blue-800 transition-all active:scale-95 whitespace-nowrap"
                           >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
                               <rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" />

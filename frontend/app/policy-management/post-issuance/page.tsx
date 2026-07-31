@@ -144,10 +144,10 @@ function PostIssuanceContent() {
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: "Active Policies", value: stats?.active ?? "—", sub: "in-force coverage", accent: "emerald" as const },
-          { title: "Grace Period", value: stats?.grace_period ?? "—", sub: "payment overdue", accent: "amber" as const },
+          { title: "Active Policies", value: stats?.active ?? "—", sub: "in-force coverage", accent: "blue" as const },
+          { title: "Grace Period", value: stats?.grace_period ?? "—", sub: "payment overdue", accent: "blue" as const },
           { title: "Expiring (30d)", value: stats?.expiring_30d ?? "—", sub: "renewal due soon", accent: "blue" as const },
-          { title: "Lapsed / Cancelled", value: (stats?.lapsed || 0) + (stats?.cancelled || 0), sub: "coverage terminated", accent: "red" as const },
+          { title: "Lapsed / Cancelled", value: (stats?.lapsed || 0) + (stats?.cancelled || 0), sub: "coverage terminated", accent: "blue" as const },
         ].map(k => (
           <MetricCard
             key={k.title}

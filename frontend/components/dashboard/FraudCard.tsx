@@ -22,22 +22,22 @@ export function FraudCard() {
     <PillarCard
       icon={<AlertTriangleIcon />}
       title="Fraud Intelligence"
-      barClass="bg-red-600"
-      iconBg="bg-red-50"
-      iconColor="text-red-600"
+      barClass="bg-blue-600"
+      iconBg="bg-blue-50"
+      iconColor="text-blue-600"
       alertCount={14}
     >
       {/* Summary KPIs */}
       <div className="grid grid-cols-2 gap-3 mb-4">
-        <div className="bg-red-50 border border-red-100 rounded-lg p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-red-400">Prevention Savings</p>
-          <p className="text-xl font-extrabold text-red-700 mt-0.5">PKR 8.7M</p>
-          <p className="text-[10px] text-red-400 mt-0.5">month-to-date</p>
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Prevention Savings</p>
+          <p className="text-xl font-extrabold text-blue-700 mt-0.5">PKR 8.7M</p>
+          <p className="text-[10px] text-blue-400 mt-0.5">month-to-date</p>
         </div>
-        <div className="bg-orange-50 border border-orange-100 rounded-lg p-3">
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-orange-400">Avg Fraud Score</p>
-          <p className="text-xl font-extrabold text-orange-700 mt-0.5">0.73</p>
-          <p className="text-[10px] text-orange-400 mt-0.5">flagged cases</p>
+        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Avg Fraud Score</p>
+          <p className="text-xl font-extrabold text-blue-700 mt-0.5">0.73</p>
+          <p className="text-[10px] text-blue-400 mt-0.5">flagged cases</p>
         </div>
       </div>
 

@@ -764,9 +764,9 @@ export default function QuotePage() {
     const totalCoverage = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.coverage_amount, 0);
     const totalPremium = fullyFilteredQuotes.reduce((sum, qt) => sum + qt.total_premium, 0);
     return [
-      { title: "Proposals", value: fullyFilteredQuotes.length, subtitle: "plans generated", accent: "slate" as const, icon: <KpiIcon name="document" /> },
-      { title: "Total Coverage", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "amber" as const, icon: <KpiIcon name="shield" /> },
-      { title: "Total Premium", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "emerald" as const, icon: <KpiIcon name="coin" /> },
+      { title: "Proposals", value: fullyFilteredQuotes.length, subtitle: "plans generated", accent: "blue" as const, icon: <KpiIcon name="document" /> },
+      { title: "Total Coverage", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalCoverage) : "—", subtitle: "sum assured", accent: "blue" as const, icon: <KpiIcon name="shield" /> },
+      { title: "Total Premium", value: fullyFilteredQuotes.length > 0 ? fmtCoverage(totalPremium) : "—", subtitle: "annualized", accent: "blue" as const, icon: <KpiIcon name="coin" /> },
     ];
   }, [segmentQuotes, search]);
 
