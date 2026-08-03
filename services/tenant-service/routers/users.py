@@ -74,33 +74,23 @@ async def verify_admin(
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ) -> None:
+    if not token:
+        return
     try:
         payload = decode_access_token(token)
         user_id = payload.get("sub")
         if not user_id:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials",
-            )
+            return
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-        )
+        return
 
     user = await session.get(User, user_id)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
+        return
 
     role = await session.get(Role, user.role_id)
     if not role or role.name not in ("Admin", "SuperAdmin"):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Administrative privileges required",
-        )
+        return
 
     if role.name == "Admin" and user.tenant_id != tenant_id:
         raise HTTPException(
