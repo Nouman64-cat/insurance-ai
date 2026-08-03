@@ -42,8 +42,12 @@ export default function UnderwritingPage() {
   const [expandedCustomerId, setExpandedCustomerId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"list" | "grid">("list");
   const [counterOfferCase, setCounterOfferCase] = useState<CaseQueueItem | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role"));
+    }
     const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
     if (!tenantId) { setLoading(false); return; }
     listCases(tenantId, "Underwriting")
@@ -450,8 +454,18 @@ export default function UnderwritingPage() {
                                   )}
                                   {c.policy_id && c.caseStatus !== "Approved" && c.caseStatus !== "Rejected" && (
                                     <button
-                                      onClick={(e) => { e.stopPropagation(); setCounterOfferCase(c); }}
-                                      className="text-xs font-semibold text-amber-600 hover:text-amber-700 transition-colors"
+                                      disabled={userRole === "Agent"}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (userRole === "Agent") return;
+                                        setCounterOfferCase(c);
+                                      }}
+                                      title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                                      className={`text-xs font-semibold transition-colors ${
+                                        userRole === "Agent"
+                                          ? "text-slate-400 opacity-50 cursor-not-allowed"
+                                          : "text-amber-600 hover:text-amber-700"
+                                      }`}
                                     >
                                       Counter-offer
                                     </button>

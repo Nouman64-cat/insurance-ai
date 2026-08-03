@@ -288,6 +288,14 @@ function PremiumCollectionPanel({
   const [channel, setChannel] = useState("JazzCash");
   const [remChannel, setRemChannel] = useState<string>(REMINDER_CHANNELS[0]);
   const [remTemplate, setRemTemplate] = useState<string>(REMINDER_TEMPLATES[1]);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role"));
+    }
+  }, []);
+
   const getActiveFreq = () => {
     if (!billing || billing.installments.length === 0) return "Quarterly";
     const pending = billing.installments.find(s => s.state !== "paid" && s.state !== "waived");
@@ -324,7 +332,7 @@ function PremiumCollectionPanel({
     return <p className="text-xs text-slate-400 italic">Billing data unavailable for this policy.</p>;
   }
 
-  const locked = busy || !billing.can_collect;
+  const locked = busy || !billing.can_collect || userRole === "Agent";
   const sum = billing.summary;
   const dash = billing.dashboard;
   const rows = billing.installments;
@@ -1985,6 +1993,13 @@ function ServicingPanel({ policyId, onChanged }: Readonly<{ policyId: string; on
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const { notify } = useNotify();
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role"));
+    }
+  }, []);
 
   // form state
   const [noms, setNoms] = useState<NomRow[]>([]);
@@ -2019,7 +2034,7 @@ function ServicingPanel({ policyId, onChanged }: Readonly<{ policyId: string; on
 
   if (!ov) return <p className="text-xs text-slate-400 italic">Loading servicing data…</p>;
 
-  const locked = busy || !ov.can_endorse;
+  const locked = busy || !ov.can_endorse || userRole === "Agent";
   const nomTotal = Math.round(noms.reduce((a, b) => a + (Number(b.share_pct) || 0), 0) * 100) / 100;
 
   const run = async (fn: () => Promise<unknown>, note: string) => {

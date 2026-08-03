@@ -100,6 +100,13 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
   const [freeLookEnd, setFreeLookEnd] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role"));
+    }
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -137,7 +144,7 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
   // Once the policy leaves the pre-issuance statuses it is drafted/bound - Stage A
   // mutations are locked (backend enforces the same via _assert_stage_a).
   const stageALocked = !PRE_ISSUANCE_STATUSES.has(readiness.status);
-  const locked = busy || stageALocked;
+  const locked = busy || stageALocked || userRole === "Agent";
   const bypass = readiness.demo_bypass_flags;
 
   const reqState = s.requirements.status === "complete" ? "done"
