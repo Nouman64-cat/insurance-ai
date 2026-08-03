@@ -384,6 +384,7 @@ async def list_policies(
             "policy_number": p.policy_number,
             "customer_id": str(p.customer_id),
             "customer_name": cust.name if cust else "—",
+            "family_group_id": str(cust.family_group_id) if cust and cust.family_group_id else None,
             "product_name": p.product_name,
             "insurance_type": p.insurance_type.value if hasattr(p.insurance_type, "value") else str(p.insurance_type),
             "coverage_amount": p.coverage_amount,

@@ -182,7 +182,7 @@ function CustomPaymentModal({
     const val = e.target.value;
     const raw = val.replace(/,/g, '');
     if (!isNaN(Number(raw)) || raw === '') {
-       setAmountStr(raw);
+      setAmountStr(raw);
     }
   };
 
@@ -429,28 +429,12 @@ function PremiumCollectionPanel({
         <div className="space-y-4">
           {/* Collection dashboard */}
           <div>
-            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Collection dashboard</p>
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-              <StatCard label="Collected (month)" value={fmtPKR(dash.collected_this_month)} accent />
-              <StatCard label="Total collected" value={fmtPKR(dash.total_collected)} />
-              <StatCard label="Overdue amount" value={fmtPKR(dash.overdue_amount)} hint={`${sum.arrears_count} arrear(s)`} />
-              <StatCard label="Collection rate" value={`${dash.collection_rate}%`} hint={`${sum.paid}/${sum.total} paid`} />
-              <StatCard label="Commission" value={fmtPKR(dash.commission_earned)} hint={`@ ${billing.commission_pct}%`} />
-            </div>
-          </div>
-          {/* Summary + autopay */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatCard label="Next due" value={sum.next_due_date ?? "—"} hint={sum.next_due_amount != null ? fmtPKR(sum.next_due_amount) : undefined} />
-            <StatCard label="Outstanding" value={fmtPKR(sum.total_outstanding)} hint={`${sum.outstanding_count} installment(s)`} accent={sum.total_outstanding > 0} />
-            <StatCard label="Surcharge" value={`${billing.surcharge_pct}%`} hint="on late payments" />
-            <div className="rounded-xl border border-slate-200 bg-white p-4 flex flex-col justify-between">
-              <p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Auto-debit</p>
-              <button disabled={locked} onClick={() => run(() => setAutopay(policyId, !billing.autopay_enabled), (b) => `Auto-debit ${b.autopay_enabled ? "enabled" : "disabled"}.`)} className={`mt-1 inline-flex items-center gap-1.5 text-xs font-semibold ${billing.autopay_enabled ? "text-blue-700" : "text-slate-500"}`}>
-                <span className={`w-8 h-4 rounded-full relative transition-colors ${billing.autopay_enabled ? "bg-blue-500" : "bg-slate-300"}`}>
-                  <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${billing.autopay_enabled ? "left-4" : "left-0.5"}`} />
-                </span>
-                {billing.autopay_enabled ? "On" : "Off"}
-              </button>
+            <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Policy Billing Overview</p>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <StatCard label="Total collected" value={fmtPKR(dash.total_collected)} accent />
+              <StatCard label="Next premium due" value={sum.next_due_date ?? "—"} hint={sum.next_due_amount != null ? fmtPKR(sum.next_due_amount) : undefined} />
+              <StatCard label="Overdue amount" value={fmtPKR(dash.overdue_amount)} hint={`${sum.arrears_count} arrear(s)`} accent={dash.overdue_amount > 0} />
+              <StatCard label="Payment frequency" value={currentFreq} hint="Billing cycle" />
             </div>
           </div>
 
@@ -471,9 +455,9 @@ function PremiumCollectionPanel({
               <span className={`inline-flex px-2.5 py-1 rounded-full text-[10px] font-semibold border ${(STATE_CHIP[firstPremium.state] ?? STATE_CHIP.upcoming).cls}`}>{firstPremium.state === "paid" ? "Collected" : (STATE_CHIP[firstPremium.state] ?? STATE_CHIP.upcoming).label}</span>
             </div>
             <div className="grid grid-cols-2 lg:grid-cols-6 gap-4 mt-4">
-              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Amount</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{fmtPKR(firstPremium.amount_due)}</p></div>
               <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Due</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{firstPremium.due_date}</p></div>
-              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Collected</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{firstPremium.paid_at ? firstPremium.paid_at.slice(0, 10) : "—"}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Amount</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{fmtPKR(firstPremium.amount_due)}</p></div>
+              <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Collected on</p><p className="text-sm font-semibold text-slate-800 mt-0.5">{firstPremium.paid_at ? firstPremium.paid_at.slice(0, 10) : "—"}</p></div>
               <div><p className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">Status</p>
                 {firstPremium.paid_at ? (
                   <span className={`text-sm font-semibold mt-0.5 ${firstPremium.paid_at.slice(0, 10) > firstPremium.due_date ? "text-amber-600" : "text-blue-600"}`}>
@@ -538,7 +522,7 @@ function PremiumCollectionPanel({
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 rounded-xl p-4 border border-slate-100">
                     <Field label="Product" value={preview.contract.product_name} />
                     <Field label="Sum assured" value={fmtCoverage(preview.contract.coverage_amount)} />
-                    <Field label="Term" value={`${preview.contract.term_years} years`} />
+                    <Field label="Insurance Terms" value={`${preview.contract.term_years} years`} />
                     <Field label="Commencement" value={preview.contract.effective_date} />
                     <Field label="Maturity date" value={<span className="text-blue-700">{preview.contract.maturity_date}</span>} />
                     <Field label="Billing" value={preview.contract.billing_frequency} />
@@ -680,7 +664,7 @@ function PremiumCollectionPanel({
             {/* View Toggle */}
             <div className="flex justify-between items-center mb-4">
               <div className="flex items-center gap-2">
-                <button 
+                <button
                   disabled={locked}
                   onClick={() => setIsBulkModalOpen(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 hover:from-blue-700 hover:to-blue-700 shadow-sm transition-all disabled:opacity-40"
@@ -751,40 +735,40 @@ function PremiumCollectionPanel({
                             </td>
                             <td className="px-4 py-2.5 text-xs text-slate-500">
                               {s.state === "paid" ? `Paid on ${s.paid_at?.slice(0, 10) ?? "—"}` :
-                               s.state === "partially_paid" ? `Post Dated Amount: ${fmtPKR((s.amount_due + (s.surcharge || 0)) - s.outstanding)} paid` :
-                               s.state === "waived" ? "Installment waived" :
-                               !collectable ? "—" :
-                               collectable && s.days_until < 0 ? `Overdue by ${Math.abs(s.days_until)}d` :
-                               collectable && s.days_until >= 0 ? `Due in ${s.days_until}d` :
-                               "Standard cycle"}
+                                s.state === "partially_paid" ? `Post Dated Amount: ${fmtPKR((s.amount_due + (s.surcharge || 0)) - s.outstanding)} paid` :
+                                  s.state === "waived" ? "Installment waived" :
+                                    !collectable ? "—" :
+                                      collectable && s.days_until < 0 ? `Overdue by ${Math.abs(s.days_until)}d` :
+                                        collectable && s.days_until >= 0 ? `Due in ${s.days_until}d` :
+                                          "Standard cycle"}
                               {s.reminder_count > 0 && <span className="block mt-0.5 text-[10px] text-slate-400">🔔 {s.reminder_count} reminder(s)</span>}
                             </td>
                             <td className="px-4 py-2.5">
                               <span className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold border ${chip.cls}`}>{chip.label}</span>
                             </td>
                             <td className="px-4 py-2.5 text-left">
-                                {collectable ? (
-                                  <select
-                                    className="w-[90px] px-2 py-1 bg-white border border-slate-200 rounded-md text-[10px] font-semibold text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
-                                    value=""
-                                    onChange={(e) => {
-                                      const action = e.target.value;
-                                      if (action === "collect") run(() => collect(s.id), `Installment #${s.installment_no} collected via ${channel}${s.surcharge > 0 ? " (incl. surcharge)" : ""} — receipt generated.`);
-                                      if (action === "remind") run(() => remind(s), `Reminder sent for #${s.installment_no} via ${remChannel} (${remTemplate}).`);
-                                      if (action === "waive") run(() => waiveInstallment(policyId, s.id), `Installment #${s.installment_no} waived.`);
-                                    }}
-                                    disabled={locked}
-                                  >
-                                    <option value="" disabled>Actions...</option>
-                                    <option value="collect">Collect Premium</option>
-                                    <option value="remind">Send Reminder</option>
-                                    <option value="waive">Waive Installment</option>
-                                  </select>
-                                ) : (
-                                  <button onClick={() => setSelectedInstallment(s)} className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="View details">
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                                  </button>
-                                )}
+                              {collectable ? (
+                                <select
+                                  className="w-[90px] px-2 py-1 bg-white border border-slate-200 rounded-md text-[10px] font-semibold text-slate-600 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer"
+                                  value=""
+                                  onChange={(e) => {
+                                    const action = e.target.value;
+                                    if (action === "collect") run(() => collect(s.id), `Installment #${s.installment_no} collected via ${channel}${s.surcharge > 0 ? " (incl. surcharge)" : ""} — receipt generated.`);
+                                    if (action === "remind") run(() => remind(s), `Reminder sent for #${s.installment_no} via ${remChannel} (${remTemplate}).`);
+                                    if (action === "waive") run(() => waiveInstallment(policyId, s.id), `Installment #${s.installment_no} waived.`);
+                                  }}
+                                  disabled={locked}
+                                >
+                                  <option value="" disabled>Actions...</option>
+                                  <option value="collect">Collect Premium</option>
+                                  <option value="remind">Send Reminder</option>
+                                  <option value="waive">Waive Installment</option>
+                                </select>
+                              ) : (
+                                <button onClick={() => setSelectedInstallment(s)} className="inline-flex items-center justify-center p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="View details">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-4 h-4"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );
@@ -832,12 +816,12 @@ function PremiumCollectionPanel({
                         <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
                           <p className="text-[11px] font-medium text-slate-600">
                             {s.state === "paid" ? `Paid on ${s.paid_at?.slice(0, 10) ?? "—"}` :
-                             s.state === "partially_paid" ? `Post Dated Amount: ${fmtPKR((s.amount_due + (s.surcharge || 0)) - s.outstanding)} paid` :
-                             s.state === "waived" ? "Installment waived" :
-                             !collectable ? "—" :
-                             collectable && s.days_until < 0 ? `Overdue by ${Math.abs(s.days_until)}d` :
-                             collectable && s.days_until >= 0 ? `Due in ${s.days_until}d` :
-                             "Standard cycle"}
+                              s.state === "partially_paid" ? `Post Dated Amount: ${fmtPKR((s.amount_due + (s.surcharge || 0)) - s.outstanding)} paid` :
+                                s.state === "waived" ? "Installment waived" :
+                                  !collectable ? "—" :
+                                    collectable && s.days_until < 0 ? `Overdue by ${Math.abs(s.days_until)}d` :
+                                      collectable && s.days_until >= 0 ? `Due in ${s.days_until}d` :
+                                        "Standard cycle"}
                           </p>
                           {s.reminder_count > 0 && <p className="mt-1.5 text-[10px] text-slate-400 font-bold">🔔 {s.reminder_count} reminder(s)</p>}
                         </div>
@@ -911,7 +895,7 @@ function PremiumCollectionPanel({
                   {(STATE_CHIP[selectedInstallment.state] ?? STATE_CHIP.upcoming).label}
                 </span>
               </div>
-              
+
               <div className="rounded-xl border border-slate-200 overflow-hidden shadow-sm">
                 <div className="divide-y divide-slate-100 bg-white">
                   {selectedInstallment.installment_no === 1 ? (
@@ -969,8 +953,8 @@ function PremiumCollectionPanel({
                 <div className="flex justify-between items-center px-4 py-4 bg-slate-50 border-t border-slate-200">
                   <span className="text-sm font-black text-slate-800 uppercase tracking-wider">Total Amount</span>
                   <span className="text-lg font-black text-blue-700 font-mono">{fmtPKR(
-                    selectedInstallment.state === "paid" || selectedInstallment.state === "waived" 
-                      ? selectedInstallment.amount_due + (selectedInstallment.surcharge || 0) 
+                    selectedInstallment.state === "paid" || selectedInstallment.state === "waived"
+                      ? selectedInstallment.amount_due + (selectedInstallment.surcharge || 0)
                       : (selectedInstallment.payable ?? selectedInstallment.amount_due)
                   )}</span>
                 </div>
@@ -1336,7 +1320,7 @@ function FreeLookPanel({
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
             </span>
-            <h3 className="text-sm font-bold text-slate-800 tracking-tight">Policy Documents</h3>
+            <h3 className="text-sm font-bold text-slate-800 tracking-tight">Policy Documents (Deliverables)</h3>
           </div>
           <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200">
             {documents.length} Files
@@ -1539,14 +1523,14 @@ function OnboardingPanel({
 
   const run = async (fn: () => Promise<unknown>, successMsg?: string) => {
     setBusy(true); setErr(null);
-    try { 
-      await fn(); 
-      await onChanged(); 
+    try {
+      await fn();
+      await onChanged();
       if (successMsg) notify(successMsg, true);
     }
-    catch (e: any) { 
+    catch (e: any) {
       const msg = e?.response?.data?.detail ?? e?.message ?? "Action failed";
-      setErr(msg); 
+      setErr(msg);
       notify(msg, false);
     }
     finally { setBusy(false); }
@@ -1733,16 +1717,20 @@ function OnboardingPanel({
               </div>
             </div>
           )}
-        </AccordionCard>
 
-        {/* 4 — Acknowledgment (optional) */}
-        <AccordionCard n={4} title="Acknowledgment (optional)" done={s.acknowledged.done} isOpen={openStep === 4} onToggle={() => setOpenStep(openStep === 4 ? 0 : 4)}>
-          {s.acknowledged.done ? (
-            <p className="text-xs text-slate-600">Confirmed via {s.acknowledged.method} · {s.acknowledged.at?.slice(0, 10)}</p>
-          ) : (
-            <OnboardingBtn disabled={locked} onClick={() => run(() => acknowledgeOnboarding(policyId, { method: "Call" }))}>Mark acknowledged</OnboardingBtn>
+          {s.welcome_kit.done && (
+            <div className="pt-4 mt-4 border-t border-slate-100">
+              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-2">Customer Acknowledgment (optional)</p>
+              {s.acknowledged.done ? (
+                <p className="text-xs text-slate-600">Confirmed via {s.acknowledged.method} · {s.acknowledged.at?.slice(0, 10)}</p>
+              ) : (
+                <OnboardingBtn disabled={locked} onClick={() => run(() => acknowledgeOnboarding(policyId, { method: "Call" }))}>Mark acknowledged</OnboardingBtn>
+              )}
+            </div>
           )}
         </AccordionCard>
+
+
       </div>
 
       {onboarding.completed && (
@@ -1818,13 +1806,13 @@ function PolicyIssuancePanel({
 
   const download = async (docId: string) => {
     setDownloading(docId); setErr(null);
-    try { 
-      await downloadDocument(policyId, docId); 
+    try {
+      await downloadDocument(policyId, docId);
       notify("Document downloaded.", true);
     }
-    catch (e: any) { 
+    catch (e: any) {
       const msg = e?.message ?? "Download failed";
-      setErr(msg); 
+      setErr(msg);
       notify(msg, false);
     }
     finally { setDownloading(null); }
@@ -1873,7 +1861,7 @@ function PolicyIssuancePanel({
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard label="Policy number" value={detail.policy_number?.replace('POL-', 'PL-') ?? "—"} />
           <StatCard label="Sum assured" value={fmtCoverage(detail.coverage_amount)} />
-          <StatCard label="Term" value={`${detail.term_years} years`} />
+          <StatCard label="Insurance Term" value={`${detail.term_years} years`} />
           <StatCard label="Status" value={detail.status} accent />
           <StatCard label="Commencement" value={detail.effective_date ?? "—"} />
           <StatCard label="Maturity" value={detail.maturity_date ?? detail.expiry_date ?? "—"} />
@@ -2164,7 +2152,20 @@ function ServicingPanel({ policyId, onChanged }: Readonly<{ policyId: string; on
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
             <p className="text-[11px] font-semibold text-slate-500">Add a rider</p>
             <div className="flex gap-2">
-              <input value={rider.name} onChange={(e) => setRider({ ...rider, name: e.target.value })} placeholder="Rider name (e.g. Accidental Death)" className="flex-1 text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-white" />
+              <select
+                value={rider.name}
+                onChange={(e) => setRider({ ...rider, name: e.target.value })}
+                className="flex-1 text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-colors"
+              >
+                <option value="" disabled>Select Adamjee standard rider...</option>
+                <option value="Accidental Death Benefit (ADB)">Accidental Death Benefit (ADB)</option>
+                <option value="Accidental Death & Disability (ADD)">Accidental Death & Disability (ADD)</option>
+                <option value="Waiver of Premium (WOP)">Waiver of Premium (WOP)</option>
+                <option value="Critical Illness (CI)">Critical Illness (CI)</option>
+                <option value="Hospital Cash Cover">Hospital Cash Cover</option>
+                <option value="Family Income Benefit (FIB)">Family Income Benefit (FIB)</option>
+                <option value="Level Term Rider">Level Term Rider</option>
+              </select>
               <input type="number" value={rider.sum_assured} onChange={(e) => setRider({ ...rider, sum_assured: e.target.value })} placeholder="Sum assured" className="w-36 text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-white" />
             </div>
             <button disabled={locked || !rider.name}

@@ -37,7 +37,7 @@ from shared.models.core import PolicyDocumentTypeEnum
 
 MEDIA_ROOT = os.getenv("POLICY_DOC_MEDIA_ROOT", "/app/media/policy_documents")
 
-_BRAND = colors.HexColor("#0f766e")   # teal-700, matches the app accent
+_BRAND = colors.HexColor("#2563eb")   # blue-600, matches the app accent
 _INK = colors.HexColor("#0f172a")
 _MUTE = colors.HexColor("#64748b")
 
@@ -412,10 +412,18 @@ def generate_welcome_kit(ctx: dict) -> dict:
 
     story: list = []
     
-    # Professional Hero Banner
+    city = ctx.get("customer_city")
+    
+    # Tenant and Region placed above the banner
+    story.append(Paragraph(tenant_name.upper(), ParagraphStyle("KitTenant", parent=ss["Body"], textColor=_BRAND, fontSize=14, fontName="Helvetica-Bold")))
+    if city:
+        story.append(Paragraph(f"Region: {city}", ParagraphStyle("KitRegion", parent=ss["Body"], textColor=_MUTE, fontSize=11, fontName="Helvetica", spaceBefore=2)))
+    story.append(Spacer(1, 15))
+    
+    # Professional Hero Banner (Now only for Customer Name and Title)
     banner_data = [[
-        Paragraph(tenant_name, ParagraphStyle("BannerTenant", parent=ss["Body"], textColor=colors.white, fontSize=12, fontName="Helvetica-Bold")),
-        Paragraph("WELCOME KIT", ParagraphStyle("BannerTitle", parent=ss["DocTitle"], textColor=colors.white, alignment=2))
+        Paragraph(customer_name, ParagraphStyle("BannerName", parent=ss["Body"], textColor=colors.white, fontSize=22, fontName="Helvetica-Bold", leading=24, spaceBefore=0, spaceAfter=0)),
+        Paragraph("WELCOME KIT", ParagraphStyle("BannerTitle", parent=ss["DocTitle"], textColor=colors.white, alignment=2, leading=24, spaceBefore=0, spaceAfter=0))
     ]]
     banner = Table(banner_data, colWidths=[80*mm, 85*mm])
     banner.setStyle(TableStyle([
@@ -439,18 +447,25 @@ def generate_welcome_kit(ctx: dict) -> dict:
     story.append(_card_table([
         ("Policyholder ID", f"<b>{ctx.get('policyholder_id') or '—'}</b>"),
         ("Policy Number", ctx.get("policy_number") or "—"),
-    ], title="Your Policyholder Identity"))
+    ], title="Policyholder Identity"))
     story.append(Spacer(1, 5))
     story.append(Paragraph("Quote your Policyholder ID whenever you contact us — it links every policy you hold with us.", ss["Fine"]))
     story.append(Spacer(1, 15))
 
+    cov = ctx.get("coverage_amount")
+    cov_str = "—"
+    if cov is not None:
+        if cov >= 1_000_000: cov_str = f"PKR {cov/1_000_000:g} Million"
+        elif 0 < cov < 1000: cov_str = f"PKR {cov:g} Million"
+        else: cov_str = f"PKR {cov:,.0f}"
+
     story.append(_card_table([
         ("Product", ctx.get("product_name") or "—"),
-        ("Sum Assured", _pkr(ctx.get("coverage_amount"))),
-        ("Term", f"{ctx.get('term_years', '—')} years"),
-        ("Effective Date", str(ctx.get("effective_date") or "—")),
+        ("Sum Assured", cov_str),
+        ("Insurance Term", f"{ctx.get('term_years', '—')} years"),
+        ("Effective From", str(ctx.get("effective_date") or "—")),
         ("Expiry Date", str(ctx.get("expiry_date") or "—")),
-    ], title="Your Cover at a Glance"))
+    ], title="Cover at a Glance"))
     story.append(Spacer(1, 15))
 
     fl_end = ctx.get("free_look_end_date")
@@ -463,12 +478,12 @@ def generate_welcome_kit(ctx: dict) -> dict:
         ("Portal Link", ctx.get("portal_url") or "—"),
         ("Username", ctx.get("portal_username") or "—"),
         ("Password", "Sent separately — you will be prompted to set this on first login."),
-    ], title="Manage Your Policy Online"))
+    ], title="Manage Policy Online"))
     story.append(Spacer(1, 5))
     story.append(Paragraph("Through the portal you can view documents, pay premiums, update details and lodge claims.", ss["Fine"]))
     story.append(Spacer(1, 15))
 
-    story.append(Paragraph("Your 14-Day Free-Look Right", ss["H"]))
+    story.append(Paragraph("14-Day Free-Look Right", ss["H"]))
     story.append(Paragraph(fl_line, ss["Body"]))
     story.append(Spacer(1, 15))
 

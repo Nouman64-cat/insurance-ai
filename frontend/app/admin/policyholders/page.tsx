@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
@@ -37,6 +37,11 @@ export default function PolicyholdersPage() {
   const [selectedEntity, setSelectedEntity] = useState<{ id: string, type: EntityType } | null>(null);
   const [activeAdd, setActiveAdd] = useState<{ type: EntityType } | null>(null);
   const [actionBusyId, setActionBusyId] = useState<string | null>(null);
+
+  // Expanded Family state
+  const [expandedFamilies, setExpandedFamilies] = useState<Record<string, boolean>>({});
+  const [familyMembersCache, setFamilyMembersCache] = useState<Record<string, any[]>>({});
+  const [loadingMembers, setLoadingMembers] = useState<Record<string, boolean>>({});
 
 
   const [search, setSearch] = useState("");
@@ -225,6 +230,26 @@ export default function PolicyholdersPage() {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to delete.");
     } finally {
       setActionBusyId(null);
+    }
+  };
+
+  const toggleFamilyRow = async (familyId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const isExpanding = !expandedFamilies[familyId];
+    setExpandedFamilies(prev => ({ ...prev, [familyId]: isExpanding }));
+    
+    if (isExpanding && !familyMembersCache[familyId]) {
+      setLoadingMembers(prev => ({ ...prev, [familyId]: true }));
+      try {
+        const tenantId = localStorage.getItem("tenant_id");
+        if (!tenantId) return;
+        const res = await api.get(`/tenants/${tenantId}/families/${familyId}/members`);
+        setFamilyMembersCache(prev => ({ ...prev, [familyId]: res.data || [] }));
+      } catch (err) {
+        console.error("Failed to load family members", err);
+      } finally {
+        setLoadingMembers(prev => ({ ...prev, [familyId]: false }));
+      }
     }
   };
 
@@ -429,41 +454,118 @@ export default function PolicyholdersPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {getFilteredData().map(p => (
-                    <tr 
-                      key={p.id} 
-                      className="hover:bg-slate-50 transition-colors cursor-pointer"
-                      onClick={() => handleRowClick(p)}
-                    >
-                      <td className="px-6 py-4 font-semibold text-slate-900">{p.name}</td>
-                      <td className="px-6 py-4">
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
-                          p.type === 'INDIVIDUAL' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          p.type === 'FAMILY' ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                          'bg-blue-50 text-blue-700 border-blue-200'
-                        }`}>
-                          {p.type}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600">{p.contact_info}</td>
-                      <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
-                      <td className="px-6 py-4 text-blue-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
-                      <td className="px-6 py-4 text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
-                      <td className="px-6 py-4 text-right space-x-3">
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleRowClick(p); }} 
-                          className="text-blue-600 hover:text-blue-800 font-semibold text-xs"
-                        >
-                          View Details
-                        </button>
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); handleDelete(p); }} 
-                          disabled={actionBusyId === p.id}
-                          className="text-red-500 hover:text-red-700 font-semibold text-xs disabled:opacity-50"
-                        >
-                          {actionBusyId === p.id ? "Deleting..." : "Delete"}
-                        </button>
-                      </td>
-                    </tr>
+                    <React.Fragment key={p.id}>
+                      <tr 
+                        className="hover:bg-slate-50 transition-colors cursor-pointer"
+                        onClick={() => handleRowClick(p)}
+                      >
+                        <td className="px-6 py-4 font-semibold text-slate-900">
+                          <div className="flex items-center gap-3">
+                            {p.type === "FAMILY" ? (
+                              <button
+                                onClick={(e) => toggleFamilyRow(p.id, e)}
+                                className="w-5 h-5 flex items-center justify-center rounded border border-slate-200 bg-white text-slate-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 transition-colors shadow-sm shrink-0"
+                                title="View Family Members"
+                              >
+                                {expandedFamilies[p.id] ? "-" : "+"}
+                              </button>
+                            ) : (
+                              <div className="w-5 h-5 shrink-0"></div>
+                            )}
+                            {p.name}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold border ${
+                            p.type === 'INDIVIDUAL' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            p.type === 'FAMILY' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}>
+                            {p.type}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-slate-600">{p.contact_info}</td>
+                        <td className="px-6 py-4 text-slate-500 font-mono text-xs">{p.primaryIdentifier || "-"}</td>
+                        <td className="px-6 py-4 text-blue-700 font-mono font-semibold text-xs">{p.policy_number || "-"}</td>
+                        <td className="px-6 py-4 text-slate-500">{new Date(p.created_at).toLocaleDateString()}</td>
+                        <td className="px-6 py-4 text-right space-x-3">
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleRowClick(p); }} 
+                            className="text-blue-600 hover:text-blue-800 font-semibold text-xs"
+                          >
+                            View Details
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDelete(p); }} 
+                            disabled={actionBusyId === p.id}
+                            className="text-red-500 hover:text-red-700 font-semibold text-xs disabled:opacity-50"
+                          >
+                            {actionBusyId === p.id ? "Deleting..." : "Delete"}
+                          </button>
+                        </td>
+                      </tr>
+                      
+                      {p.type === "FAMILY" && expandedFamilies[p.id] && (
+                        <tr className="bg-slate-50/40 border-b border-slate-100 shadow-inner">
+                          <td colSpan={7} className="px-14 py-4">
+                            {loadingMembers[p.id] ? (
+                              <div className="flex items-center py-4 text-slate-400 text-sm">
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500 mr-3"></div>
+                                Loading family members...
+                              </div>
+                            ) : (
+                              <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden my-1">
+                                <div className="bg-slate-100/50 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
+                                  <h4 className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                                    Family Members Directory ({(familyMembersCache[p.id] || []).length})
+                                  </h4>
+                                </div>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-xs whitespace-nowrap">
+                                    <thead className="bg-slate-50/50 text-slate-500 font-medium border-b border-slate-100">
+                                      <tr>
+                                        <th className="px-4 py-2.5">Member Name</th>
+                                        <th className="px-4 py-2.5">Relation</th>
+                                        <th className="px-4 py-2.5">CNIC</th>
+                                        <th className="px-4 py-2.5">Gender / Age</th>
+                                        <th className="px-4 py-2.5">Occupation</th>
+                                        <th className="px-4 py-2.5 text-right">Declared Income (PKR)</th>
+                                        <th className="px-4 py-2.5 text-right">Health Stats</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {(familyMembersCache[p.id] || []).map((m: any) => (
+                                        <tr key={m.id} className="hover:bg-slate-50 transition-colors">
+                                          <td className="px-4 py-2.5 font-semibold text-slate-800">{m.name}</td>
+                                          <td className="px-4 py-2.5 text-blue-700 font-medium">{m.relationship || "-"}</td>
+                                          <td className="px-4 py-2.5 text-slate-500 font-mono">{m.cnic || "-"}</td>
+                                          <td className="px-4 py-2.5 text-slate-600">
+                                            {m.gender || "-"} {m.dob ? `· ${new Date().getFullYear() - new Date(m.dob).getFullYear()}y` : ""}
+                                          </td>
+                                          <td className="px-4 py-2.5 text-slate-600">{m.occupation || "-"}</td>
+                                          <td className="px-4 py-2.5 text-right font-semibold text-emerald-600">
+                                            {m.declared_income ? m.declared_income.toLocaleString() : "-"}
+                                          </td>
+                                          <td className="px-4 py-2.5 text-right text-slate-500">
+                                            <span className={m.is_smoker ? "text-amber-600 font-medium" : ""}>{m.is_smoker ? "Smoker" : "Non-smoker"}</span> 
+                                            {" "}· {m.height_cm}cm · {m.weight_kg}kg
+                                          </td>
+                                        </tr>
+                                      ))}
+                                      {(!familyMembersCache[p.id] || familyMembersCache[p.id].length === 0) && (
+                                        <tr>
+                                          <td colSpan={7} className="px-4 py-6 text-center text-slate-400">No enrolled members found for this family.</td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
