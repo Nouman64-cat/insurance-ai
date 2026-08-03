@@ -12,6 +12,8 @@ import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import type { AgentMessage, QuickAction } from "@/lib/agent/types";
 import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
+import { IssuanceModal, SuccessModal, PaymentModal } from "./policy/IssuanceModals";
+import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/policies";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -141,6 +143,13 @@ export function CopilotInterface() {
   const [uploadedDocs, setUploadedDocs] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const interruptRiskRef = useRef<boolean>(false);
+  
+  const [bulkSteps, setBulkSteps] = useState<ProcessStep[]>([]);
+  const interruptBulkRef = useRef<boolean>(false);
+
+  const [issuanceModalPolicy, setIssuanceModalPolicy] = useState<any | null>(null);
+  const [successModalResult, setSuccessModalResult] = useState<{ result: IssuanceResult | PaymentConfirmResult, policyName: string, caseNumber: string, isPayment?: boolean } | null>(null);
+  const [paymentModalPolicy, setPaymentModalPolicy] = useState<any | null>(null);
 
   useEffect(() => {
     if (selectedFile && selectedFile.type.startsWith("image/")) {
@@ -361,7 +370,8 @@ export function CopilotInterface() {
               }
             } else if (evt.type === "invalid" || evt.type === "error") {
                updateStep("error", "Assessment failed", "error");
-               throw new Error(evt.message || "Validation failed");
+               const errMsg = evt.errors?.length ? evt.errors.join("; ") : (evt.message || "Validation failed");
+               throw new Error(errMsg);
             }
           }
         }
@@ -390,6 +400,7 @@ export function CopilotInterface() {
           },
           quick_actions: [
             { label: "View Results", actionType: "navigate", payload: results_route },
+            { label: "Download Report", actionType: "download", payload: args.case_id },
             { label: "Move to Review", actionType: "submit", payload: `Move case ${args.case_id} to Under Review` }
           ]
         });
@@ -401,6 +412,116 @@ export function CopilotInterface() {
       }
     })();
   }, [pendingInterrupt, resolveInterrupt]);
+  // Client-executed bulk underwriting journey
+  useEffect(() => {
+    if (pendingInterrupt?.kind !== "client_execute") return;
+    if (pendingInterrupt.toolCall.name !== "bulk_underwriting_journey") return;
+    
+    if (interruptBulkRef.current) return;
+    interruptBulkRef.current = true;
+    
+    const cnics = pendingInterrupt.toolCall.args.cnics || [];
+    setBulkSteps(cnics.map((c: string) => ({ id: c, label: `Processing ${c}`, status: "pending" })));
+    
+    (async () => {
+      try {
+        const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
+        
+        // Remove /api from API_BASE because chat API runs on 8003
+        // Actually, we'll use the Chat agent URL directly for this stream.
+        const chatAgentUrl = process.env.NEXT_PUBLIC_CHAT_API_URL ?? "http://localhost:8003";
+
+        const res = await fetch(`${chatAgentUrl}/bulk-underwriting/stream`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
+          body: JSON.stringify({ cnics }),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const reader = res.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) throw new Error("No stream reader available");
+
+        let buffer = "";
+        let finalMessage = "Processed bulk underwriting journey.\n";
+        let missingUploadActions: QuickAction[] = [];
+        
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          buffer = parts.pop() || "";
+          
+          for (let p of parts) {
+            p = p.trim();
+            if (!p.startsWith("data: ")) continue;
+            
+            try {
+              const evt = JSON.parse(p.slice(6));
+              
+              if (evt.type === "progress") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "active", label: `${evt.step} for ${evt.cnic}` } : s
+                ));
+              } else if (evt.type === "warning") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "error", label: `Missing docs for ${evt.cnic}` } : s
+                ));
+                finalMessage += `\n❌ **${evt.cnic}**: Missing ${evt.missing.length} documents.`;
+                evt.missing.slice(0, 3).forEach((doc: string) => {
+                  missingUploadActions.push({
+                    label: `Upload ${doc} (${evt.cnic})`,
+                    actionType: "upload",
+                    payload: JSON.stringify({ document_type: doc, cnic: evt.cnic })
+                  });
+                });
+              } else if (evt.type === "error") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "error", label: `Error: ${evt.message}` } : s
+                ));
+                finalMessage += `\n❌ **${evt.cnic}**: Failed - ${evt.message}`;
+              } else if (evt.type === "done") {
+                setBulkSteps(prev => prev.map(s => 
+                  s.id === evt.cnic ? { ...s, status: "done", label: `Completed ${evt.cnic}` } : s
+                ));
+                const d = evt.result.ai_decision || "Unknown";
+                finalMessage += `\n✅ **${evt.cnic}**: Case ${evt.caseNumber} opened. Decision: **${d}**`;
+              }
+            } catch (e) {
+              console.warn("Failed to parse SSE event", p, e);
+            }
+          }
+        }
+        
+        resolveInterrupt({
+          success: true,
+          message: finalMessage,
+          quick_actions: [
+            ...missingUploadActions,
+            { label: "View Cases", actionType: "navigate", payload: "cases" }
+          ]
+        });
+      } catch (err: any) {
+        resolveInterrupt({ success: false, message: `Bulk processing failed: ${err.message}` });
+      } finally {
+        interruptBulkRef.current = false;
+        setBulkSteps([]);
+      }
+    })();
+  }, [pendingInterrupt, resolveInterrupt]);
+
+  // Client-executed Policy Issuance and Payment
+  useEffect(() => {
+    if (pendingInterrupt?.kind !== "client_execute") return;
+    if (pendingInterrupt.toolCall.name === "issue_policy") {
+      setIssuanceModalPolicy(pendingInterrupt.toolCall.args.policy);
+    } else if (pendingInterrupt.toolCall.name === "confirm_policy_payment") {
+      setPaymentModalPolicy(pendingInterrupt.toolCall.args.policy);
+    }
+  }, [pendingInterrupt]);
 
   const getBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -463,6 +584,8 @@ export function CopilotInterface() {
       fileInputRef.current?.click();
     } else if (action.actionType === "confirm") {
       resolveInterrupt(action.payload === "Yes");
+    } else if (action.actionType === "download") {
+      handleDownloadPDF(action.payload);
     } else {
       handleSubmit(undefined, action.payload);
     }
@@ -632,6 +755,99 @@ export function CopilotInterface() {
   if (isAutomationMode) {
     return (
       <div className="flex h-full w-full bg-white text-slate-900 font-sans overflow-hidden">
+        <>
+          {issuanceModalPolicy && (
+            <IssuanceModal
+              policy={issuanceModalPolicy}
+              onClose={() => {
+                setIssuanceModalPolicy(null);
+                resolveInterrupt({ success: false, message: "User cancelled issuance." });
+              }}
+              onIssued={(result, policyId) => {
+                setIssuanceModalPolicy(null);
+                setSuccessModalResult({ result, policyName: issuanceModalPolicy.customer_name, caseNumber: pendingInterrupt?.toolCall.args.case_number, isPayment: false });
+              }}
+            />
+          )}
+          {paymentModalPolicy && (
+            <PaymentModal
+              policy={paymentModalPolicy}
+              onClose={() => {
+                setPaymentModalPolicy(null);
+                resolveInterrupt({ success: false, message: "User cancelled payment confirmation." });
+              }}
+              onConfirmed={(result, policyId) => {
+                setPaymentModalPolicy(null);
+                setSuccessModalResult({ result, policyName: paymentModalPolicy.customer_name, caseNumber: pendingInterrupt?.toolCall.args.case_number, isPayment: true });
+              }}
+            />
+          )}
+          {successModalResult && !successModalResult.isPayment && (
+            <SuccessModal
+              result={successModalResult.result as IssuanceResult}
+              policyName={successModalResult.policyName}
+              onClose={() => {
+                const res = successModalResult.result as IssuanceResult;
+                const caseNum = successModalResult.caseNumber;
+                setSuccessModalResult(null);
+                
+                const total = res.premium_breakdown?.total_premium || 0;
+                const msg = `Policy **${res.policy_number}** drafted for **${caseNum}** ✅\n\n- Status: **Pending Payment**\n- Effective: ${res.effective_date}\n- Expiry: ${res.expiry_date}\n- Total Premium: PKR ${total.toLocaleString()}\n- Payment Reference: ${res.payment?.reference || '—'}\n\nConfirm payment to activate coverage and bind the contract.`;
+                
+                resolveInterrupt({
+                  success: true,
+                  message: msg,
+                  policy_id: res.policy_id,
+                  policy_number: res.policy_number,
+                  issuance_result: res,
+                  last_action: {
+                    tool_name: "issue_policy",
+                    entity_type: "case",
+                    entity_id: pendingInterrupt?.toolCall.args.case_id,
+                    route: "policy-issuance",
+                    label: `Policy ${res.policy_number} drafted`
+                  },
+                  quick_actions: [
+                    { label: "Confirm Payment Now", actionType: "submit", payload: `Confirm payment for case ${caseNum}` },
+                    { label: "Open Policy Issuance", actionType: "navigate", payload: "policy-issuance" }
+                  ]
+                });
+              }}
+            />
+          )}
+          {successModalResult && successModalResult.isPayment && (
+            <SuccessModal
+              result={successModalResult.result as any}
+              policyName={successModalResult.policyName}
+              onClose={() => {
+                const res = successModalResult.result as PaymentConfirmResult;
+                const caseNum = successModalResult.caseNumber;
+                setSuccessModalResult(null);
+                
+                const msg = `🎉 Policy **${res.policy_number}** is now **Active**!\n\n- Coverage bound effective: ${res.effective_date}\n- Expiry: ${res.expiry_date}\n- Free-look period ends: ${res.free_look_end_date}\n- Payment: ${res.payment?.reference || '—'}\n\nThe case has been closed and the customer promoted to Policyholder.\nThis policy is now visible in the **Post-Issuance** section.`;
+                
+                resolveInterrupt({
+                  success: true,
+                  message: msg,
+                  policy_id: pendingInterrupt?.toolCall.args.policy.id,
+                  policy_number: res.policy_number,
+                  payment_result: res,
+                  last_action: {
+                    tool_name: "confirm_policy_payment",
+                    entity_type: "policy",
+                    entity_id: pendingInterrupt?.toolCall.args.policy.id,
+                    route: `post-issuance/${pendingInterrupt?.toolCall.args.policy.id}`,
+                    label: `Policy ${res.policy_number} activated`
+                  },
+                  quick_actions: [
+                    { label: "View Active Policy", actionType: "submit", payload: `Show me the active policy status for case ${caseNum}` },
+                    { label: "Open Post-Issuance", actionType: "navigate", payload: "policy-management/post-issuance" }
+                  ]
+                });
+              }}
+            />
+          )}
+        </>
         {/* Hidden File Input */}
         <input
           type="file"
@@ -639,48 +855,50 @@ export function CopilotInterface() {
           onChange={async (e) => {
             const file = e.target.files?.[0];
             if (!file) return;
-            setSelectedFile(file);
-            selectedFileRef.current = file;
-            setIsUploading(true);
-
-            if (interruptUploadRef.current) {
-              const { args } = interruptUploadRef.current;
-              interruptUploadRef.current = null;
-              try {
-                const result = await uploadDocument(args, file);
-                setSelectedFile(null);
-                resolveInterrupt(result);
-              } catch (err: any) {
-                setSelectedFile(null);
-                resolveInterrupt({ success: false, error: err.message || "Upload failed." });
-              }
-            } else if (pendingUploadRef.current) {
-              const args = pendingUploadRef.current;
-              pendingUploadRef.current = null;
-              try {
-                const result = await uploadDocument(args, file);
-                notify(`✅ ${result.message}`, true);
-                if (pendingInterrupt) {
-                  setUploadedDocs((prev) => [...prev, args.document_type]);
-                  // Do NOT resolve the interrupt yet — the user might need to upload multiple
-                  // documents. They will click the 'Proceed' button when they are done.
-                } else {
-                  const msg = `I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`;
-                  send(msg);
+            
+            // For immediate uploads, don't show the preview to avoid DOM layout thrashing
+            if (interruptUploadRef.current || pendingUploadRef.current || autoSubmitPrompt) {
+              setIsUploading(true);
+              
+              if (interruptUploadRef.current) {
+                const { args } = interruptUploadRef.current;
+                interruptUploadRef.current = null;
+                try {
+                  const result = await uploadDocument(args, file);
+                  resolveInterrupt(result);
+                } catch (err: any) {
+                  resolveInterrupt({ success: false, error: err.message || "Upload failed." });
+                } finally {
+                  setIsUploading(false);
                 }
-              } catch (err: any) {
-                notify(`⚠️ ${err.message || "Upload failed."}`, false);
-              } finally {
-                setSelectedFile(null);
+              } else if (pendingUploadRef.current) {
+                const args = pendingUploadRef.current;
+                pendingUploadRef.current = null;
+                try {
+                  const result = await uploadDocument(args, file);
+                  notify(`✅ ${result.message}`, true);
+                  setUploadedDocs((prev) => [...prev, args.document_type]);
+                } catch (err: any) {
+                  notify(`⚠️ ${err.message || "Upload failed."}`, false);
+                } finally {
+                  setIsUploading(false);
+                }
+              } else if (autoSubmitPrompt) {
+                // To attach and immediately submit, we do set the file briefly
+                setSelectedFile(file);
+                handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
+                setAutoSubmitPrompt("");
                 setIsUploading(false);
               }
-            } else if (autoSubmitPrompt) {
-              handleSubmit(undefined, `Upload ${file.name} as ${autoSubmitPrompt} for this case.`);
-              setAutoSubmitPrompt("");
-              setIsUploading(false);
-            } else {
-              setIsUploading(false);
+              
+              // Reset the file input
+              if (fileInputRef.current) fileInputRef.current.value = "";
+              return;
             }
+
+            // Normal attach (for chat message)
+            setSelectedFile(file);
+            selectedFileRef.current = file;
           }}
           className="hidden"
           accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp"
@@ -1427,13 +1645,13 @@ export function CopilotInterface() {
                 ))}
                 {/* Live process graph — the agent narrating its own state
                     machine, node by node, while (and after) it works. */}
-                {(steps.length > 0 || riskSteps.length > 0) && (
+                {(steps.length > 0 || riskSteps.length > 0 || bulkSteps.length > 0) && (
                   <div className="flex justify-start items-start gap-2">
                     <div className="w-7 h-7 rounded-full bg-white logo-white border border-blue-100 shadow-sm flex flex-shrink-0 items-center justify-center overflow-hidden">
                       <img src="/rizvi.png" alt="Agent" className="w-5 h-5 object-contain" />
                     </div>
                     <div className="max-w-[82%] flex-1">
-                      <ProcessGraph steps={riskSteps.length > 0 ? riskSteps : steps} />
+                      <ProcessGraph steps={bulkSteps.length > 0 ? bulkSteps : (riskSteps.length > 0 ? riskSteps : steps)} />
                     </div>
                   </div>
                 )}
@@ -1499,7 +1717,9 @@ export function CopilotInterface() {
                       try {
                         const result = await uploadDocument(args, file);
                         notify(`✅ ${result.message}`, true);
-                        send(`I've uploaded the ${args.document_type}${args.cnic ? ` for CNIC ${args.cnic}` : ""}. What's the next step?`);
+                        setUploadedDocs((prev) => [...prev, args.document_type]);
+                        // Do not auto-send a message. The user can upload multiple docs
+                        // and then click 'Retry Risk Assessment' manually.
                       } catch (err: any) {
                         notify(`⚠️ ${err.message || "Upload failed."}`, false);
                       } finally {

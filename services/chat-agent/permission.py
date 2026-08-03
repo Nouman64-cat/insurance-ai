@@ -24,10 +24,16 @@ MUTATING_TOOLS = {
     "upload_document",
     "run_risk_assessment",
     "quick_start_workflow",
+    # Policy lifecycle (steps 5–7)
+    "approve_case",
+    "run_pre_issuance_verification",
+    "issue_policy",
+    "confirm_policy_payment",
     # One confirmation buys the whole autonomous pipeline — that's the point.
     # (continue_underwriting_journey is deliberately NOT here: the journey was
     # already consented to at start; resuming it shouldn't re-prompt.)
     "start_underwriting_journey",
+    "bulk_underwriting_journey",
 }
 
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
@@ -50,6 +56,9 @@ SAFE_TOOLS = {
     "get_dashboard_stats",
     "get_workflow_recommendation",
     "continue_underwriting_journey",
+    # Policy lifecycle (read-only)
+    "get_pre_issuance_status",
+    "get_active_policy_status",
 }
 
 # Destructive enough that the confirmation prompt names the record explicitly
@@ -124,6 +133,13 @@ STEP_LABELS: dict[str, str] = {
     "quick_start_workflow": "Generating demo data",
     "start_underwriting_journey": "Launching autonomous underwriting journey",
     "continue_underwriting_journey": "Resuming underwriting journey",
+    # Policy lifecycle (steps 5–7)
+    "approve_case": "Approving case",
+    "get_pre_issuance_status": "Checking pre-issuance readiness",
+    "run_pre_issuance_verification": "Running pre-issuance verification",
+    "issue_policy": "Issuing policy",
+    "confirm_policy_payment": "Confirming payment",
+    "get_active_policy_status": "Checking active policy status",
 }
 
 
@@ -142,6 +158,8 @@ def is_role_allowed(tool_name: str, role: str) -> bool:
 
 
 def requires_confirmation(tool_name: str) -> bool:
+    if tool_name == "run_risk_assessment":
+        return False
     return tool_name in MUTATING_TOOLS
 
 

@@ -68,6 +68,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
   });
   const threadIdRef = useRef<string>("");
   const pendingAssessmentRef = useRef<any>(null);
+  const pendingQuickActionsRef = useRef<QuickAction[] | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -90,12 +91,13 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
             setMessages((prev) => {
               const copy = [...prev];
               // Move the assessment from any previous message in this turn to the final token bubble
-              if (pendingAssessmentRef.current) {
+              if (pendingAssessmentRef.current || pendingQuickActionsRef.current) {
                 for (let i = copy.length - 1; i >= 0; i--) {
                   if (copy[i].role === "user") break;
-                  if (copy[i].role === "assistant" && copy[i].assessment) {
+                  if (copy[i].role === "assistant" && (copy[i].assessment || copy[i].quickActions)) {
                     copy[i] = { ...copy[i] };
-                    delete copy[i].assessment;
+                    if (pendingAssessmentRef.current) delete copy[i].assessment;
+                    if (pendingQuickActionsRef.current) delete copy[i].quickActions;
                   }
                 }
               }
@@ -104,10 +106,12 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
                 role: "assistant",
                 text: evt.content,
                 assessment: pendingAssessmentRef.current || undefined,
+                quickActions: pendingQuickActionsRef.current || undefined,
               });
               return copy;
             });
             pendingAssessmentRef.current = null;
+            pendingQuickActionsRef.current = null;
           }
           break;
 
@@ -158,10 +162,21 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
         }
 
         case "quick_actions":
-          // The backend attaches contextual next-step suggestions to every
-          // tool result — surface the freshest set as this turn's
-          // recommendations (rendered as the chips under the chat input).
-          setTurnActions(evt.actions || []);
+          // Attach contextual next-step suggestions directly to the chat bubble
+          pendingQuickActionsRef.current = evt.actions;
+          setMessages((prev) => {
+            const copy = [...prev];
+            for (let i = copy.length - 1; i >= 0; i--) {
+              if (copy[i].role === "assistant") {
+                copy[i] = { ...copy[i], quickActions: evt.actions };
+                break;
+              }
+            }
+            return copy;
+          });
+          // Also set turnActions for the floating panel (filter out upload actions
+          // since they are already attached to the specific message bubble)
+          setTurnActions(evt.actions ? evt.actions.filter((a: any) => a.actionType !== "upload") : []);
           break;
 
         case "step":

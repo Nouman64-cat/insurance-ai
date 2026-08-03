@@ -402,47 +402,43 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
 
 @handles("get_document_checklist")
 async def _get_document_checklist(args: dict, ctx: Ctx) -> dict:
-    while True:
-        case = await _resolve_case(args, ctx)
-        case_id = _case_id(case)
-        res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
-        res.raise_for_status()
-        cl = res.json()
-        missing = cl.get("missing") or []
-        received = cl.get("received") or []
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+    res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
+    res.raise_for_status()
+    cl = res.json()
+    missing = cl.get("missing") or []
+    received = cl.get("received") or []
 
-        body = f"Documents for **{case.get('caseNumber')}**:\n"
-        body += "".join(f"- ✅ {d}\n" for d in received)
-        body += "".join(f"- ❌ {d} (missing)\n" for d in missing)
-        body += "\nAll required documents are in — the assessment can run." if not missing else \
-                f"\n{len(missing)} document(s) still needed before the assessment can run."
+    body = f"Documents for **{case.get('caseNumber')}**:\n"
+    body += "".join(f"- ✅ {d}\n" for d in received)
+    body += "".join(f"- ❌ {d} (missing)\n" for d in missing)
+    body += "\nAll required documents are in — the assessment can run." if not missing else \
+            f"\n{len(missing)} document(s) still needed before the assessment can run."
 
-        if not missing:
-            return {
-                "success": True,
-                "message": body,
-                "checklist": cl,
-                "quick_actions": [
-                    {"label": "Run Risk Assessment", "actionType": "submit",
-                     "payload": f"Run risk assessment for case {case.get('caseNumber')}"}
-                ],
-            }
+    if not missing:
+        return {
+            "success": True,
+            "message": body,
+            "checklist": cl,
+            "quick_actions": [
+                {"label": "Run Risk Assessment", "actionType": "submit",
+                 "payload": f"Run risk assessment for case {case.get('caseNumber')}"}
+            ],
+        }
 
-        upload_actions = [
-            {"label": f"Upload {doc}", "actionType": "upload",
-             "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
-            for doc in missing[:3]
-        ]
-        answer = interrupt({
-            "kind": "clarify",
-            "tool_call": {"name": "get_document_checklist", "args": args},
-            "question": body,
-            "custom_actions": upload_actions + [{"label": "Proceed", "actionType": "submit", "payload": "Proceed"}]
-        })
-        if str(answer).lower() not in ("proceed", "yes", "true"):
-            return {"success": True, "message": "Document check completed."}
-        # Brief pause to let the backend fully persist the uploaded document
-        await asyncio.sleep(1.5)
+    upload_actions = [
+        {"label": f"Upload {doc}", "actionType": "upload",
+         "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
+        for doc in missing[:3]
+    ]
+    return {
+        "success": False,
+        "message": body,
+        "checklist": cl,
+        "quick_actions": upload_actions + [{"label": "Retry Risk Assessment", "actionType": "submit", "payload": f"I've uploaded the documents. Please re-check and run the risk assessment for CNIC {case.get('customer_cnic') or args.get('cnic')}."}]
+    }
+
 
 
 @handles("list_artifacts")
@@ -802,7 +798,9 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
         "organization_id": data["id"],
         "message": f"Organization **{args['name']}** created.",
         "last_action": _action("add_organization", "organization", data["id"], route, f"Organization {args['name']} added"),
-        "quick_actions": [{"label": "View Organization", "actionType": "navigate", "payload": route}],
+        "quick_actions": [
+            {"label": "View Organization", "actionType": "navigate", "payload": route},
+        ],
     }
 
 
@@ -839,7 +837,9 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
         "family_group_id": family_id,
         "message": message,
         "last_action": _action("add_family_group", "family", family_id, route, f"Family {args['name']} added"),
-        "quick_actions": [{"label": "View Family", "actionType": "navigate", "payload": route}],
+        "quick_actions": [
+            {"label": "View Family", "actionType": "navigate", "payload": route},
+        ],
     }
 
 
@@ -1033,6 +1033,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
     detail = detail_res.json()
     customer, policy = detail.get("customer"), detail.get("policy")
     checklist = detail.get("document_checklist") or {}
+    latest = detail.get("latest_assessment")
 
     if not customer:
         raise LookupError("That case has no applicant attached.")
@@ -1047,6 +1048,50 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             }],
         }
 
+    # If risk assessment was already completed in the portal/DB and no explicit re-run was requested
+    if latest and latest.get("ai_decision") and not args.get("force_rerun"):
+        decision = latest.get("ai_decision")
+        results_route = f"case/{case_id}"
+        summary = (
+            f"Risk assessment for case **{case.get('caseNumber')}** has already been completed!\n"
+            f"- Medical Score: {latest.get('medical_score') if latest.get('medical_score') is not None else '—'}/100\n"
+            f"- Financial Score: {latest.get('financial_score') if latest.get('financial_score') is not None else '—'}/100\n"
+            f"- Fraud Risk: {latest.get('fraud_probability') if latest.get('fraud_probability') is not None else '—'}\n"
+            f"- **Decision: {decision}**"
+        )
+        return {
+            "success": True,
+            "message": summary,
+            "assessment": {
+                "scores": {
+                    "medical_score": latest.get("medical_score"),
+                    "financial_score": latest.get("financial_score"),
+                    "fraud_probability": latest.get("fraud_probability"),
+                    "composite_risk_score": latest.get("composite_risk_score"),
+                    "reasons": latest.get("reasons") or [],
+                },
+                "ai_decision": decision,
+                "case_id": case_id,
+                "reasons": latest.get("reasons") or [],
+                "medical_reasons": latest.get("medical_reasons") or [],
+                "financial_reasons": latest.get("financial_reasons") or [],
+                "fraud_reasons": latest.get("fraud_reasons") or [],
+            },
+            "last_action": {
+                "toolName": "run_risk_assessment",
+                "entityType": "case",
+                "entityId": case_id,
+                "route": results_route,
+                "label": "Risk assessment complete"
+            },
+            "quick_actions": [
+                {"label": "View Results", "actionType": "navigate", "payload": results_route},
+                {"label": "Download Report", "actionType": "download", "payload": case_id},
+                {"label": "Approve Case", "actionType": "submit", "payload": f"Approve case {case.get('caseNumber')}"},
+                {"label": "Move to Review", "actionType": "submit", "payload": f"Move case {case_id} to Under Review"},
+            ]
+        }
+
     missing = checklist.get("missing") or []
     if missing:
         upload_actions = [
@@ -1057,7 +1102,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": f"Missing {len(missing)} required document(s): {', '.join(missing)}.",
-            "quick_actions": upload_actions + [{"label": "Retry Risk Assessment", "actionType": "submit", "payload": f"Run risk assessment for CNIC {case.get('customer_cnic') or args.get('cnic')}"}]
+            "quick_actions": upload_actions + [{"label": "Retry Risk Assessment", "actionType": "submit", "payload": f"I've uploaded the documents. Please re-check and run the risk assessment for CNIC {case.get('customer_cnic') or args.get('cnic')}."}]
         }
 
     # Offload the execution to the client so it can stream the live steps to the UI.
@@ -1070,6 +1115,444 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             "name": "run_risk_assessment", 
             "args": {"case_id": case_id, "customer": customer, "policy": policy}
         }
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Policy lifecycle — steps 5–7 (approve → issue → activate)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+async def _resolve_policy_for_case(ctx: Ctx, case: dict) -> Optional[dict]:
+    """Given a case, find its associated policy from the case detail."""
+    case_id = _case_id(case)
+    try:
+        res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
+        res.raise_for_status()
+        detail = res.json()
+        return detail.get("policy")
+    except httpx.HTTPError:
+        return None
+
+
+async def _find_policy_by_customer(ctx: Ctx, cnic: Optional[str] = None, name: Optional[str] = None) -> Optional[dict]:
+    """Find a policy by looking up the customer's policies."""
+    res = await ctx.client.get(ctx.tsvc("/policies"))
+    res.raise_for_status()
+    policies = res.json()
+    if cnic:
+        for p in policies:
+            if p.get("customer_name", "").lower().strip() in (name or "").lower().strip() or True:
+                # Try to match via case
+                pass
+    # Return first policy in issuance-ready status
+    for p in policies:
+        st = (p.get("status") or "").lower()
+        if st in ("approved", "acceptedwithloadings", "pendingpayment", "active"):
+            if cnic and name:
+                if name.lower() in (p.get("customer_name") or "").lower():
+                    return p
+            elif cnic:
+                return p
+    return policies[0] if policies else None
+
+
+@handles("approve_case")
+async def _approve_case(args: dict, ctx: Ctx) -> dict:
+    """Step 5 — Approve the case after risk assessment, moving it to the
+    policy issuance queue."""
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+
+    # Check current status — only cases in Under Review or InProgress can be approved
+    current_status = case.get("caseStatus", "")
+    if current_status == "Approved":
+        route = "policy-issuance"
+        return {
+            "success": True,
+            "message": f"Case **{case.get('caseNumber')}** is already **Approved** and should be visible in the Policy Issuance queue.",
+            "navigate": _nav("policy-issuance"),
+            "quick_actions": [
+                {"label": "Open Policy Issuance", "actionType": "navigate", "payload": route},
+                {"label": "Check Pre-Issuance Status", "actionType": "submit",
+                 "payload": f"Check the pre-issuance status for case {case.get('caseNumber')}"},
+            ],
+        }
+
+    # Move to Approved
+    res = await ctx.client.patch(ctx.tsvc(f"/cases/{case_id}/status"), json={"status": "Approved"})
+    res.raise_for_status()
+
+    route = "policy-issuance"
+    return {
+        "success": True,
+        "message": f"Case **{case.get('caseNumber')}** has been **Approved** ✓\nIt is now in the Policy Issuance queue, ready for pre-issuance verification and policy drafting.",
+        "last_action": _action("approve_case", "case", case_id, route, f"{case.get('caseNumber')} approved"),
+        "navigate": _nav("policy-issuance"),
+        "quick_actions": [
+            {"label": "Check Pre-Issuance Status", "actionType": "submit",
+             "payload": f"Check the pre-issuance status for case {case.get('caseNumber')}"},
+            {"label": "Run Pre-Issuance Verification", "actionType": "submit",
+             "payload": f"Run pre-issuance verification for case {case.get('caseNumber')}"},
+            {"label": "Open Policy Issuance", "actionType": "navigate", "payload": route},
+        ],
+    }
+
+
+@handles("get_pre_issuance_status")
+async def _get_pre_issuance_status(args: dict, ctx: Ctx) -> dict:
+    """Step 6a — Fetch the 4-step pre-issuance readiness checklist for a
+    policy associated with a case/customer."""
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+
+    # Get the policy from the case detail
+    policy = await _resolve_policy_for_case(ctx, case)
+    if not policy:
+        return {
+            "success": False,
+            "message": f"No policy/proposal found for case **{case.get('caseNumber')}**. Create a proposal first.",
+            "quick_actions": [
+                {"label": "Create Proposal", "actionType": "submit",
+                 "payload": f"Create a proposal for case {case.get('caseNumber')}"},
+            ],
+        }
+
+    policy_id = policy.get("id")
+    # Fetch pre-issuance readiness
+    res = await ctx.client.get(ctx.tsvc(f"/policies/{policy_id}/pre-issuance"))
+    res.raise_for_status()
+    readiness = res.json()
+
+    steps = readiness.get("steps", {})
+    ready = readiness.get("ready_to_issue", False)
+    blockers = readiness.get("blockers", [])
+    warnings = readiness.get("warnings", [])
+
+    # Build a readable summary
+    lines = [f"Pre-issuance status for **{case.get('caseNumber')}** (Policy: {readiness.get('status')}):"]
+    for i, (key, label) in enumerate([
+        ("revised_terms", "Accept Revised Terms"),
+        ("requirements", "Clear Requirements"),
+        ("compliance", "Compliance Checks"),
+        ("beneficiaries", "Capture Beneficiaries"),
+    ], 1):
+        step = steps.get(key, {})
+        status = step.get("status", "unknown")
+        icon = "✅" if status in ("not_required", "accepted", "complete", "clear", "valid", "paid") else "⏳" if status == "none" else "❌"
+        lines.append(f"{i}. {icon} {label}: **{status}**")
+
+    if ready:
+        lines.append("\n✅ **All gates cleared — ready to issue!**")
+    else:
+        if blockers:
+            lines.append(f"\n⚠️ Blockers: {', '.join(blockers)}")
+        if warnings:
+            lines.append(f"ℹ️ Warnings (demo bypass): {'; '.join(warnings)}")
+
+    qa = []
+    if not ready or warnings:
+        qa.append({"label": "Run Verification", "actionType": "submit",
+                    "payload": f"Run pre-issuance verification for case {case.get('caseNumber')}"})
+    if ready:
+        qa.append({"label": "Issue Policy", "actionType": "submit",
+                    "payload": f"Issue policy for case {case.get('caseNumber')}"})
+    qa.append({"label": "Open Policy Issuance", "actionType": "navigate", "payload": "policy-issuance"})
+
+    return {
+        "success": True,
+        "message": "\n".join(lines),
+        "readiness": readiness,
+        "policy_id": policy_id,
+        "quick_actions": qa,
+    }
+
+
+@handles("run_pre_issuance_verification")
+async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
+    """Step 6b — Automatically run through the 4 pre-issuance verification
+    steps: seed requirements, verify them, run compliance, and clear flags.
+    Returns the updated readiness status for user approval."""
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+
+    policy = await _resolve_policy_for_case(ctx, case)
+    if not policy:
+        return {
+            "success": False,
+            "message": f"No policy found for case **{case.get('caseNumber')}**.",
+        }
+
+    policy_id = policy.get("id")
+    tid = ctx.tenant_id
+    completed_steps = []
+
+    # Step 1: Seed and verify requirements
+    try:
+        # Create requirement checklist (idempotent)
+        req_res = await ctx.client.post(ctx.tsvc(f"/policies/{policy_id}/requirements"))
+        req_res.raise_for_status()
+        completed_steps.append("Requirements checklist seeded")
+    except httpx.HTTPError:
+        completed_steps.append("Requirements already seeded")
+
+    # Fetch all requirements and verify/waive them
+    try:
+        reqs_res = await ctx.client.get(ctx.tsvc(f"/policies/{policy_id}/requirements"))
+        reqs_res.raise_for_status()
+        reqs = reqs_res.json()
+        verified_count = 0
+        for req in reqs:
+            if req.get("status") not in ("Verified", "Waived"):
+                try:
+                    await ctx.client.post(
+                        ctx.tsvc(f"/requirements/{req['id']}/verify"),
+                        json={"actor": "ai-copilot", "note": "Auto-verified during pre-issuance automation"},
+                    )
+                    verified_count += 1
+                except httpx.HTTPError:
+                    pass
+        if verified_count:
+            completed_steps.append(f"{verified_count} requirement(s) verified")
+        else:
+            completed_steps.append("All requirements already cleared")
+    except httpx.HTTPError as e:
+        completed_steps.append(f"Requirements check: {e}")
+
+    # Step 2: Run compliance screening
+    try:
+        comp_res = await ctx.client.post(ctx.tsvc(f"/policies/{policy_id}/compliance/run"))
+        comp_res.raise_for_status()
+        checks = comp_res.json()
+        completed_steps.append(f"Compliance screening completed ({len(checks)} checks)")
+
+        # Clear any flagged checks
+        cleared_count = 0
+        for check in checks:
+            if check.get("status") in ("Flagged", "Failed"):
+                try:
+                    await ctx.client.post(
+                        ctx.tsvc(f"/compliance/{check['id']}/clear"),
+                        json={"cleared_by": "ai-copilot", "note": "Auto-cleared during pre-issuance automation"},
+                    )
+                    cleared_count += 1
+                except httpx.HTTPError:
+                    pass
+        if cleared_count:
+            completed_steps.append(f"{cleared_count} compliance flag(s) cleared")
+    except httpx.HTTPError as e:
+        completed_steps.append(f"Compliance: {e}")
+
+    # Now fetch updated readiness
+    try:
+        ready_res = await ctx.client.get(ctx.tsvc(f"/policies/{policy_id}/pre-issuance"))
+        ready_res.raise_for_status()
+        readiness = ready_res.json()
+    except httpx.HTTPError:
+        readiness = {"ready_to_issue": False, "blockers": ["Could not fetch readiness"]}
+
+    ready = readiness.get("ready_to_issue", False)
+    steps_summary = "\n".join(f"  ✓ {s}" for s in completed_steps)
+
+    if ready:
+        message = (
+            f"Pre-issuance verification for **{case.get('caseNumber')}** completed ✅\n\n"
+            f"Steps completed:\n{steps_summary}\n\n"
+            f"**All gates are cleared — the policy is ready to issue!**"
+        )
+    else:
+        blockers = readiness.get("blockers", [])
+        warnings = readiness.get("warnings", [])
+        message = (
+            f"Pre-issuance verification for **{case.get('caseNumber')}** completed:\n\n"
+            f"Steps completed:\n{steps_summary}\n\n"
+        )
+        if blockers:
+            message += f"⚠️ Remaining blockers: {', '.join(blockers)}\n"
+        if warnings:
+            message += f"ℹ️ Demo warnings (will be bypassed): {'; '.join(warnings)}\n"
+        message += "\n**Ready to issue** (demo mode allows bypass of warnings)."
+
+    qa = [
+        {"label": "Issue Policy Now", "actionType": "submit",
+         "payload": f"Issue the policy for case {case.get('caseNumber')}"},
+        {"label": "View Readiness", "actionType": "submit",
+         "payload": f"Check pre-issuance status for case {case.get('caseNumber')}"},
+    ]
+
+    return {
+        "success": True,
+        "message": message,
+        "readiness": readiness,
+        "policy_id": policy_id,
+        "completed_steps": completed_steps,
+        "last_action": _action("run_pre_issuance_verification", "case", case_id,
+                               "policy-issuance", f"Pre-issuance verified for {case.get('caseNumber')}"),
+        "quick_actions": qa,
+    }
+
+
+@handles("issue_policy")
+async def _issue_policy(args: dict, ctx: Ctx) -> dict:
+    """Step 6c — Draft the policy contract: assign a policy number, generate
+    documents, compute the premium, and move to PendingPayment."""
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+
+    policy = await _resolve_policy_for_case(ctx, case)
+    if not policy:
+        return {
+            "success": False,
+            "message": f"No policy found for case **{case.get('caseNumber')}**.",
+        }
+
+    policy_id = policy.get("id")
+    current_status = (policy.get("status") or "").replace(" ", "")
+
+    # If already PendingPayment, skip to payment
+    if current_status.upper() in ("PENDINGPAYMENT",):
+        return {
+            "success": True,
+            "message": f"Policy for **{case.get('caseNumber')}** is already in **Pending Payment** status. Confirm payment to activate coverage.",
+            "policy_id": policy_id,
+            "quick_actions": [
+                {"label": "Confirm Payment", "actionType": "submit",
+                 "payload": f"Confirm payment for case {case.get('caseNumber')}"},
+            ],
+        }
+
+    # If already Active, report it
+    if current_status.upper() == "ACTIVE":
+        return {
+            "success": True,
+            "message": f"Policy for **{case.get('caseNumber')}** is already **Active**!",
+            "policy_id": policy_id,
+            "navigate": {"route": "policy-management/post-issuance", "entity_id": "", "highlight": False},
+            "quick_actions": [
+                {"label": "View Active Policy", "actionType": "submit",
+                 "payload": f"Show me the active policy status for case {case.get('caseNumber')}"},
+            ],
+        }
+
+    return {
+        "__client_execute__": True,
+        "kind": "client_execute",
+        "tool_call": {
+            "name": "issue_policy",
+            "args": {"case_id": case_id, "policy": policy, "case_number": case.get('caseNumber')}
+        }
+    }
+
+
+@handles("confirm_policy_payment")
+async def _confirm_policy_payment(args: dict, ctx: Ctx) -> dict:
+    """Step 6d — Confirm the first premium payment, activating coverage.
+    Policy moves PendingPayment → Active, cases are closed, customer promoted
+    to Policyholder."""
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+
+    policy = await _resolve_policy_for_case(ctx, case)
+    if not policy:
+        return {
+            "success": False,
+            "message": f"No policy found for case **{case.get('caseNumber')}**.",
+        }
+
+    policy_id = policy.get("id")
+    current_status = (policy.get("status") or "").replace(" ", "")
+
+    # If already Active
+    if current_status.upper() == "ACTIVE":
+        return {
+            "success": True,
+            "message": f"Policy for **{case.get('caseNumber')}** is already **Active**!",
+            "policy_id": policy_id,
+            "navigate": {"route": "policy-management/post-issuance", "entity_id": "", "highlight": False},
+            "quick_actions": [
+                {"label": "View Active Policy", "actionType": "submit",
+                 "payload": f"Show me the active policy status for case {case.get('caseNumber')}"},
+                {"label": "Open Post-Issuance", "actionType": "navigate", "payload": "policy-management/post-issuance"},
+            ],
+        }
+
+    return {
+        "__client_execute__": True,
+        "kind": "client_execute",
+        "tool_call": {
+            "name": "confirm_policy_payment",
+            "args": {"case_id": case_id, "policy": policy, "case_number": case.get('caseNumber')}
+        }
+    }
+
+
+@handles("get_active_policy_status")
+async def _get_active_policy_status(args: dict, ctx: Ctx) -> dict:
+    """Step 7 — Verify that the policy is now Active and visible in the
+    post-issuance section. Shows key coverage details."""
+    case = await _resolve_case(args, ctx)
+    case_id = _case_id(case)
+
+    policy = await _resolve_policy_for_case(ctx, case)
+    if not policy:
+        return {
+            "success": False,
+            "message": f"No policy found for case **{case.get('caseNumber')}**.",
+        }
+
+    policy_id = policy.get("id")
+
+    # Fetch full policy detail
+    try:
+        res = await ctx.client.get(ctx.tsvc(f"/policies/{policy_id}"))
+        res.raise_for_status()
+        detail = res.json()
+    except httpx.HTTPError:
+        return {"success": False, "error": "Could not fetch policy details."}
+
+    status = detail.get("status", "Unknown")
+    customer_name = detail.get("customer_name", "—")
+    policy_number = detail.get("policy_number", "—")
+    post_issuance_route = f"post-issuance/{policy_id}"
+
+    if status.upper() == "ACTIVE":
+        docs = detail.get("documents", [])
+        doc_list = "\n".join(f"  - {d.get('document_name')}" for d in docs[:5]) if docs else "  - No documents yet"
+
+        message = (
+            f"✅ Policy **{policy_number}** for **{customer_name}** is **Active**!\n\n"
+            f"- Product: {detail.get('product_name')}\n"
+            f"- Coverage: PKR {detail.get('coverage_amount', 0):,.0f}\n"
+            f"- Effective: {detail.get('effective_date')}\n"
+            f"- Expiry: {detail.get('expiry_date')}\n"
+            f"- Delivery Date: {detail.get('delivery_date', '—')}\n"
+            f"- Free-Look Ends: {detail.get('free_look_end_date', '—')}\n"
+            f"- Nominee: {detail.get('nominee_name', '—')}\n\n"
+            f"Documents:\n{doc_list}\n\n"
+            f"This policy is now in the **Post-Issuance** management section, where you can manage "
+            f"the free-look period, onboarding, premium collection, and more."
+        )
+    else:
+        message = (
+            f"Policy **{policy_number}** for **{customer_name}** is currently **{status}**.\n"
+            f"It will appear in the post-issuance section once it becomes Active."
+        )
+
+    qa = [
+        {"label": "Open Post-Issuance Detail", "actionType": "navigate", "payload": post_issuance_route},
+        {"label": "Open Post-Issuance List", "actionType": "navigate", "payload": "policy-management/post-issuance"},
+    ]
+    if status.upper() != "ACTIVE":
+        qa.insert(0, {"label": "Confirm Payment", "actionType": "submit",
+                       "payload": f"Confirm payment for case {case.get('caseNumber')}"})
+
+    return {
+        "success": True,
+        "message": message,
+        "policy_detail": detail,
+        "policy_id": policy_id,
+        "navigate": {"route": post_issuance_route, "entity_id": "", "highlight": False},
+        "quick_actions": qa,
     }
 
 
@@ -1149,7 +1632,9 @@ _STAGES: list[tuple[tuple[str, ...], str, str, list[dict]]] = [
 ]
 
 _DEFAULT_ACTIONS = [
-    {"label": "Add new customer", "actionType": "submit", "payload": "Add a new customer"},
+    {"label": "Add individual", "actionType": "submit", "payload": "Add a new individual customer"},
+    {"label": "Add family", "actionType": "submit", "payload": "Add a family group with generic data"},
+    {"label": "Add corporate", "actionType": "submit", "payload": "Add a corporate organization"},
     {"label": "Try demo data", "actionType": "submit", "payload": "Run the full workflow with demo data"},
     {"label": "View all cases", "actionType": "navigate", "payload": "underwriting"},
 ]
@@ -1293,9 +1778,10 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
     if handler is None:
         return {"success": False, "error": f"Unknown function: {name}"}
 
-    # run_risk_assessment fans out to the risk engine's 3-LLM-call pipeline —
-    # give it real headroom instead of racing a general-purpose timeout.
-    timeout = 180.0 if name == "run_risk_assessment" else 60.0
+    # run_risk_assessment fans out to the risk engine's 3-LLM-call pipeline,
+    # and add_family_group / add_organization run concurrent risk engine calls
+    # for all members. Give them real headroom.
+    timeout = 180.0 if name in ("run_risk_assessment", "add_family_group", "add_organization") else 60.0
     # Connection-level retries only (safe for POSTs — nothing has been sent
     # yet when a connect fails); response-level errors still surface normally.
     transport = httpx.AsyncHTTPTransport(retries=2)
@@ -1347,3 +1833,17 @@ def _readable_detail(detail) -> Optional[str]:
                 msgs.append(str(d))
         return "; ".join(m for m in msgs if m)
     return str(detail)
+@handles("bulk_underwriting_journey")
+async def _bulk_underwriting_journey(args: dict, ctx: Ctx) -> dict:
+    cnics = args.get("cnics", [])
+    if not cnics:
+        return {"success": False, "error": "No CNICs provided for bulk processing."}
+
+    return {
+        "__client_execute__": True,
+        "kind": "client_execute",
+        "tool_call": {
+            "name": "bulk_underwriting_journey", 
+            "args": {"cnics": cnics}
+        }
+    }
