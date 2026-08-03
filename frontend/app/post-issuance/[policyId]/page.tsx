@@ -1712,7 +1712,7 @@ function OnboardingPanel({
 
           {s.welcome_kit.done && (
             <div className="pt-4 mt-4 border-t border-slate-100">
-              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-2">Acknowledgment (optional)</p>
+              <p className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-2">Customer Acknowledgment (optional)</p>
               {s.acknowledged.done ? (
                 <p className="text-xs text-slate-600">Confirmed via {s.acknowledged.method} · {s.acknowledged.at?.slice(0, 10)}</p>
               ) : (
@@ -2137,9 +2137,9 @@ function ServicingPanel({ policyId, onChanged }: Readonly<{ policyId: string; on
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-2">
             <p className="text-[11px] font-semibold text-slate-500">Add a rider</p>
             <div className="flex gap-2">
-              <select 
-                value={rider.name} 
-                onChange={(e) => setRider({ ...rider, name: e.target.value })} 
+              <select
+                value={rider.name}
+                onChange={(e) => setRider({ ...rider, name: e.target.value })}
                 className="flex-1 text-xs border border-slate-200 rounded-lg px-2.5 py-2 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-300 transition-colors"
               >
                 <option value="" disabled>Select Adamjee standard rider...</option>
