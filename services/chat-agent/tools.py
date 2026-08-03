@@ -252,7 +252,7 @@ class DeleteCustomerArgs(BaseModel):
 
 @tool(args_schema=DeleteCustomerArgs)
 def delete_customer(**kwargs) -> str:
-    """Permanently delete a customer."""
+    """Attempt to delete a customer. Note: Customer records cannot be deleted because we must maintain records for future use and audit compliance."""
     return "{}"
 
 

@@ -684,17 +684,9 @@ async def _update_customer(args: dict, ctx: Ctx) -> dict:
 
 @handles("delete_customer")
 async def _delete_customer(args: dict, ctx: Ctx) -> dict:
-    res = await ctx.client.get(ctx.tsvc("/customers"))
-    res.raise_for_status()
-    customer = _find_customer(res.json(), args.get("cnic"), args.get("name"))
-    if not customer:
-        raise LookupError(f"No customer found for \"{args.get('name') or args.get('cnic')}\".")
-
-    delete = await ctx.client.delete(ctx.tsvc(f"/customers/{customer['id']}"))
-    delete.raise_for_status()
     return {
-        "success": True,
-        "message": f"Deleted **{_full_name(customer)}**.",
+        "success": False,
+        "message": "You cannot delete a customer. We have to maintain records for future use and compliance.",
         "quick_actions": [{"label": "View Leads", "actionType": "navigate", "payload": "admin/leads"}],
     }
 

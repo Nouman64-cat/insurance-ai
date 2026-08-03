@@ -31,6 +31,30 @@ const actionIcons: Record<string, string> = {
   confirm: "✅",
 };
 
+function checkIsUploaded(action: QuickAction, uploadedDocs: string[]): boolean {
+  if (action.actionType !== "upload") return false;
+  let docType = "";
+  if (action.payload) {
+    try {
+      const parsed = JSON.parse(action.payload);
+      if (parsed.document_type) docType = parsed.document_type;
+    } catch {
+      docType = action.payload;
+    }
+  }
+  if (!docType && action.label) {
+    docType = action.label.replace(/^Upload\s+/i, "").trim();
+  }
+  if (!docType) return false;
+
+  return uploadedDocs.some(
+    (d) =>
+      d.toLowerCase().trim() === docType.toLowerCase().trim() ||
+      d.toLowerCase().includes(docType.toLowerCase()) ||
+      docType.toLowerCase().includes(d.toLowerCase())
+  );
+}
+
 function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickAction[] {
   if (!lastMessage) {
     return [
@@ -226,6 +250,10 @@ export function CopilotInterface() {
     form.append("document_type", args.document_type);
     form.append("file", file);
     await api.post(`/tenants/${tenantId}/cases/${c.caseld}/artifacts`, form, { headers: { "Content-Type": "multipart/form-data" } });
+
+    if (args.document_type) {
+      setUploadedDocs((prev) => Array.from(new Set([...prev, args.document_type])));
+    }
 
     // Rich result: when this resumes the graph, the SSE pipeline re-emits
     // last_action (toast + navigate + highlight) and quick_actions (the
@@ -537,7 +565,6 @@ export function CopilotInterface() {
     const text = overrideText ?? input;
     if ((!text.trim() && !selectedFile) || isLoading || isUploading) return;
     if (!overrideText) setInput("");
-    setUploadedDocs([]);
 
     let attachments = undefined;
     if (selectedFile) {
@@ -1179,15 +1206,29 @@ export function CopilotInterface() {
                            {/* Quick Actions */}
                            {msg.quickActions && msg.quickActions.length > 0 && (
                              <div className={`flex flex-wrap gap-2 mt-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                               {msg.quickActions.map((action, idx) => (
-                                 <button
-                                   key={`${action.actionType}-${action.label}-${idx}`}
-                                   onClick={() => handleQuickAction(action)}
-                                   className="px-3 py-1.5 text-xs font-semibold rounded-full bg-white border border-slate-200 hover:bg-slate-50 hover:border-blue-200 hover:text-blue-700 shadow-sm transition-all flex items-center gap-1.5"
-                                 >
-                                   {action.label}
-                                 </button>
-                               ))}
+                               {msg.quickActions.map((action, idx) => {
+                                 const isUploaded = checkIsUploaded(action, uploadedDocs);
+                                 return (
+                                   <button
+                                     key={`${action.actionType}-${action.label}-${idx}`}
+                                     onClick={() => handleQuickAction(action)}
+                                     className={`px-3 py-1.5 text-xs font-semibold rounded-full border shadow-sm transition-all flex items-center gap-1.5 ${
+                                       isUploaded
+                                         ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 font-bold"
+                                         : "bg-white border-slate-200 hover:bg-slate-50 hover:border-blue-200 hover:text-blue-700"
+                                     }`}
+                                   >
+                                     {isUploaded ? (
+                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M20 6L9 17l-5-5" /></svg>
+                                     ) : action.actionType === "navigate" ? (
+                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M5 12h14" /><path d="m12 5 7 7-7 7" /></svg>
+                                     ) : action.actionType === "upload" ? (
+                                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" /></svg>
+                                     ) : null}
+                                     {isUploaded ? `Uploaded ${action.label.replace(/^Upload\s+/i, "")}` : action.label}
+                                   </button>
+                                 );
+                               })}
                              </div>
                            )}
                          </div>
@@ -1338,24 +1379,33 @@ export function CopilotInterface() {
           return (
             <div className="hidden xl:flex flex-col w-[220px] flex-shrink-0 bg-white/60 backdrop-blur-sm border-l border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-1.5">
               <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">Suggested Actions</div>
-              {finalActions.slice(0, 8).map((action, idx) => (
-                <button
-                  key={`rp-${action.actionType}-${idx}`}
-                  onClick={() => handleQuickAction(action)}
-                  className="w-full text-left px-3 py-2.5 text-[12.5px] font-medium rounded-xl bg-white hover:bg-indigo-50 border border-slate-200/80 hover:border-indigo-200 hover:text-indigo-700 text-slate-700 transition-all shadow-sm flex items-start gap-2.5 group"
-                >
-                  <span className="mt-0.5 flex-shrink-0">
-                    {action.actionType === "navigate" ? (
-                      <svg className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                    ) : action.actionType === "upload" ? (
-                      <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
-                    ) : (
-                      <svg className="w-3.5 h-3.5 text-violet-400 group-hover:text-violet-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-                    )}
-                  </span>
-                  <span className="leading-snug">{action.label}</span>
-                </button>
-              ))}
+              {finalActions.slice(0, 8).map((action, idx) => {
+                const isUploaded = checkIsUploaded(action, uploadedDocs);
+                return (
+                  <button
+                    key={`rp-${action.actionType}-${idx}`}
+                    onClick={() => handleQuickAction(action)}
+                    className={`w-full text-left px-3 py-2.5 text-[12.5px] font-medium rounded-xl border transition-all shadow-sm flex items-start gap-2.5 group ${
+                      isUploaded
+                        ? "bg-emerald-50 hover:bg-emerald-100 border-emerald-300 text-emerald-800 font-bold"
+                        : "bg-white hover:bg-indigo-50 border-slate-200/80 hover:border-indigo-200 hover:text-indigo-700 text-slate-700"
+                    }`}
+                  >
+                    <span className="mt-0.5 flex-shrink-0">
+                      {isUploaded ? (
+                        <svg className="w-3.5 h-3.5 text-emerald-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 6L9 17l-5-5" /></svg>
+                      ) : action.actionType === "navigate" ? (
+                        <svg className="w-3.5 h-3.5 text-indigo-400 group-hover:text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                      ) : action.actionType === "upload" ? (
+                        <svg className="w-3.5 h-3.5 text-amber-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                      ) : (
+                        <svg className="w-3.5 h-3.5 text-violet-400 group-hover:text-violet-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                      )}
+                    </span>
+                    <span className="leading-snug">{isUploaded ? `Uploaded ${action.label.replace(/^Upload\s+/i, "")}` : action.label}</span>
+                  </button>
+                );
+              })}
             </div>
           );
         })()}
@@ -1605,24 +1655,21 @@ export function CopilotInterface() {
                       {msg.quickActions && msg.quickActions.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-1">
                           {msg.quickActions.map((action, idx) => {
-                            let isUploaded = false;
-                            if (action.actionType === "upload" && action.payload) {
-                              try {
-                                const payload = JSON.parse(action.payload);
-                                isUploaded = uploadedDocs.includes(payload.document_type);
-                              } catch(e) {}
-                            }
+                            const isUploaded = checkIsUploaded(action, uploadedDocs);
                             return (
                             <button
                               key={`${action.actionType}-${action.label}-${idx}`}
                               onClick={() => handleQuickAction(action)}
-                              className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${action.actionType === "navigate"
-                                  ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                  : action.actionType === "upload"
-                                    ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
-                                    : action.actionType === "confirm"
-                                      ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                      : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                              className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
+                                isUploaded
+                                  ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600"
+                                  : action.actionType === "navigate"
+                                    ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                    : action.actionType === "upload"
+                                      ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                                      : action.actionType === "confirm"
+                                        ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                        : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
                                 }`}
                             >
                               {isUploaded ? (
@@ -1634,7 +1681,7 @@ export function CopilotInterface() {
                               ) : (
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5"><circle cx="12" cy="12" r="10" /><path d="M12 8v8" /></svg>
                               )}
-                              {isUploaded ? `Uploaded ${action.label.replace('Upload ', '')}` : action.label}
+                              {isUploaded ? `Uploaded ${action.label.replace(/^Upload\s+/i, '')}` : action.label}
                             </button>
                             );
                           })}
@@ -1774,25 +1821,29 @@ export function CopilotInterface() {
                   : getRecommendedActions(messages.length > 0 ? messages[messages.length - 1] : undefined)
                 )
                   .slice(0, 3)
-                  .map((action, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleQuickAction(action)}
-                      disabled={isLoading || isUploading}
-                      className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${
-                        (isLoading || isUploading) ? "opacity-60 cursor-not-allowed pointer-events-none " : ""
-                      }${action.actionType === "navigate"
-                          ? "text-emerald-600 hover:text-white hover:bg-emerald-600 border-emerald-200"
-                          : action.actionType === "upload"
-                            ? "text-amber-600 hover:text-white hover:bg-amber-600 border-amber-200"
-                            : action.actionType === "confirm"
-                              ? "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
-                              : "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
-                        }`}
-                    >
-                      {action.label}
-                    </button>
-                  ))}
+                  .map((action, idx) => {
+                    const isUploaded = checkIsUploaded(action, uploadedDocs);
+                    return (
+                      <button
+                        key={idx}
+                        onClick={() => handleQuickAction(action)}
+                        disabled={isLoading || isUploading}
+                        className={`text-[10px] px-2.5 py-1 rounded-full font-medium transition-all border ${
+                          (isLoading || isUploading) ? "opacity-60 cursor-not-allowed pointer-events-none " : ""
+                        }${
+                          isUploaded
+                            ? "text-emerald-700 bg-emerald-100 hover:bg-emerald-200 border-emerald-300 font-bold"
+                            : action.actionType === "navigate"
+                              ? "text-emerald-600 hover:text-white hover:bg-emerald-600 border-emerald-200"
+                              : action.actionType === "upload"
+                                ? "text-amber-600 hover:text-white hover:bg-amber-600 border-amber-200"
+                                : "text-blue-600 hover:text-white hover:bg-blue-600 border-blue-200"
+                          }`}
+                      >
+                        {isUploaded ? `✓ Uploaded ${action.label.replace(/^Upload\s+/i, '')}` : action.label}
+                      </button>
+                    );
+                  })}
               </div>
             </div>
 
