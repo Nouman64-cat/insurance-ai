@@ -52,8 +52,7 @@ function IssueStepper({ current }: Readonly<{ current: number }>) {
         return (
           <div key={s} className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
-              <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
-                done ? "bg-white text-blue-600" : active ? "bg-white/90 text-blue-700" : "bg-white/25 text-white"}`}>
+              <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${done ? "bg-white text-blue-600" : active ? "bg-white/90 text-blue-700" : "bg-white/25 text-white"}`}>
                 {done ? "✓" : i + 1}
               </span>
               <span className={`text-[11px] font-semibold ${active || done ? "text-white" : "text-white/60"}`}>{s}</span>
@@ -178,7 +177,7 @@ function IssuanceModal({ policy, onClose, onIssued }: IssuanceModalProps) {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 rounded-xl p-4">
                   <Field label="Product" value={preview.contract.product_name} />
                   <Field label="Sum assured" value={fmtCoverage(preview.contract.coverage_amount)} />
-                  <Field label="Term" value={`${preview.contract.term_years} years`} />
+                  <Field label="Insurance Terms" value={`${preview.contract.term_years} years`} />
                   <Field label="Commencement" value={preview.contract.effective_date} />
                   <Field label="Maturity date" value={<span className="text-blue-700">{preview.contract.maturity_date}</span>} />
                   <Field label="Billing" value={preview.contract.billing_frequency} />
