@@ -7,20 +7,27 @@ export const login = async (email: string, password: string) => {
   formData.append('password', password);
 
   // According to FastAPI OAuth2 password bearer
-  const response = await api.post('/auth/token', formData, {
+  const tokenResponse = await api.post('/auth/token', formData, {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
   });
 
-  const { access_token, user } = response.data;
-  
+  const { access_token } = tokenResponse.data;
+
+  // Fetch current user details with access_token
+  const meResponse = await api.get('/auth/me', {
+    headers: { Authorization: `Bearer ${access_token}` }
+  });
+
+  const user = meResponse.data;
+
   await AsyncStorage.multiSet([
     ['jwt_token', access_token],
-    ['tenant_id', user.tenant_id],
-    ['user_email', user.email],
-    ['user_role', user.role],
-    ['agent_id', user.agent_id || '']
+    ['tenant_id', user.tenant_id || ''],
+    ['user_email', user.email || ''],
+    ['user_role', user.role_name || ''],
+    ['agent_id', user.id || '']
   ]);
-  
+
   return user;
 };
 

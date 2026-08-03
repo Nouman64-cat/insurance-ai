@@ -6,9 +6,9 @@ import Button from '../components/Button';
 import { createIndividualLead, createFamilyLead, createCorporateLead, EntityType } from '../api/leads';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { MainTabParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../navigation/AppNavigator';
 
-type AddLeadNavProp = NativeStackNavigationProp<MainTabParamList, 'AddLead'>;
+type AddLeadNavProp = NativeStackNavigationProp<RootStackParamList, 'AddLead'>;
 
 export default function AddLeadScreen() {
   const [type, setType] = useState<EntityType>('INDIVIDUAL');
@@ -60,7 +60,7 @@ export default function AddLeadScreen() {
       }
       
       Alert.alert('Success', 'Lead created successfully.', [
-        { text: 'OK', onPress: () => navigation.navigate('Leads') }
+        { text: 'OK', onPress: () => navigation.goBack() }
       ]);
       
       // Reset forms
