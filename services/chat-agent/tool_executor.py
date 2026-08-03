@@ -1677,12 +1677,6 @@ def _demo_customer() -> dict:
 
 @handles("quick_start_workflow")
 async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
-    if not ctx.exec_ctx.jwt_token:
-        return {
-            "success": False,
-            "error": "Your session has expired — sign in again and I'll run the demo.",
-        }
-
     demo = _demo_customer()
     if args.get("applicant_name"):
         parts = args["applicant_name"].strip().split(maxsplit=1)
@@ -1792,8 +1786,7 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
         if exc.response.status_code in (401, 403):
             return {
                 "success": False,
-                "error": "Your session has expired — sign in again and I'll pick up right where we left off.",
-                "quick_actions": [{"label": "Sign in again", "actionType": "navigate", "payload": "login"}],
+                "error": "Currently, you have no access to do this, ask your manager.",
             }
         detail = None
         try:

@@ -151,10 +151,55 @@ def is_destructive(tool_name: str) -> bool:
     return tool_name in DESTRUCTIVE_TOOLS
 
 
+AGENT_ALLOWED_TOOLS = {
+    # Lead Generation & Customer Intake
+    "add_customer",
+    "update_customer",
+    "add_organization",
+    "add_family_group",
+    "bulk_add_customers",
+    "quick_start_workflow",
+    "list_customers",
+    "list_organizations",
+    "list_family_groups",
+    "create_case",
+    "list_cases",
+    "get_case_details",
+    "add_case_comment",
+    # Proposals & Document Collection
+    "create_proposal",
+    "list_quotes",
+    "list_insurance_plans",
+    "upload_document",
+    "get_document_checklist",
+    "list_artifacts",
+    # Discovery & Navigation
+    "navigate_to_page",
+    "show_record",
+    "search_records",
+    "get_dashboard_stats",
+    "get_workflow_recommendation",
+}
+
+
 def is_role_allowed(tool_name: str, role: str) -> bool:
+    if role in ("SuperAdmin", "Admin"):
+        return True
+    if role == "Agent":
+        return tool_name in AGENT_ALLOWED_TOOLS
+    if role == "Underwriter":
+        return tool_name not in {"add_user", "delete_user", "list_users", "delete_customer"}
+    if role == "Viewer":
+        return tool_name in SAFE_TOOLS
     if tool_name in MUTATING_TOOLS:
         return role in ADMIN_ROLES
     return True
+
+
+def get_tools_for_role(role: str) -> list:
+    """Return only the tool definitions authorized for the given user role (Multitenant Tools)."""
+    from tools import ALL_TOOLS
+    return [t for t in ALL_TOOLS if is_role_allowed(t.name, role)]
 
 
 def requires_confirmation(tool_name: str) -> bool:

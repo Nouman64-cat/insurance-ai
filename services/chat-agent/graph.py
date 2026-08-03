@@ -30,6 +30,7 @@ from journey import register_journey
 from pages import catalogue
 from permission import (
     CLIENT_EXECUTED_TOOLS,
+    get_tools_for_role,
     is_destructive,
     is_role_allowed,
     missing_args,
@@ -107,22 +108,32 @@ Brief (2–3 sentences), warm, professional. After every completed action, state
 happened and what the sensible next step is — the UI turns your tool results into \
 clickable recommendation buttons automatically."""
 
+AGENT_ROLE_RESTRICTION_TEMPLATE = (
+    "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user's role is 'Agent'. "
+    "As an Agent, your authorized scope is strictly limited to LEAD GENERATION and PROPOSAL CREATION (adding/updating customers, creating cases, generating policy proposals/quotes, and uploading required documents).\n"
+    "- You MUST NOT perform Underwriting (risk assessments, automated underwriting journeys, approving/rejecting cases, or updating case statuses).\n"
+    "- You MUST NOT perform Pre-Issuance or Post-Issuance actions (pre-issuance verification, policy contract drafting, payment confirmation, or active policy status tracking).\n"
+    "If the user asks you to perform underwriting or policy issuance actions, respond directly: 'Currently, you have no access to do this, ask your manager.'"
+)
+
 ROLE_RESTRICTION_TEMPLATE = (
     "\n\nCRITICAL SECURITY INSTRUCTION: The current user's role is '{role}'. They are NOT an "
-    "Admin. Mutating tools are blocked for this role at the platform level — if the user asks "
-    "for one, politely explain they don't have sufficient permission. You can still look things "
-    "up or navigate for them."
+    "Admin. Tools outside their authorized scope are blocked at the platform level — if the user asks "
+    "for an unauthorized action, respond directly: 'Currently, you have no access to do this, ask your manager.'"
 )
 
 
 def _build_prompt(role: str) -> str:
     prompt = SYSTEM_PROMPT.format(pages=catalogue())
-    if role not in ("SuperAdmin", "Admin"):
+    if role == "Agent":
+        prompt += AGENT_ROLE_RESTRICTION_TEMPLATE
+    elif role not in ("SuperAdmin", "Admin"):
         prompt += ROLE_RESTRICTION_TEMPLATE.format(role=role)
     return prompt
 
 
-def _llm() -> ChatGoogleGenerativeAI:
+def _llm(role: str = "Admin") -> ChatGoogleGenerativeAI:
+    tools = get_tools_for_role(role)
     return ChatGoogleGenerativeAI(
         model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         temperature=0.1,
@@ -130,15 +141,16 @@ def _llm() -> ChatGoogleGenerativeAI:
         max_output_tokens=2048,
         # Belt: the SDK's own retry layer for rate-limit/transient errors.
         max_retries=3,
-    ).bind_tools(ALL_TOOLS)
+    ).bind_tools(tools)
 
 
 async def agent_node(state: ChatState) -> dict:
-    messages = [SystemMessage(content=_build_prompt(state["user_role"])), *state["messages"]]
+    user_role = state.get("user_role") or "Admin"
+    messages = [SystemMessage(content=_build_prompt(user_role)), *state["messages"]]
     # Braces: Gemini intermittently 429s/503s under load — one failed call must
     # not kill a live conversation turn, so retry with short exponential
     # backoff on top of the SDK's internal retries before giving up.
-    llm = _llm()
+    llm = _llm(user_role)
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
@@ -184,7 +196,8 @@ async def permission_gate(state: ChatState) -> Command:
         return Command(goto="agent", update=update)
 
     if not is_role_allowed(name, state["user_role"]):
-        result = {"success": False, "error": "You do not have permission to perform this action."}
+        msg = "Currently, you have no access to do this, ask your manager."
+        result = {"success": False, "error": msg}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
     if name == "create_proposal":
