@@ -23,6 +23,9 @@ export interface CaseQueueItem {
   family_group_id?: string;
   family_group_name?: string;
   organization_id?: string;
+  e_application_status?: "NotSent" | "Sent" | "InProgress" | "Submitted" | "Expired";
+  acr_status?: "NotStarted" | "Draft" | "Submitted";
+  ipp_status?: "NotStarted" | "Initiated" | "Realized" | "Failed";
 }
 
 export async function listCases(

@@ -842,6 +842,18 @@ MIGRATIONS: list[tuple[str, str]] = [
     # Note: policy_versions, premium_schedules, renewal_transactions, policy_documents
     # are brand-new tables — create_all() auto-creates them from SQLModel metadata.
     # No ALTER TABLE entries needed here for those tables.
+    (
+        "v37a — add terms_explained_to_proposer to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS terms_explained_to_proposer BOOLEAN",
+    ),
+    (
+        "v37b — add identity_verified_kyc to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS identity_verified_kyc BOOLEAN",
+    ),
+    (
+        "v37c — add signature_obtained_in_presence to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS signature_obtained_in_presence BOOLEAN",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

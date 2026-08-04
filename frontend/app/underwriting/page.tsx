@@ -29,6 +29,31 @@ interface CustomerFolder {
   cases: CaseQueueItem[];
 }
 
+// Pre-Underwriting completeness — E-Application + Agent's Confidential Report.
+// Small at-a-glance indicator only; see /case/[id] for the full detail/actions.
+function PreUnderwritingBadges({ eAppStatus, acrStatus, ippStatus }: { eAppStatus?: string; acrStatus?: string; ippStatus?: string }) {
+  const eAppDone = eAppStatus === "Submitted";
+  const acrDone = acrStatus === "Submitted";
+  const ippDone = ippStatus === "Realized";
+  const badge = (label: string, done: boolean) => (
+    <span
+      key={label}
+      className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wide border ${
+        done ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200"
+      }`}
+    >
+      {done ? "✓" : "!"} {label}
+    </span>
+  );
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      {badge("IPP", ippDone)}
+      {badge("E-App", eAppDone)}
+      {badge("ACR", acrDone)}
+    </div>
+  );
+}
+
 export default function UnderwritingPage() {
   const router = useRouter();
   const [cases, setCases] = useState<CaseQueueItem[]>([]);
@@ -251,6 +276,19 @@ export default function UnderwritingPage() {
         {kpis.map(k => <MetricCard key={k.title} {...k} />)}
       </div>
 
+      {(() => {
+        const incomplete = cases.filter(
+          c => c.caseStatus === "Under Review" && (c.e_application_status !== "Submitted" || c.acr_status !== "Submitted" || c.ipp_status !== "Realized"),
+        ).length;
+        if (!incomplete) return null;
+        return (
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
+            <span>⚠️</span>
+            {incomplete} case{incomplete === 1 ? "" : "s"} under review still missing the initial premium payment, E-Application, and/or Confidential Report — open a case to complete them.
+          </div>
+        );
+      })()}
+
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
           <input
@@ -428,6 +466,7 @@ export default function UnderwritingPage() {
                               <td className="px-5 py-3">
                                 <p className="text-xs font-semibold text-slate-900 truncate max-w-[150px]">{c.customer_name}</p>
                                 <p className="font-mono text-[10px] text-slate-500 mt-0.5">{c.caseNumber}</p>
+                                <PreUnderwritingBadges eAppStatus={c.e_application_status} acrStatus={c.acr_status} ippStatus={c.ipp_status} />
                               </td>
                               <td className="px-5 py-3 text-slate-600 text-xs">{c.product_name ?? "—"}</td>
                               <td className="px-5 py-3 text-right font-semibold text-slate-700">{c.coverage_amount != null ? fmtCoverage(c.coverage_amount) : "—"}</td>

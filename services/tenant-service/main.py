@@ -62,6 +62,9 @@ from routers.agent import router as agent_router
 from routers.policies import router as policies_router
 from routers.pre_issuance import router as pre_issuance_router
 from routers.post_issuance import router as post_issuance_router
+from routers.e_application import router as e_application_router
+from routers.agent_confidential_report import router as agent_confidential_report_router
+from routers.initial_premium_payment import router as initial_premium_payment_router
 from routers.demo import router as demo_router
 # STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
 # from routers.renewal_scheduler import start_renewal_scheduler
@@ -176,6 +179,9 @@ app.include_router(agent_router)
 app.include_router(policies_router)
 app.include_router(pre_issuance_router)
 app.include_router(post_issuance_router)
+app.include_router(e_application_router)
+app.include_router(agent_confidential_report_router)
+app.include_router(initial_premium_payment_router)
 app.include_router(demo_router)
 
 

@@ -400,6 +400,112 @@ async def delete_artifact(tenant_id: UUID, artifact_id: UUID, request: Request, 
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/artifacts/{artifact_id}")
 
 
+# ── Pre-Underwriting — E-Application (customer) ────────────────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/e-application/invite",
+    tags=["Pre-Underwriting"],
+    summary="Generate a tokenized E-Application link for the customer",
+)
+async def invite_e_application(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/e-application/invite")
+
+
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/e-application",
+    tags=["Pre-Underwriting"],
+    summary="Get E-Application status/content for a case (staff view)",
+)
+async def get_e_application(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/e-application")
+
+
+# Public — no auth, scoped only by the token itself. The customer never logs in.
+@app.get(
+    "/public/e-application/{raw_token}",
+    tags=["Pre-Underwriting"],
+    summary="[Public] Fetch E-Application by invite token",
+)
+async def public_get_e_application(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/e-application/{raw_token}")
+
+
+@app.put(
+    "/public/e-application/{raw_token}",
+    tags=["Pre-Underwriting"],
+    summary="[Public] Autosave E-Application draft by invite token",
+)
+async def public_save_e_application(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/e-application/{raw_token}")
+
+
+@app.post(
+    "/public/e-application/{raw_token}/submit",
+    tags=["Pre-Underwriting"],
+    summary="[Public] Submit the completed, signed E-Application",
+)
+async def public_submit_e_application(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/e-application/{raw_token}/submit")
+
+
+# ── Pre-Underwriting — Agent's Confidential Report (ACR) ───────────────────────
+
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/acr",
+    tags=["Pre-Underwriting"],
+    summary="Get the Agent's Confidential Report for a case",
+)
+async def get_acr(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr")
+
+
+@app.put(
+    "/tenants/{tenant_id}/cases/{case_id}/acr",
+    tags=["Pre-Underwriting"],
+    summary="Create/update the Agent's Confidential Report draft",
+)
+async def upsert_acr(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr")
+
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/acr/submit",
+    tags=["Pre-Underwriting"],
+    summary="Submit and lock the Agent's Confidential Report",
+)
+async def submit_acr(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr/submit")
+
+
+# ── Pre-Underwriting — Initial Premium Payment (IPP) ────────────────────────────
+
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/ipp",
+    tags=["Pre-Underwriting"],
+    summary="Get Initial Premium Payment status for a case",
+)
+async def get_ipp(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/ipp")
+
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/ipp/initiate",
+    tags=["Pre-Underwriting"],
+    summary="Initiate the Initial Premium Payment for a case (pre-underwriting)",
+)
+async def initiate_ipp(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/ipp/initiate")
+
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/ipp/confirm",
+    tags=["Pre-Underwriting"],
+    summary="Confirm/settle the Initial Premium Payment for a case",
+)
+async def confirm_ipp(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/ipp/confirm")
+
+
 # ── Text Summarizer ────────────────────────────────────────────────────────────
 
 @app.post("/summarize/stream", tags=["Summarizer"], summary="Stream case summary via SSE (Gemini 2.5 Flash)")

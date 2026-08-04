@@ -851,6 +851,9 @@ class CaseRead(BaseModel):
     coverage_amount:         Optional[float] = None
     latest_ai_decision:      Optional[str] = None
     latest_composite_score:  Optional[int] = None
+    e_application_status:    Optional[str] = None
+    acr_status:              Optional[str] = None
+    ipp_status:               Optional[str] = None
 
     model_config = {"from_attributes": True}
 

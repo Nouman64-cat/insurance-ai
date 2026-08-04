@@ -584,7 +584,7 @@ async def run_compliance(
 
     now = datetime.utcnow()
     created = []
-    for result in compliance_engine.screen(customer, policy):
+    for result in await compliance_engine.screen(customer, policy):
         chk = ComplianceCheck(
             tenant_id=tenant_id, policy_id=policy_id, customer_id=customer.id,
             check_type=ComplianceCheckTypeEnum(result["check_type"]),

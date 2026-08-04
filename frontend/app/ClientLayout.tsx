@@ -20,6 +20,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isLoginPage = pathname === "/login";
+  // Public, unauthenticated pages meant to be opened by someone outside the
+  // portal (e.g. a customer with no account) — must skip both the auth
+  // redirect below and the Sidebar/TopBar/Footer portal shell entirely.
+  const isPublicStandalonePage = pathname?.startsWith("/e-application/") ?? false;
+  const bypassAuthShell = isLoginPage || isPublicStandalonePage;
   const [authChecked, setAuthChecked] = useState(false);
   const [tenantName, setTenantName] = useState("Adamjee Life");
   const { isAutomationMode } = useCopilot();
@@ -82,18 +87,20 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       api.defaults.headers.common["X-Tenant-Id"] = tenantId;
     }
 
-    if (!token && !isLoginPage) {
+    if (isPublicStandalonePage) {
+      setAuthChecked(true);
+    } else if (!token && !isLoginPage) {
       router.push("/login");
     } else if (token && isLoginPage) {
       router.push("/");
     } else {
       setAuthChecked(true);
     }
-  }, [pathname, isLoginPage, router]);
+  }, [pathname, isLoginPage, isPublicStandalonePage, router]);
 
   // Poll background processing documents globally across navigation
   useEffect(() => {
-    if (!authChecked || isLoginPage) return;
+    if (!authChecked || isLoginPage || isPublicStandalonePage) return;
 
     let active = true;
     let timerId: NodeJS.Timeout | null = null;
@@ -168,12 +175,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       if (timerId) clearTimeout(timerId);
       window.removeEventListener("insurance_ai_new_processing", handleNewDoc);
     };
-  }, [authChecked, isLoginPage, showToast]);
+  }, [authChecked, isLoginPage, isPublicStandalonePage, showToast]);
 
   // Poll for background-generated quotations (Kafka quote worker) globally
   // across navigation, so the toast fires no matter which page the user is on.
   useEffect(() => {
-    if (!authChecked || isLoginPage) return;
+    if (!authChecked || isLoginPage || isPublicStandalonePage) return;
 
     let active = true;
     let timerId: NodeJS.Timeout | null = null;
@@ -237,9 +244,9 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       if (timerId) clearTimeout(timerId);
       window.removeEventListener(PENDING_QUOTES_EVENT, handleNewPending);
     };
-  }, [authChecked, isLoginPage, showToast]);
+  }, [authChecked, isLoginPage, isPublicStandalonePage, showToast]);
 
-  if (!authChecked && !isLoginPage) {
+  if (!authChecked && !bypassAuthShell) {
     return (
       <body className="bg-slate-950 min-h-screen flex items-center justify-center font-sans text-slate-200">
         <div className="flex flex-col items-center gap-3">
@@ -254,8 +261,8 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <body className={isLoginPage ? "bg-slate-950" : "dashboard-shell bg-slate-50"}>
-      {isLoginPage ? (
+    <body className={bypassAuthShell ? (isLoginPage ? "bg-slate-950" : "bg-slate-50") : "dashboard-shell bg-slate-50"}>
+      {bypassAuthShell ? (
         children
       ) : (
         <>

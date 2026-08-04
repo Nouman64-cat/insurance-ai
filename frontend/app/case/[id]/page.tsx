@@ -9,6 +9,12 @@ import { DecisionBanner, StatusBadge } from "@/components/StatusBadge";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { fmtCoverage, fmtDob, fmtIncome, type AIDecision } from "@/lib/mock-data";
 import api, { summarizerApi } from "@/app/services/api";
+import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
+import { getACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
+import { ACRModal } from "@/components/entities/ACRModal";
+import { getIPP, type IPP } from "@/app/services/initialPremiumPayment";
+import { IPPModal } from "@/components/entities/IPPModal";
+import { getCompliance, runCompliance, clearCompliance, failCompliance, type ComplianceCheck } from "@/app/services/preIssuance";
 
 // ── Markdown renderer for the AI document summary ────────────────────────────
 
@@ -553,6 +559,18 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [showReportModal, setShowReportModal] = useState(false);
   const [downloadingApp, setDownloadingApp] = useState(false);
 
+  // Pre-Underwriting — Customer E-Application + Agent's Confidential Report + Initial Premium Payment
+  const [eApp, setEApp] = useState<EApplication | null>(null);
+  const [eAppLink, setEAppLink] = useState<string | null>(null);
+  const [eAppBusy, setEAppBusy] = useState(false);
+  const [eAppErr, setEAppErr] = useState<string | null>(null);
+  const [acr, setAcr] = useState<AgentConfidentialReport | null>(null);
+  const [showACRModal, setShowACRModal] = useState(false);
+  const [ipp, setIpp] = useState<IPP | null>(null);
+  const [showIPPModal, setShowIPPModal] = useState(false);
+  const [checks, setChecks] = useState<ComplianceCheck[]>([]);
+  const [compBusy, setCompBusy] = useState(false);
+
   const [docSummary, setDocSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
   const [summarizeError, setSummarizeError] = useState<string | null>(null);
@@ -640,10 +658,88 @@ export default function CasePage({ params }: { params: { id: string } }) {
     } catch { /* non-fatal — the case shell above still renders */ }
   }, [tenantId, caseId]);
 
+  const fetchEApplication = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      setEApp(await getEApplication(caseId));
+    } catch { /* non-fatal */ }
+  }, [tenantId, caseId]);
+
+  const fetchAcr = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      setAcr(await getACR(caseId));
+    } catch { /* non-fatal */ }
+  }, [tenantId, caseId]);
+
+  const fetchIpp = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      setIpp(await getIPP(caseId));
+    } catch { /* non-fatal */ }
+  }, [tenantId, caseId]);
+
+  const handleGenerateEAppLink = async () => {
+    setEAppBusy(true); setEAppErr(null);
+    try {
+      const invite = await inviteEApplication(caseId);
+      setEAppLink(`${window.location.origin}${invite.link_path}`);
+      await fetchEApplication();
+    } catch (e: any) {
+      setEAppErr(e?.message ?? "Failed to generate link");
+    } finally {
+      setEAppBusy(false);
+    }
+  };
+
+  const fetchCompliance = useCallback(async () => {
+    if (!tenantId || !detail?.policy_id) return;
+    try {
+      setChecks(await getCompliance(detail.policy_id));
+    } catch { /* non-fatal */ }
+  }, [tenantId, detail?.policy_id]);
+
+  const handleRunCompliance = async () => {
+    if (!detail?.policy_id) return;
+    setCompBusy(true);
+    try {
+      await runCompliance(detail.policy_id);
+      await fetchCompliance();
+    } catch { /* */ }
+    finally { setCompBusy(false); }
+  };
+
+  const handleClearCompliance = async (id: string) => {
+    setCompBusy(true);
+    try {
+      await clearCompliance(id, "Cleared after review", "officer");
+      await fetchCompliance();
+    } catch { /* */ }
+    finally { setCompBusy(false); }
+  };
+
+  const handleFailCompliance = async (id: string) => {
+    setCompBusy(true);
+    try {
+      await failCompliance(id, "Failed after review", "officer");
+      await fetchCompliance();
+    } catch { /* */ }
+    finally { setCompBusy(false); }
+  };
+
   useEffect(() => {
     fetchDetail();
     fetchArtifacts();
-  }, [fetchDetail, fetchArtifacts]);
+    fetchEApplication();
+    fetchAcr();
+    fetchIpp();
+  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp]);
+
+  useEffect(() => {
+    if (detail?.policy_id) {
+      fetchCompliance();
+    }
+  }, [detail?.policy_id, fetchCompliance]);
 
   // Poll every 3s while any artifact is still being OCR'd, so status/ocr_result
   // update without a manual refresh — same pattern as the /cases explorer.
@@ -662,7 +758,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   useEffect(() => {
     if (isGroup) return;
     const missingDocs = detail?.document_checklist?.missing ?? [];
-    if (detail && !loading && status === "idle" && !live.compositeScore && !detail.latest_assessment && missingDocs.length === 0) {
+    const checksMissing = eApp?.status !== "Submitted" || acr?.status !== "Submitted" || ipp?.status !== "Realized";
+    if (detail && !loading && status === "idle" && !live.compositeScore && !detail.latest_assessment && missingDocs.length === 0 && !checksMissing) {
       if (autoRun === "true") {
         // Remove autoRun from URL so we don't re-trigger on refresh
         router.replace(`/case/${caseId}`);
@@ -670,7 +767,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
         setTimeout(() => runUnderwriting(), 100);
       }
     }
-  }, [detail, loading, status, live.compositeScore, autoRun, caseId, router, isGroup]);
+  }, [detail, loading, status, live.compositeScore, autoRun, caseId, router, isGroup, eApp?.status, acr?.status, ipp?.status]);
 
   const summarizeDocuments = async () => {
     const texts = artifacts.filter(a => a.ocr_result).map(a => a.ocr_result as string);
@@ -1057,10 +1154,17 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const { case: c, customer, policy, document_checklist: docs } = detail;
 
-  // Underwriting requires every mandatory document to be uploaded first — the
-  // Run / Re-run buttons stay disabled until the checklist has nothing missing.
+  // Underwriting requires every mandatory document to be uploaded AND
+  // all initial checks to be completed — the Run / Re-run buttons stay 
+  // disabled until the checklist has nothing missing.
   const missingRequiredDocs = docs?.missing ?? [];
-  const requiredDocsMissing = missingRequiredDocs.length > 0;
+  const missingPreChecks: string[] = [];
+  if (missingRequiredDocs.length > 0) missingPreChecks.push(`Docs: ${missingRequiredDocs.join(", ")}`);
+  if (eApp?.status !== "Submitted") missingPreChecks.push("E-Application");
+  if (acr?.status !== "Submitted") missingPreChecks.push("Agent's Confidential Report");
+  if (ipp?.status !== "Realized") missingPreChecks.push("Initial Premium Payment");
+  
+  const requiredDocsMissing = missingPreChecks.length > 0;
 
   // In a multi-plan group each plan streams in parallel into its own slice of the
   // maps; otherwise fall back to the single-case state. Everything below renders
@@ -1437,6 +1541,223 @@ export default function CasePage({ params }: { params: { id: string } }) {
             </div>
           )}
 
+          {/* Pre-Underwriting — customer E-Application + agent's confidential report */}
+          <div className="card p-5 space-y-4">
+            <Accordion
+              title="E-Application"
+              action={
+                <button
+                  onClick={handleGenerateEAppLink}
+                  disabled={eAppBusy}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40"
+                >
+                  {eAppBusy ? "Generating…" : eApp && eApp.status !== "NotSent" ? "Resend Link" : "Generate Link"}
+                </button>
+              }
+            >
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="text-slate-500">Status</span>
+                <span className={`font-semibold ${
+                  eApp?.status === "Submitted" ? "text-blue-600"
+                  : eApp?.status === "Expired" ? "text-red-600"
+                  : eApp?.status === "InProgress" || eApp?.status === "Sent" ? "text-amber-600"
+                  : "text-slate-400"
+                }`}>
+                  {eApp?.status ?? "NotSent"}
+                </span>
+              </div>
+              {eAppErr && <p className="text-xs text-red-600 mb-2">{eAppErr}</p>}
+              {eAppLink && (
+                <div className="mb-2">
+                  <p className="text-[11px] text-slate-500 mb-1">Share this link with the customer:</p>
+                  <div className="flex items-center gap-2">
+                    <input readOnly value={eAppLink} className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600" onFocus={(e) => e.currentTarget.select()} />
+                    <button
+                      onClick={() => navigator.clipboard.writeText(eAppLink)}
+                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex-shrink-0"
+                    >
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+              {eApp?.status === "Submitted" && (
+                <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
+                  <DataRow label="Submitted" value={eApp.submitted_at ? new Date(eApp.submitted_at).toLocaleString() : "—"} />
+                  <DataRow label="Family History Entries" value={String(eApp.family_history?.entries?.length ?? 0)} />
+                  <DataRow label="Signature" value={eApp.declaration?.signature_name ?? "—"} />
+                </div>
+              )}
+              {(!eApp || eApp.status === "NotSent") && (
+                <p className="text-xs text-slate-400">No link has been sent to the customer yet.</p>
+              )}
+            </Accordion>
+
+            <Accordion
+              title="Agent's Confidential Report"
+              action={
+                acr?.status === "Submitted" ? undefined : (
+                  <button
+                    disabled={userRole !== "Agent" && userRole !== "Admin"}
+                    onClick={() => setShowACRModal(true)}
+                    title={userRole !== "Agent" && userRole !== "Admin" ? "Only the assigned agent can file this" : undefined}
+                    className={`text-xs font-semibold ${userRole !== "Agent" && userRole !== "Admin" ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-600 hover:text-blue-700"}`}
+                  >
+                    {acr?.status === "Draft" ? "Continue ACR" : "Fill ACR"}
+                  </button>
+                )
+              }
+            >
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="text-slate-500">Status</span>
+                <span className={`font-semibold ${acr?.status === "Submitted" ? "text-blue-600" : acr?.status === "Draft" ? "text-amber-600" : "text-slate-400"}`}>
+                  {acr?.status ?? "NotStarted"}
+                </span>
+              </div>
+              {acr?.status === "Submitted" && (
+                <div className="space-y-1.5 text-xs">
+                  <DataRow label="Recommendation" value={acr.recommendation ?? "—"} />
+                  <DataRow label="Submitted" value={acr.submitted_at ? new Date(acr.submitted_at).toLocaleString() : "—"} />
+                  {acr.remarks && <DataRow label="Remarks" value={acr.remarks} />}
+                </div>
+              )}
+            </Accordion>
+
+            <Accordion
+              title="Initial Premium Payment"
+              action={
+                ipp?.status === "Realized" ? undefined : (
+                  <button
+                    onClick={() => setShowIPPModal(true)}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    {ipp?.status === "Initiated" ? "Complete Payment" : "Collect Payment"}
+                  </button>
+                )
+              }
+            >
+              <div className="flex items-center justify-between text-xs mb-2">
+                <span className="text-slate-500">Status</span>
+                <span className={`font-semibold ${
+                  ipp?.status === "Realized" ? "text-blue-600"
+                  : ipp?.status === "Failed" ? "text-red-600"
+                  : ipp?.status === "Initiated" ? "text-amber-600"
+                  : "text-slate-400"
+                }`}>
+                  {ipp?.status ?? "NotStarted"}
+                </span>
+              </div>
+              {ipp?.status === "Realized" ? (
+                <div className="space-y-1.5 text-xs">
+                  <DataRow label="Amount" value={ipp.amount != null ? `PKR ${Math.round(ipp.amount).toLocaleString()}` : "—"} />
+                  <DataRow label="Method" value={ipp.method ?? "—"} />
+                  <DataRow label="Reference" value={ipp.reference ?? "—"} />
+                  <DataRow label="Paid" value={ipp.realized_at ? new Date(ipp.realized_at).toLocaleString() : "—"} />
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Per Section 30 of the Insurance Ordinance 2000, this must clear before the case proceeds to underwriting.
+                </p>
+              )}
+            </Accordion>
+
+            <Accordion
+              title="Compliance (PEP / Sanctions)"
+              action={
+                checks.length === 0 ? undefined : (
+                  <button
+                    onClick={handleRunCompliance}
+                    disabled={compBusy || !detail?.policy_id}
+                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40"
+                  >
+                    Re-run
+                  </button>
+                )
+              }
+            >
+              {!detail?.policy_id ? (
+                <p className="text-xs text-slate-400">A policy must be attached to this case to run compliance.</p>
+              ) : checks.length === 0 ? (
+                <div className="flex flex-col gap-2 items-start">
+                  <p className="text-xs text-slate-400">No compliance screening has been run yet.</p>
+                  <button
+                    onClick={handleRunCompliance}
+                    disabled={compBusy}
+                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-md text-xs font-semibold transition-colors disabled:opacity-40"
+                  >
+                    Run AML / Sanctions / SECP
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {checks.map((c) => {
+                    const tone = c.status === "Passed" ? "text-blue-700 bg-blue-50 border-blue-200"
+                      : c.status === "Flagged" ? "text-amber-700 bg-amber-50 border-amber-200"
+                        : c.status === "Failed" ? "text-red-700 bg-red-50 border-red-200" : "text-slate-500 bg-slate-50 border-slate-200";
+                    const details = (c.details ?? {}) as { matched?: any[]; list?: string; note?: string; source?: string };
+                    const isLive = details.source === "opensanctions";
+                    return (
+                      <div key={c.id} className="rounded-md px-2.5 py-1.5 bg-slate-50 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-xs font-medium text-slate-700">{c.check_type}
+                              <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>
+                                {c.status === "Flagged" ? "Pending" : c.status}
+                              </span>
+                              {c.check_type === "Sanctions" && (
+                                <span className={`ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isLive ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-500"}`}
+                                  title={isLive ? "Screened against OpenSanctions (PEP + NACTA + global sanctions)" : "OPENSANCTIONS_API_KEY not configured — internal watchlist only"}>
+                                  {isLive ? "Live PEP/Sanctions" : "Internal only"}
+                                </span>
+                              )}
+                            </p>
+                            {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
+                          </div>
+                          {c.status === "Flagged" && (
+                            <div className="flex gap-1.5 flex-shrink-0">
+                              <button disabled={compBusy} onClick={() => handleClearCompliance(c.id)} className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40">Approve</button>
+                              <button disabled={compBusy} onClick={() => handleFailCompliance(c.id)} className="px-2 py-0.5 rounded text-xs font-semibold bg-white border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-40">Reject</button>
+                            </div>
+                          )}
+                        </div>
+                        {c.check_type === "Sanctions" && details.matched && details.matched.length > 0 && (
+                          <div className="space-y-1 pl-0.5">
+                            {details.matched.map((m: any, i: number) => (
+                              <div key={i} className="text-[10px] text-slate-500 border-l-2 border-amber-300 pl-2">
+                                <span className="font-semibold text-slate-700">{m.matched_name ?? m}</span>
+                                {m.score != null && <span className="ml-1">· {m.score}% match</span>}
+                                {m.topics && m.topics.length > 0 && <span className="ml-1">· {m.topics.join(", ")}</span>}
+                                {m.datasets && m.datasets.length > 0 && <span className="ml-1 text-slate-400">({m.datasets.join(", ")})</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Accordion>
+          </div>
+
+          {showACRModal && (
+            <ACRModal
+              caseId={caseId}
+              initial={acr}
+              onClose={() => setShowACRModal(false)}
+              onDone={() => { setShowACRModal(false); fetchAcr(); }}
+            />
+          )}
+
+          {showIPPModal && (
+            <IPPModal
+              caseId={caseId}
+              customerName={customer?.name}
+              onClose={() => setShowIPPModal(false)}
+              onConfirmed={() => { setShowIPPModal(false); fetchIpp(); }}
+            />
+          )}
+
           {/* Document checklist + upload */}
           <div className="card p-5">
             <Accordion
@@ -1554,7 +1875,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <button
                 onClick={handleRun}
                 disabled={effStatus === "streaming" || !policy || !customer || requiredDocsMissing || userRole === "Agent"}
-                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined)}
+                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (requiredDocsMissing ? `Complete missing requirements first: ${missingPreChecks.join("; ")}` : undefined)}
                 className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 {effStatus === "streaming" ? <Spinner /> : null}
@@ -1562,7 +1883,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
               </button>
               {requiredDocsMissing && (
                 <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 max-w-sm">
-                  Required document{missingRequiredDocs.length > 1 ? "s" : ""} missing: <span className="font-semibold">{missingRequiredDocs.join(", ")}</span>. Upload {missingRequiredDocs.length > 1 ? "them" : "it"} to enable underwriting.
+                  Missing prerequisites: <span className="font-semibold">{missingPreChecks.join("; ")}</span>. Complete them to enable underwriting.
                 </p>
               )}
               {effStreamError && !requiredDocsMissing && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{effStreamError}</p>}
@@ -1588,7 +1909,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <button
                     onClick={handleRun}
                     disabled={effStatus === "streaming" || requiredDocsMissing || userRole === "Agent"}
-                    title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined)}
+                    title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (requiredDocsMissing ? `Complete missing requirements first: ${missingPreChecks.join("; ")}` : undefined)}
                     className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {effStatus === "streaming" ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
