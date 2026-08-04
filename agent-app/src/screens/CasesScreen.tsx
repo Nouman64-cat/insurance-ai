@@ -14,6 +14,7 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../theme/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchCases, CaseItem } from '../api/cases';
 import { inviteEApplication, buildEApplicationLink } from '../api/eApplication';

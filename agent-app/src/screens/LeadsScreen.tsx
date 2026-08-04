@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, Modal, TouchableOpacity, Alert, ScrollView, Dimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { fetchAgentLeads, updateLeadStatus, deleteLead, UnifiedLead, ProfileStatus, EntityType } from '../api/leads';
+import { useTheme } from '../theme/ThemeContext';
 import LeadCard from '../components/LeadCard';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';

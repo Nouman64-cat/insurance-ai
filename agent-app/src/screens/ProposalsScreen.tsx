@@ -11,6 +11,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useTheme } from '../theme/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchProposals, ProposalItem } from '../api/proposals';
 import { useNavigation } from '@react-navigation/native';
