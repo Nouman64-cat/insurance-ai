@@ -14,6 +14,7 @@ export interface PolicyListItem {
   term_years: number;
   status: string;
   segment?: string;
+  family_group_id?: string | null;
   case_number?: string | null;
   case_status?: string | null;
   effective_date: string | null;

@@ -10,16 +10,35 @@ import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import LeadsScreen from '../screens/LeadsScreen';
 import AddLeadScreen from '../screens/AddLeadScreen';
+import ProposalsScreen from '../screens/ProposalsScreen';
+import AddProposalScreen from '../screens/AddProposalScreen';
+import CasesScreen from '../screens/CasesScreen';
+import AddCaseScreen from '../screens/AddCaseScreen';
+import UnderwritingScreen from '../screens/UnderwritingScreen';
+import PrePolicyIssuanceScreen from '../screens/PrePolicyIssuanceScreen';
+import PostPolicyIssuanceScreen from '../screens/PostPolicyIssuanceScreen';
+import ChatScreen from '../screens/ChatScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
+  AddLead: undefined;
+  Proposals: undefined;
+  AddProposal: undefined;
+  Cases: undefined;
+  AddCase: undefined;
+  Underwriting: undefined;
+  PrePolicyIssuance: undefined;
+  PostPolicyIssuance: undefined;
+  Chat: undefined;
 };
 
 export type MainTabParamList = {
   Dashboard: undefined;
   Leads: undefined;
-  AddLead: undefined;
+  Proposals: undefined;
+  Cases: undefined;
+  Chat: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,7 +53,9 @@ function MainTabs() {
 
           if (route.name === 'Dashboard') iconName = focused ? 'home' : 'home-outline';
           else if (route.name === 'Leads') iconName = focused ? 'people' : 'people-outline';
-          else if (route.name === 'AddLead') iconName = focused ? 'add-circle' : 'add-circle-outline';
+          else if (route.name === 'Proposals') iconName = focused ? 'document-text' : 'document-text-outline';
+          else if (route.name === 'Cases') iconName = focused ? 'folder-open' : 'folder-open-outline';
+          else if (route.name === 'Chat') iconName = focused ? 'chatbubbles' : 'chatbubbles-outline';
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
@@ -45,7 +66,9 @@ function MainTabs() {
     >
       <Tab.Screen name="Dashboard" component={DashboardScreen} />
       <Tab.Screen name="Leads" component={LeadsScreen} />
-      <Tab.Screen name="AddLead" component={AddLeadScreen} options={{ title: 'Add Lead' }} />
+      <Tab.Screen name="Proposals" component={ProposalsScreen} />
+      <Tab.Screen name="Cases" component={CasesScreen} />
+      <Tab.Screen name="Chat" component={ChatScreen} options={{ title: 'AI Copilot' }} />
     </Tab.Navigator>
   );
 }
@@ -80,10 +103,19 @@ export default function AppNavigator() {
     <NavigationContainer>
       <Stack.Navigator 
         screenOptions={{ headerShown: false }}
-        initialRouteName={userToken == null ? "Auth" : "Main"}
+        initialRouteName={userToken ? 'Main' : 'Auth'}
       >
         <Stack.Screen name="Auth" component={LoginScreen} />
         <Stack.Screen name="Main" component={MainTabs} />
+        <Stack.Screen name="AddLead" component={AddLeadScreen} />
+        <Stack.Screen name="Proposals" component={ProposalsScreen} />
+        <Stack.Screen name="AddProposal" component={AddProposalScreen} />
+        <Stack.Screen name="Cases" component={CasesScreen} />
+        <Stack.Screen name="AddCase" component={AddCaseScreen} />
+        <Stack.Screen name="Underwriting" component={UnderwritingScreen} />
+        <Stack.Screen name="PrePolicyIssuance" component={PrePolicyIssuanceScreen} />
+        <Stack.Screen name="PostPolicyIssuance" component={PostPolicyIssuanceScreen} />
+        <Stack.Screen name="Chat" component={ChatScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

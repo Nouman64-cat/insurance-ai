@@ -524,6 +524,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [detail, setDetail] = useState<CaseDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role"));
+    }
+  }, []);
 
   const [status, setStatus] = useState<StreamStatus>("idle");
   const [live, setLive] = useState<LiveResult>(EMPTY_LIVE);
@@ -1167,23 +1174,31 @@ export default function CasePage({ params }: { params: { id: string } }) {
           <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
             <button
               onClick={() => overrideStatus("Pending Documents")}
-              disabled={overriding !== null}
-              className="px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              disabled={overriding !== null || userRole === "Agent"}
+              title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+              className={`px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg transition-colors ${
+                userRole === "Agent" ? "opacity-50 cursor-not-allowed bg-slate-100" : "hover:bg-slate-50"
+              }`}
             >
               {overriding === "Pending Documents" ? <Spinner className="w-3.5 h-3.5 border-slate-400 border-t-slate-700" /> : "Request Info"}
             </button>
             <button
               onClick={() => overrideStatus("Rejected")}
-              disabled={overriding !== null}
-              className="px-4 py-2 text-sm font-semibold text-red-700 border border-red-200 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50 transition-colors"
+              disabled={overriding !== null || userRole === "Agent"}
+              title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+              className={`px-4 py-2 text-sm font-semibold text-red-700 border border-red-200 bg-red-50 rounded-lg transition-colors ${
+                userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-100"
+              }`}
             >
               {overriding === "Rejected" ? <Spinner className="w-3.5 h-3.5 border-red-300 border-t-red-700" /> : "Override: Decline"}
             </button>
             <button
               onClick={() => overrideStatus("Approved")}
-              disabled={overriding !== null || !hasAny}
-              title={!hasAny ? "Run AI Underwriting before approving" : undefined}
-              className="px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-sm"
+              disabled={overriding !== null || !hasAny || userRole === "Agent"}
+              title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (!hasAny ? "Run AI Underwriting before approving" : undefined)}
+              className={`px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg transition-colors shadow-sm ${
+                userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"
+              }`}
             >
               {overriding === "Approved" ? <Spinner /> : "Override: Proceed"}
             </button>
@@ -1426,7 +1441,19 @@ export default function CasePage({ params }: { params: { id: string } }) {
           <div className="card p-5">
             <Accordion
               title="Documents"
-              action={<button onClick={() => setShowUpload(true)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">+ Upload</button>}
+              action={
+                <button
+                  disabled={userRole === "Agent"}
+                  onClick={() => {
+                    if (userRole === "Agent") return;
+                    setShowUpload(true);
+                  }}
+                  title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                  className={`text-xs font-semibold ${userRole === "Agent" ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-600 hover:text-blue-700"}`}
+                >
+                  + Upload
+                </button>
+              }
             >
               {docs.required.length === 0 ? (
                 <p className="text-xs text-slate-400">No documents required for this plan type.</p>
@@ -1500,7 +1527,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <p className="section-label">Document Summary (AI)</p>
               <button
                 onClick={summarizeDocuments}
-                disabled={summarizing || artifacts.filter(a => a.ocr_result).length === 0}
+                disabled={summarizing || artifacts.filter(a => a.ocr_result).length === 0 || userRole === "Agent"}
+                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
                 className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {summarizing ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
@@ -1525,8 +1553,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               </p>
               <button
                 onClick={handleRun}
-                disabled={effStatus === "streaming" || !policy || !customer || requiredDocsMissing}
-                title={requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined}
+                disabled={effStatus === "streaming" || !policy || !customer || requiredDocsMissing || userRole === "Agent"}
+                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined)}
                 className="mt-2 flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-lg text-sm font-semibold hover:bg-blue-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-sm"
               >
                 {effStatus === "streaming" ? <Spinner /> : null}
@@ -1559,8 +1587,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <p className="section-label">AI Recommendation</p>
                   <button
                     onClick={handleRun}
-                    disabled={effStatus === "streaming" || requiredDocsMissing}
-                    title={requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined}
+                    disabled={effStatus === "streaming" || requiredDocsMissing || userRole === "Agent"}
+                    title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (requiredDocsMissing ? `Upload required document(s) first: ${missingRequiredDocs.join(", ")}` : undefined)}
                     className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {effStatus === "streaming" ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
@@ -1646,8 +1674,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               <p className="section-label">Underwriter Notes</p>
               <button
                 onClick={() => generateNote(buildNoteContext())}
-                disabled={generatingNote || !hasAny}
-                title={hasAny ? "Draft a note from the case details with AI" : "Run underwriting first to generate a note"}
+                disabled={generatingNote || !hasAny || userRole === "Agent"}
+                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (hasAny ? "Draft a note from the case details with AI" : "Run underwriting first to generate a note")}
                 className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {generatingNote
@@ -1660,14 +1688,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
             <textarea
               value={note}
               onChange={e => setNote(e.target.value)}
-              className="w-full h-24 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 resize-none placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-              placeholder="Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…"
+              disabled={userRole === "Agent"}
+              className="w-full h-24 text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg p-3 resize-none placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition disabled:opacity-50 disabled:cursor-not-allowed"
+              placeholder={userRole === "Agent" ? "Notes disabled for Agent role." : "Add case notes, override justification, or referral comments here — or click Generate with AI for a draft…"}
             />
             <div className="flex items-center justify-end gap-2 mt-3">
               {noteSent && <span className="text-xs text-blue-600 font-semibold mr-auto">✓ Posted</span>}
               <button
                 onClick={submitNote}
-                disabled={postingNote || !note.trim()}
+                disabled={postingNote || !note.trim() || userRole === "Agent"}
+                title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
                 className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-700 rounded-md hover:bg-blue-800 disabled:opacity-50 transition-colors"
               >
                 {postingNote ? "Posting…" : "Post Note"}

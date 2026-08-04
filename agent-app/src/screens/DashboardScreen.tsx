@@ -1,20 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MetricCard from '../components/MetricCard';
 import { fetchAgentLeads, UnifiedLead } from '../api/leads';
 import { logout } from '../api/auth';
 import Button from '../components/Button';
 import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
-
-type NavProp = NativeStackNavigationProp<RootStackParamList, 'Main'>;
+import { Ionicons } from '@expo/vector-icons';
 
 export default function DashboardScreen() {
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigation = useNavigation<NavProp>();
+  const navigation = useNavigation<any>();
 
   const loadData = async () => {
     setLoading(true);
@@ -49,8 +46,8 @@ export default function DashboardScreen() {
       >
         <View style={styles.header}>
           <View>
-            <Text style={styles.title}>Agent Dashboard</Text>
-            <Text style={styles.subtitle}>Your active portfolio overview</Text>
+            <Text style={styles.title}>Agent Workspace</Text>
+            <Text style={styles.subtitle}>Insurance Portal & Lifecycle Hub</Text>
           </View>
           <Button title="Logout" type="secondary" onPress={handleLogout} style={styles.logoutBtn} textStyle={{fontSize: 12}} />
         </View>
@@ -83,6 +80,93 @@ export default function DashboardScreen() {
               accent="slate" 
               iconName="business" 
             />
+          </View>
+        </View>
+
+        {/* Quick Module Access Grid */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Modules & Access Control</Text>
+          
+          <View style={styles.gridContainer}>
+            {/* Full Access Modules */}
+            <TouchableOpacity 
+              style={styles.gridCard} 
+              onPress={() => navigation.navigate('Proposals')}
+            >
+              <View style={[styles.cardIconBox, { backgroundColor: '#eff6ff' }]}>
+                <Ionicons name="document-text" size={22} color="#1d4ed8" />
+              </View>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>Proposals</Text>
+                <Text style={styles.cardAccessWrite}>Full Access</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.gridCard} 
+              onPress={() => navigation.navigate('Cases')}
+            >
+              <View style={[styles.cardIconBox, { backgroundColor: '#eff6ff' }]}>
+                <Ionicons name="folder-open" size={22} color="#1d4ed8" />
+              </View>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>Cases</Text>
+                <Text style={styles.cardAccessWrite}>Full Access</Text>
+              </View>
+            </TouchableOpacity>
+
+            {/* Read Only Modules */}
+            <TouchableOpacity 
+              style={styles.gridCard} 
+              onPress={() => navigation.navigate('Underwriting')}
+            >
+              <View style={[styles.cardIconBox, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="analytics" size={22} color="#b45309" />
+              </View>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>Underwriting</Text>
+                <Text style={styles.cardAccessRead}>Read-Only</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.gridCard} 
+              onPress={() => navigation.navigate('PrePolicyIssuance')}
+            >
+              <View style={[styles.cardIconBox, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="shield-checkmark" size={22} color="#b45309" />
+              </View>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>Pre-Issuance</Text>
+                <Text style={styles.cardAccessRead}>Read-Only</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.gridCard} 
+              onPress={() => navigation.navigate('PostPolicyIssuance')}
+            >
+              <View style={[styles.cardIconBox, { backgroundColor: '#fef3c7' }]}>
+                <Ionicons name="ribbon" size={22} color="#b45309" />
+              </View>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>Post-Issuance</Text>
+                <Text style={styles.cardAccessRead}>Read-Only</Text>
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.gridCard} 
+              onPress={() => navigation.navigate('Chat')}
+            >
+              <View style={[styles.cardIconBox, { backgroundColor: '#dcfce7' }]}>
+                <Ionicons name="sparkles" size={22} color="#15803d" />
+              </View>
+              <View style={styles.cardInfo}>
+                <Text style={styles.cardTitle}>AI Copilot</Text>
+                <Text style={styles.cardAccessWrite}>Assistant</Text>
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
 
@@ -120,7 +204,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   title: {
     fontSize: 24,
@@ -128,7 +212,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   subtitle: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748b',
   },
   logoutBtn: {
@@ -137,19 +221,62 @@ const styles = StyleSheet.create({
   },
   metricsGrid: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 12,
   },
   metricCol: {
     flex: 1,
   },
   section: {
-    marginTop: 24,
+    marginTop: 20,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#334155',
     marginBottom: 12,
+  },
+  gridContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  gridCard: {
+    width: '48%',
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cardIconBox: {
+    width: 38,
+    height: 38,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardInfo: {
+    flex: 1,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  cardAccessWrite: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1d4ed8',
+    marginTop: 2,
+  },
+  cardAccessRead: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#b45309',
+    marginTop: 2,
   },
   pipelineCard: {
     backgroundColor: '#ffffff',

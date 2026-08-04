@@ -52,8 +52,7 @@ function IssueStepper({ current }: Readonly<{ current: number }>) {
         return (
           <div key={s} className="flex items-center gap-2">
             <div className="flex items-center gap-1.5">
-              <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
-                done ? "bg-white text-blue-600" : active ? "bg-white/90 text-blue-700" : "bg-white/25 text-white"}`}>
+              <span className={`flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${done ? "bg-white text-blue-600" : active ? "bg-white/90 text-blue-700" : "bg-white/25 text-white"}`}>
                 {done ? "✓" : i + 1}
               </span>
               <span className={`text-[11px] font-semibold ${active || done ? "text-white" : "text-white/60"}`}>{s}</span>
@@ -79,10 +78,11 @@ interface IssuanceModalProps {
   policy: PolicyListItem;
   onClose: () => void;
   onIssued: (result: IssuanceResult, policyId: string) => void;
+  userRole?: string | null;
 }
 
 // Step 1 — Review & confirm the contract before binding.
-function IssuanceModal({ policy, onClose, onIssued }: IssuanceModalProps) {
+function IssuanceModal({ policy, onClose, onIssued, userRole }: IssuanceModalProps) {
   const { notify } = useNotify();
   const [preview, setPreview] = useState<IssuancePreview | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(true);
@@ -178,7 +178,7 @@ function IssuanceModal({ policy, onClose, onIssued }: IssuanceModalProps) {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-slate-50 rounded-xl p-4">
                   <Field label="Product" value={preview.contract.product_name} />
                   <Field label="Sum assured" value={fmtCoverage(preview.contract.coverage_amount)} />
-                  <Field label="Term" value={`${preview.contract.term_years} years`} />
+                  <Field label="Insurance Terms" value={`${preview.contract.term_years} years`} />
                   <Field label="Commencement" value={preview.contract.effective_date} />
                   <Field label="Maturity date" value={<span className="text-blue-700">{preview.contract.maturity_date}</span>} />
                   <Field label="Billing" value={preview.contract.billing_frequency} />
@@ -237,8 +237,8 @@ function IssuanceModal({ policy, onClose, onIssued }: IssuanceModalProps) {
         {/* Footer actions */}
         <div className="border-t border-slate-100 px-6 py-4 flex gap-3">
           <button onClick={onClose} className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors">Cancel</button>
-          <button onClick={handleIssue} disabled={issuing || loadingPreview || !ready}
-            title={!ready ? "Clear the blocking gates first" : undefined}
+          <button onClick={handleIssue} disabled={issuing || loadingPreview || !ready || userRole === "Agent"}
+            title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (!ready ? "Clear the blocking gates first" : undefined)}
             className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-600 rounded-xl hover:from-blue-700 hover:to-blue-700 disabled:opacity-50 transition-all shadow-sm">
             {issuing ? "Binding…" : "Issue & bind →"}
           </button>
@@ -299,9 +299,10 @@ interface PaymentModalProps {
   policy: PolicyListItem;
   onClose: () => void;
   onConfirmed: (result: PaymentConfirmResult, policyId: string) => void;
+  userRole?: string | null;
 }
 
-function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
+function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalProps) {
   const { notify } = useNotify();
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [selected, setSelected] = useState<string>("");
@@ -449,7 +450,8 @@ function PaymentModal({ policy, onClose, onConfirmed }: PaymentModalProps) {
             </button>
             <button
               onClick={handleConfirm}
-              disabled={loading || confirming || !selected}
+              disabled={loading || confirming || !selected || userRole === "Agent"}
+              title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
               className="flex-1 px-4 py-2.5 text-sm font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl hover:from-blue-700 hover:to-blue-800 disabled:opacity-50 transition-all shadow-sm"
             >
               {confirming ? "Confirming…" : "Confirm & Activate"}
@@ -477,6 +479,7 @@ export default function PolicyIssuancePage() {
   const [issuanceResult, setIssuanceResult] = useState<{ result: IssuanceResult, policyName: string } | null>(null);
   const [activatedMsg, setActivatedMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -493,7 +496,12 @@ export default function PolicyIssuancePage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setUserRole(localStorage.getItem("user_role"));
+    }
+    load();
+  }, []);
 
   const queue = useMemo(() =>
     policies.filter(p => {
@@ -770,11 +778,18 @@ export default function PolicyIssuancePage() {
                       {tab === "queue" ? (
                         (p.status || "").toUpperCase().replace(/[^A-Z]/g, "") === "PENDINGPAYMENT" ? (
                           <button
+                            disabled={userRole === "Agent"}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (userRole === "Agent") return;
                               setPaymentPolicy(p);
                             }}
-                            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg shadow-sm hover:from-blue-700 hover:to-blue-800 transition-all active:scale-95 whitespace-nowrap"
+                            title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                            className={`inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white rounded-lg shadow-sm whitespace-nowrap transition-all ${
+                              userRole === "Agent"
+                                ? "bg-slate-400 opacity-50 cursor-not-allowed"
+                                : "bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 active:scale-95"
+                            }`}
                           >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-3 h-3">
                               <rect x="1" y="4" width="22" height="16" rx="2" /><line x1="1" y1="10" x2="23" y2="10" />
@@ -783,11 +798,18 @@ export default function PolicyIssuancePage() {
                           </button>
                         ) : (
                           <button
+                            disabled={userRole === "Agent"}
                             onClick={(e) => {
                               e.stopPropagation();
+                              if (userRole === "Agent") return;
                               setSelectedPolicy(p);
                             }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 transition-colors shadow-sm"
+                            title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-white text-xs font-bold shadow-sm transition-colors ${
+                              userRole === "Agent"
+                                ? "bg-slate-400 opacity-50 cursor-not-allowed"
+                                : "bg-blue-600 hover:bg-blue-700"
+                            }`}
                           >
                             <svg viewBox="0 0 24 24" fill="currentColor" className="w-3 h-3">
                               <polygon points="5 3 19 12 5 21" />
@@ -831,6 +853,7 @@ export default function PolicyIssuancePage() {
           policy={selectedPolicy}
           onClose={() => setSelectedPolicy(null)}
           onIssued={handleIssued}
+          userRole={userRole}
         />
       )}
       {paymentPolicy && (
@@ -838,6 +861,7 @@ export default function PolicyIssuancePage() {
           policy={paymentPolicy}
           onClose={() => setPaymentPolicy(null)}
           onConfirmed={handleConfirmed}
+          userRole={userRole}
         />
       )}
       {viewPolicy && (
