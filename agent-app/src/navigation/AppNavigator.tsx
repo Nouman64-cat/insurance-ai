@@ -78,12 +78,12 @@ export default function AppNavigator() {
 
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        {userToken == null ? (
-          <Stack.Screen name="Auth" component={LoginScreen} />
-        ) : (
-          <Stack.Screen name="Main" component={MainTabs} />
-        )}
+      <Stack.Navigator 
+        screenOptions={{ headerShown: false }}
+        initialRouteName={userToken == null ? "Auth" : "Main"}
+      >
+        <Stack.Screen name="Auth" component={LoginScreen} />
+        <Stack.Screen name="Main" component={MainTabs} />
       </Stack.Navigator>
     </NavigationContainer>
   );

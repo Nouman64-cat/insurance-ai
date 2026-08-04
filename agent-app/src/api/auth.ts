@@ -11,14 +11,20 @@ export const login = async (email: string, password: string) => {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
   });
 
-  const { access_token, user } = response.data;
+  const { access_token } = response.data;
   
+  // Save the token so the interceptor can use it for the next request
+  await AsyncStorage.setItem('jwt_token', access_token);
+
+  // Fetch user profile using the token
+  const meResponse = await api.get('/auth/me');
+  const user = meResponse.data;
+
   await AsyncStorage.multiSet([
-    ['jwt_token', access_token],
     ['tenant_id', user.tenant_id],
     ['user_email', user.email],
-    ['user_role', user.role],
-    ['agent_id', user.agent_id || '']
+    ['user_role', user.role_name || ''],
+    ['agent_id', user.id || '']
   ]);
   
   return user;
