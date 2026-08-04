@@ -25,6 +25,7 @@ export interface CaseQueueItem {
   organization_id?: string;
   e_application_status?: "NotSent" | "Sent" | "InProgress" | "Submitted" | "Expired";
   acr_status?: "NotStarted" | "Draft" | "Submitted";
+  compliance_status?: "NotStarted" | "Passed" | "Flagged" | "Failed";
   ipp_status?: "NotStarted" | "Initiated" | "Realized" | "Failed";
 }
 
@@ -39,5 +40,10 @@ export async function listCases(
       ...(segment ? { segment } : {}),
     },
   });
+  return resp.data;
+}
+
+export async function runCaseCompliance(tenantId: string, caseId: string): Promise<any> {
+  const resp = await api.post(`/tenants/${tenantId}/cases/${caseId}/compliance/run`);
   return resp.data;
 }

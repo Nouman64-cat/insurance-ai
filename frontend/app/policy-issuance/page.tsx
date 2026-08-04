@@ -463,12 +463,18 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
   );
 }
 
-export default function PolicyIssuancePage() {
+import { useSearchParams } from "next/navigation";
+import { Suspense } from "react";
+
+function PolicyIssuanceContent() {
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") === "active" ? "active" : "queue";
+
   const [stats, setStats] = useState<PolicyStats | null>(null);
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<"queue" | "active">("queue");
+  const [tab, setTab] = useState<"queue" | "active">(initialTab);
   const [selectedPolicy, setSelectedPolicy] = useState<PolicyListItem | null>(null);
   const [paymentPolicy, setPaymentPolicy] = useState<PolicyListItem | null>(null);
   const [viewPolicy, setViewPolicy] = useState<PolicyListItem | null>(null);
@@ -593,13 +599,63 @@ export default function PolicyIssuancePage() {
   };
 
   return (
-    <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
-      {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Policy Issuance</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          {/* Bind approved proposals into active insurance contracts — calculate premiums, generate policy numbers, and issue legal documents. */}
-        </p>
+    <div className="px-6 py-4 space-y-4 max-w-screen-2xl mx-auto w-full">
+      {/* Sleek Compact Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-xs shrink-0">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <path d="M9 15l2 2 4-4" />
+            </svg>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-lg font-bold text-slate-900 tracking-tight">Policy Issuance Hub</h1>
+              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-semibold uppercase tracking-wider">
+                Unified Portal
+              </span>
+            </div>
+            <p className="text-xs text-slate-500">
+              Bind approved proposals, verify pre-issuance gates, collect premiums &amp; manage active contracts.
+            </p>
+          </div>
+        </div>
+
+        {/* Compact Segmented Switcher */}
+        <div className="flex bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shrink-0">
+          <button
+            onClick={() => setTab("queue")}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              tab === "queue"
+                ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <span>1. Pre-Issuance Queue</span>
+            {queue.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-mono font-bold">
+                {queue.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setTab("active")}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              tab === "active"
+                ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
+                : "text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <span>2. Active Contracts &amp; Post-Issuance</span>
+            {active.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-mono font-bold">
+                {active.length}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
 
       {errorMsg && (
@@ -628,17 +684,15 @@ export default function PolicyIssuancePage() {
         ))}
       </div>
 
-
-
-      {/* Tab Bar + Search */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      {/* Search & Filters */}
+      <div className="flex items-center justify-between gap-3 flex-wrap bg-white p-3.5 rounded-xl border border-slate-200 shadow-xs">
         <div className="flex items-center gap-3 flex-wrap flex-1 min-w-0">
           <input
             type="text"
             placeholder="Search customer, policy, product…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full max-w-xs px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"
+            className="w-full max-w-xs px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50"
           />
           <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
 
@@ -659,19 +713,6 @@ export default function PolicyIssuancePage() {
             activeCount={structuredFilterCount}
             onClearAll={clearFilters}
           />
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="flex bg-slate-100/80 p-1 rounded-xl border border-slate-200/60 shrink-0">
-            {(["queue", "active"] as const).map(t => (
-              <button
-                key={t}
-                onClick={() => setTab(t)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-semibold transition-all ${tab === t ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-              >
-                {t === "queue" ? `Issuance Queue (${queue.length})` : `Active Policies (${active.length})`}
-              </button>
-            ))}
-          </div>
         </div>
       </div>
       {activeFilterChips.length > 0 && (
@@ -879,5 +920,13 @@ export default function PolicyIssuancePage() {
         />
       )}
     </div>
+  );
+}
+
+export default function PolicyIssuancePage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading Policy Issuance Hub…</div>}>
+      <PolicyIssuanceContent />
+    </Suspense>
   );
 }
