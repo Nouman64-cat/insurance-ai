@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Use process.env.EXPO_PUBLIC_API_URL or your local machine IP on Wi-Fi (port 8010 for API Gateway)
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.137:8010'; 
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.212:8010';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

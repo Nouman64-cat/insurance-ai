@@ -2,9 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createDrawerNavigator } from '@react-navigation/drawer';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { ActivityIndicator, View } from 'react-native';
+import { useTheme } from '../theme/ThemeContext';
 
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
@@ -18,11 +20,15 @@ import UnderwritingScreen from '../screens/UnderwritingScreen';
 import PrePolicyIssuanceScreen from '../screens/PrePolicyIssuanceScreen';
 import PostPolicyIssuanceScreen from '../screens/PostPolicyIssuanceScreen';
 import ChatScreen from '../screens/ChatScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import AboutScreen from '../screens/AboutScreen';
+import HelpScreen from '../screens/HelpScreen';
+import CustomDrawer from './CustomDrawer';
 
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
-  AddLead: undefined;
+  AddLead: { type?: 'INDIVIDUAL' | 'FAMILY' | 'CORPORATE', category?: 'quick' | 'normal' } | undefined;
   Proposals: undefined;
   AddProposal: undefined;
   Cases: undefined;
@@ -31,6 +37,13 @@ export type RootStackParamList = {
   PrePolicyIssuance: undefined;
   PostPolicyIssuance: undefined;
   Chat: undefined;
+};
+
+export type MainDrawerParamList = {
+  DashboardTabs: undefined;
+  Settings: undefined;
+  About: undefined;
+  Help: undefined;
 };
 
 export type MainTabParamList = {
@@ -43,11 +56,15 @@ export type MainTabParamList = {
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const Tab = createBottomTabNavigator<MainTabParamList>();
+const Drawer = createDrawerNavigator<MainDrawerParamList>();
 
 function MainTabs() {
+  const { colors } = useTheme();
+  
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
+        tabBarStyle: { backgroundColor: colors.surface, borderTopColor: colors.border },
         tabBarIcon: ({ focused, color, size }) => {
           let iconName: keyof typeof Ionicons.glyphMap = 'help';
 
@@ -59,8 +76,8 @@ function MainTabs() {
 
           return <Ionicons name={iconName} size={size} color={color} />;
         },
-        tabBarActiveTintColor: '#1D4ED8',
-        tabBarInactiveTintColor: '#94a3b8',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textMuted,
         headerShown: false,
       })}
     >
@@ -70,6 +87,56 @@ function MainTabs() {
       <Tab.Screen name="Cases" component={CasesScreen} />
       <Tab.Screen name="Chat" component={ChatScreen} options={{ title: 'AI Copilot' }} />
     </Tab.Navigator>
+  );
+}
+
+function MainDrawer() {
+  const { colors, isDark } = useTheme();
+  
+  return (
+    <Drawer.Navigator
+      useLegacyImplementation={false}
+      drawerContent={(props) => <CustomDrawer {...props} />}
+      screenOptions={{
+        headerShown: false,
+        swipeEnabled: false,
+        drawerActiveBackgroundColor: isDark ? colors.border : '#eff6ff',
+        drawerActiveTintColor: colors.primary,
+        drawerInactiveTintColor: colors.text,
+        drawerLabelStyle: { fontSize: 16, fontWeight: '500', marginLeft: -10 },
+      }}
+    >
+      <Drawer.Screen 
+        name="DashboardTabs" 
+        component={MainTabs} 
+        options={{ 
+          title: 'Dashboard',
+          drawerIcon: ({ color }) => <Ionicons name="home-outline" size={22} color={color} />
+        }} 
+      />
+      <Drawer.Screen 
+        name="Settings" 
+        component={SettingsScreen} 
+        options={{ 
+          drawerIcon: ({ color }) => <Ionicons name="settings-outline" size={22} color={color} />
+        }} 
+      />
+      <Drawer.Screen 
+        name="About" 
+        component={AboutScreen} 
+        options={{ 
+          drawerIcon: ({ color }) => <Ionicons name="information-circle-outline" size={22} color={color} />
+        }} 
+      />
+      <Drawer.Screen 
+        name="Help" 
+        component={HelpScreen} 
+        options={{ 
+          title: 'Help & Support',
+          drawerIcon: ({ color }) => <Ionicons name="help-circle-outline" size={22} color={color} />
+        }} 
+      />
+    </Drawer.Navigator>
   );
 }
 
@@ -93,7 +160,7 @@ export default function AppNavigator() {
 
   if (isLoading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc' }}>
         <ActivityIndicator size="large" color="#1D4ED8" />
       </View>
     );
@@ -106,7 +173,7 @@ export default function AppNavigator() {
         initialRouteName={userToken ? 'Main' : 'Auth'}
       >
         <Stack.Screen name="Auth" component={LoginScreen} />
-        <Stack.Screen name="Main" component={MainTabs} />
+        <Stack.Screen name="Main" component={MainDrawer} />
         <Stack.Screen name="AddLead" component={AddLeadScreen} />
         <Stack.Screen name="Proposals" component={ProposalsScreen} />
         <Stack.Screen name="AddProposal" component={AddProposalScreen} />

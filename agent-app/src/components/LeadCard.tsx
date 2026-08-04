@@ -1,13 +1,16 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { UnifiedLead } from '../api/leads';
 
 interface LeadCardProps {
   lead: UnifiedLead;
   onStatusChange: (newStatus: 'PROSPECT' | 'NOT_INTERESTED' | 'LEAD') => void;
+  onDelete?: () => void;
+  onEdit?: () => void;
 }
 
-export default function LeadCard({ lead, onStatusChange }: LeadCardProps) {
+export default function LeadCard({ lead, onStatusChange, onDelete, onEdit }: LeadCardProps) {
   const isIndividual = lead.type === 'INDIVIDUAL';
   const isFamily = lead.type === 'FAMILY';
   
@@ -26,14 +29,28 @@ export default function LeadCard({ lead, onStatusChange }: LeadCardProps) {
     <View style={styles.card}>
       <View style={styles.header}>
         <View style={styles.typeBadgeContainer}>
-          <View style={[styles.typeBadge, isIndividual ? styles.bgBlue : isFamily ? styles.bgEmerald : styles.bgAmber]}>
-            <Text style={[styles.typeText, isIndividual ? styles.textBlue : isFamily ? styles.textEmerald : styles.textAmber]}>
+          <View style={[styles.typeBadge, isIndividual ? styles.bgBlue : isFamily ? styles.bgSlate : styles.bgDarkSlate]}>
+            <Text style={[styles.typeText, isIndividual ? styles.textBlue : isFamily ? styles.textSlate : styles.textDarkSlate]}>
               {lead.type.substring(0, 3)}
             </Text>
           </View>
           <Text style={styles.date}>{new Date(lead.created_at).toLocaleDateString()}</Text>
         </View>
-        <Text style={styles.statusBadge}>{lead.status.replace('_', ' ')}</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={styles.statusBadge}>{lead.status.replace('_', ' ')}</Text>
+          <TouchableOpacity onPress={() => Alert.alert('Lead Options', 'Select an action', [
+            { text: 'Edit Lead', onPress: () => onEdit && onEdit() },
+            { text: 'Delete', style: 'destructive', onPress: () => {
+              Alert.alert('Confirm Delete', 'Are you sure you want to delete this lead?', [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'Delete', style: 'destructive', onPress: () => onDelete && onDelete() }
+              ]);
+            } },
+            { text: 'Cancel', style: 'cancel' }
+          ])}>
+            <Ionicons name="ellipsis-vertical" size={18} color="#64748b" />
+          </TouchableOpacity>
+        </View>
       </View>
       
       <Text style={styles.name} numberOfLines={1}>{lead.name}</Text>
@@ -101,10 +118,10 @@ const styles = StyleSheet.create({
   },
   bgBlue: { backgroundColor: '#dbeafe' },
   textBlue: { color: '#1d4ed8' },
-  bgEmerald: { backgroundColor: '#d1fae5' },
-  textEmerald: { color: '#047857' },
-  bgAmber: { backgroundColor: '#fef3c7' },
-  textAmber: { color: '#b45309' },
+  bgSlate: { backgroundColor: '#f1f5f9' },
+  textSlate: { color: '#475569' },
+  bgDarkSlate: { backgroundColor: '#e2e8f0' },
+  textDarkSlate: { color: '#0f172a' },
   
   date: {
     fontSize: 10,
