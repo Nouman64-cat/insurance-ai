@@ -273,20 +273,42 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
                   const tone = c.status === "Passed" ? "text-blue-700 bg-blue-50 border-blue-200"
                     : c.status === "Flagged" ? "text-amber-700 bg-amber-50 border-amber-200"
                       : c.status === "Failed" ? "text-red-700 bg-red-50 border-red-200" : "text-slate-500 bg-slate-50 border-slate-200";
+                  const details = (c.details ?? {}) as { matched?: any[]; list?: string; note?: string; source?: string };
+                  const isLive = details.source === "opensanctions";
                   return (
-                    <div key={c.id} className="flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 bg-slate-50">
-                      <div>
-                        <p className="text-xs font-medium text-slate-700">{c.check_type}
-                          <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>
-                            {c.status === "Flagged" ? "Pending" : c.status}
-                          </span>
-                        </p>
-                        {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
+                    <div key={c.id} className="rounded-md px-2.5 py-1.5 bg-slate-50 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-xs font-medium text-slate-700">{c.check_type}
+                            <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>
+                              {c.status === "Flagged" ? "Pending" : c.status}
+                            </span>
+                            {c.check_type === "Sanctions" && (
+                              <span className={`ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isLive ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-500"}`}
+                                title={isLive ? "Screened against OpenSanctions (PEP + NACTA + global sanctions)" : "OPENSANCTIONS_API_KEY not configured — internal watchlist only"}>
+                                {isLive ? "Live PEP/Sanctions" : "Internal only"}
+                              </span>
+                            )}
+                          </p>
+                          {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
+                        </div>
+                        {c.status === "Flagged" && (
+                          <div className="flex gap-1.5 flex-shrink-0">
+                            <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review — false positive", "officer"))}>Approve</Btn>
+                            <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review — confirmed match", "officer"))}>Reject</Btn>
+                          </div>
+                        )}
                       </div>
-                      {c.status === "Flagged" && (
-                        <div className="flex gap-1.5 flex-shrink-0">
-                          <Btn tone="emerald" disabled={busy} onClick={() => run(() => clearCompliance(c.id, "Cleared after review", "officer"))}>Approve</Btn>
-                          <Btn tone="red" disabled={busy} onClick={() => run(() => failCompliance(c.id, "Failed after review", "officer"))}>Reject</Btn>
+                      {c.check_type === "Sanctions" && details.matched && details.matched.length > 0 && (
+                        <div className="space-y-1 pl-0.5">
+                          {details.matched.map((m: any, i: number) => (
+                            <div key={i} className="text-[10px] text-slate-500 border-l-2 border-amber-300 pl-2">
+                              <span className="font-semibold text-slate-700">{m.matched_name ?? m}</span>
+                              {m.score != null && <span className="ml-1">· {m.score}% match</span>}
+                              {m.topics && m.topics.length > 0 && <span className="ml-1">· {m.topics.join(", ")}</span>}
+                              {m.datasets && m.datasets.length > 0 && <span className="ml-1 text-slate-400">({m.datasets.join(", ")})</span>}
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

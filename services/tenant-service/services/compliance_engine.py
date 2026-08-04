@@ -1,12 +1,18 @@
 """
-Deterministic pre-issuance compliance engine — AML, Sanctions, SECP.
+Pre-issuance compliance engine — AML, Sanctions/PEP, SECP.
 
-There is no live third-party AML / sanctions / SECP feed in this environment, so
-this module is a *believable internal engine*: it screens the applicant's own
-data (name, CNIC, occupation, declared income vs. sum assured) against rule sets
-and watchlists and returns a verdict per check. Results are deterministic — the
-same applicant always yields the same outcome — so seeded "flagged" customers
-reliably exercise the flag → clear path in the UI.
+AML and SECP have no live third-party feed to check against in this
+environment, so those two stay a *believable internal engine*: rule sets over
+the applicant's own data (occupation, declared income vs. sum assured, CNIC
+format). Results are deterministic — the same applicant always yields the
+same outcome — so seeded "flagged" customers reliably exercise the flag →
+clear path in the UI.
+
+Sanctions/PEP is different: services/pep_screening.py has a real integration
+to OpenSanctions (covers Pakistani PEPs + NACTA proscribed persons in one
+collection). When OPENSANCTIONS_API_KEY is configured, real matches are used;
+otherwise this module falls back to the same internal fictional-watchlist
+name-match it always used, so the screen never hard-fails for lack of a key.
 
 Each screen returns a list of dicts:
     {"check_type", "status", "score", "details": {...}}
@@ -18,6 +24,7 @@ from __future__ import annotations
 import re
 from typing import Optional
 
+from services import pep_screening
 from shared.models.core import (
     ComplianceCheckTypeEnum,
     ComplianceStatusEnum,
@@ -46,7 +53,9 @@ def _cnic_valid(cnic: Optional[str]) -> bool:
     return len(digits) == 13
 
 
-def _screen_sanctions(customer: Customer) -> dict:
+def _screen_sanctions_internal(customer: Customer) -> dict:
+    """Fallback path — fictional internal watchlist, used when OpenSanctions
+    isn't configured or the live call fails."""
     name = (customer.name or "").lower()
     hits = [tok for tok in _SANCTIONS_WATCHLIST if tok in name]
     if hits:
@@ -54,15 +63,45 @@ def _screen_sanctions(customer: Customer) -> dict:
             "check_type": ComplianceCheckTypeEnum.SANCTIONS.value,
             "status": ComplianceStatusEnum.FLAGGED.value,
             "score": 100.0,
-            "details": {"matched": hits, "list": "Sanctions/PEP watchlist",
-                        "note": "Potential name match — manual review required."},
+            "details": {"matched": hits, "list": "Internal watchlist (no live PEP/sanctions API configured)",
+                        "note": "Potential name match — manual review required.", "source": "internal"},
         }
     return {
         "check_type": ComplianceCheckTypeEnum.SANCTIONS.value,
         "status": ComplianceStatusEnum.PASSED.value,
         "score": 0.0,
-        "details": {"matched": [], "list": "Sanctions/PEP watchlist",
-                    "note": "No watchlist match."},
+        "details": {"matched": [], "list": "Internal watchlist (no live PEP/sanctions API configured)",
+                    "note": "No watchlist match.", "source": "internal"},
+    }
+
+
+async def _screen_sanctions(customer: Customer) -> dict:
+    """Sanctions/PEP screen — real OpenSanctions match when configured,
+    otherwise the internal fictional-watchlist fallback."""
+    dob = customer.dob.isoformat() if customer.dob else None
+    matches = await pep_screening.screen_person(customer.name or "", dob=dob)
+
+    if matches is None:
+        # Unconfigured, unreachable, or malformed response — degrade rather
+        # than block the applicant on an infrastructure problem.
+        return _screen_sanctions_internal(customer)
+
+    if not matches:
+        return {
+            "check_type": ComplianceCheckTypeEnum.SANCTIONS.value,
+            "status": ComplianceStatusEnum.PASSED.value,
+            "score": 0.0,
+            "details": {"matched": [], "list": "OpenSanctions (PEP + NACTA + global sanctions)",
+                        "note": "No match found.", "source": "opensanctions"},
+        }
+
+    return {
+        "check_type": ComplianceCheckTypeEnum.SANCTIONS.value,
+        "status": ComplianceStatusEnum.FLAGGED.value,
+        "score": matches[0]["score"],
+        "details": {"matched": matches, "list": "OpenSanctions (PEP + NACTA + global sanctions)",
+                    "note": f"{len(matches)} potential match(es) — manual review required.",
+                    "source": "opensanctions"},
     }
 
 
@@ -129,10 +168,10 @@ def _screen_secp(customer: Customer) -> dict:
     }
 
 
-def screen(customer: Customer, policy: Policy) -> list[dict]:
+async def screen(customer: Customer, policy: Policy) -> list[dict]:
     """Run all three mandatory checks for an applicant."""
     return [
         _screen_aml(customer, policy),
-        _screen_sanctions(customer),
+        await _screen_sanctions(customer),
         _screen_secp(customer),
     ]

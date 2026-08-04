@@ -1335,6 +1335,167 @@ class CaseAuditTrail(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Pre-Underwriting — Customer E-Application & Agent's Confidential Report
+#
+# Intake-stage documents that must be cleared before a Case moves into
+# underwriting risk assessment. Distinct from PolicyRequirement/ComplianceCheck
+# (Stage A — Pre-Issuance, i.e. *after* an underwriting decision) — these two
+# live earlier, tied to the Case rather than a bound Policy.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class EApplicationStatusEnum(str, Enum):
+    NOT_SENT = "NotSent"
+    SENT = "Sent"
+    IN_PROGRESS = "InProgress"
+    SUBMITTED = "Submitted"
+    EXPIRED = "Expired"
+
+
+class CustomerEApplication(SQLModel, table=True):
+    """
+    The customer-facing E-Application: medical/health questionnaire, family
+    history, lifestyle habits, existing-insurance declaration, and the
+    proposer's own declaration/e-signature. Filled by the customer via a
+    tokenized public link (no login) — see routers/e_application.py.
+    """
+    __tablename__ = "customer_e_applications"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, unique=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False)
+
+    status: EApplicationStatusEnum = Field(default=EApplicationStatusEnum.NOT_SENT, max_length=50)
+
+    # Never store the raw token — only its sha256 hex digest, checked on lookup.
+    invite_token_hash: Optional[str] = Field(default=None, index=True, max_length=64, nullable=True)
+    invite_expires_at: Optional[datetime] = Field(default=None, nullable=True)
+    sent_at: Optional[datetime] = Field(default=None, nullable=True)
+    sent_by: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+
+    started_at: Optional[datetime] = Field(default=None, nullable=True)
+    submitted_at: Optional[datetime] = Field(default=None, nullable=True)
+    submitted_ip: Optional[str] = Field(default=None, max_length=45, nullable=True)
+
+    # Yes/No disclosure list + free-text details for each "Yes" — see
+    # requirements: medical condition/illness, doctor diagnosis, physical
+    # deformity, congenital/birth defect, mental/psychiatric/nervous disorder,
+    # smoking/alcohol, pregnancy, general family health.
+    medical_questionnaire: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # List of {relation, name, age, is_alive, condition, age_at_onset}
+    family_history: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # Hazardous hobbies, occupation hazard, foreign travel, driving/legal history
+    lifestyle_habits: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # Self-declared other-insurer policies
+    existing_insurance: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # Accuracy/authorization/blank-form/terms checkboxes + typed signature name
+    declaration: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class ACRStatusEnum(str, Enum):
+    NOT_STARTED = "NotStarted"
+    DRAFT = "Draft"
+    SUBMITTED = "Submitted"
+
+
+class ACRRecommendationEnum(str, Enum):
+    RECOMMEND = "Recommend"
+    RECOMMEND_WITH_CAUTION = "RecommendWithCaution"
+    DO_NOT_RECOMMEND = "DoNotRecommend"
+
+
+class AgentConfidentialReport(SQLModel, table=True):
+    """
+    The selling agent's non-medical risk control: moral hazard, financial
+    standing, and general lifestyle observations that data fields alone miss.
+    Filled by the agent (agent-app or admin), reviewed read-only by underwriters.
+    """
+    __tablename__ = "agent_confidential_reports"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, unique=True, nullable=False)
+    agent_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+
+    status: ACRStatusEnum = Field(default=ACRStatusEnum.NOT_STARTED, max_length=50)
+
+    # Moral hazard
+    known_proposer_since: Optional[str] = Field(default=None, max_length=100, nullable=True)
+    relationship_to_proposer: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    purpose_of_insurance: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    financial_interest_explained: Optional[bool] = Field(default=None, nullable=True)
+    adverse_info_known: Optional[bool] = Field(default=None, nullable=True)
+    adverse_info_details: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    # Financial standing
+    occupation_verified: Optional[bool] = Field(default=None, nullable=True)
+    income_source_verified: Optional[bool] = Field(default=None, nullable=True)
+    estimated_income_opinion: Optional[float] = Field(default=None, ge=0, nullable=True)
+    income_consistency_note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    # General lifestyle
+    health_appearance_note: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    habits_observed: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    hazardous_activity_known: Optional[bool] = Field(default=None, nullable=True)
+
+    # Agent/intermediary declaration — the agent's own attestation, distinct
+    # from the customer's declaration captured on CustomerEApplication.
+    terms_explained_to_proposer: Optional[bool] = Field(default=None, nullable=True)
+    identity_verified_kyc: Optional[bool] = Field(default=None, nullable=True)
+    signature_obtained_in_presence: Optional[bool] = Field(default=None, nullable=True)
+
+    recommendation: Optional[ACRRecommendationEnum] = Field(default=None, max_length=50, nullable=True)
+    remarks: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    submitted_at: Optional[datetime] = Field(default=None, nullable=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class IPPStatusEnum(str, Enum):
+    """Mirrors services/payment_gateway.py's PaymentStatusEnum values — kept as
+    a separate enum here since shared/models/core.py doesn't import service
+    modules, plus a NOT_STARTED value the gateway itself has no concept of."""
+    NOT_STARTED = "NotStarted"
+    INITIATED = "Initiated"
+    REALIZED = "Realized"
+    FAILED = "Failed"
+
+
+class InitialPremiumPayment(SQLModel, table=True):
+    """
+    Initial Premium Payment (IPP) — Section 30 of the Insurance Ordinance 2000
+    ("no premium, no risk"). Per Adamjee's actual proposal flow, this is
+    collected at proposal submission, *before* underwriting risk assessment
+    begins — distinct from PremiumSchedule/the /payments/* endpoints in
+    policies.py, which collect the (possibly re-priced, post-loading) first
+    premium *after* an underwriting decision, right before cover binds.
+    Amount is taken from the case's PremiumQuote (the pre-underwriting
+    estimate), not the final underwritten premium.
+    """
+    __tablename__ = "initial_premium_payments"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, unique=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+
+    amount: float = Field(ge=0)
+    status: IPPStatusEnum = Field(default=IPPStatusEnum.NOT_STARTED, max_length=50)
+    method: Optional[str] = Field(default=None, max_length=50, nullable=True)
+    reference: Optional[str] = Field(default=None, max_length=100, nullable=True)
+
+    initiated_at: Optional[datetime] = Field(default=None, nullable=True)
+    realized_at: Optional[datetime] = Field(default=None, nullable=True)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 11. TokenUsage
 # ─────────────────────────────────────────────────────────────────────────────
 class TokenUsage(SQLModel, table=True):

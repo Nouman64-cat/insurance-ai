@@ -24,6 +24,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import HelpScreen from '../screens/HelpScreen';
 import CustomDrawer from './CustomDrawer';
+import AgentConfidentialReportScreen from '../screens/AgentConfidentialReportScreen';
 
 export type RootStackParamList = {
   Auth: undefined;
@@ -37,6 +38,7 @@ export type RootStackParamList = {
   PrePolicyIssuance: undefined;
   PostPolicyIssuance: undefined;
   Chat: undefined;
+  AgentConfidentialReport: { caseId: string; applicantName?: string };
 };
 
 export type MainDrawerParamList = {
@@ -183,6 +185,7 @@ export default function AppNavigator() {
         <Stack.Screen name="PrePolicyIssuance" component={PrePolicyIssuanceScreen} />
         <Stack.Screen name="PostPolicyIssuance" component={PostPolicyIssuanceScreen} />
         <Stack.Screen name="Chat" component={ChatScreen} />
+        <Stack.Screen name="AgentConfidentialReport" component={AgentConfidentialReportScreen} />
       </Stack.Navigator>
     </NavigationContainer>
   );

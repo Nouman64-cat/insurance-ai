@@ -212,6 +212,28 @@ async def list_cases(
     for a in (await session.execute(assessments_stmt)).scalars().all():
         latest_by_case.setdefault(a.case_id, a)
 
+    # Pre-Underwriting status — E-Application / Agent's Confidential Report,
+    # bulk-fetched by case_id like everything else above (avoids N+1 on the queue).
+    from shared.models.core import AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment
+    e_app_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(CustomerEApplication.case_id, CustomerEApplication.status)
+            .where(CustomerEApplication.case_id.in_(case_ids))
+        )).all()
+    }
+    acr_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(AgentConfidentialReport.case_id, AgentConfidentialReport.status)
+            .where(AgentConfidentialReport.case_id.in_(case_ids))
+        )).all()
+    }
+    ipp_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(InitialPremiumPayment.case_id, InitialPremiumPayment.status)
+            .where(InitialPremiumPayment.case_id.in_(case_ids))
+        )).all()
+    }
+
     # Fetch Family groups to include the true group name
     family_group_ids = list({c.family_group_id for c in customers.values() if c.family_group_id})
     family_groups = {}
@@ -245,6 +267,12 @@ async def list_cases(
         row["coverage_amount"] = policy.coverage_amount if policy else None
         row["latest_ai_decision"] = latest.ai_decision.value if latest else None
         row["latest_composite_score"] = latest.composite_risk_score if latest else None
+        e_app_status = e_app_status_by_case.get(c.caseld)
+        row["e_application_status"] = e_app_status.value if e_app_status else "NotSent"
+        acr_status = acr_status_by_case.get(c.caseld)
+        row["acr_status"] = acr_status.value if acr_status else "NotStarted"
+        ipp_status = ipp_status_by_case.get(c.caseld)
+        row["ipp_status"] = ipp_status.value if ipp_status else "NotStarted"
         out.append(row)
     return out
 

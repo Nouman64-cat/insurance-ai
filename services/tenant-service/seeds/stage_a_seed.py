@@ -66,6 +66,8 @@ from shared.models.core import (
     Tenant,
     PolicyOnboarding,
     CustomerPortalAccount,
+    PolicyRider,
+    PolicyEndorsement,
 )
 from seeds.acquisition_sources_seed import get_or_seed_sources
 
@@ -417,7 +419,7 @@ async def purge_tenant(session: AsyncSession, tenant_id: UUID) -> int:
 
     # 2. Delete no-cascade policy children for every policy in the tenant.
     if policy_ids:
-        for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent, PolicyOnboarding):
+        for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent, PolicyOnboarding, PolicyRider, PolicyEndorsement):
             await session.exec(sa_delete(model).where(model.policy_id.in_(policy_ids)))  # type: ignore[attr-defined]
 
     # 3. Delete no-cascade customer children.
@@ -428,8 +430,11 @@ async def purge_tenant(session: AsyncSession, tenant_id: UUID) -> int:
     # 4. Delete every customer — ORM cascade clears the rest.
     # 2.5 Delete no-cascade case children
     await session.exec(sa_delete(RiskAssessment).where(RiskAssessment.tenant_id == tenant_id))
-    from shared.models.core import Artifact
+    from shared.models.core import Artifact, CustomerEApplication, AgentConfidentialReport, InitialPremiumPayment
     await session.exec(sa_delete(Artifact).where(Artifact.tenant_id == tenant_id))
+    await session.exec(sa_delete(CustomerEApplication).where(CustomerEApplication.tenant_id == tenant_id))
+    await session.exec(sa_delete(AgentConfidentialReport).where(AgentConfidentialReport.tenant_id == tenant_id))
+    await session.exec(sa_delete(InitialPremiumPayment).where(InitialPremiumPayment.tenant_id == tenant_id))
 
     # 3. Delete every customer — ORM cascade clears the rest.
     customers = (await session.exec(select(Customer).where(Customer.tenant_id == tenant_id))).all()
@@ -455,9 +460,16 @@ async def reset_stage_a(session: AsyncSession, tenant_id: UUID) -> int:
         for portal in portals:
             await session.delete(portal)
 
+        cases = (await session.exec(select(Case).where(Case.customer_id == cust.id))).all()
+        for c in cases:
+            from shared.models.core import CustomerEApplication, AgentConfidentialReport, InitialPremiumPayment
+            for model in (CustomerEApplication, AgentConfidentialReport, InitialPremiumPayment):
+                for row in (await session.exec(select(model).where(model.case_id == c.caseld))).all():
+                    await session.delete(row)
+
         pols = (await session.exec(select(Policy).where(Policy.customer_id == cust.id))).all()
         for p in pols:
-            for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent, PolicyOnboarding):
+            for model in (CounterOffer, PolicyRequirement, ComplianceCheck, Beneficiary, PolicyEvent, PolicyOnboarding, PolicyRider, PolicyEndorsement):
                 for row in (await session.exec(select(model).where(model.policy_id == p.id))).all():
                     await session.delete(row)
         await session.delete(cust)

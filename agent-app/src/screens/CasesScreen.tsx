@@ -10,10 +10,13 @@ import {
   RefreshControl,
   ScrollView,
   Dimensions,
+  Share,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { fetchCases, CaseItem } from '../api/cases';
+import { inviteEApplication, buildEApplicationLink } from '../api/eApplication';
 import { useNavigation } from '@react-navigation/native';
 
 export default function CasesScreen() {
@@ -21,7 +24,21 @@ export default function CasesScreen() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [sendingLinkFor, setSendingLinkFor] = useState<string | null>(null);
   const navigation = useNavigation<any>();
+
+  const handleSendEAppLink = async (item: CaseItem) => {
+    setSendingLinkFor(item.id);
+    try {
+      const invite = await inviteEApplication(item.id);
+      const link = buildEApplicationLink(invite.link_path);
+      await Share.share({ message: `Please complete your life insurance application here: ${link}` });
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to generate E-Application link');
+    } finally {
+      setSendingLinkFor(null);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -138,6 +155,25 @@ export default function CasesScreen() {
         <View style={styles.cardFooter}>
           <Text style={styles.metaText}>Type: {item.case_type}</Text>
           <Text style={styles.metaText}>Priority: {item.priority}</Text>
+        </View>
+        <View style={styles.preUwRow}>
+          <TouchableOpacity
+            style={styles.preUwBtn}
+            onPress={() => handleSendEAppLink(item)}
+            disabled={sendingLinkFor === item.id}
+          >
+            <Ionicons name="link-outline" size={14} color="#1d4ed8" />
+            <Text style={styles.preUwBtnText}>
+              {sendingLinkFor === item.id ? 'Generating…' : 'Send E-Application'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.preUwBtn}
+            onPress={() => navigation.navigate('AgentConfidentialReport', { caseId: item.id, applicantName: item.applicant_name })}
+          >
+            <Ionicons name="lock-closed-outline" size={14} color="#1d4ed8" />
+            <Text style={styles.preUwBtnText}>File ACR</Text>
+          </TouchableOpacity>
         </View>
       </View>
     );
@@ -286,5 +322,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748b',
     fontWeight: '500',
+  },
+  preUwRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#f1f5f9',
+  },
+  preUwBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingVertical: 7,
+  },
+  preUwBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#1d4ed8',
   },
 });
