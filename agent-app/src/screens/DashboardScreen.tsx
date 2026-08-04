@@ -5,13 +5,15 @@ import MetricCard from '../components/MetricCard';
 import { fetchAgentLeads, UnifiedLead } from '../api/leads';
 import { logout } from '../api/auth';
 import Button from '../components/Button';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../theme/ThemeContext';
 
 export default function DashboardScreen() {
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
   const [loading, setLoading] = useState(true);
   const navigation = useNavigation<any>();
+  const { colors, isDark } = useTheme();
 
   const loadData = async () => {
     setLoading(true);
@@ -29,27 +31,29 @@ export default function DashboardScreen() {
     loadData();
   }, []);
 
-  const handleLogout = async () => {
-    await logout();
-    navigation.replace('Auth');
-  };
-
   const indLeads = leads.filter(l => l.type === 'INDIVIDUAL').length;
   const famLeads = leads.filter(l => l.type === 'FAMILY').length;
   const corpLeads = leads.filter(l => l.type === 'CORPORATE').length;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView 
         contentContainerStyle={styles.container}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
+        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} tintColor={colors.primary} />}
       >
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.title}>Agent Workspace</Text>
-            <Text style={styles.subtitle}>Insurance Portal & Lifecycle Hub</Text>
+        <View style={[styles.header, { backgroundColor: colors.surface, borderColor: colors.border, justifyContent: 'flex-start', alignItems: 'flex-start' }]}>
+          <TouchableOpacity style={[styles.menuIconBtn, { backgroundColor: isDark ? colors.border : '#eff6ff', marginRight: 16, marginTop: 2 }]} onPress={() => navigation.dispatch(DrawerActions.toggleDrawer())}>
+            <Ionicons name="menu-outline" size={26} color={colors.primary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 12}}>
+              <Ionicons name="shield-checkmark" size={22} color={colors.primary} style={{marginRight: 6}} />
+              <Text style={{fontSize: 20, fontWeight: '900', color: colors.text, letterSpacing: -0.5}}>Rizviz</Text>
+            </View>
+            <Text style={[styles.greeting, { color: colors.textMuted }]}>Welcome back,</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Agent Workspace</Text>
+            <Text style={[styles.subtitle, { color: colors.textMuted }]}>Insurance Portal & Lifecycle Hub</Text>
           </View>
-          <Button title="Logout" type="secondary" onPress={handleLogout} style={styles.logoutBtn} textStyle={{fontSize: 12}} />
         </View>
 
         <View style={styles.metricsGrid}>
@@ -63,7 +67,7 @@ export default function DashboardScreen() {
             <MetricCard 
               title="Individual" 
               value={indLeads} 
-              accent="emerald" 
+              accent="slate" 
               iconName="person" 
             />
           </View>
@@ -71,7 +75,7 @@ export default function DashboardScreen() {
             <MetricCard 
               title="Family" 
               value={famLeads} 
-              accent="amber" 
+              accent="slate" 
               iconName="people-circle" 
             />
             <MetricCard 
@@ -85,104 +89,125 @@ export default function DashboardScreen() {
 
         {/* Quick Module Access Grid */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Modules & Access Control</Text>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Modules & Access</Text>
+            <Ionicons name="apps-outline" size={20} color={colors.textMuted} />
+          </View>
           
           <View style={styles.gridContainer}>
             {/* Full Access Modules */}
             <TouchableOpacity 
-              style={styles.gridCard} 
+              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
               onPress={() => navigation.navigate('Proposals')}
             >
-              <View style={[styles.cardIconBox, { backgroundColor: '#eff6ff' }]}>
-                <Ionicons name="document-text" size={22} color="#1d4ed8" />
+              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
+                <Ionicons name="document-text" size={24} color={colors.primary} />
               </View>
               <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>Proposals</Text>
-                <Text style={styles.cardAccessWrite}>Full Access</Text>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Proposals</Text>
+                <Text style={[styles.cardAccessWrite, { color: colors.primary }]}>Full Access</Text>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.gridCard} 
+              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
               onPress={() => navigation.navigate('Cases')}
             >
-              <View style={[styles.cardIconBox, { backgroundColor: '#eff6ff' }]}>
-                <Ionicons name="folder-open" size={22} color="#1d4ed8" />
+              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
+                <Ionicons name="folder-open" size={24} color={colors.primary} />
               </View>
               <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>Cases</Text>
-                <Text style={styles.cardAccessWrite}>Full Access</Text>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Cases</Text>
+                <Text style={[styles.cardAccessWrite, { color: colors.primary }]}>Full Access</Text>
               </View>
             </TouchableOpacity>
 
             {/* Read Only Modules */}
             <TouchableOpacity 
-              style={styles.gridCard} 
+              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
               onPress={() => navigation.navigate('Underwriting')}
             >
-              <View style={[styles.cardIconBox, { backgroundColor: '#fef3c7' }]}>
-                <Ionicons name="analytics" size={22} color="#b45309" />
+              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
+                <Ionicons name="analytics" size={24} color={colors.primary} />
               </View>
               <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>Underwriting</Text>
-                <Text style={styles.cardAccessRead}>Read-Only</Text>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Underwriting</Text>
+                <Text style={[styles.cardAccessRead, { color: colors.textMuted }]}>Read-Only</Text>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.gridCard} 
+              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
               onPress={() => navigation.navigate('PrePolicyIssuance')}
             >
-              <View style={[styles.cardIconBox, { backgroundColor: '#fef3c7' }]}>
-                <Ionicons name="shield-checkmark" size={22} color="#b45309" />
+              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
+                <Ionicons name="shield-checkmark" size={24} color={colors.primary} />
               </View>
               <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>Pre-Issuance</Text>
-                <Text style={styles.cardAccessRead}>Read-Only</Text>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Pre-Issuance</Text>
+                <Text style={[styles.cardAccessRead, { color: colors.textMuted }]}>Read-Only</Text>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.gridCard} 
+              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
               onPress={() => navigation.navigate('PostPolicyIssuance')}
             >
-              <View style={[styles.cardIconBox, { backgroundColor: '#fef3c7' }]}>
-                <Ionicons name="ribbon" size={22} color="#b45309" />
+              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
+                <Ionicons name="ribbon" size={24} color={colors.primary} />
               </View>
               <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>Post-Issuance</Text>
-                <Text style={styles.cardAccessRead}>Read-Only</Text>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>Post-Issuance</Text>
+                <Text style={[styles.cardAccessRead, { color: colors.textMuted }]}>Read-Only</Text>
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity 
-              style={styles.gridCard} 
+              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
               onPress={() => navigation.navigate('Chat')}
             >
-              <View style={[styles.cardIconBox, { backgroundColor: '#dcfce7' }]}>
-                <Ionicons name="sparkles" size={22} color="#15803d" />
+              <View style={[styles.cardIconBox, { backgroundColor: colors.primary }]}>
+                <Ionicons name="sparkles" size={24} color="#ffffff" />
               </View>
               <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>AI Copilot</Text>
-                <Text style={styles.cardAccessWrite}>Assistant</Text>
+                <Text style={[styles.cardTitle, { color: colors.text }]}>AI Copilot</Text>
+                <Text style={[styles.cardAccessAssistant, { color: colors.text }]}>Assistant</Text>
               </View>
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pipeline Overview</Text>
-          <View style={styles.pipelineCard}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Pipeline Overview</Text>
+            <Ionicons name="stats-chart" size={20} color={colors.textMuted} />
+          </View>
+          <View style={[styles.pipelineCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.pipeStat}>
-              <Text style={styles.pipeVal}>{leads.filter(l => l.status === 'LEAD').length}</Text>
+              <View style={[styles.pipeIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
+                <Ionicons name="star" size={18} color={colors.primary} />
+              </View>
+              <Text style={[styles.pipeVal, { color: colors.primary }]}>{leads.filter(l => l.status === 'LEAD').length}</Text>
               <Text style={styles.pipeLabel}>New Leads</Text>
             </View>
+            
+            <View style={[styles.pipeDivider, { backgroundColor: colors.border }]} />
+            
             <View style={styles.pipeStat}>
-              <Text style={styles.pipeVal}>{leads.filter(l => l.status === 'PROSPECT').length}</Text>
+              <View style={[styles.pipeIconBox, { backgroundColor: isDark ? colors.border : '#f1f5f9' }]}>
+                <Ionicons name="time" size={18} color={colors.textMuted} />
+              </View>
+              <Text style={[styles.pipeVal, { color: colors.textMuted }]}>{leads.filter(l => l.status === 'PROSPECT').length}</Text>
               <Text style={styles.pipeLabel}>In Progress</Text>
             </View>
+
+            <View style={[styles.pipeDivider, { backgroundColor: colors.border }]} />
+
             <View style={styles.pipeStat}>
-              <Text style={styles.pipeVal}>{leads.filter(l => l.status === 'NOT_INTERESTED').length}</Text>
+              <View style={[styles.pipeIconBox, { backgroundColor: isDark ? colors.border : '#f8fafc' }]}>
+                <Ionicons name="close-circle" size={18} color={isDark ? '#64748b' : '#94a3b8'} />
+              </View>
+              <Text style={[styles.pipeVal, { color: isDark ? '#64748b' : '#94a3b8' }]}>{leads.filter(l => l.status === 'NOT_INTERESTED').length}</Text>
               <Text style={styles.pipeLabel}>Dead</Text>
             </View>
           </View>
@@ -199,25 +224,46 @@ const styles = StyleSheet.create({
   },
   container: {
     padding: 16,
+    paddingBottom: 40,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
+    backgroundColor: '#ffffff',
+    padding: 20,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#f1f5f9',
+  },
+  greeting: {
+    fontSize: 14,
+    color: '#64748b',
+    fontWeight: '600',
+    marginBottom: 4,
   },
   title: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '800',
     color: '#0f172a',
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 13,
-    color: '#64748b',
+    marginTop: 2,
   },
-  logoutBtn: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+  menuIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   metricsGrid: {
     flexDirection: 'row',
@@ -227,34 +273,46 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   section: {
-    marginTop: 20,
+    marginTop: 28,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#334155',
-    marginBottom: 12,
+    color: '#1e293b',
+    letterSpacing: -0.3,
   },
   gridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 12,
   },
   gridCard: {
     width: '48%',
     backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     borderWidth: 1,
     borderColor: '#e2e8f0',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
   },
   cardIconBox: {
-    width: 38,
-    height: 38,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -265,40 +323,62 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#0f172a',
+    marginBottom: 2,
   },
   cardAccessWrite: {
     fontSize: 11,
     fontWeight: '600',
     color: '#1d4ed8',
-    marginTop: 2,
   },
   cardAccessRead: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#b45309',
-    marginTop: 2,
+    color: '#475569',
+  },
+  cardAccessAssistant: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0f172a',
   },
   pipelineCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#e2e8f0',
-    padding: 16,
+    padding: 20,
     flexDirection: 'row',
     justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.03,
+    shadowRadius: 10,
+    elevation: 2,
   },
   pipeStat: {
     alignItems: 'center',
+    flex: 1,
+  },
+  pipeIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  pipeDivider: {
+    width: 1,
+    backgroundColor: '#e2e8f0',
+    marginHorizontal: 10,
   },
   pipeVal: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
-    color: '#1d4ed8',
+    marginBottom: 4,
   },
   pipeLabel: {
     fontSize: 12,
     color: '#64748b',
-    marginTop: 4,
     fontWeight: '600',
   }
 });

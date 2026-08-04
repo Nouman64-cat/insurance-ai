@@ -25,12 +25,13 @@ export const login = async (email: string, password: string) => {
     ['tenant_id', user.tenant_id || ''],
     ['user_email', user.email || ''],
     ['user_role', user.role_name || ''],
-    ['agent_id', user.id || '']
+    ['agent_id', user.id || ''],
+    ['agent_name', user.full_name || '']
   ]);
 
   return user;
 };
 
 export const logout = async () => {
-  await AsyncStorage.multiRemove(['jwt_token', 'tenant_id', 'user_email', 'user_role', 'agent_id']);
+  await AsyncStorage.multiRemove(['jwt_token', 'tenant_id', 'user_email', 'user_role', 'agent_id', 'agent_name']);
 };

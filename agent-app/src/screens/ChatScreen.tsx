@@ -87,11 +87,11 @@ export default function ChatScreen() {
         prev.map((msg) =>
           msg.id === assistantMsgId
             ? {
-                ...msg,
-                text: accumulated || 'Request processed successfully.',
-                isStreaming: false,
-                quickActions: receivedActions,
-              }
+              ...msg,
+              text: accumulated || 'Request processed successfully.',
+              isStreaming: false,
+              quickActions: receivedActions,
+            }
             : msg
         )
       );
@@ -100,10 +100,10 @@ export default function ChatScreen() {
         prev.map((msg) =>
           msg.id === assistantMsgId
             ? {
-                ...msg,
-                text: `⚠️ Error: ${err.message || 'Could not connect to AI Copilot.'}`,
-                isStreaming: false,
-              }
+              ...msg,
+              text: `⚠️ Error: ${err.message || 'Could not connect to AI Copilot.'}`,
+              isStreaming: false,
+            }
             : msg
         )
       );
