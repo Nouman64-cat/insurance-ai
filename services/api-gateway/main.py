@@ -351,6 +351,15 @@ async def get_case_document_checklist(tenant_id: UUID, case_id: UUID, request: R
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/document-checklist")
 
 
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/compliance/run",
+    tags=["Cases"],
+    summary="Run PEP, Sanctions and SECP compliance screening for a case",
+)
+async def run_case_compliance(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/compliance/run")
+
+
 # ── Artifacts ─────────────────────────────────────────────────────────────────
 
 @app.post(
@@ -553,6 +562,11 @@ async def proxy_auth(path: str, request: Request):
 @app.api_route("/tenants/{tenant_id}/users{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_tenant_users(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/users{path}")
+
+
+@app.api_route("/tenants/{tenant_id}/cases{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_cases(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases{path}")
 
 
 @app.api_route("/tenants/{tenant_id}/customers{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)

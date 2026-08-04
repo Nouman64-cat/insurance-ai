@@ -52,6 +52,9 @@ class PolicyInput(BaseModel):
 class EvaluationRequest(BaseModel):
     customer: CustomerInput
     policy: PolicyInput
+    e_application: Optional[Dict[str, Any]] = None
+    acr: Optional[Dict[str, Any]] = None
+    compliance_screening: Optional[Any] = None
 
 
 class SuggestPlanRequest(BaseModel):
@@ -121,6 +124,9 @@ async def evaluate(
         customer_data=request.customer.model_dump(),
         policy_data=request.policy.model_dump(),
         tenant_id=x_tenant_id,
+        e_application=request.e_application,
+        acr=request.acr,
+        compliance_screening=request.compliance_screening,
     )
 
     if not result["is_valid"]:
@@ -161,6 +167,9 @@ async def evaluate_stream(
                 customer_data=request.customer.model_dump(),
                 policy_data=request.policy.model_dump(),
                 tenant_id=x_tenant_id,
+                e_application=request.e_application,
+                acr=request.acr,
+                compliance_screening=request.compliance_screening,
             ):
                 if node_name == "__done__":
                     # Persist the fully-scored customer into Memgraph before

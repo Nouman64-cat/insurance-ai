@@ -33,6 +33,9 @@ class RiskState(TypedDict):
     customer: Dict[str, Any]
     policy: Dict[str, Any]
     tenant_id: str
+    e_application: Optional[Dict[str, Any]]
+    acr: Optional[Dict[str, Any]]
+    compliance_screening: Optional[Any]
     is_valid: bool
     validation_errors: List[str]
     medical_score: int
@@ -111,6 +114,7 @@ def validate_input(state: RiskState) -> Dict[str, Any]:
 
 def medical_scoring(state: RiskState) -> Dict[str, Any]:
     customer = state["customer"]
+    e_app = state.get("e_application")
     structured_llm = _llm().with_structured_output(MedicalScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert life insurance medical underwriter.
@@ -118,16 +122,17 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
          1. Age (Calculate from DOB. Older = higher risk).
          2. Gender (Standard actuarial mortality differentials).
          3. Occupation Hazard (High hazard like mining/military/deep sea diver = high points).
-         4. Substance Consumption (Smoking status/vaper, alcohol consumption frequency, recreational drug use history).
-         5. High-Risk Hobbies / Avocations (Participates in extreme sports, private aviation).
-         6. Travel & Location Risks (Frequent travel to politically unstable or high-risk regions).
-         7. Driving & Legal History (Driving violations, DUI history).
+         4. Declarative Medical Questionnaire (E-Application Yes/No answers, smoker status, family history, chronic conditions).
+         5. Substance Consumption (Smoking status/vaper, alcohol consumption frequency, recreational drug use history).
+         6. High-Risk Hobbies / Avocations (Participates in extreme sports, private aviation).
+         7. Travel & Location Risks (Frequent travel to politically unstable or high-risk regions).
+         8. Driving & Legal History (Driving violations, DUI history).
 
          Output a strict composite risk score from 0 (standard risk) to 100 (uninsurable) and the specific reasons. 
          Provide structured risk factors including the parameter, observation, and risk rating."""),
-        ("user", "Customer Data: {customer}")
+        ("user", "Customer Data: {customer}\n\nE-Application Disclosures: {e_app}")
     ])
-    result = (prompt | structured_llm).invoke({"customer": customer})
+    result = (prompt | structured_llm).invoke({"customer": customer, "e_app": e_app or "None provided"})
     medical_reasons = [r.dict() for r in result.medical_reasons]
     return {"medical_score": result.medical_score, "medical_reasons": medical_reasons}
 
@@ -135,6 +140,7 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
 def financial_scoring(state: RiskState) -> Dict[str, Any]:
     customer = state["customer"]
     policy = state["policy"]
+    acr = state.get("acr")
     structured_llm = _llm().with_structured_output(FinancialScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert insurance financial underwriter.
@@ -142,12 +148,13 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
          1. Income-to-coverage ratio (high coverage vs low income = higher risk).
          2. Policy term (longer term = higher exposure).
          3. Occupation stability and income reliability.
+         4. Agent's Confidential Report (ACR) findings (Agent's estimated income opinion, verified source of income, moral hazard observations, agent remarks).
 
          Output a financial risk score from 0 (low risk) to 100 (very high risk) and specific reasons.
          Provide structured risk factors including the parameter, observation, and risk rating."""),
-        ("user", "Customer: {customer}\nPolicy: {policy}")
+        ("user", "Customer: {customer}\nPolicy: {policy}\n\nAgent Confidential Report (ACR): {acr}")
     ])
-    result = (prompt | structured_llm).invoke({"customer": customer, "policy": policy})
+    result = (prompt | structured_llm).invoke({"customer": customer, "policy": policy, "acr": acr or "None provided"})
     financial_reasons = [r.dict() for r in result.financial_reasons]
     return {"financial_score": result.financial_score, "financial_reasons": financial_reasons}
 
@@ -265,43 +272,43 @@ def fraud_check(state: RiskState) -> Dict[str, Any]:
         f"(occupation peers within 50,000 of this coverage amount)\n"
     )
 
+    comp_screening = state.get("compliance_screening")
+
     # ── 3. LLM evaluation with Gemini ─────────────────────────────────────────
     structured_llm = _llm().with_structured_output(FraudScoreOutput)
 
     prompt = ChatPromptTemplate.from_messages([
-        ("system", """You are a senior insurance fraud investigator specialising in network-based fraud rings.
-You have access to both raw customer data AND live Memgraph graph intelligence.
+        ("system", """You are a senior insurance fraud investigator specialising in network-based fraud rings and compliance screening.
+You have access to raw customer data, live Memgraph graph intelligence, and Pre-Underwriting Compliance Screening results.
 
-Evaluate fraud probability using a two-tier signal hierarchy:
+Evaluate fraud & compliance risk using a signal hierarchy:
 
-TIER 1 — GRAPH SIGNALS (highest weight, hard evidence):
-  • income_outlier = true → declared income exceeds 3× the average of neighbours
-    in the same area + occupation cluster; classic income-fabrication signal.
-  • coverage_cluster_size > 0 → occupation peers applying for near-identical
-    coverage amounts; coordinated high-value applications through a shared network.
-  • cluster_size large → a dense area/occupation cluster amplifies ring risk.
+TIER 1 — COMPLIANCE & GRAPH SIGNALS (highest weight, hard evidence):
+  • Compliance Screening: Sanctions matches, PEP matches, SECP invalid CNICs, AML high risk rating.
+  • income_outlier = true → declared income exceeds 3× the average of neighbours in the same area + occupation cluster.
+  • coverage_cluster_size > 0 → occupation peers applying for near-identical coverage amounts.
 
 TIER 2 — DATA SIGNALS (secondary weight, circumstantial):
   • Coverage-to-income ratio > 15× → moral hazard / over-insurance.
-  • Age-occupation-income inconsistency (e.g. 25-year-old "retired").
-  • Unusually round income figures that match known fabrication patterns.
+  • Age-occupation-income inconsistency.
 
-GRAPH UNAVAILABLE: If graph_available is false, assess from data signals only
-and cap probability at 0.5 — absence of graph evidence is not proof of fraud.
+GRAPH UNAVAILABLE: If graph_available is false, assess from data & compliance signals.
 
 Output a fraud_probability from 0.0 (clean) to 1.0 (certain fraud) and a list
-of specific, evidence-backed reasons referencing the actual graph findings.
+of specific, evidence-backed reasons referencing graph and compliance findings.
 Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user",
          "=== CUSTOMER DATA ===\n{customer}\n\n"
          "=== POLICY DATA ===\n{policy}\n\n"
+         "=== PRE-UNDERWRITING COMPLIANCE SCREENING ===\n{comp_screening}\n\n"
          "=== MEMGRAPH RING INTELLIGENCE ===\n{graph_summary}"),
     ])
 
     result = (prompt | structured_llm).invoke({
-        "customer":     customer,
-        "policy":        policy,
-        "graph_summary": graph_summary,
+        "customer":       customer,
+        "policy":          policy,
+        "comp_screening":  comp_screening or "None provided",
+        "graph_summary":   graph_summary,
     })
 
     fraud_reasons = [r.dict() for r in result.fraud_reasons]
@@ -416,11 +423,17 @@ def _initial_state(
     customer_data: Dict[str, Any],
     policy_data: Dict[str, Any],
     tenant_id: str = "",
+    e_application: Optional[Dict[str, Any]] = None,
+    acr: Optional[Dict[str, Any]] = None,
+    compliance_screening: Optional[Any] = None,
 ) -> RiskState:
     return {
         "customer":           customer_data,
         "policy":              policy_data,
         "tenant_id":           tenant_id,
+        "e_application":       e_application,
+        "acr":                 acr,
+        "compliance_screening": compliance_screening,
         "is_valid":            False,
         "validation_errors":   [],
         "medical_score":       0,
@@ -440,20 +453,26 @@ def run_evaluation(
     customer_data: Dict[str, Any],
     policy_data: Dict[str, Any],
     tenant_id: str = "",
+    e_application: Optional[Dict[str, Any]] = None,
+    acr: Optional[Dict[str, Any]] = None,
+    compliance_screening: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    return dict(_workflow.invoke(_initial_state(customer_data, policy_data, tenant_id)))
+    init_st = _initial_state(customer_data, policy_data, tenant_id, e_application, acr, compliance_screening)
+    return dict(_workflow.invoke(init_st))
 
 
 def stream_evaluation(
     customer_data: Dict[str, Any],
     policy_data: Dict[str, Any],
     tenant_id: str = "",
+    e_application: Optional[Dict[str, Any]] = None,
+    acr: Optional[Dict[str, Any]] = None,
+    compliance_screening: Optional[Any] = None,
 ):
     """Yields (node_name, node_data) for each completed node, then ('__done__', full_state)."""
-    accumulated = dict(_initial_state(customer_data, policy_data, tenant_id))
-    for update in _workflow.stream(
-        _initial_state(customer_data, policy_data, tenant_id), stream_mode="updates"
-    ):
+    init_st = _initial_state(customer_data, policy_data, tenant_id, e_application, acr, compliance_screening)
+    accumulated = dict(init_st)
+    for update in _workflow.stream(init_st, stream_mode="updates"):
         node_name = list(update.keys())[0]
         node_data = update[node_name]
         accumulated.update(node_data)

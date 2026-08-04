@@ -212,9 +212,9 @@ async def list_cases(
     for a in (await session.execute(assessments_stmt)).scalars().all():
         latest_by_case.setdefault(a.case_id, a)
 
-    # Pre-Underwriting status — E-Application / Agent's Confidential Report,
+    # Pre-Underwriting status — E-Application / Agent's Confidential Report / Compliance Screening / IPP,
     # bulk-fetched by case_id like everything else above (avoids N+1 on the queue).
-    from shared.models.core import AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment
+    from shared.models.core import AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck, ComplianceStatusEnum
     e_app_status_by_case = {
         row[0]: row[1] for row in (await session.execute(
             select(CustomerEApplication.case_id, CustomerEApplication.status)
@@ -233,6 +233,23 @@ async def list_cases(
             .where(InitialPremiumPayment.case_id.in_(case_ids))
         )).all()
     }
+
+    # Fetch ComplianceCheck status by policy_id and customer_id
+    policy_ids_for_cc = [p_id for p_id in policy_ids if p_id]
+    customer_ids_for_cc = [c.customer_id for c in cases if c.customer_id]
+    compliance_checks_by_policy = {}
+    compliance_checks_by_customer = {}
+    if policy_ids_for_cc or customer_ids_for_cc:
+        stmt_cc = select(ComplianceCheck).where(
+            (ComplianceCheck.policy_id.in_(policy_ids_for_cc)) |
+            (ComplianceCheck.customer_id.in_(customer_ids_for_cc))
+        )
+        cc_rows = (await session.execute(stmt_cc)).scalars().all()
+        for cc in cc_rows:
+            if cc.policy_id:
+                compliance_checks_by_policy.setdefault(cc.policy_id, []).append(cc)
+            if cc.customer_id:
+                compliance_checks_by_customer.setdefault(cc.customer_id, []).append(cc)
 
     # Fetch Family groups to include the true group name
     family_group_ids = list({c.family_group_id for c in customers.values() if c.family_group_id})
@@ -271,6 +288,20 @@ async def list_cases(
         row["e_application_status"] = e_app_status.value if e_app_status else "NotSent"
         acr_status = acr_status_by_case.get(c.caseld)
         row["acr_status"] = acr_status.value if acr_status else "NotStarted"
+        
+        cc_list = (
+            compliance_checks_by_policy.get(c.policy_id, []) if c.policy_id else []
+        ) or compliance_checks_by_customer.get(c.customer_id, [])
+        if not cc_list:
+            comp_status = "NotStarted"
+        elif any(chk.status == ComplianceStatusEnum.FAILED for chk in cc_list):
+            comp_status = "Failed"
+        elif any(chk.status == ComplianceStatusEnum.FLAGGED and not chk.cleared_by for chk in cc_list):
+            comp_status = "Flagged"
+        else:
+            comp_status = "Passed"
+        row["compliance_status"] = comp_status
+
         ipp_status = ipp_status_by_case.get(c.caseld)
         row["ipp_status"] = ipp_status.value if ipp_status else "NotStarted"
         out.append(row)
@@ -445,6 +476,38 @@ async def get_case_detail(
                 "is_current": peer_case.caseld == case.caseld,
             })
 
+    # Pre-underwriting statuses calculation
+    from shared.models.core import AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck, ComplianceStatusEnum
+    e_app = (await session.execute(select(CustomerEApplication).where(CustomerEApplication.case_id == case_id))).scalars().first()
+    acr = (await session.execute(select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id))).scalars().first()
+    ipp = (await session.execute(select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id))).scalars().first()
+    
+    comp_checks = []
+    if policy:
+        comp_checks = (await session.execute(select(ComplianceCheck).where(ComplianceCheck.policy_id == policy.id))).scalars().all()
+    if not comp_checks and case.customer_id:
+        comp_checks = (await session.execute(select(ComplianceCheck).where(ComplianceCheck.customer_id == case.customer_id))).scalars().all()
+        
+    e_app_status_val = e_app.status.value if e_app else "NotSent"
+    acr_status_val = acr.status.value if acr else "NotStarted"
+    ipp_status_val = ipp.status.value if ipp else "NotStarted"
+    
+    if not comp_checks:
+        comp_status_val = "NotStarted"
+    elif any(c.status == ComplianceStatusEnum.FAILED for c in comp_checks):
+        comp_status_val = "Failed"
+    elif any(c.status == ComplianceStatusEnum.FLAGGED and not c.cleared_by for c in comp_checks):
+        comp_status_val = "Flagged"
+    else:
+        comp_status_val = "Passed"
+        
+    is_pre_underwriting_ready = (
+        e_app_status_val == "Submitted" and
+        acr_status_val == "Submitted" and
+        comp_status_val == "Passed" and
+        ipp_status_val == "Realized"
+    )
+
     return {
         "case": CaseRead.model_validate(case),
         "customer": CustomerRead.model_validate(customer) if customer else None,
@@ -460,6 +523,13 @@ async def get_case_detail(
             "required": required,
             "received": received,
             "missing": missing,
+        },
+        "pre_underwriting_status": {
+            "e_application": e_app_status_val,
+            "acr": acr_status_val,
+            "compliance": comp_status_val,
+            "ipp": ipp_status_val,
+            "is_ready": is_pre_underwriting_ready,
         },
         "latest_assessment": (
             {
@@ -480,6 +550,82 @@ async def get_case_detail(
             if latest else None
         ),
         "assessments_count": len(assessments),
+    }
+
+
+@router.post("/{case_id}/compliance/run")
+async def run_case_compliance(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    """Run PEP, Sanctions, AML, SECP compliance screening for a pre-underwriting case."""
+    from services import compliance_engine
+    from shared.models.core import ComplianceCheck, ComplianceCheckTypeEnum, ComplianceStatusEnum, Customer, Policy
+    
+    stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    case = (await session.execute(stmt)).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+        
+    customer = await session.get(Customer, case.customer_id)
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+        
+    policy = None
+    if case.policy_id:
+        policy = await session.get(Policy, case.policy_id)
+    if not policy:
+        policy_stmt = select(Policy).where(Policy.tenant_id == tenant_id, Policy.customer_id == case.customer_id).order_by(Policy.created_at.desc())
+        policy = (await session.execute(policy_stmt)).scalars().first()
+        if policy:
+            case.policy_id = policy.id
+            session.add(case)
+        
+    if not policy:
+        raise HTTPException(status_code=409, detail="Case has no linked policy for compliance screening.")
+        
+    # Delete prior compliance checks for this policy to stay idempotent
+    await session.exec(delete(ComplianceCheck).where(ComplianceCheck.policy_id == policy.id))
+        
+    now = datetime.utcnow()
+    created = []
+    for result in await compliance_engine.screen(customer, policy):
+        chk = ComplianceCheck(
+            tenant_id=tenant_id,
+            policy_id=policy.id,
+            customer_id=customer.id,
+            check_type=ComplianceCheckTypeEnum(result["check_type"]),
+            status=ComplianceStatusEnum(result["status"]),
+            score=result.get("score"),
+            details_json=result.get("details"),
+            screened_at=now,
+        )
+        session.add(chk)
+        created.append(chk)
+        
+    await session.commit()
+    for c in created:
+        await session.refresh(c)
+        
+    has_failed = any(c.status == ComplianceStatusEnum.FAILED for c in created)
+    has_flagged = any(c.status == ComplianceStatusEnum.FLAGGED for c in created)
+    overall_status = "Failed" if has_failed else ("Flagged" if has_flagged else "Passed")
+    
+    return {
+        "case_id": str(case_id),
+        "overall_status": overall_status,
+        "checks": [
+            {
+                "id": str(c.id),
+                "check_type": c.check_type.value if hasattr(c.check_type, "value") else str(c.check_type),
+                "status": c.status.value if hasattr(c.status, "value") else str(c.status),
+                "score": c.score,
+                "details": c.details_json,
+                "screened_at": c.screened_at.isoformat() if c.screened_at else None,
+            }
+            for c in created
+        ]
     }
 
 
