@@ -26,7 +26,7 @@ const DEFAULT_ICON: Record<ToneName, keyof typeof Ionicons.glyphMap> = {
   warning: 'warning',
   danger: 'alert-circle',
   neutral: 'information-circle',
-  accent: 'sparkles',
+  accent: 'information-circle',
 };
 
 /** Inline, non-blocking message pinned within page content. */

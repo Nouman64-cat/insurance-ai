@@ -152,7 +152,7 @@ export default function ChatScreen() {
             ]}
           >
             <Ionicons
-              name={errored ? 'alert-circle' : 'sparkles'}
+              name={errored ? 'alert-circle-outline' : 'chatbubble-ellipses-outline'}
               size={15}
               color={errored ? colors.tone.danger.on : colors.tone.accent.on}
             />

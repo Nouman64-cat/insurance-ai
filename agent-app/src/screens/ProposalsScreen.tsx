@@ -6,6 +6,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { spacing, radii, typography, hitTarget } from '../theme/tokens';
 import { ToneName } from '../theme/palette';
 import { useResponsive } from '../hooks/useResponsive';
+import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useNotifications } from '../notifications/NotificationContext';
 import { fetchProposals, ProposalItem } from '../api/proposals';
 import { formatRelativeTime } from '../notifications/types';
@@ -60,6 +61,7 @@ const formatCurrency = (amount: number): string => {
 export default function ProposalsScreen() {
   const { colors } = useTheme();
   const { gutter, isCompact, width, columns } = useResponsive();
+  const { fabPadding } = useBottomClearance();
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
 
@@ -268,7 +270,7 @@ export default function ProposalsScreen() {
                 </View>
                 <ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={styles.boardList}
+                  contentContainerStyle={[styles.boardList, { paddingBottom: fabPadding }]}
                   nestedScrollEnabled
                 >
                   {items.length === 0 ? (
@@ -295,7 +297,7 @@ export default function ProposalsScreen() {
           columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}
           contentContainerStyle={[
             styles.listContent,
-            { paddingHorizontal: gutter },
+            { paddingHorizontal: gutter, paddingBottom: fabPadding },
             filtered.length === 0 ? styles.listEmpty : null,
           ]}
           showsVerticalScrollIndicator={false}
@@ -365,7 +367,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingTop: spacing.lg,
-    paddingBottom: 120,
+    // Bottom padding is supplied dynamically via useBottomClearance.
     gap: spacing.md,
   },
   listEmpty: {
@@ -423,7 +425,7 @@ const styles = StyleSheet.create({
   },
   boardList: {
     gap: spacing.md,
-    paddingBottom: 120,
+    // Bottom padding is supplied dynamically via useBottomClearance.
   },
   boardEmpty: {
     alignItems: 'center',

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, StyleSheet, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
@@ -9,9 +9,10 @@ import { statusTone, statusLabel, entityTone, entityLabel } from '../theme/palet
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { useLeadSync } from '../sync/LeadSyncProvider';
-import { updateLeadStatus, deleteLead, ProfileStatus } from '../api/leads';
+import { fetchLeadJourney, LeadJourney as Journey } from '../api/leadJourney';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { formatRelativeTime } from '../notifications/types';
+import LeadJourneyView from '../components/LeadJourney';
 import {
   Screen,
   ScreenHeader,
@@ -19,30 +20,32 @@ import {
   Card,
   Badge,
   Avatar,
-  Button,
   ListRow,
   Divider,
   EmptyState,
-  ConfirmDialog,
   SectionHeader,
   Pressable,
 } from '../components/ui';
 
 type DetailRoute = RouteProp<RootStackParamList, 'LeadDetail'>;
 
-/** The pipeline, in order. Drives both the stepper and the "advance" action. */
-const PIPELINE: ProfileStatus[] = ['LEAD', 'PROSPECT', 'UNDERWRITING_READY'];
-
+/**
+ * Read-only lead detail. An agent's job is to capture the lead and then track
+ * it — advancing the pipeline is underwriting's and operations' decision, made
+ * in the portal. This screen therefore exposes contact actions and the journey,
+ * and no status controls at all.
+ */
 export default function LeadDetailScreen() {
   const { colors } = useTheme();
   const route = useRoute<DetailRoute>();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { canSeeAllLeads } = useSession();
   const { toast } = useNotifications();
-  const { leads, applyLocal, removeLocal, refresh, syncing } = useLeadSync();
+  const { leads, refresh, syncing } = useLeadSync();
 
-  const [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [journey, setJourney] = useState<Journey | null>(null);
+  const [journeyLoading, setJourneyLoading] = useState(true);
+  const [journeyError, setJourneyError] = useState<string | null>(null);
 
   // Reading from the sync store rather than fetching means the screen updates
   // live when the portal changes this lead while it is open.
@@ -51,48 +54,31 @@ export default function LeadDetailScreen() {
     [leads, route.params.leadId]
   );
 
-  const changeStatus = useCallback(
-    async (status: ProfileStatus) => {
-      if (!lead) return;
-      const previous = lead.status;
-      setBusy(true);
-      applyLocal(lead.id, { status });
-      try {
-        await updateLeadStatus(lead, status);
-        toast(`Moved to ${statusLabel[status] ?? status}`, { tone: 'success', icon: 'checkmark-circle' });
-      } catch (err: any) {
-        applyLocal(lead.id, { status: previous });
-        toast('Could not update the lead', {
-          body: err?.message ?? 'Please try again.',
-          tone: 'danger',
-          icon: 'alert-circle',
-        });
-      } finally {
-        setBusy(false);
-      }
-    },
-    [lead, applyLocal, toast]
-  );
-
-  const handleDelete = useCallback(async () => {
+  const loadJourney = useCallback(async () => {
     if (!lead) return;
-    setBusy(true);
+    setJourneyLoading(true);
+    setJourneyError(null);
     try {
-      await deleteLead(lead);
-      removeLocal(lead.id);
-      setConfirmDelete(false);
-      toast(`${lead.name} deleted`, { tone: 'neutral', icon: 'trash-outline' });
-      navigation.goBack();
-    } catch (err: any) {
-      toast('Could not delete the lead', {
-        body: err?.message ?? 'Please try again.',
-        tone: 'danger',
-        icon: 'alert-circle',
+      const result = await fetchLeadJourney({
+        leadId: lead.id,
+        type: lead.type,
+        profileStatus: lead.status,
+        createdAt: lead.created_at,
+        groupPolicyStatus: lead.groupPolicyStatus,
       });
+      setJourney(result);
+    } catch (err: any) {
+      setJourneyError(err?.message ?? 'Could not load the journey.');
     } finally {
-      setBusy(false);
+      setJourneyLoading(false);
     }
-  }, [lead, removeLocal, toast, navigation]);
+    // Re-derives whenever the lead's own status changes, so a portal-side move
+    // is reflected without leaving the screen.
+  }, [lead?.id, lead?.status, lead?.groupPolicyStatus]);
+
+  useEffect(() => {
+    loadJourney();
+  }, [loadJourney]);
 
   const dial = (phone: string) => {
     Linking.openURL(`tel:${phone.replace(/[^\d+]/g, '')}`).catch(() =>
@@ -124,27 +110,20 @@ export default function LeadDetailScreen() {
   }
 
   const tone = statusTone[lead.status] ?? 'neutral';
-  const stageIndex = PIPELINE.indexOf(lead.status);
-  const nextStage = stageIndex >= 0 && stageIndex < PIPELINE.length - 1 ? PIPELINE[stageIndex + 1] : null;
   const hasPhone = !!lead.contact_info && !/^no (phone|contact)$/i.test(lead.contact_info);
 
   return (
     <Screen
       refreshing={syncing}
-      onRefresh={refresh}
+      onRefresh={() => {
+        refresh();
+        loadJourney();
+      }}
       header={
         <ScreenHeader
           title={lead.name || 'Lead'}
           subtitle={entityLabel[lead.type] ?? lead.type}
           leading="back"
-          actions={[
-            {
-              icon: 'trash-outline',
-              onPress: () => setConfirmDelete(true),
-              accessibilityLabel: 'Delete lead',
-              tone: 'danger',
-            },
-          ]}
         />
       }
     >
@@ -153,7 +132,7 @@ export default function LeadDetailScreen() {
           <Avatar
             name={lead.name}
             tone={entityTone[lead.type] ?? 'neutral'}
-            size={64}
+            size={60}
             shape={lead.type === 'INDIVIDUAL' ? 'circle' : 'rounded'}
           />
           <View style={styles.heroText}>
@@ -173,14 +152,14 @@ export default function LeadDetailScreen() {
 
         <View style={styles.quickActions}>
           <QuickAction
-            icon="call"
+            icon="call-outline"
             label="Call"
             disabled={!hasPhone}
             onPress={() => dial(lead.contact_info)}
           />
           <QuickAction
-            icon="chatbubble"
-            label="SMS"
+            icon="chatbubble-outline"
+            label="Message"
             disabled={!hasPhone}
             onPress={() =>
               Linking.openURL(`sms:${lead.contact_info.replace(/[^\d+]/g, '')}`).catch(() =>
@@ -189,7 +168,7 @@ export default function LeadDetailScreen() {
             }
           />
           <QuickAction
-            icon="mail"
+            icon="mail-outline"
             label="Email"
             disabled={!lead.email}
             onPress={() => lead.email && mail(lead.email)}
@@ -197,85 +176,13 @@ export default function LeadDetailScreen() {
         </View>
       </Card>
 
-      <SectionHeader title="Pipeline stage" icon="git-commit-outline" />
-      <Card padding="lg" style={styles.section}>
-        <View style={styles.stepper}>
-          {PIPELINE.map((stage, index) => {
-            const reached = stageIndex >= index && stageIndex !== -1;
-            const stageColor = reached ? colors.tone.brand.solid : colors.borderStrong;
-            return (
-              <React.Fragment key={stage}>
-                <View style={styles.step}>
-                  <View
-                    style={[
-                      styles.stepDot,
-                      {
-                        backgroundColor: reached ? stageColor : colors.surface,
-                        borderColor: stageColor,
-                      },
-                    ]}
-                  >
-                    {reached ? (
-                      <Ionicons name="checkmark" size={13} color={colors.tone.brand.onSolid} />
-                    ) : null}
-                  </View>
-                  <Text
-                    variant="micro"
-                    color={reached ? 'default' : 'subtle'}
-                    align="center"
-                    numberOfLines={2}
-                    style={styles.stepLabel}
-                  >
-                    {statusLabel[stage] ?? stage}
-                  </Text>
-                </View>
-                {index < PIPELINE.length - 1 ? (
-                  <View
-                    style={[
-                      styles.stepLine,
-                      { backgroundColor: stageIndex > index ? colors.tone.brand.solid : colors.border },
-                    ]}
-                  />
-                ) : null}
-              </React.Fragment>
-            );
-          })}
-        </View>
-
-        {lead.status === 'NOT_INTERESTED' ? (
-          <Button
-            title="Reactivate lead"
-            onPress={() => changeStatus('LEAD')}
-            variant="soft"
-            tone="success"
-            icon="refresh"
-            fullWidth
-            loading={busy}
-            style={styles.stageAction}
-          />
-        ) : (
-          <View style={styles.stageActions}>
-            {nextStage ? (
-              <Button
-                title={`Move to ${statusLabel[nextStage] ?? nextStage}`}
-                onPress={() => changeStatus(nextStage)}
-                icon="arrow-forward"
-                iconPosition="right"
-                loading={busy}
-                style={styles.stageActionItem}
-              />
-            ) : null}
-            <Button
-              title="Not interested"
-              onPress={() => changeStatus('NOT_INTERESTED')}
-              variant="outline"
-              tone="neutral"
-              disabled={busy}
-              style={styles.stageActionItem}
-            />
-          </View>
-        )}
-      </Card>
+      <SectionHeader title="Journey" icon="git-commit-outline" />
+      <LeadJourneyView
+        journey={journey}
+        loading={journeyLoading}
+        error={journeyError}
+        onRetry={loadJourney}
+      />
 
       <SectionHeader title="Details" icon="information-circle-outline" />
       <Card padding="md" style={styles.section}>
@@ -286,9 +193,9 @@ export default function LeadDetailScreen() {
           tone="brand"
           onPress={hasPhone ? () => dial(lead.contact_info) : undefined}
         />
-        <Divider spacingY="none" />
         {lead.email ? (
           <>
+            <Divider spacingY="none" />
             <ListRow
               title="Email"
               value={lead.email}
@@ -296,37 +203,37 @@ export default function LeadDetailScreen() {
               tone="info"
               onPress={() => mail(lead.email!)}
             />
-            <Divider spacingY="none" />
           </>
         ) : null}
         {lead.city ? (
           <>
-            <ListRow title="City" value={lead.city} icon="location-outline" tone="accent" />
             <Divider spacingY="none" />
+            <ListRow title="City" value={lead.city} icon="location-outline" tone="accent" />
           </>
         ) : null}
         {lead.primaryIdentifier ? (
           <>
+            <Divider spacingY="none" />
             <ListRow
               title={lead.type === 'CORPORATE' ? 'Registration no.' : 'CNIC'}
               value={lead.primaryIdentifier}
               icon="card-outline"
               tone="neutral"
             />
-            <Divider spacingY="none" />
           </>
         ) : null}
         {typeof lead.memberCount === 'number' && lead.type !== 'INDIVIDUAL' ? (
           <>
+            <Divider spacingY="none" />
             <ListRow
               title={lead.type === 'FAMILY' ? 'Members' : 'Employees'}
               value={String(lead.memberCount)}
               icon="people-outline"
               tone="accent"
             />
-            <Divider spacingY="none" />
           </>
         ) : null}
+        <Divider spacingY="none" />
         <ListRow
           title="Owner"
           value={lead.assignedAgentName ?? 'Unassigned'}
@@ -348,18 +255,6 @@ export default function LeadDetailScreen() {
           You are viewing this lead with tenant-wide access.
         </Text>
       ) : null}
-
-      <ConfirmDialog
-        visible={confirmDelete}
-        title={`Delete ${lead.name}?`}
-        message="This removes the lead from the shared database, so it disappears from the portal too. This cannot be undone."
-        confirmLabel="Delete"
-        tone="danger"
-        icon="trash-outline"
-        loading={busy}
-        onConfirm={handleDelete}
-        onCancel={() => setConfirmDelete(false)}
-      />
     </Screen>
   );
 }
@@ -436,41 +331,6 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: spacing.xl,
-  },
-  stepper: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: spacing.xl,
-  },
-  step: {
-    alignItems: 'center',
-    width: 78,
-  },
-  stepDot: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepLabel: {
-    marginTop: spacing.xs,
-  },
-  stepLine: {
-    flex: 1,
-    height: 2,
-    // Aligns the connector with the centre of the 26pt dots.
-    marginTop: 12,
-  },
-  stageAction: {
-    marginTop: spacing.sm,
-  },
-  stageActions: {
-    gap: spacing.sm,
-  },
-  stageActionItem: {
-    alignSelf: 'stretch',
   },
   scopeNote: {
     marginTop: spacing.sm,

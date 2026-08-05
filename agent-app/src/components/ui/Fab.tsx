@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useContext } from 'react';
 import { StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BottomTabBarHeightContext } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../../theme/ThemeContext';
 import { radii, spacing } from '../../theme/tokens';
 import { ToneName } from '../../theme/palette';
@@ -15,28 +16,39 @@ export interface FabProps {
   label?: string;
   tone?: ToneName;
   accessibilityLabel?: string;
-  /** Adds clearance for a bottom tab bar sitting under the FAB. */
-  aboveTabBar?: boolean;
+  /** Extra clearance on top of the automatic tab-bar/safe-area offset. */
+  extraBottomOffset?: number;
   style?: StyleProp<ViewStyle>;
 }
 
-/** Floating primary action, anchored bottom-right above the safe area. */
+/**
+ * Floating primary action, anchored bottom-right.
+ *
+ * The offset is measured, not guessed: a hardcoded margin sits *on top of* the
+ * bottom tab bar, which is 62pt on Android and 84pt on iOS. Reading the real
+ * height from navigation — and falling back to the safe-area inset on screens
+ * with no tab bar — is what keeps it clear on every device.
+ */
 export default function Fab({
   icon,
   onPress,
   label,
   tone = 'brand',
   accessibilityLabel,
-  aboveTabBar = true,
+  extraBottomOffset = 0,
   style,
 }: FabProps) {
   const { colors, shadow } = useTheme();
   const insets = useSafeAreaInsets();
   const t = colors.tone[tone];
 
-  // The tab bar already sits inside the safe area, so only its own height needs
-  // clearing on top of the standard margin.
-  const bottom = (aboveTabBar ? spacing.xl : spacing.xl + insets.bottom) + spacing.xs;
+  // Context rather than `useBottomTabBarHeight()`: the hook throws outside a
+  // tab navigator, and this component is also used on plain stack screens.
+  const tabBarHeight = useContext(BottomTabBarHeightContext);
+
+  // The tab bar already includes the safe-area inset, so the two must not be
+  // added together — that would double-count the home indicator.
+  const bottom = (tabBarHeight ?? insets.bottom) + spacing.lg + extraBottomOffset;
 
   return (
     <Pressable

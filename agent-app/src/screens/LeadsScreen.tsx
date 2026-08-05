@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { View, StyleSheet, FlatList, ScrollView, TextInput, RefreshControl } from 'react-native';
+import { View, StyleSheet, FlatList, ScrollView, TextInput, RefreshControl, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -7,6 +7,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { spacing, radii, typography, hitTarget } from '../theme/tokens';
 import { statusLabel } from '../theme/palette';
 import { useResponsive } from '../hooks/useResponsive';
+import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { useLeadSync } from '../sync/LeadSyncProvider';
@@ -42,6 +43,7 @@ const BOARD_COLUMNS: { status: ProfileStatus; title: string }[] = [
 export default function LeadsScreen() {
   const { colors } = useTheme();
   const { gutter, columns, isCompact, width } = useResponsive();
+  const { fabPadding } = useBottomClearance();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { canSeeAllLeads } = useSession();
   const { toast } = useNotifications();
@@ -93,30 +95,9 @@ export default function LeadsScreen() {
   );
 
   // ── Mutations ──────────────────────────────────────────────────────────────
-
-  const changeStatus = useCallback(
-    async (lead: UnifiedLead, status: ProfileStatus) => {
-      const previousStatus = lead.status;
-      // Optimistic: the row moves immediately, and `applyLocal` also updates the
-      // sync baseline so the next poll does not announce the user's own change.
-      applyLocal(lead.id, { status });
-      try {
-        await updateLeadStatus(lead, status);
-        toast(`${lead.name} → ${statusLabel[status] ?? status}`, {
-          tone: 'success',
-          icon: 'checkmark-circle',
-        });
-      } catch (err: any) {
-        applyLocal(lead.id, { status: previousStatus });
-        toast('Could not update the lead', {
-          body: err?.message ?? 'Please try again.',
-          tone: 'danger',
-          icon: 'alert-circle',
-        });
-      }
-    },
-    [applyLocal, toast]
-  );
+  // Agents create and track leads; they do not advance them. Stage changes are
+  // underwriting's and operations' decision, made in the portal, so this screen
+  // deliberately offers no status controls.
 
   const confirmDelete = useCallback(async () => {
     if (!pendingDelete) return;
@@ -183,7 +164,7 @@ export default function LeadsScreen() {
         keyExtractor={(item) => item.id}
         numColumns={gridColumns}
         columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}
-        contentContainerStyle={[styles.listContent, { paddingHorizontal: gutter }]}
+        contentContainerStyle={[styles.listContent, { paddingHorizontal: gutter, paddingBottom: fabPadding }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -203,7 +184,6 @@ export default function LeadsScreen() {
             lead={item}
             showOwner={canSeeAllLeads}
             onPress={() => openLead(item)}
-            onStatusChange={(status) => changeStatus(item, status)}
             onMenu={() => setMenuLead(item)}
             style={gridColumns > 1 ? styles.gridItem : undefined}
           />
@@ -256,7 +236,7 @@ export default function LeadsScreen() {
 
               <ScrollView
                 showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.boardList}
+                contentContainerStyle={[styles.boardList, { paddingBottom: fabPadding }]}
                 // The board scrolls horizontally; each column scrolls vertically.
                 nestedScrollEnabled
               >
@@ -401,44 +381,20 @@ export default function LeadsScreen() {
                 openLead(lead);
               }}
             />
-            {menuLead.status !== 'PROSPECT' ? (
-              <ListRow
-                title="Mark as In Progress"
-                subtitle="You are actively working this lead"
-                icon="play-forward-outline"
-                tone="warning"
-                onPress={() => {
-                  const lead = menuLead;
-                  setMenuLead(null);
-                  changeStatus(lead, 'PROSPECT');
-                }}
-              />
-            ) : null}
-            {menuLead.status !== 'NOT_INTERESTED' ? (
-              <ListRow
-                title="Mark as Not Interested"
-                subtitle="Moves the lead out of the active pipeline"
-                icon="close-circle-outline"
-                tone="neutral"
-                onPress={() => {
-                  const lead = menuLead;
-                  setMenuLead(null);
-                  changeStatus(lead, 'NOT_INTERESTED');
-                }}
-              />
-            ) : (
-              <ListRow
-                title="Reactivate lead"
-                subtitle="Return it to the new-leads column"
-                icon="refresh-outline"
-                tone="success"
-                onPress={() => {
-                  const lead = menuLead;
-                  setMenuLead(null);
-                  changeStatus(lead, 'LEAD');
-                }}
-              />
-            )}
+            <ListRow
+              title="Call"
+              subtitle={menuLead.contact_info}
+              icon="call-outline"
+              tone="success"
+              disabled={/^no (phone|contact)$/i.test(menuLead.contact_info)}
+              onPress={() => {
+                const number = menuLead.contact_info.replace(/[^\d+]/g, '');
+                setMenuLead(null);
+                Linking.openURL(`tel:${number}`).catch(() =>
+                  toast('No dialler available on this device', { tone: 'warning' })
+                );
+              }}
+            />
             <ListRow
               title="Delete lead"
               subtitle="Permanently removes it for everyone"
@@ -500,7 +456,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingTop: spacing.lg,
-    paddingBottom: 120,
+    // Bottom padding is supplied dynamically via useBottomClearance.
     gap: spacing.md,
   },
   column: {
@@ -538,7 +494,7 @@ const styles = StyleSheet.create({
   },
   boardList: {
     gap: spacing.md,
-    paddingBottom: 120,
+    // Bottom padding is supplied dynamically via useBottomClearance.
   },
   boardEmpty: {
     alignItems: 'center',

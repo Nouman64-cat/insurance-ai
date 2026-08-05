@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
+import { listAgents, Agent } from "@/app/services/agents";
 import { AcquisitionSource, SOURCE_TYPE_LABELS } from "./customerShared";
 
 interface Props {
@@ -16,6 +17,8 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
   const [phone, setPhone] = useState("");
   const [acquisitionSourceId, setAcquisitionSourceId] = useState("");
   const [sources, setSources] = useState<AcquisitionSource[]>([]);
+  const [assignedAgentId, setAssignedAgentId] = useState("");
+  const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -25,6 +28,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
     setLastName("");
     setPhone("");
     setAcquisitionSourceId("");
+    setAssignedAgentId("");
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
     if (tenantId) {
@@ -32,6 +36,9 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
         .get<AcquisitionSource[]>(`/tenants/${tenantId}/acquisition-sources`)
         .then((resp) => setSources(resp.data || []))
         .catch(() => setSources([]));
+      // Users holding the "Agent" RBAC role, as managed on the Users page.
+      // Assigning here is what routes the lead to that agent's mobile app.
+      listAgents(tenantId).then(setAgentOptions).catch(() => setAgentOptions([]));
     }
   }, [open]);
 
@@ -52,6 +59,9 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
         last_name: lastName.trim(),
         profile_status: "LEAD",
         acquisition_source_id: acquisitionSourceId || null,
+        // Without this the lead is created unassigned and never reaches any
+        // agent's mobile app, which filters by assigned_agent_id.
+        assigned_agent_id: assignedAgentId || null,
         details: {
           phone: phone.trim(),
           created_via: "Quick Lead Onboarding",
@@ -149,6 +159,29 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1">
+              Assign to Agent
+            </label>
+            <select
+              value={assignedAgentId}
+              onChange={(e) => setAssignedAgentId(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+            >
+              <option value="">-- Unassigned --</option>
+              {agentOptions.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.full_name}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-slate-500">
+              {assignedAgentId
+                ? "This lead will appear on the agent's mobile app, and they will be notified."
+                : "Unassigned leads stay in the portal only — no agent will be notified."}
+            </p>
           </div>
 
           <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">

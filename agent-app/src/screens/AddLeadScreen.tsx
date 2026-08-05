@@ -307,7 +307,7 @@ export default function AddLeadScreen() {
           label={isFull ? 'Full profile' : 'Quick lead'}
           tone={isFull ? 'brand' : 'warning'}
           variant="soft"
-          icon={isFull ? 'document-text-outline' : 'flash-outline'}
+          icon={isFull ? 'document-text-outline' : 'timer-outline'}
         />
         <Text variant="caption" color="muted" style={styles.introText}>
           {isFull
@@ -600,7 +600,7 @@ export default function AddLeadScreen() {
               tone="warning"
               title="High-risk hobbies"
               description="Activities with materially elevated fatality rates."
-              icon="flash-outline"
+              icon="timer-outline"
               style={styles.groupBanner}
             />
             <CheckboxCard

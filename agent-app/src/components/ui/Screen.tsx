@@ -10,10 +10,11 @@ import {
   Platform,
   ScrollViewProps,
 } from 'react-native';
-import { SafeAreaView, Edge } from 'react-native-safe-area-context';
+import { SafeAreaView, Edge, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../theme/ThemeContext';
 import { spacing, layout } from '../../theme/tokens';
 import { useResponsive } from '../../hooks/useResponsive';
+import { useBottomClearance } from '../../hooks/useBottomClearance';
 
 export interface ScreenProps {
   children?: React.ReactNode;
@@ -64,12 +65,16 @@ export default function Screen({
 }: ScreenProps) {
   const { colors } = useTheme();
   const { gutter, isCompact } = useResponsive();
+  const { fabPadding, listPadding } = useBottomClearance();
+  const insets = useSafeAreaInsets();
 
   const contentStyle: StyleProp<ViewStyle> = [
     padded ? { paddingHorizontal: gutter } : null,
     // On tablets, cap and centre the column instead of stretching text lines.
     !isCompact ? styles.capped : null,
-    fabClearance ? { paddingBottom: layout.fabClearance } : { paddingBottom: spacing.xxl },
+    // Measured from the real chrome rather than a fixed constant, so the last
+    // row clears the tab bar and any FAB on every device.
+    { paddingBottom: fabClearance ? fabPadding : listPadding },
     contentContainerStyle,
   ];
 
@@ -111,6 +116,10 @@ export default function Screen({
               backgroundColor: colors.surface,
               borderTopColor: colors.border,
               paddingHorizontal: gutter,
+              // The screen claims only the top safe-area edge, so without this
+              // a pinned footer sits under the iPhone home indicator and the
+              // Android gesture bar.
+              paddingBottom: Math.max(insets.bottom, spacing.md),
             },
           ]}
         >
