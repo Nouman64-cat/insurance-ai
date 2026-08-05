@@ -1,54 +1,46 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useColorScheme } from 'react-native';
+import { lightColors, darkColors, ThemeColors as PaletteColors } from './palette';
+import { elevation, ElevationStyle } from './tokens';
 
 export type ThemeType = 'light' | 'dark' | 'system';
 
-export interface ThemeColors {
-  background: string;
-  surface: string;
-  text: string;
-  textMuted: string;
-  primary: string;
-  border: string;
+/**
+ * What screens actually consume. Extends the palette with `card`, an alias for
+ * `surface` kept so existing screens keep compiling while they migrate.
+ */
+export interface ThemeColors extends PaletteColors {
+  /** @deprecated Use `surface`. Retained for backwards compatibility. */
   card: string;
-  danger: string;
 }
 
-const lightColors: ThemeColors = {
-  background: '#f8fafc',
-  surface: '#ffffff',
-  text: '#0f172a',
-  textMuted: '#64748b',
-  primary: '#1d4ed8',
-  border: '#e2e8f0',
-  card: '#ffffff',
-  danger: '#ef4444',
-};
-
-const darkColors: ThemeColors = {
-  background: '#0f172a',
-  surface: '#1e293b',
-  text: '#f8fafc',
-  textMuted: '#94a3b8',
-  primary: '#3b82f6',
-  border: '#334155',
-  card: '#1e293b',
-  danger: '#f87171',
-};
+const STORAGE_KEY = 'app_theme';
 
 interface ThemeContextProps {
   theme: ThemeType;
   isDark: boolean;
   colors: ThemeColors;
   setTheme: (theme: ThemeType) => void;
+  /**
+   * Theme-aware elevation. Always use this rather than `elevation()` directly —
+   * it injects the right shadow colour, without which cards are invisible in
+   * dark mode.
+   */
+  shadow: (level: 0 | 1 | 2 | 3 | 4) => ElevationStyle;
 }
+
+const withAliases = (palette: PaletteColors): ThemeColors => ({
+  ...palette,
+  card: palette.surface,
+});
 
 const ThemeContext = createContext<ThemeContextProps>({
   theme: 'system',
   isDark: false,
-  colors: lightColors,
+  colors: withAliases(lightColors),
   setTheme: () => {},
+  shadow: (level) => elevation(level, lightColors.shadow),
 });
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -57,29 +49,51 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    AsyncStorage.getItem('app_theme').then((savedTheme) => {
-      if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
-        setThemeState(savedTheme);
-      }
-      setIsReady(true);
-    });
+    let cancelled = false;
+    AsyncStorage.getItem(STORAGE_KEY)
+      .then((saved) => {
+        if (cancelled) return;
+        if (saved === 'light' || saved === 'dark' || saved === 'system') {
+          setThemeState(saved);
+        }
+      })
+      // A failed read is not worth blocking launch over — fall back to system.
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setIsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const setTheme = (newTheme: ThemeType) => {
-    setThemeState(newTheme);
-    AsyncStorage.setItem('app_theme', newTheme);
-  };
-
-  if (!isReady) return null;
+  const setTheme = useCallback((next: ThemeType) => {
+    setThemeState(next);
+    AsyncStorage.setItem(STORAGE_KEY, next).catch(() => undefined);
+  }, []);
 
   const isDark = theme === 'dark' || (theme === 'system' && systemColorScheme === 'dark');
-  const colors = isDark ? darkColors : lightColors;
 
-  return (
-    <ThemeContext.Provider value={{ theme, isDark, colors, setTheme }}>
-      {children}
-    </ThemeContext.Provider>
-  );
+  const value = useMemo<ThemeContextProps>(() => {
+    const palette = isDark ? darkColors : lightColors;
+    const colors = withAliases(palette);
+    return {
+      theme,
+      isDark,
+      colors,
+      setTheme,
+      shadow: (level: 0 | 1 | 2 | 3 | 4) => elevation(level, palette.shadow),
+    };
+  }, [theme, isDark, setTheme]);
+
+  // Rendering with the wrong theme and correcting it a frame later produces a
+  // visible flash, so hold the tree until the stored preference is known.
+  if (!isReady) return null;
+
+  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
 };
 
 export const useTheme = () => useContext(ThemeContext);
+
+export { spacing, radii, typography, duration, layout, hitSlop, hitTarget } from './tokens';
+export type { ToneName, Tone } from './palette';

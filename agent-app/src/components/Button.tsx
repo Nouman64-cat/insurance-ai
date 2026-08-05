@@ -1,80 +1,31 @@
 import React from 'react';
-import { TouchableOpacity, Text, StyleSheet, ActivityIndicator, ViewStyle, TextStyle } from 'react-native';
+import { ViewStyle, TextStyle, StyleProp } from 'react-native';
+import UIButton from './ui/Button';
 
-interface ButtonProps {
+interface LegacyButtonProps {
   title: string;
   onPress: () => void;
   loading?: boolean;
   disabled?: boolean;
-  style?: ViewStyle;
-  textStyle?: TextStyle;
+  style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
   type?: 'primary' | 'secondary' | 'danger';
 }
 
-export default function Button({ title, onPress, loading, disabled, style, textStyle, type = 'primary' }: ButtonProps) {
-  const isPrimary = type === 'primary';
-  const isDanger = type === 'danger';
-  const isSecondary = type === 'secondary';
+/**
+ * Compatibility shim over the design-system Button, so screens that have not
+ * migrated to `components/ui` still render themed, dark-mode-correct buttons.
+ * New code should import `Button` from `components/ui` directly.
+ */
+export default function Button({ type = 'primary', ...props }: LegacyButtonProps) {
+  const { variant, tone } = (
+    {
+      primary: { variant: 'solid', tone: 'brand' },
+      secondary: { variant: 'soft', tone: 'brand' },
+      danger: { variant: 'solid', tone: 'danger' },
+    } as const
+  )[type];
 
-  return (
-    <TouchableOpacity
-      style={[
-        styles.button,
-        isPrimary && styles.primary,
-        isSecondary && styles.secondary,
-        isDanger && styles.danger,
-        (disabled || loading) && styles.disabled,
-        style
-      ]}
-      onPress={onPress}
-      disabled={disabled || loading}
-      activeOpacity={0.8}
-    >
-      {loading ? (
-        <ActivityIndicator color={isSecondary ? '#1D4ED8' : '#ffffff'} />
-      ) : (
-        <Text style={[
-          styles.text, 
-          isSecondary ? styles.textSecondary : styles.textPrimary,
-          isDanger && styles.textPrimary,
-          textStyle
-        ]}>
-          {title}
-        </Text>
-      )}
-    </TouchableOpacity>
-  );
+  // The legacy button always stretched to its container, and callers rely on it.
+  return <UIButton variant={variant} tone={tone} fullWidth {...props} />;
 }
-
-const styles = StyleSheet.create({
-  button: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  primary: {
-    backgroundColor: '#1D4ED8',
-  },
-  secondary: {
-    backgroundColor: '#DBEAFE',
-  },
-  danger: {
-    backgroundColor: '#EF4444',
-  },
-  disabled: {
-    opacity: 0.6,
-  },
-  text: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  textPrimary: {
-    color: '#ffffff',
-  },
-  textSecondary: {
-    color: '#1D4ED8',
-  },
-});

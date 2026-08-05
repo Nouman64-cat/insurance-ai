@@ -7,6 +7,8 @@ export interface ChatMessage {
   text: string;
   quickActions?: Array<{ label: string; actionType: string; payload: string }>;
   isStreaming?: boolean;
+  /** Set when the turn failed, so the bubble can render in the danger tone. */
+  isError?: boolean;
 }
 
 export const sendChatMessage = async (

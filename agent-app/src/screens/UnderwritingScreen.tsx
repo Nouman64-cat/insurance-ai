@@ -1,243 +1,400 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  Alert,
-  RefreshControl,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../theme/ThemeContext';
+import { spacing, radii } from '../theme/tokens';
+import { ToneName } from '../theme/palette';
+import { useResponsive } from '../hooks/useResponsive';
+import { useNotifications } from '../notifications/NotificationContext';
 import { fetchAssessments, AssessmentItem } from '../api/underwriting';
+import { formatRelativeTime } from '../notifications/types';
+import {
+  Screen,
+  ScreenHeader,
+  Text,
+  Card,
+  Badge,
+  Banner,
+  ProgressBar,
+  EmptyState,
+  SkeletonList,
+  Divider,
+  Pressable,
+  SegmentedControl,
+} from '../components/ui';
+
+type Filter = 'ALL' | 'AUTO_APPROVE' | 'HUMAN_REVIEW';
+
+const DECISION_META: Record<string, { tone: ToneName; label: string; icon: keyof typeof Ionicons.glyphMap }> = {
+  AUTO_APPROVE: { tone: 'success', label: 'Auto-approve', icon: 'checkmark-circle' },
+  HUMAN_REVIEW: { tone: 'warning', label: 'Human review', icon: 'eye' },
+  AUTO_DECLINE: { tone: 'danger', label: 'Auto-decline', icon: 'close-circle' },
+  REFER: { tone: 'accent', label: 'Referred', icon: 'git-branch' },
+};
+
+const decisionMeta = (decision: string) =>
+  DECISION_META[(decision ?? '').toUpperCase()] ?? {
+    tone: 'neutral' as ToneName,
+    label: decision || 'Pending',
+    icon: 'help-circle' as keyof typeof Ionicons.glyphMap,
+  };
+
+/** Lower composite risk is better, so the tone scale runs the opposite way. */
+const riskTone = (score: number): ToneName => {
+  if (score <= 30) return 'success';
+  if (score <= 60) return 'warning';
+  return 'danger';
+};
 
 export default function UnderwritingScreen() {
+  const { colors } = useTheme();
+  const { gutter, isCompact, columns } = useResponsive();
+  const { toast } = useNotifications();
+
   const [assessments, setAssessments] = useState<AssessmentItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [filter, setFilter] = useState<Filter>('ALL');
 
-  const loadData = async () => {
-    setLoading(true);
+  const load = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setRefreshing(true);
     try {
       const data = await fetchAssessments();
       setAssessments(data);
-    } catch (e) {
-      console.log('Failed to fetch underwriting assessments', e);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.message ?? 'Could not load assessments.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    loadData();
   }, []);
 
-  const handleRestrictedAction = (actionName: string) => {
-    Alert.alert(
-      'Access Restricted',
-      `Currently, you have no access to ${actionName}. Please ask your manager for authorization.`
-    );
-  };
+  useEffect(() => {
+    load({ silent: true });
+  }, [load]);
+
+  const counts = useMemo(() => {
+    const tally: Record<string, number> = { ALL: assessments.length };
+    for (const a of assessments) {
+      const key = (a.ai_decision ?? '').toUpperCase();
+      tally[key] = (tally[key] ?? 0) + 1;
+    }
+    return tally;
+  }, [assessments]);
+
+  const filtered = useMemo(
+    () =>
+      filter === 'ALL'
+        ? assessments
+        : assessments.filter((a) => (a.ai_decision ?? '').toUpperCase() === filter),
+    [assessments, filter]
+  );
+
+  /**
+   * Agents cannot approve, decline, or override a score — those decisions sit
+   * with an underwriter. Explaining that is more useful than hiding the button.
+   */
+  const explainRestriction = (action: string) =>
+    toast('Underwriter authorisation required', {
+      body: `${action} is restricted to underwriters and managers.`,
+      tone: 'warning',
+      icon: 'lock-closed',
+    });
+
+  const gridColumns = isCompact ? 1 : columns(340);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Underwriting Risk Engine</Text>
-        <Text style={styles.subtitle}>AI Risk Assessments & Composite Scoring</Text>
+    <Screen
+      scrollable={false}
+      padded={false}
+      header={
+        <ScreenHeader
+          title="Underwriting"
+          subtitle={
+            loading
+              ? 'Loading…'
+              : `${assessments.length} ${assessments.length === 1 ? 'assessment' : 'assessments'}`
+          }
+          leading="back"
+        >
+          <SegmentedControl<Filter>
+            segments={[
+              { value: 'ALL', label: 'All', count: counts.ALL ?? 0 },
+              { value: 'HUMAN_REVIEW', label: 'Review', count: counts.HUMAN_REVIEW ?? 0 },
+              { value: 'AUTO_APPROVE', label: 'Approved', count: counts.AUTO_APPROVE ?? 0 },
+            ]}
+            value={filter}
+            onChange={setFilter}
+            variant="chips"
+          />
+        </ScreenHeader>
+      }
+    >
+      <View style={{ paddingHorizontal: gutter }}>
+        <Banner
+          tone="warning"
+          title="Read-only view"
+          description="Score overrides and approve/decline decisions require underwriter authorisation."
+          icon="lock-closed"
+          style={styles.banner}
+        />
+
+        {error && !loading ? (
+          <Banner
+            tone="danger"
+            title="Could not refresh"
+            description={error}
+            actionLabel="Retry"
+            onAction={() => load()}
+            style={styles.banner}
+          />
+        ) : null}
       </View>
 
-      {/* Security Banner for Agent Role */}
-      <View style={styles.readOnlyBanner}>
-        <Ionicons name="lock-closed" size={18} color="#92400e" />
-        <Text style={styles.bannerText}>
-          Read-Only Mode: Underwriting decisions & score overrides require Manager authorization.
-        </Text>
-      </View>
+      {loading ? (
+        <View style={{ paddingHorizontal: gutter }}>
+          <SkeletonList count={3} />
+        </View>
+      ) : (
+        <FlatList
+          key={`uw-${gridColumns}`}
+          data={filtered}
+          keyExtractor={(item) => item.id}
+          numColumns={gridColumns}
+          columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingHorizontal: gutter },
+            filtered.length === 0 ? styles.listEmpty : null,
+          ]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load()}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressBackgroundColor={colors.surface}
+            />
+          }
+          ListEmptyComponent={
+            <EmptyState
+              icon="shield-checkmark-outline"
+              title={filter === 'ALL' ? 'No assessments yet' : 'Nothing in this bucket'}
+              description={
+                filter === 'ALL'
+                  ? 'Risk assessments appear here once a case reaches underwriting.'
+                  : 'Try a different filter to see the other assessments.'
+              }
+              actionLabel={filter === 'ALL' ? undefined : 'Show all'}
+              onAction={filter === 'ALL' ? undefined : () => setFilter('ALL')}
+            />
+          }
+          renderItem={({ item }) => {
+            const decision = decisionMeta(item.ai_decision);
+            const composite = Number(item.composite_risk_score) || 0;
+            const compositeTone = riskTone(composite);
+            const fraudPercent = Math.round((Number(item.fraud_probability) || 0) * 100);
 
-      <FlatList
-        data={assessments}
-        keyExtractor={(item) => item.id}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
-        contentContainerStyle={styles.listContent}
-        renderItem={({ item }) => (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View>
-                <Text style={styles.customerName}>{item.customer_name}</Text>
-                <Text style={styles.caseId}>{item.case_id}</Text>
-              </View>
-              <View style={[
-                styles.decisionBadge,
-                item.ai_decision === 'AUTO_APPROVE' ? styles.badgeApprove : styles.badgeReview
-              ]}>
-                <Text style={styles.decisionText}>{item.ai_decision}</Text>
-              </View>
-            </View>
+            return (
+              <Card padding="lg" style={gridColumns > 1 ? styles.card : undefined}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardIdentity}>
+                    <Text variant="title3" numberOfLines={1}>
+                      {item.customer_name}
+                    </Text>
+                    <Text variant="caption" color="muted" numberOfLines={1}>
+                      {item.case_id} · {formatRelativeTime(new Date(item.created_at).getTime())}
+                    </Text>
+                  </View>
+                  <Badge label={decision.label} tone={decision.tone} variant="soft" icon={decision.icon} />
+                </View>
 
-            <View style={styles.scoresGrid}>
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreVal}>{item.medical_score}/100</Text>
-                <Text style={styles.scoreLabel}>Medical</Text>
-              </View>
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreVal}>{item.financial_score}/100</Text>
-                <Text style={styles.scoreLabel}>Financial</Text>
-              </View>
-              <View style={styles.scoreItem}>
-                <Text style={styles.scoreVal}>{item.fraud_probability}</Text>
-                <Text style={styles.scoreLabel}>Fraud Prob</Text>
-              </View>
-              <View style={styles.scoreItem}>
-                <Text style={[styles.scoreVal, { color: '#1d4ed8' }]}>
-                  {item.composite_risk_score}
-                </Text>
-                <Text style={styles.scoreLabel}>Composite</Text>
-              </View>
-            </View>
+                <Divider spacingY="md" />
 
-            <View style={styles.actionRow}>
-              <TouchableOpacity
-                style={styles.disabledBtn}
-                onPress={() => handleRestrictedAction('Override Scores')}
-              >
-                <Ionicons name="lock-closed-outline" size={14} color="#64748b" />
-                <Text style={styles.disabledBtnText}>Override Scores</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.disabledBtn}
-                onPress={() => handleRestrictedAction('Approve or Decline')}
-              >
-                <Ionicons name="lock-closed-outline" size={14} color="#64748b" />
-                <Text style={styles.disabledBtnText}>Make Decision</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-      />
-    </SafeAreaView>
+                <View
+                  style={[
+                    styles.composite,
+                    {
+                      backgroundColor: colors.tone[compositeTone].soft,
+                      borderColor: colors.tone[compositeTone].softBorder,
+                    },
+                  ]}
+                >
+                  <View style={styles.compositeText}>
+                    <Text variant="overline" uppercase style={{ color: colors.tone[compositeTone].on }}>
+                      Composite risk
+                    </Text>
+                    <Text style={[styles.compositeValue, { color: colors.tone[compositeTone].on }]}>
+                      {composite}
+                      <Text variant="caption" style={{ color: colors.tone[compositeTone].on }}>
+                        {' '}
+                        / 100
+                      </Text>
+                    </Text>
+                  </View>
+                  <Ionicons
+                    name={composite <= 30 ? 'trending-down' : 'trending-up'}
+                    size={22}
+                    color={colors.tone[compositeTone].solid}
+                  />
+                </View>
+
+                <View style={styles.scores}>
+                  <ProgressBar
+                    value={(Number(item.medical_score) || 0) / 100}
+                    label={`Medical · ${item.medical_score}/100`}
+                    tone={riskTone(100 - (Number(item.medical_score) || 0))}
+                    height={6}
+                    style={styles.score}
+                  />
+                  <ProgressBar
+                    value={(Number(item.financial_score) || 0) / 100}
+                    label={`Financial · ${item.financial_score}/100`}
+                    tone={riskTone(100 - (Number(item.financial_score) || 0))}
+                    height={6}
+                    style={styles.score}
+                  />
+                  <ProgressBar
+                    value={fraudPercent / 100}
+                    label={`Fraud probability · ${fraudPercent}%`}
+                    tone={riskTone(fraudPercent)}
+                    height={6}
+                    style={styles.score}
+                  />
+                </View>
+
+                {item.reasons?.length ? (
+                  <View style={styles.reasons}>
+                    <Text variant="overline" color="subtle" uppercase style={styles.reasonsTitle}>
+                      Key factors
+                    </Text>
+                    {item.reasons.slice(0, 3).map((reason, index) => (
+                      <View key={index} style={styles.reason}>
+                        <Ionicons name="ellipse" size={5} color={colors.textSubtle} style={styles.bullet} />
+                        <Text variant="caption" color="muted" style={styles.reasonText}>
+                          {reason}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                <View style={styles.actions}>
+                  {['Overriding scores', 'Approving or declining'].map((action, index) => (
+                    <Pressable
+                      key={action}
+                      onPress={() => explainRestriction(action)}
+                      pressedScale={0.97}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${action} — restricted`}
+                      style={[
+                        styles.action,
+                        { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
+                      ]}
+                    >
+                      <Ionicons name="lock-closed-outline" size={14} color={colors.textSubtle} />
+                      <Text variant="captionStrong" color="subtle" numberOfLines={1}>
+                        {index === 0 ? 'Override scores' : 'Make decision'}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </Card>
+            );
+          }}
+        />
+      )}
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
-    padding: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  readOnlyBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef3c7',
-    borderColor: '#fde68a',
-    borderWidth: 1,
-    padding: 12,
-    margin: 16,
-    borderRadius: 10,
-    gap: 8,
-  },
-  bannerText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#78350f',
+  banner: {
+    marginTop: spacing.md,
+    marginBottom: spacing.sm,
   },
   listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    gap: 12,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.xxxl,
+    gap: spacing.md,
+  },
+  listEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  column: {
+    gap: spacing.md,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
+    flex: 1,
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    gap: spacing.md,
   },
-  customerName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
+  cardIdentity: {
+    flex: 1,
   },
-  caseId: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  decisionBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  badgeApprove: {
-    backgroundColor: '#dcfce7',
-  },
-  badgeReview: {
-    backgroundColor: '#eff6ff',
-  },
-  decisionText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  scoresGrid: {
+  composite: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    backgroundColor: '#f8fafc',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
-  },
-  scoreItem: {
     alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.md,
+    borderWidth: 1,
   },
-  scoreVal: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0f172a',
+  compositeText: {
+    flex: 1,
   },
-  scoreLabel: {
-    fontSize: 10,
-    color: '#64748b',
-    marginTop: 2,
+  compositeValue: {
+    fontSize: 28,
+    lineHeight: 34,
+    fontWeight: '800',
+    marginTop: spacing.xxs,
   },
-  actionRow: {
+  scores: {
+    marginTop: spacing.lg,
+    gap: spacing.md,
+  },
+  score: {
+    width: '100%',
+  },
+  reasons: {
+    marginTop: spacing.lg,
+  },
+  reasonsTitle: {
+    marginBottom: spacing.sm,
+  },
+  reason: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+    marginBottom: spacing.xs,
   },
-  disabledBtn: {
+  bullet: {
+    marginTop: 6,
+  },
+  reasonText: {
+    flex: 1,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.lg,
+  },
+  action: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f5f9',
-    borderColor: '#cbd5e1',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 8,
-    gap: 4,
-  },
-  disabledBtnText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748b',
   },
 });

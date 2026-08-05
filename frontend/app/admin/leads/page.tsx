@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAcquisitionSources, AcquisitionSource } from "@/app/services/acquisitionSources";
 import Link from "next/link";
@@ -10,6 +10,9 @@ import { resetFunnel } from "@/app/services/demo";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
 import FiltersPanel from "@/components/FiltersPanel";
 import AddEntryChooser, { EntryEntityType } from "@/components/entities/AddEntryChooser";
+import NewLeadAlert, { NewLeadInfo } from "@/components/NewLeadAlert";
+import { getUserDirectory } from "@/app/services/agents";
+import { useNotify } from "@/components/NotificationContext";
 import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import CustomerQuickLeadModal from "@/components/entities/CustomerQuickLeadModal";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
@@ -27,15 +30,34 @@ interface UnifiedLead {
   created_at: string;
   status: ProfileStatus;
   primaryIdentifier?: string; // CNIC or Registration No
+  displayId?: string;
+  /** The list endpoints return only the id — the name comes from the directory. */
+  assignedAgentId?: string | null;
+  assignedAgentName?: string | null;
 }
 
 type FilterType = "ALL" | "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
+/**
+ * How often to re-read the shared database while this board is open. Agents
+ * create leads from the mobile app against the same tables, so without this the
+ * board silently goes stale until someone reloads the page.
+ */
+const LIVE_REFRESH_MS = 15_000;
+
 export default function LeadsHubPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { notify } = useNotify();
   const cnicQuery = searchParams.get("cnic");
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
+  /** Leads that appeared since the board was opened, awaiting acknowledgement. */
+  const [incomingLeads, setIncomingLeads] = useState<NewLeadInfo[]>([]);
+  /**
+   * Ids from the previous snapshot, for detecting genuinely new leads.
+   * `null` means no baseline yet — the next fetch establishes one silently.
+   */
+  const knownLeadIds = useRef<Set<string> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [resetting, setResetting] = useState(false);
@@ -141,7 +163,37 @@ export default function LeadsHubPage() {
   };
 
   useEffect(() => {
+    // Narrowing a filter removes leads from the result set; without dropping the
+    // baseline, widening it again would announce every one of them as "new".
+    knownLeadIds.current = null;
     fetchLeads();
+  }, [dateFrom, dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter]);
+
+  /**
+   * Keeps the board live against the shared database, so leads created in the
+   * mobile app appear here without a manual reload. Polling pauses while the
+   * tab is hidden — nobody is reading it, and it would burn quota all day.
+   */
+  useEffect(() => {
+    const tick = () => {
+      if (document.visibilityState === "visible") fetchLeads({ silent: true });
+    };
+    const timer = setInterval(tick, LIVE_REFRESH_MS);
+
+    // Returning to the tab is the moment the user most expects current data.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") fetchLeads({ silent: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+    // The filter values are read inside fetchLeads at call time, so this effect
+    // deliberately sets the interval up once rather than tearing it down on
+    // every keystroke in the filter panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFrom, dateTo, cityFilter, provinceFilter, branchFilter, sourceFilter]);
 
   useEffect(() => {
@@ -199,8 +251,13 @@ export default function LeadsHubPage() {
     }
   };
 
-  const fetchLeads = async () => {
-    setLoading(true);
+  /**
+   * `silent` skips the loading spinner, for the background poll — flashing the
+   * skeleton every 15 seconds while the user reads the board would be worse
+   * than not refreshing at all.
+   */
+  const fetchLeads = async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setLoading(true);
     setError("");
     const tenantId = localStorage.getItem("tenant_id");
 
@@ -218,6 +275,12 @@ export default function LeadsHubPage() {
       if (provinceFilter) structuredParams.province = provinceFilter;
       if (dateFrom) structuredParams.created_from = dateFrom;
       if (dateTo) structuredParams.created_to = dateTo;
+
+      // Resolves `assigned_agent_id` into a name for the Agent column. Cached
+      // per tenant, so the background poll does not refetch it each cycle.
+      const directory = await getUserDirectory(tenantId);
+      const agentNameFor = (id?: string | null) =>
+        id ? directory.get(String(id)) ?? null : null;
 
       // Parallel fetch to gather all entity types, excluding active policyholders using category queries
       const [
@@ -256,6 +319,8 @@ export default function LeadsHubPage() {
             created_at: c.created_at,
             status: c.profile_status || "LEAD",
             primaryIdentifier: c.cnic,
+            assignedAgentId: c.assigned_agent_id ?? null,
+            assignedAgentName: agentNameFor(c.assigned_agent_id),
           });
         }
       });
@@ -274,6 +339,8 @@ export default function LeadsHubPage() {
             contact_info: f.contact_phone || f.contact_email || "No contact",
             created_at: f.created_at,
             status: f.profile_status || "LEAD",
+            assignedAgentId: f.assigned_agent_id ?? null,
+            assignedAgentName: agentNameFor(f.assigned_agent_id),
           });
         }
       });
@@ -293,6 +360,8 @@ export default function LeadsHubPage() {
             created_at: o.created_at,
             status: o.profile_status || "LEAD",
             primaryIdentifier: o.registration_number,
+            assignedAgentId: o.assigned_agent_id ?? null,
+            assignedAgentName: agentNameFor(o.assigned_agent_id),
           });
         }
       });
@@ -327,12 +396,52 @@ export default function LeadsHubPage() {
 
       // 2. Sort by newest first
       unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      announceNewLeads(unified);
       setLeads(unified);
     } catch (err: any) {
       setError(err.message || "Failed to load leads");
     } finally {
       setLoading(false);
     }
+  };
+
+  /**
+   * Compares an incoming snapshot against the previous one and raises a toast —
+   * plus an interrupting dialog — for leads that were not there before. This is
+   * what surfaces a lead an agent just created in the mobile app.
+   */
+  const announceNewLeads = (incoming: UnifiedLead[]) => {
+    const known = knownLeadIds.current;
+
+    // The first load establishes the baseline. Announcing it would fire a
+    // notification for every lead already on the board.
+    if (known === null) {
+      knownLeadIds.current = new Set(incoming.map((l) => l.id));
+      return;
+    }
+
+    const fresh = incoming.filter((l) => !known.has(l.id));
+    knownLeadIds.current = new Set(incoming.map((l) => l.id));
+    if (fresh.length === 0) return;
+
+    notify(
+      fresh.length === 1
+        ? `New lead: ${fresh[0].name}${fresh[0].assignedAgentName ? ` — added by ${fresh[0].assignedAgentName}` : ""}`
+        : `${fresh.length} new leads added`,
+      true,
+    );
+
+    setIncomingLeads((prev) => [
+      ...prev,
+      ...fresh.map((l) => ({
+        id: l.id,
+        name: l.name,
+        type: l.type,
+        contact_info: l.contact_info,
+        agentName: l.assignedAgentName,
+        createdAt: l.created_at,
+      })),
+    ]);
   };
 
   const getFilteredLeads = () => {
@@ -849,6 +958,7 @@ export default function LeadsHubPage() {
                                     "All Leads"}
                             </th>
                             <th className="px-6 py-4">Type</th>
+                            <th className="px-6 py-4">Agent</th>
                             <th className="px-6 py-4">Contact</th>
                             <th className="px-6 py-4">CNIC</th>
                             <th className="px-6 py-4">Date Added</th>
@@ -888,6 +998,18 @@ export default function LeadsHubPage() {
                                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeStyles[lead.type]}`}>
                                     {lead.type}
                                   </span>
+                                </td>
+                                <td className="px-6 py-4">
+                                  {lead.assignedAgentName ? (
+                                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-700">
+                                      <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-[9px] font-bold text-blue-700 border border-blue-200">
+                                        {lead.assignedAgentName.charAt(0).toUpperCase()}
+                                      </span>
+                                      <span className="font-medium">{lead.assignedAgentName}</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-xs text-slate-400 italic">Unassigned</span>
+                                  )}
                                 </td>
                                 <td className="px-6 py-4 text-slate-600 text-xs">{lead.contact_info}</td>
                                 <td className="px-6 py-4 text-slate-500 font-mono text-xs">{lead.primaryIdentifier || "-"}</td>
@@ -994,7 +1116,9 @@ export default function LeadsHubPage() {
           onClose={() => setSelectedEntity(null)}
           entityId={selectedEntity.id}
           entityType={selectedEntity.type}
-          onSaved={fetchLeads}
+          // Wrapped: the modal may pass its own arguments, which would land in
+          // `fetchLeads`'s options parameter and silently suppress the spinner.
+          onSaved={() => fetchLeads()}
         />
       )}
 
@@ -1068,6 +1192,17 @@ export default function LeadsHubPage() {
           }}
         />
       )}
+
+      {/* Raised when a lead lands while this board is open — typically created
+          by an agent in the mobile app. */}
+      <NewLeadAlert
+        leads={incomingLeads}
+        onDismiss={() => setIncomingLeads([])}
+        onView={(lead) => {
+          setIncomingLeads([]);
+          setSelectedEntity({ id: lead.id, type: lead.type });
+        }}
+      />
     </div>
   );
 }
@@ -1128,6 +1263,19 @@ function LeadCard({
           <path fillRule="evenodd" d="M2 3.5A1.5 1.5 0 013.5 2h1.148a1.5 1.5 0 011.465 1.175l.716 3.223a1.5 1.5 0 01-1.052 1.767l-.933.267c-.41.117-.643.555-.48.95a11.542 11.542 0 006.254 6.254c.395.163.833-.07.95-.48l.267-.933a1.5 1.5 0 011.767-1.052l3.223.716A1.5 1.5 0 0118 15.352V16.5a1.5 1.5 0 01-1.5 1.5H15c-1.149 0-2.263-.15-3.326-.43A13.022 13.022 0 012.43 8.326 13.019 13.019 0 012 5V3.5z" clipRule="evenodd" />
         </svg>
         {lead.contact_info}
+      </div>
+
+      <div className="text-xs font-medium flex items-center gap-1.5 mb-2">
+        {lead.assignedAgentName ? (
+          <>
+            <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-[8px] font-bold text-blue-700 border border-blue-200">
+              {lead.assignedAgentName.charAt(0).toUpperCase()}
+            </span>
+            <span className="text-slate-600 truncate">{lead.assignedAgentName}</span>
+          </>
+        ) : (
+          <span className="text-slate-400 italic">Unassigned</span>
+        )}
       </div>
 
       {lead.primaryIdentifier && (

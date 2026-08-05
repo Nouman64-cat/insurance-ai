@@ -1,10 +1,10 @@
 {
   "expo": {
-    "name": "agent-app",
+    "name": "Rizvi Agent",
     "slug": "agent-app",
     "version": "1.0.0",
-    "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true
     },
