@@ -24,6 +24,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from database import create_db_and_tables
 from kafka_producer import create_producer
 from quote_worker import start_quote_worker
+from risk_result_worker import start_risk_result_worker
 from routers.chat import router as chat_router
 from routers.evaluate import router as evaluate_router
 from routers.quote import router as quote_router
@@ -47,15 +48,21 @@ async def lifespan(app: FastAPI):
     await create_db_and_tables()
     app.state.kafka_producer = await create_producer()
 
-    # Quote worker — background asyncio task, generates quotations for newly
-    # created customers (see quote_worker.py).
+    # Background Kafka consumers, both driven by one stop event:
+    #   • quote worker       — generates quotations for newly created customers.
+    #   • risk result worker — persists RiskAssessments for proposals submitted
+    #     through the async POST /evaluate path. Without it, results published on
+    #     insurance.risk.evaluated.v1 have no subscriber and are discarded.
     stop_event = asyncio.Event()
-    worker_task = start_quote_worker(stop_event)
+    worker_tasks = [
+        start_quote_worker(stop_event),
+        start_risk_result_worker(stop_event),
+    ]
 
     yield
 
     stop_event.set()
-    await worker_task
+    await asyncio.gather(*worker_tasks, return_exceptions=True)
     await app.state.kafka_producer.stop()
 
 

@@ -37,8 +37,15 @@ from shared.models.core import (
     Beneficiary,
     BillingFrequencyEnum,
     Claim,
+    CounterOffer,
+    CounterOfferStatusEnum,
+    CounterOfferTypeEnum,
     Customer,
+    InitialPremiumPayment,
     InsurancePlan,
+    IPPStatusEnum,
+    MedicalExamOrder,
+    MedicalExamStatusEnum,
     Policy,
     PolicyDocument,
     PolicyDocumentTypeEnum,
@@ -85,31 +92,144 @@ async def _get_policy(session: AsyncSession, tenant_id: UUID, policy_id: UUID) -
 
 
 async def _next_policy_number(session: AsyncSession, tenant_id: UUID) -> str:
+    """Allocate the next policy number for this tenant and year.
+
+    Previously this counted existing numbered policies and added one, which had
+    two defects: two concurrent issuances counted the same total and minted the
+    SAME number (Policy.policy_number is unique — one of them 500s), and any
+    deleted policy made the counter walk backwards over a number already used.
+
+    Now it takes a transaction-scoped advisory lock keyed on the tenant, then
+    derives the next value from the highest suffix actually in use — so it is
+    both collision-free under concurrency and monotonic across deletions. The
+    lock is released automatically when the surrounding transaction ends.
+    """
     year = datetime.utcnow().year
-    result = await session.exec(
-        select(Policy).where(
+    prefix = f"PL-{year}-"
+
+    # Serialise number allocation per tenant. tenant_id.int is 128 bits; fold it
+    # into the signed 64-bit space pg_advisory_xact_lock expects.
+    lock_key = (tenant_id.int % (2 ** 62)) - (2 ** 61)
+    await session.exec(text("SELECT pg_advisory_xact_lock(:k)").bindparams(k=lock_key))
+
+    rows = await session.exec(
+        select(Policy.policy_number).where(
             Policy.tenant_id == tenant_id,
-            Policy.policy_number.is_not(None),  # type: ignore[arg-type]
+            Policy.policy_number.is_not(None),      # type: ignore[arg-type]
+            Policy.policy_number.startswith(prefix),  # type: ignore[attr-defined]
         )
     )
-    count = len(list(result.all())) + 1
-    return f"PL-{year}-{count:04d}"
+    highest = 0
+    for number in rows.all():
+        try:
+            highest = max(highest, int(str(number).rsplit("-", 1)[-1]))
+        except (ValueError, IndexError):     # hand-edited / legacy format — skip
+            continue
+    return f"{prefix}{highest + 1:04d}"
+
+
+async def _realized_ipp(session: AsyncSession, policy: Policy) -> Optional[InitialPremiumPayment]:
+    """The already-collected pre-underwriting initial premium for this policy.
+
+    Section 30 ("no premium, no risk") has the first premium collected at
+    proposal submission, before underwriting runs — see
+    routers/initial_premium_payment.py. Issuance must therefore credit what was
+    already banked instead of raising a second, full-price demand for the same
+    first premium, which is what happened before this existed.
+    """
+    return (await session.exec(
+        select(InitialPremiumPayment).where(
+            InitialPremiumPayment.policy_id == policy.id,
+            InitialPremiumPayment.status == IPPStatusEnum.REALIZED,
+        )
+        .order_by(InitialPremiumPayment.realized_at.desc())  # type: ignore[arg-type]
+    )).first()
+
+
+def _age_from_dob(dob: Optional[date]) -> Optional[int]:
+    """Age in whole years at today's date, or None when the DOB is unknown."""
+    if dob is None:
+        return None
+    today = date.today()
+    return today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+
+async def _effective_loading_pct(session: AsyncSession, policy: Policy) -> tuple[float, str]:
+    """The loading percentage the contract must actually be priced at.
+
+    Three sources can rate a case up, and before this helper existed only the
+    first was ever read — so an accepted Loading counter-offer and an adverse
+    panel medical both priced at standard rates:
+
+      1. An ACCEPTED Loading counter-offer. This wins outright: the customer was
+         shown revised terms and agreed to them, so it is the contractual price
+         regardless of what the models suggest.
+      2. Otherwise the harsher of the panel medical's rating
+         (MedicalExamOrder.suggested_loading_pct) and the AI's holistic
+         suggestion (RiskAssessment.suggested_loading). Taking the max is the
+         conservative reading — neither assessment cancels the other out.
+
+    Returns (loading_pct, human-readable basis) for the audit trail.
+    """
+    offer = (await session.exec(
+        select(CounterOffer)
+        .where(
+            CounterOffer.policy_id == policy.id,
+            CounterOffer.status == CounterOfferStatusEnum.ACCEPTED,
+            CounterOffer.offer_type == CounterOfferTypeEnum.LOADING,
+        )
+        .order_by(CounterOffer.responded_at.desc())  # type: ignore[arg-type]
+    )).first()
+    if offer is not None and offer.revised_loading_pct:
+        return float(offer.revised_loading_pct), "accepted counter-offer"
+
+    ra = (await session.exec(
+        select(RiskAssessment).where(RiskAssessment.policy_id == policy.id)
+        .order_by(RiskAssessment.created_at.desc())  # type: ignore[arg-type]
+    )).first()
+    ai_loading = float(getattr(ra, "suggested_loading", 0) or 0)
+
+    # MedicalExamOrder.policy_id is nullable (the order is keyed by case), so
+    # fall back to the case link rather than silently missing the rating.
+    med = (await session.exec(
+        select(MedicalExamOrder)
+        .where(MedicalExamOrder.policy_id == policy.id)
+        .order_by(MedicalExamOrder.updated_at.desc())  # type: ignore[arg-type]
+    )).first()
+    if med is None:
+        case_ids = [
+            c.caseld for c in
+            (await session.exec(select(Case).where(Case.policy_id == policy.id))).all()
+        ]
+        if case_ids:
+            med = (await session.exec(
+                select(MedicalExamOrder)
+                .where(MedicalExamOrder.case_id.in_(case_ids))  # type: ignore[attr-defined]
+                .order_by(MedicalExamOrder.updated_at.desc())   # type: ignore[arg-type]
+            )).first()
+    med_loading = 0.0
+    if med is not None and med.status == MedicalExamStatusEnum.COMPLETED:
+        med_loading = float(med.suggested_loading_pct or 0)
+
+    if med_loading >= ai_loading and med_loading > 0:
+        return med_loading, "panel medical findings"
+    if ai_loading > 0:
+        return ai_loading, "AI risk assessment"
+    return 0.0, "standard rates"
 
 
 async def _price_breakdown(session: AsyncSession, tenant_id: UUID, policy: Policy,
                            coverage_override: Optional[float] = None):
     """Compute the premium breakdown for a policy (shared by /issue, the
-    issuance-preview and endorsement re-quotes). Reads the customer smoker flag,
-    the latest risk-assessment loading and the plan rates, then delegates to
-    PricingEngine.calculate(). Pass coverage_override to re-price a sum-assured
-    change without mutating the policy."""
+    issuance-preview and endorsement re-quotes). Reads the customer's rating
+    factors, resolves the effective loading, and delegates to
+    PricingEngine.calculate() — which runs the same shared formula POST /quote
+    used, so the issued contract matches the quote the customer accepted.
+    Pass coverage_override to re-price a sum-assured change without mutating
+    the policy."""
     cust = await session.get(Customer, policy.customer_id)
     is_smoker = bool(getattr(cust, "is_smoker", False))
-    ra = (await session.exec(
-        select(RiskAssessment).where(RiskAssessment.policy_id == policy.id)
-        .order_by(RiskAssessment.created_at.desc())  # type: ignore[arg-type]
-    )).first()
-    loading_pct = float(getattr(ra, "suggested_loading", 0) or 0)
+    loading_pct, _basis = await _effective_loading_pct(session, policy)
     ins_type_str = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
     base_rate, smoker_factor = await _load_plan_rates(session, tenant_id, policy.insurance_type)
     return PricingEngine.calculate(
@@ -120,6 +240,9 @@ async def _price_breakdown(session: AsyncSession, tenant_id: UUID, policy: Polic
         smoker_factor=smoker_factor,
         loading_pct=loading_pct,
         is_smoker=is_smoker,
+        age=_age_from_dob(getattr(cust, "dob", None)),
+        height_cm=getattr(cust, "height_cm", None),
+        weight_kg=getattr(cust, "weight_kg", None),
     ), loading_pct
 
 
@@ -210,13 +333,18 @@ _INSTALLMENTS_PER_YEAR = {
 def _build_premium_schedule(
     policy_id: UUID, version_id: UUID, total_annual_premium: float,
     effective: date, billing_frequency: BillingFrequencyEnum, first_reference: Optional[str],
+    prepaid_amount: float = 0.0, prepaid_at: Optional[datetime] = None,
 ) -> list[PremiumSchedule]:
     """Build the first policy-year installment ledger for a billing frequency.
 
-    ANNUAL (today's default) yields a single installment identical to the old
-    inline behaviour; the finer cadences split the annual premium evenly and space
-    the due dates across the year. All rows start PENDING — confirm_payment marks
-    the earliest one PAID to bind cover, and Stage B collects the remainder.
+    ANNUAL (today's default) yields a single installment; the finer cadences
+    split the annual premium evenly and space the due dates across the year.
+
+    ``prepaid_amount`` is the pre-underwriting Initial Premium Payment already
+    realized against this policy. It is credited to the first installment, which
+    settles as PAID when the credit covers it — otherwise the balance stays
+    collectable as a top-up. Without this the applicant was billed the whole
+    first premium a second time at issuance.
     """
     n = _INSTALLMENTS_PER_YEAR.get(billing_frequency, 1)
     per = round(total_annual_premium / n, 2)
@@ -225,18 +353,53 @@ def _build_premium_schedule(
     for i in range(n):
         # Absorb rounding drift into the first installment so the year still sums.
         amount = round(total_annual_premium - per * (n - 1), 2) if i == 0 else per
+        credit = round(min(prepaid_amount, amount), 2) if i == 0 else 0.0
+        settled = i == 0 and credit >= amount - 0.01
         rows.append(PremiumSchedule(
             policy_id=policy_id,
             policy_version_id=version_id,
             billing_frequency=billing_frequency,
             due_date=effective + timedelta(days=step_days * i),
             amount_due=amount,
-            amount_paid=0.0,
-            status=PremiumScheduleStatusEnum.PENDING,
+            amount_paid=credit,
+            status=PremiumScheduleStatusEnum.PAID if settled else PremiumScheduleStatusEnum.PENDING,
+            paid_at=(prepaid_at or datetime.utcnow()) if settled else None,
             payment_reference=first_reference if i == 0 else None,
             installment_no=i + 1,
         ))
     return rows
+
+
+async def _bind_cover(
+    session: AsyncSession, policy: Policy, *, actor: str, detail: dict,
+) -> PolicyEvent:
+    """Take a fully-paid policy live: PENDING_PAYMENT → ACTIVE plus everything
+    that legally follows from cover incepting.
+
+    Shared by ``/payments/confirm`` (the applicant settles the balance) and
+    ``/issue`` (the pre-underwriting Initial Premium Payment already covered the
+    first premium, so there is nothing left to collect). Both routes must do
+    identical work — free-look clock, case closure, policyholder promotion,
+    binding documents — so it lives here rather than being written twice.
+    """
+    event = apply_transition(
+        session, policy, PolicyStatusEnum.ACTIVE,
+        event_type="PaymentConfirmed", actor=actor, detail=detail,
+    )
+
+    # Start the free-look clock. Delivery = the moment cover binds and docs go
+    # out; the statutory window runs from here (NOT effective_date). Stage B
+    # step 1 reads these to allow a full-refund cancellation inside the window.
+    policy.delivery_date = date.today()
+    policy.free_look_end_date = policy.delivery_date + timedelta(days=FREE_LOOK_DAYS)
+
+    # Finalize the pre-issuance workflow now that cover is in force.
+    await _close_cases_and_promote(session, policy)
+
+    # Generate the binding documents (Schedule, Certificate, Wording)
+    await generate_and_store_documents(session, policy, policy.current_version_id)
+
+    return event
 
 
 async def _close_cases_and_promote(session: AsyncSession, policy: Policy) -> None:
@@ -321,13 +484,16 @@ async def upcoming_renewals(
     result = await session.exec(select(Policy).where(Policy.tenant_id == tenant_id))
     upcoming = []
     for p in result.all():
+        # _st() returns the enum *value* ("Active" / "GracePeriod"). Comparing
+        # against SCREAMING_SNAKE names here matched nothing, so this endpoint
+        # silently returned an empty list for every tenant.
         st = _st(p)
-        if st not in ("ACTIVE", "GRACE_PERIOD") or not p.expiry_date:
+        if st not in (PolicyStatusEnum.ACTIVE.value, PolicyStatusEnum.GRACE_PERIOD.value) or not p.expiry_date:
             continue
         days_left = (p.expiry_date - today).days
         if days_left > days:
             continue
-        urgency = ("grace" if st == "GRACE_PERIOD" else
+        urgency = ("grace" if st == PolicyStatusEnum.GRACE_PERIOD.value else
                    "15d" if days_left <= 15 else
                    "30d" if days_left <= 30 else
                    "60d" if days_left <= 60 else "90d")
@@ -553,7 +719,11 @@ async def issue_policy(
     policy = await _get_policy(session, tenant_id, policy_id)
     status_val = _st(policy)
     if status_val not in ("Approved", "AcceptedWithLoadings", "Issued"):
-        raise HTTPException(400, f"Policy must be Approved or AcceptedWithLoadings to issue (current: {status_val})")
+        raise HTTPException(
+            400,
+            "Policy must be Approved, AcceptedWithLoadings or Issued to issue "
+            f"(current: {status_val})",
+        )
     if policy.policy_number:
         raise HTTPException(400, "Policy already issued")
 
@@ -568,38 +738,28 @@ async def issue_policy(
     # in DEMO mode so Stage B and audit know this contract still needs backfilling.
     demo_bypass_flags = readiness.get("demo_bypass_flags", "NotFlagged")
 
-    cust = await session.get(Customer, policy.customer_id)
-    is_smoker = bool(getattr(cust, "is_smoker", False))
-
-    ra_res = await session.exec(
-        select(RiskAssessment)
-        .where(RiskAssessment.policy_id == policy_id)
-        .order_by(RiskAssessment.created_at.desc())  # type: ignore[arg-type]
-    )
-    ra = ra_res.first()
-    loading_pct = float(getattr(ra, "suggested_loading", 0) or 0)
-
-    ins_type_str = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
-    base_rate, smoker_factor = await _load_plan_rates(session, tenant_id, policy.insurance_type)
-
-    # ── Pricing (decoupled) ──────────────────────────────────────────────────
-    breakdown = PricingEngine.calculate(
-        insurance_type=ins_type_str,
-        coverage_amount=policy.coverage_amount,
-        term_years=policy.term_years,
-        base_rate=base_rate,
-        smoker_factor=smoker_factor,
-        loading_pct=loading_pct,
-        is_smoker=is_smoker,
-    )
+    # ── Pricing ──────────────────────────────────────────────────────────────
+    # Same shared formula POST /quote ran, and the effective loading now honours
+    # an accepted counter-offer and the panel medical, not just the AI's number.
+    breakdown, loading_pct = await _price_breakdown(session, tenant_id, policy)
+    _, loading_basis = await _effective_loading_pct(session, policy)
 
     today = date.today()
     effective = policy.effective_date or today
-    expiry = date(effective.year + policy.term_years, effective.month, effective.day)
+    expiry = _maturity_date(effective, policy.term_years)
     grace_end = expiry + timedelta(days=GRACE_PERIOD_DAYS)
 
-    # First-premium payment intent — the applicant now owes this before cover binds.
-    intent = payment_gateway.initiate_payment(breakdown.total_premium)
+    # Credit the pre-underwriting Initial Premium Payment: the applicant already
+    # settled the first premium at proposal, so only a balance (if the final
+    # underwritten premium came out higher) can still be owed.
+    ipp = await _realized_ipp(session, policy)
+    prepaid = float(ipp.amount or 0) if ipp else 0.0
+    balance_due = round(max(0.0, breakdown.total_premium - prepaid), 2)
+    fully_prepaid = balance_due <= 0.01
+
+    # Payment intent for whatever is still outstanding. Nothing to raise when the
+    # initial premium already covered the contract.
+    intent = payment_gateway.initiate_payment(balance_due) if not fully_prepaid else None
 
     # ── Atomic draft transaction ─────────────────────────────────────────────
     try:
@@ -626,13 +786,17 @@ async def issue_policy(
         session.add(version)
         await session.flush()  # get version.id before FK usage
 
-        # First policy-year installment ledger. ANNUAL (default) = one PENDING row,
-        # exactly as before; finer cadences seed the whole year so Stage B has a
-        # ledger to collect against. The earliest row must be PAID to bind cover.
+        # First policy-year installment ledger, with the already-realized initial
+        # premium credited against the first row. ANNUAL (default) = one row;
+        # finer cadences seed the whole year so Stage B has a ledger to collect
+        # against. The earliest row must be PAID before cover can bind.
         billing_frequency = BillingFrequencyEnum.ANNUAL
         for schedule in _build_premium_schedule(
             policy_id, version.id, breakdown.total_premium,
-            effective, billing_frequency, intent.reference,
+            effective, billing_frequency,
+            intent.reference if intent else (ipp.reference if ipp else None),
+            prepaid_amount=prepaid,
+            prepaid_at=ipp.realized_at if ipp else None,
         ):
             session.add(schedule)
 
@@ -650,6 +814,7 @@ async def issue_policy(
 
         # Generate the Premium Notice (bill) now that the contract fields are set.
         await generate_and_store_premium_notice(session, policy, version.id)
+        documents_generated = 1
 
         event = apply_transition(
             session, policy, PolicyStatusEnum.PENDING_PAYMENT,
@@ -658,10 +823,31 @@ async def issue_policy(
             detail={
                 "policy_number": policy_number,
                 "total_premium": breakdown.total_premium,
-                "payment_reference": intent.reference,
+                "loading_pct": loading_pct,
+                "loading_basis": loading_basis,
+                "initial_premium_credited": round(prepaid, 2),
+                "balance_due": balance_due,
+                "payment_reference": intent.reference if intent else None,
                 "version": "1.0",
             },
         )
+        events = [event]
+
+        # The initial premium already covers the contract — there is nothing left
+        # to collect, so cover incepts now rather than parking the policy at
+        # PendingPayment behind a zero-value payment the user would have to fake.
+        if fully_prepaid:
+            events.append(await _bind_cover(
+                session, policy,
+                actor="system",
+                detail={
+                    "payment_reference": ipp.reference if ipp else None,
+                    "amount": round(prepaid, 2),
+                    "method": ipp.method if ipp else None,
+                    "source": "InitialPremiumPayment",
+                },
+            ))
+            documents_generated += 3
 
         await session.commit()
 
@@ -673,24 +859,34 @@ async def issue_policy(
         log.exception("Issuance failed for policy %s — rolled back", policy_id)
         raise HTTPException(500, f"Issuance failed and was rolled back: {exc}") from exc
 
-    await _publish_policy_event(request, policy, event)
+    for ev in events:
+        await _publish_policy_event(request, policy, ev)
 
-    log.info("Policy drafted (pending payment): %s (%s) — premium PKR %.0f",
-             policy_number, policy_id, breakdown.total_premium)
+    log.info(
+        "Policy %s: %s (%s) — premium PKR %.0f (loading %.1f%% via %s), "
+        "initial premium credited PKR %.0f, balance PKR %.0f",
+        "issued and activated" if fully_prepaid else "drafted (pending payment)",
+        policy_number, policy_id, breakdown.total_premium, loading_pct, loading_basis,
+        prepaid, balance_due,
+    )
     return {
         "policy_number": policy_number,
-        "status": "PendingPayment",
+        "status": _st(policy),
         "effective_date": effective.isoformat(),
         "expiry_date": expiry.isoformat(),
         "maturity_date": policy.maturity_date.isoformat() if policy.maturity_date else None,
         "grace_period_end_date": grace_end.isoformat(),
         "premium_breakdown": breakdown.to_dict(),
         "version": "1.0",
-        "documents_generated": 3,
+        "documents_generated": documents_generated,
         "grace_period_days": GRACE_PERIOD_DAYS,
-        "amount_due": round(breakdown.total_premium, 2),
-        "payment": intent.to_dict(),
+        "total_premium": round(breakdown.total_premium, 2),
+        "initial_premium_credited": round(prepaid, 2),
+        "amount_due": balance_due,
+        "payment": intent.to_dict() if intent else None,
         "available_payment_methods": payment_gateway.available_methods(),
+        "delivery_date": policy.delivery_date.isoformat() if policy.delivery_date else None,
+        "free_look_end_date": policy.free_look_end_date.isoformat() if policy.free_look_end_date else None,
     }
 
 
@@ -780,10 +976,10 @@ async def confirm_payment(
         schedule.payment_reference = intent.reference
         session.add(schedule)
 
-        # Bind cover: PENDING_PAYMENT → ACTIVE (guarded by the state machine).
-        event = apply_transition(
-            session, policy, PolicyStatusEnum.ACTIVE,
-            event_type="PaymentConfirmed",
+        # Bind cover: PENDING_PAYMENT → ACTIVE (guarded by the state machine),
+        # plus free-look clock, case closure, promotion and binding documents.
+        event = await _bind_cover(
+            session, policy,
             actor="gateway",
             detail={
                 "payment_reference": intent.reference,
@@ -792,18 +988,6 @@ async def confirm_payment(
                 "schedule_id": str(schedule.id),
             },
         )
-
-        # Start the free-look clock. Delivery = the moment cover binds and docs
-        # go out; the statutory window runs from here (NOT effective_date). Stage B
-        # step 1 reads these to allow a full-refund cancellation inside the window.
-        policy.delivery_date = date.today()
-        policy.free_look_end_date = policy.delivery_date + timedelta(days=FREE_LOOK_DAYS)
-
-        # Finalize the pre-issuance workflow now that cover is in force.
-        await _close_cases_and_promote(session, policy)
-
-        # Generate the binding documents (Schedule, Certificate, Wording)
-        await generate_and_store_documents(session, policy, policy.current_version_id)
 
         await session.commit()
 

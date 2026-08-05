@@ -7,7 +7,9 @@ and the gate the server enforces can never drift apart.
 
 Kept free of any router imports so both routers can depend on it without a cycle.
 
-Gate rules for the ISSUE action (drafting the contract → PENDING_PAYMENT):
+Gate rules for the ISSUE action (drafting the contract → PENDING_PAYMENT).
+
+In production every one of these is a hard blocker:
   • no counter-offer still Pending (revised terms must be accepted/declined),
   • every PolicyRequirement is Verified or Waived,
   • all three ComplianceChecks (AML / Sanctions / SECP) are Passed or cleared,
@@ -15,9 +17,16 @@ Gate rules for the ISSUE action (drafting the contract → PENDING_PAYMENT):
   • any facultative reinsurance cession is placed — the excess over retention
     must sit with a reinsurer before this insurer writes the cover.
 
-For DEMO mode, compliance and beneficiary gates are downgraded to "warnings" —
-the issue still proceeds but the UI shows an orange alert explaining these would
-block a real issuance.
+In DEMO mode (the default — see DEMO_MODE below) only the first is enforced.
+The other FOUR — requirements, compliance, beneficiaries and reinsurance — are
+downgraded to warnings: the issue proceeds, the UI shows an orange alert, and
+each bypass is recorded in ``demo_bypass_flags`` on the policy so Stage B and
+audit know what still needs backfilling.
+
+Set DEMO_MODE=false to enforce all five, which is what a real deployment does.
+(The docstring here used to describe all five as enforced while the code only
+ever blocked on the counter-offer, and mentioned the demo downgrade for two of
+the four gates that are actually downgraded.)
 
 Premium collection (step 3) and document generation (step 6) happen at/after the
 draft, so they are reported as steps but are not issue blockers.
@@ -25,8 +34,7 @@ draft, so they are reported as steps but are not issue blockers.
 
 from __future__ import annotations
 
-from typing import Optional
-from uuid import UUID
+import os
 
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -46,9 +54,30 @@ from shared.models.core import (
     PremiumScheduleStatusEnum,
     ReinsuranceReferral,
     ReinsuranceReferralStatusEnum,
+    ReinsurerDecisionEnum,
     RequirementStatusEnum,
 )
+from services import compliance_engine
 from services.underwriting_limits import age_from_dob, compute_cession
+
+# Whether the four mandatory-but-demo-bypassed gates block an issue. Defaults to
+# demo behaviour (warnings only) to preserve the existing walkthrough; set
+# DEMO_MODE=false in a real deployment so requirements, compliance,
+# beneficiaries and reinsurance become hard blockers like the counter-offer.
+DEMO_MODE: bool = os.environ.get("DEMO_MODE", "true").lower() not in ("false", "0", "no")
+
+
+def _gate(blockers: list[str], warnings: list[str], message: str) -> bool:
+    """Record an unmet mandatory gate and report whether it was bypassed.
+
+    In production it lands in ``blockers`` and stops the issue; in demo mode it
+    lands in ``warnings`` and is flagged on the policy instead.
+    """
+    if DEMO_MODE:
+        warnings.append(f"{message} (demo bypass — required in production)")
+        return True
+    blockers.append(message)
+    return False
 
 _REQUIRED_COMPLIANCE = {
     ComplianceCheckTypeEnum.AML.value,
@@ -62,7 +91,7 @@ def _v(x) -> str:
 
 
 async def _reinsurance_step(
-    session: AsyncSession, policy: Policy, warnings: list[str]
+    session: AsyncSession, policy: Policy, blockers: list[str], warnings: list[str]
 ) -> tuple[dict, bool]:
     """Whether this policy's cession is placed.
 
@@ -95,27 +124,41 @@ async def _reinsurance_step(
         }, False
 
     ref_status = _v(referral.status) if referral else None
+    ref_decision = _v(referral.reinsurer_decision) if referral and referral.reinsurer_decision else None
+
+    # A cession is placed only when the reinsurer actually took the risk. The
+    # POSTPONE path in routers/reinsurance.py also parks the referral at
+    # ACCEPTED/terms_applied (it has finished processing the response), so
+    # testing those two alone reported a postponed — i.e. still unplaced —
+    # cession as covered. The reinsurer's own decision is the deciding fact.
     placed = bool(
         referral
         and referral.terms_applied
         and ref_status == ReinsuranceReferralStatusEnum.ACCEPTED.value
+        and ref_decision not in (
+            ReinsurerDecisionEnum.POSTPONE.value,
+            ReinsurerDecisionEnum.DECLINE.value,
+        )
     )
 
     if placed:
         status = "placed"
     elif referral is None:
         status = "not_referred"
-    elif ref_status == ReinsuranceReferralStatusEnum.DECLINED.value:
+    elif ref_decision == ReinsurerDecisionEnum.DECLINE.value or ref_status == ReinsuranceReferralStatusEnum.DECLINED.value:
         status = "declined"
+    elif ref_decision == ReinsurerDecisionEnum.POSTPONE.value:
+        status = "postponed"
     else:
         status = "pending"
 
-    bypassed = not placed
-    if bypassed:
-        warnings.append(
+    bypassed = False
+    if not placed:
+        bypassed = _gate(
+            blockers, warnings,
             f"Facultative cession of PKR {cession['facultative_ceded_amount']:,.0f} above the "
             f"retention of PKR {cession['retention_limit']:,.0f} is not placed "
-            f"({status.replace('_', ' ')}) — demo bypass, required in production"
+            f"({status.replace('_', ' ')})",
         )
 
     return {
@@ -174,8 +217,9 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
     }
     requirement_bypassed = False
     if outstanding:
-        warnings.append(f"{len(outstanding)} requirement(s) not yet cleared (demo bypass — required in production)")
-        requirement_bypassed = True
+        requirement_bypassed = _gate(
+            blockers, warnings, f"{len(outstanding)} requirement(s) not yet cleared",
+        )
 
     # ── Step 3 — First premium (post-draft; informational) ────────────────────
     paid = [s for s in schedules if s.status == PremiumScheduleStatusEnum.PAID]
@@ -187,23 +231,26 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
     # ── Step 4 — Compliance (AML / Sanctions / SECP) ──────────────────────────
     by_type = {_v(c.check_type): c for c in checks}
     missing = _REQUIRED_COMPLIANCE - set(by_type)
-    bad = [c for c in checks if c.status in (ComplianceStatusEnum.FLAGGED, ComplianceStatusEnum.FAILED)]
+    # Gate on the same effective status the two compliance UIs display, so the
+    # checklist can never disagree with what the officer is looking at.
+    effective = {c.id: compliance_engine.effective_status(c) for c in checks}
+    bad = [c for c in checks
+           if effective[c.id] in (ComplianceStatusEnum.FLAGGED, ComplianceStatusEnum.FAILED)]
     compliance_bypassed = False  # would this gate block a real (non-demo) issuance?
     if missing:
         comp_status = "not_run"
-        # DEMO: downgraded from hard blocker to warning
-        warnings.append("Compliance screening not yet run (demo bypass — required in production)")
-        compliance_bypassed = True
+        compliance_bypassed = _gate(blockers, warnings, "Compliance screening not yet run")
     elif bad:
         comp_status = "flagged"
-        # DEMO: downgraded from hard blocker to warning
-        warnings.append(f"{len(bad)} compliance check(s) need clearance (demo bypass — required in production)")
-        compliance_bypassed = True
+        compliance_bypassed = _gate(
+            blockers, warnings, f"{len(bad)} compliance check(s) need clearance",
+        )
     else:
         comp_status = "clear"
     compliance = {
         "status": comp_status,
-        "checks": [{"id": str(c.id), "check_type": _v(c.check_type), "status": _v(c.status),
+        "checks": [{"id": str(c.id), "check_type": _v(c.check_type),
+                    "status": effective[c.id].value, "raw_status": _v(c.status),
                     "score": c.score} for c in checks],
     }
 
@@ -214,10 +261,11 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
         "status": "valid" if ben_valid else ("invalid" if bens else "none"),
         "total_share": total_share, "count": len(bens),
     }
-    beneficiary_bypassed = not ben_valid  # would this gate block a real issuance?
+    beneficiary_bypassed = False  # would this gate block a real issuance?
     if not ben_valid:
-        # DEMO: downgraded from hard blocker to warning
-        warnings.append("Beneficiaries must be captured and sum to 100% (demo bypass — required in production)")
+        beneficiary_bypassed = _gate(
+            blockers, warnings, "Beneficiaries must be captured and sum to 100%",
+        )
 
     # ── Step 6 — Documents (produced at draft; informational pre-issue) ───────
     non_stub = [d for d in docs if not d.is_stub]
@@ -230,7 +278,7 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
     # Cover written above retention with the excess unplaced leaves the insurer
     # carrying a risk it never intended to hold net, so this is a real gate —
     # but it only bites on policies that actually breach automatic capacity.
-    reinsurance, reinsurance_bypassed = await _reinsurance_step(session, policy, warnings)
+    reinsurance, reinsurance_bypassed = await _reinsurance_step(session, policy, blockers, warnings)
 
     # Which mandatory gates are being waved through in DEMO mode. Persisted onto
     # the policy at issuance so Stage B (and audit) knows what to backfill before

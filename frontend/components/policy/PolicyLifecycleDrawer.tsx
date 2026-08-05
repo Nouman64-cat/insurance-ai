@@ -325,7 +325,7 @@ export function PolicyLifecycleDrawer({ policyId, fallbackName, onClose }: Reado
             {POST_ISSUANCE_STATUSES.has(normStatus(status)) && (
               <Section title="Stage B — Post-Issuance">
                 <Link
-                  href={`/policy-management/post-issuance?highlight=${policyId}`}
+                  href={`/post-issuance/${policyId}`}
                   className="flex items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50/60 px-4 py-3 hover:bg-blue-50 transition-colors group"
                 >
                   <div>

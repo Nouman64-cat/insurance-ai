@@ -51,6 +51,15 @@ class ProposalPayload(BaseModel):
     proposal_id: UUID
     customer: CustomerPayload
     policy: PolicyPayload
+    # Rows the API Gateway persisted before publishing. Carried through the
+    # whole round trip so the result consumer can attach the RiskAssessment to
+    # the right Customer/Policy/Case instead of having to re-derive them — the
+    # async path previously had no way back to them at all, so every result
+    # published on insurance.risk.evaluated.v1 was silently discarded.
+    # Optional so events produced by an older gateway still deserialise.
+    customer_id: Optional[UUID] = None
+    policy_id: Optional[UUID] = None
+    case_id: Optional[UUID] = None
 
 
 class ProposalSubmittedEvent(BaseModel):
@@ -65,6 +74,9 @@ class ProposalSubmittedEvent(BaseModel):
 # Topic: insurance.risk.evaluated.v1
 # ─────────────────────────────────────────────────────────────────────────────
 
+RISK_EVALUATED_TOPIC = "insurance.risk.evaluated.v1"
+
+
 class RiskScores(BaseModel):
     medical_score: int
     financial_score: int
@@ -77,6 +89,25 @@ class RiskEvaluatedPayload(BaseModel):
     scores: RiskScores
     ai_decision: str
     reasons: List[str]
+
+    # Echoed straight back from ProposalPayload so the consumer can persist.
+    tenant_id: Optional[UUID] = None
+    customer_id: Optional[UUID] = None
+    policy_id: Optional[UUID] = None
+    case_id: Optional[UUID] = None
+
+    # Extra-mortality loading implied by the composite score. Priced into the
+    # contract at issuance, so it has to survive the hop.
+    suggested_loading: Optional[float] = None
+
+    # A proposal that failed deterministic validation produced no scores worth
+    # storing; the consumer skips it rather than writing a junk assessment.
+    is_valid: bool = True
+    validation_errors: List[str] = Field(default_factory=list)
+
+    medical_reasons: List[str] = Field(default_factory=list)
+    financial_reasons: List[str] = Field(default_factory=list)
+    fraud_reasons: List[str] = Field(default_factory=list)
 
 
 class RiskEvaluatedEvent(BaseModel):

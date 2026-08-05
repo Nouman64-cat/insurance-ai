@@ -323,9 +323,36 @@ Provide structured risk factors including the parameter, observation, and risk r
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Actuarial decision bands
-#   Auto Approve  → composite < 30  AND  fraud < 0.10  (clean profile, low risk)
-#   Decline       → composite > 75  OR   fraud > 0.60  (either dimension is disqualifying)
-#   Human Review  → everything else                     (ambiguous — needs underwriter eyes)
+#   Auto Approve         → composite < 30  AND  fraud < 0.10  (clean profile, low risk)
+#   Decline              → composite > 75  OR   fraud > 0.60  (either is disqualifying)
+#   Approve with Loading → composite 30–49 AND  fraud < 0.10  (ratable — sub-standard
+#                          but writable at an extra premium)
+#   Human Review         → everything else                    (needs underwriter eyes)
+
+# Extra-mortality loading for the ratable band, as a % on the base premium.
+# (lower_bound_composite, loading_pct) — the highest band the score reaches wins.
+# Deliberately coarse and explainable rather than a continuous curve: an
+# underwriter has to be able to justify the number to the customer.
+_LOADING_BANDS: List[tuple] = [
+    (30, 25.0),
+    (40, 50.0),
+    (50, 75.0),
+    (60, 100.0),
+]
+
+
+def _suggested_loading(composite_risk_score: int) -> Optional[float]:
+    """Extra-mortality loading implied by a composite score, or None if standard.
+
+    Read by the whole downstream chain — the RiskAssessment row, the issuance
+    price (tenant-service routers/policies.py::_effective_loading_pct) and the
+    reinsurance referral. Before this existed, decision_aggregation never
+    returned a loading at all, so RiskAssessment.suggested_loading was always
+    NULL and every contract priced at standard rates no matter the risk.
+    """
+    applicable = [pct for lower, pct in _LOADING_BANDS if composite_risk_score >= lower]
+    return applicable[-1] if applicable else None
+
 
 def decision_aggregation(state: RiskState) -> Dict[str, Any]:
     # ── 1. Pull scores with conservative safe defaults ────────────────────────
@@ -345,6 +372,7 @@ def decision_aggregation(state: RiskState) -> Dict[str, Any]:
     composite_risk_score = max(0, min(100, round(raw_composite)))
 
     # ── 3. Actuarial decision bands ───────────────────────────────────────────
+    suggested_loading: Optional[float] = None
     if composite_risk_score < 30 and fraud_probability < 0.10:
         ai_decision = "Auto Approve"
         band_rationale = (
@@ -363,7 +391,20 @@ def decision_aggregation(state: RiskState) -> Dict[str, Any]:
                 f"composite {composite_risk_score} exceeds hard-decline "
                 f"threshold of 75 (fraud: {fraud_probability:.2f})"
             )
+    elif composite_risk_score < 50 and fraud_probability < 0.10:
+        # Sub-standard but ratable — writable at an extra premium rather than
+        # occupying an underwriter. The loading travels with the decision so the
+        # issuance price actually reflects it.
+        suggested_loading = _suggested_loading(composite_risk_score)
+        ai_decision = "Approve with Loading"
+        band_rationale = (
+            f"composite {composite_risk_score} falls in the 30–49 ratable band "
+            f"(fraud: {fraud_probability:.2f}) → +{suggested_loading:g}% extra mortality"
+        )
     else:
+        # Still surface an indicative loading so an underwriter who approves this
+        # case manually inherits a priced rating rather than standard rates.
+        suggested_loading = _suggested_loading(composite_risk_score)
         ai_decision = "Human Review"
         band_rationale = (
             f"composite {composite_risk_score} falls in the 30–75 review band "
@@ -384,10 +425,20 @@ def decision_aggregation(state: RiskState) -> Dict[str, Any]:
     }
 
     reasons = [*medical_reasons, *financial_reasons, *fraud_reasons, math_breakdown]
+    if suggested_loading:
+        reasons.append({
+            "parameter": "Suggested Loading",
+            "risk_rating": "Info",
+            "observation": (
+                f"Composite {composite_risk_score} maps to an extra-mortality "
+                f"loading of +{suggested_loading:g}% on the base premium."
+            ),
+        })
 
     return {
         "composite_risk_score": composite_risk_score,
         "ai_decision":          ai_decision,
+        "suggested_loading":    suggested_loading,
         "reasons":              reasons,
     }
 

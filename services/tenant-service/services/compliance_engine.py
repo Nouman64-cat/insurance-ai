@@ -21,6 +21,7 @@ consumed by routers/pre_issuance.py to persist ComplianceCheck rows.
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Optional
 
@@ -175,3 +176,77 @@ async def screen(customer: Customer, policy: Policy) -> list[dict]:
         await _screen_sanctions(customer),
         _screen_secp(customer),
     ]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Screening as stored + read. Both the pre-underwriting gate
+# (routers/cases.py::/cases/{id}/compliance/run) and the Stage A panel
+# (routers/pre_issuance.py::/policies/{id}/compliance/run) screen the SAME
+# policy and write the SAME ComplianceCheck rows, each deleting the other's
+# results first. They used to disagree about what a result means: Stage A forced
+# every check to Flagged and re-labelled stored Passed rows as Flagged on read,
+# while the case queue reported those same rows as Passed. Running one screen
+# therefore silently un-cleared the other's gate.
+#
+# Both now go through the two functions below, so there is one definition of
+# "what did the screen say" and one definition of "is that good enough to pass".
+# ─────────────────────────────────────────────────────────────────────────────
+
+# When true (the demo default), a machine PASS is not enough on its own — a
+# compliance officer has to countersign it before the gate reads as cleared.
+# Set COMPLIANCE_REQUIRE_MANUAL_CLEARANCE=false to trust the engine outright.
+REQUIRE_MANUAL_CLEARANCE: bool = (
+    os.environ.get("COMPLIANCE_REQUIRE_MANUAL_CLEARANCE", "true").lower()
+    not in ("false", "0", "no")
+)
+
+
+def effective_status(check) -> ComplianceStatusEnum:
+    """The status a ComplianceCheck should be *presented and gated* on.
+
+    Under REQUIRE_MANUAL_CLEARANCE an engine PASS that no officer has signed off
+    still reads as FLAGGED — it needs a human. Anything an officer has actioned
+    (``cleared_by`` set) is reported exactly as stored.
+    """
+    status = check.status
+    if not REQUIRE_MANUAL_CLEARANCE or check.cleared_by:
+        return status
+    if status == ComplianceStatusEnum.PASSED:
+        return ComplianceStatusEnum.FLAGGED
+    return status
+
+
+async def screen_and_store(session, tenant_id, customer: Customer, policy: Policy) -> list:
+    """Re-run all three screenings for a policy, replacing any prior results.
+
+    Idempotent: previous rows for this policy are removed first, so repeated
+    runs (from either entry point) converge on the same three rows rather than
+    accumulating. The engine's own verdict is stored verbatim — presentation
+    rules belong in effective_status(), not in the stored data.
+    """
+    from sqlmodel import select
+    from datetime import datetime
+
+    from shared.models.core import ComplianceCheck
+
+    for old in (await session.exec(
+        select(ComplianceCheck).where(ComplianceCheck.policy_id == policy.id)
+    )).all():
+        await session.delete(old)
+
+    now = datetime.utcnow()
+    created = []
+    for result in await screen(customer, policy):
+        chk = ComplianceCheck(
+            tenant_id=tenant_id,
+            policy_id=policy.id,
+            customer_id=customer.id,
+            check_type=ComplianceCheckTypeEnum(result["check_type"]),
+            status=ComplianceStatusEnum(result["status"]),
+            score=result.get("score"),
+            details_json=result.get("details"),
+            screened_at=now,
+        )
+        session.add(chk)
+        created.append(chk)
+    return created

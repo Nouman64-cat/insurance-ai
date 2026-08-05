@@ -1039,7 +1039,7 @@ export default function PostIssuancePage() {
   // hardcoded page. Falls back to the list if there's no history to pop.
   const goBack = () => {
     if (window.history.length > 1) router.back();
-    else router.push("/policy-management/post-issuance");
+    else router.push("/policy-issuance?tab=active");
   };
 
   const doCancel = async () => {

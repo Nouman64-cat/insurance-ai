@@ -43,42 +43,20 @@ from shared.events.kafka_events import (
     ProposalSubmittedEvent,
 )
 from shared.models.core import (
-    ActionTypeEnum,
     AIDecision,
     Customer,
     Case,
-    CaseHistory,
-    CaseStatusEnum,
     Policy,
-    PolicyStatusEnum,
     RiskAssessment,
     Tenant,
-    User,
 )
-from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
+
+from dependencies import Settings
+# The RiskAssessment write + policy/case advancement, shared with the Kafka
+# result worker so the sync and async evaluation paths cannot drift.
+from risk_persistence import persist_assessment
 
 log = logging.getLogger(__name__)
-
-# AI decision band -> Policy/Case lifecycle status. The AI's decision is only
-# ever a recommendation surfaced to the underwriter (via RiskAssessment.ai_decision
-# and the case's reasons) — it never finalizes Approved/Declined itself. Every
-# band parks the case/policy at Under Review so a human always makes the actual
-# Approve/Decline call via the case's Override buttons (tenant-service
-# routers/cases.py::update_case_status), which is what drives it into the
-# Policy Issuance queue.
-_DECISION_POLICY_STATUS: dict[str, PolicyStatusEnum] = {
-    "Auto Approve":         PolicyStatusEnum.UNDER_REVIEW,
-    "Approve with Loading": PolicyStatusEnum.UNDER_REVIEW,
-    "Human Review":         PolicyStatusEnum.UNDER_REVIEW,
-    "Decline":              PolicyStatusEnum.UNDER_REVIEW,
-}
-_DECISION_CASE_STATUS: dict[str, CaseStatusEnum] = {
-    "Auto Approve":         CaseStatusEnum.UNDER_REVIEW,
-    "Approve with Loading": CaseStatusEnum.UNDER_REVIEW,
-    "Human Review":         CaseStatusEnum.UNDER_REVIEW,
-    "Decline":              CaseStatusEnum.UNDER_REVIEW,
-}
-from dependencies import Settings
 
 router = APIRouter(tags=["Underwriting"])
 
@@ -121,13 +99,72 @@ async def evaluate(
             ),
         )
 
-    # ── 2. Build the event ────────────────────────────────────────────────────
+    # ── 2. Persist the rows the result will attach to ─────────────────────────
+    # The risk engine answers on a different topic, minutes later and in another
+    # process, so the result worker needs stable identity to write against. Both
+    # rows are find-or-created up front and their ids travel with the event.
+    # Without this the async path had no route back to the proposal at all and
+    # every RiskEvaluated event was discarded.
+    customer = (await session.exec(
+        select(Customer).where(
+            Customer.tenant_id == tenant_id,
+            Customer.cnic == request.customer.cnic,
+        )
+    )).first()
+    if customer is None:
+        customer = Customer(
+            tenant_id=tenant_id,
+            cnic=request.customer.cnic,
+            name=request.customer.name,
+            dob=request.customer.dob,
+            gender=request.customer.gender,
+            occupation=request.customer.occupation,
+            declared_income=request.customer.declared_income,
+            # Async submission carries no biometrics; recorded as unknown
+            # placeholders, exactly as the streaming path does.
+            is_smoker=False,
+            height_cm=170,
+            weight_kg=70,
+        )
+        session.add(customer)
+        await session.flush()
+
+    case: Case | None = None
+    if request.case_id is not None:
+        case = await session.get(Case, request.case_id)
+        if case is not None and case.tenant_id != tenant_id:
+            case = None
+
+    policy: Policy | None = None
+    if case is not None and case.policy_id is not None:
+        policy = await session.get(Policy, case.policy_id)
+
+    if policy is None:
+        policy = Policy(
+            tenant_id=tenant_id,
+            customer_id=customer.id,
+            product_name=request.policy.product_name,
+            insurance_type=request.policy.insurance_type,
+            coverage_amount=request.policy.coverage_amount,
+            term_years=request.policy.term_years,
+            dependent_name=request.policy.dependent_name,
+            dependent_dob=request.policy.dependent_dob,
+        )
+        session.add(policy)
+        await session.flush()
+
+    await session.commit()
+
+    # ── 3. Build the event ────────────────────────────────────────────────────
     proposal_id = uuid4()
 
     event = ProposalSubmittedEvent(
         tenant_id=tenant_id,
         payload=ProposalPayload(
             proposal_id=proposal_id,
+            customer_id=customer.id,
+            policy_id=policy.id,
+            case_id=case.caseld if case else None,
             customer=CustomerPayload(
                 cnic=request.customer.cnic,
                 dob=str(request.customer.dob),
@@ -146,7 +183,7 @@ async def evaluate(
         ),
     )
 
-    # ── 3. Publish to Kafka ───────────────────────────────────────────────────
+    # ── 4. Publish to Kafka ───────────────────────────────────────────────────
     # Keying by tenant_id ensures all proposals for the same tenant land on the
     # same partition — preserving per-tenant ordering guarantees.
     try:
@@ -161,7 +198,7 @@ async def evaluate(
             detail=f"Failed to publish proposal event: {exc}",
         )
 
-    # ── 4. Return 202 immediately ─────────────────────────────────────────────
+    # ── 5. Return 202 immediately ─────────────────────────────────────────────
     return ProposalAcceptedResponse(
         event_id=event.event_id,
         proposal_id=proposal_id,
@@ -324,65 +361,24 @@ async def evaluate_stream(
                     db.add(policy)
                     await db.flush()
 
-                assessment = RiskAssessment(
-                    tenant_id=tenant_id,
-                    customer_id=customer.id,
-                    policy_id=policy.id,
-                    case_id=request.case_id,
-                    medical_score=final_risk["medical_score"],
-                    financial_score=final_risk["financial_score"],
-                    fraud_probability=final_risk["fraud_probability"],
-                    composite_risk_score=final_risk.get("composite_risk_score"),
-                    ai_decision=AIDecision(final_risk["ai_decision"]),
-                    suggested_loading=final_risk.get("suggested_loading"),
-                    reasons=final_risk.get("reasons"),
-                    medical_reasons=final_risk.get("medical_reasons"),
-                    financial_reasons=final_risk.get("financial_reasons"),
-                    fraud_reasons=final_risk.get("fraud_reasons"),
+                # Writes the RiskAssessment and parks the Policy (and the Case,
+                # when this evaluation belongs to one) at Under Review — every
+                # decision band lands there so the underwriter always makes the
+                # final Approve/Decline call. Shared with the Kafka result worker
+                # so both evaluation paths record a result identically.
+                #
+                # NOTE: the customer is NOT promoted to POLICYHOLDER here. That
+                # only happens once cover actually binds — see tenant-service
+                # routers/policies.py::_bind_cover (reached from payment
+                # confirmation), and the identical note in routers/cases.py.
+                assessment = await persist_assessment(
+                    db, tenant_id,
+                    customer=customer,
+                    policy=policy,
+                    case=case,
+                    final_risk=final_risk,
                     ai_summary=request.ai_summary,
                 )
-                db.add(assessment)
-
-                # Park the Policy (and, if this evaluation belongs to a Case, the
-                # Case too) at Under Review — every decision band lands here so
-                # the underwriter always makes the final Approve/Decline call.
-                new_policy_status = _DECISION_POLICY_STATUS.get(final_risk["ai_decision"])
-                if new_policy_status is not None:
-                    try:
-                        apply_transition(
-                            db, policy, new_policy_status,
-                            event_type="ai_decision", actor="risk-engine",
-                            detail={"ai_decision": final_risk["ai_decision"]},
-                        )
-                    except IllegalStateTransition as exc:
-                        # Policy already moved on (e.g. re-evaluated after issuance) —
-                        # log and keep the assessment, but don't force an illegal jump.
-                        log.warning("Skipped AI auto-transition for policy %s: %s", policy.id, exc)
-
-                if case is not None:
-                    new_case_status = _DECISION_CASE_STATUS.get(final_risk["ai_decision"])
-                    if new_case_status is not None and new_case_status != case.caseStatus:
-                        system_user = (
-                            await db.exec(select(User).where(User.tenant_id == tenant_id))
-                        ).first()
-                        if system_user is not None:
-                            db.add(CaseHistory(
-                                caseld=case.caseld,
-                                actionType=ActionTypeEnum.DECISION,
-                                fromStatus=case.caseStatus.value,
-                                toStatus=new_case_status.value,
-                                changedBy=system_user.id,
-                                systemGeneratedFlag=True,
-                            ))
-                        case.caseStatus = new_case_status
-                        db.add(case)
-
-                # NOTE: Do NOT promote the customer to POLICYHOLDER here. A customer
-                # only becomes a policyholder once the policy is actually issued and
-                # goes Active — promoting at Approved is premature and causes them to
-                # appear on the Policyholders page before coverage exists. This
-                # transition is handled in routers/policies.py::issue_policy() (see
-                # the identical note in tenant-service/routers/cases.py).
 
                 await db.commit()
                 await db.refresh(assessment)

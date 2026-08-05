@@ -143,7 +143,8 @@ const NAV_ITEMS = [
         badge: null,
         subLinks: [
           { href: "/underwriting?tab=pre-underwriting", label: "Pre-Underwriting" },
-          { href: "/underwriting?tab=risk-engine", label: "Risk Engine & AI Cases" }
+          { href: "/underwriting?tab=risk-engine", label: "Risk Engine & AI Cases" },
+          { href: "/post-underwriting", label: "Post-Underwriting Verification" }
         ]
       },
       {
