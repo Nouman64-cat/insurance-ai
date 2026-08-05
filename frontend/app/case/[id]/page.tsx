@@ -15,6 +15,14 @@ import { ACRModal } from "@/components/entities/ACRModal";
 import { getIPP, type IPP } from "@/app/services/initialPremiumPayment";
 import { IPPModal } from "@/components/entities/IPPModal";
 import { getCompliance, runCompliance, clearCompliance, failCompliance, type ComplianceCheck } from "@/app/services/preIssuance";
+import {
+  getInsuranceHistory, runInsuranceHistory, clearInsuranceHistory, failInsuranceHistory,
+  type InsuranceHistory,
+} from "@/app/services/insuranceHistory";
+import {
+  getMedicalExam, assessMedicalExam, inviteMedicalExam, waiveMedicalExam,
+  recordMedicalResult, MEDICAL_CLEARED, type MedicalExamOrder,
+} from "@/app/services/medicalExam";
 
 // ── Markdown renderer for the AI document summary ────────────────────────────
 
@@ -570,6 +578,14 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [showIPPModal, setShowIPPModal] = useState(false);
   const [checks, setChecks] = useState<ComplianceCheck[]>([]);
   const [compBusy, setCompBusy] = useState(false);
+  // Pre-Underwriting gates 5 & 6 — insurance history, panel medical examination
+  const [history, setHistory] = useState<InsuranceHistory | null>(null);
+  const [histBusy, setHistBusy] = useState(false);
+  const [medical, setMedical] = useState<MedicalExamOrder | null>(null);
+  const [medBusy, setMedBusy] = useState(false);
+  const [medLink, setMedLink] = useState<string | null>(null);
+  const [medErr, setMedErr] = useState<string | null>(null);
+  const [showResultModal, setShowResultModal] = useState(false);
 
   const [docSummary, setDocSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
@@ -727,13 +743,113 @@ export default function CasePage({ params }: { params: { id: string } }) {
     finally { setCompBusy(false); }
   };
 
+  // ── Gate 5 — Insurance history ────────────────────────────────────────────
+  const fetchHistory = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      setHistory(await getInsuranceHistory(caseId));
+    } catch { /* non-fatal */ }
+  }, [tenantId, caseId]);
+
+  const handleRunHistory = async () => {
+    setHistBusy(true);
+    try {
+      setHistory(await runInsuranceHistory(caseId));
+      await fetchDetail();
+    } catch (e: any) {
+      alert(e?.message ?? "Insurance history check failed");
+    } finally {
+      setHistBusy(false);
+    }
+  };
+
+  const handleHistoryOverride = async (accept: boolean) => {
+    setHistBusy(true);
+    try {
+      const note = accept
+        ? "Findings reviewed and accepted by the underwriter"
+        : "Adverse history — proposal cannot proceed";
+      setHistory(accept
+        ? await clearInsuranceHistory(caseId, note)
+        : await failInsuranceHistory(caseId, note));
+      await fetchDetail();
+    } catch (e: any) {
+      alert(e?.message ?? "Failed to record the override");
+    } finally {
+      setHistBusy(false);
+    }
+  };
+
+  // ── Gate 6 — Panel medical examination ────────────────────────────────────
+  const fetchMedical = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      setMedical(await getMedicalExam(caseId));
+    } catch { /* non-fatal */ }
+  }, [tenantId, caseId]);
+
+  const handleAssessMedical = async () => {
+    setMedBusy(true); setMedErr(null);
+    try {
+      setMedical(await assessMedicalExam(caseId));
+      await fetchDetail();
+    } catch (e: any) {
+      setMedErr(e?.message ?? "Could not apply the non-medical limit grid");
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
+  const handleInviteMedical = async () => {
+    setMedBusy(true); setMedErr(null);
+    try {
+      const invite = await inviteMedicalExam(caseId);
+      setMedLink(`${window.location.origin}${invite.link_path}`);
+      await fetchMedical();
+      await fetchDetail();
+    } catch (e: any) {
+      setMedErr(e?.message ?? "Failed to generate the booking link");
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
+  const handleWaiveMedical = async () => {
+    const reason = window.prompt("Reason for waiving the medical requirement:");
+    if (!reason) return;
+    setMedBusy(true); setMedErr(null);
+    try {
+      setMedical(await waiveMedicalExam(caseId, reason));
+      await fetchDetail();
+    } catch (e: any) {
+      setMedErr(e?.message ?? "Failed to waive the medical requirement");
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
+  const handleRecordResults = async (results: Record<string, string>) => {
+    setMedBusy(true); setMedErr(null);
+    try {
+      setMedical(await recordMedicalResult(caseId, { results }));
+      setShowResultModal(false);
+      await fetchDetail();
+    } catch (e: any) {
+      setMedErr(e?.message ?? "Failed to record the results");
+    } finally {
+      setMedBusy(false);
+    }
+  };
+
   useEffect(() => {
     fetchDetail();
     fetchArtifacts();
     fetchEApplication();
     fetchAcr();
     fetchIpp();
-  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp]);
+    fetchHistory();
+    fetchMedical();
+  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical]);
 
   useEffect(() => {
     if (detail?.policy_id) {
@@ -1521,8 +1637,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
           )}
 
           {policy && (
-            <div className="card p-5">
-              <Accordion title="Policy Details">
+            <div className="card p-5 space-y-4">
+              <Accordion title="Policy Details" defaultOpen={true}>
                 <DataRow label="Product" value={INSURANCE_TYPE_LABELS[policy.insurance_type] ?? policy.product_name} />
                 <DataRow label="Coverage Amount" value={fmtCoverage(policy.coverage_amount)} />
                 <DataRow label="Policy Term" value={`${policy.term_years} years`} />
@@ -1541,204 +1657,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
             </div>
           )}
 
-          {/* Pre-Underwriting — customer E-Application + agent's confidential report */}
-          <div className="card p-5 space-y-4">
-            <Accordion
-              title="E-Application"
-              action={
-                <button
-                  onClick={handleGenerateEAppLink}
-                  disabled={eAppBusy}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40"
-                >
-                  {eAppBusy ? "Generating…" : eApp && eApp.status !== "NotSent" ? "Resend Link" : "Generate Link"}
-                </button>
-              }
-            >
-              <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-slate-500">Status</span>
-                <span className={`font-semibold ${
-                  eApp?.status === "Submitted" ? "text-blue-600"
-                  : eApp?.status === "Expired" ? "text-red-600"
-                  : eApp?.status === "InProgress" || eApp?.status === "Sent" ? "text-amber-600"
-                  : "text-slate-400"
-                }`}>
-                  {eApp?.status ?? "NotSent"}
-                </span>
-              </div>
-              {eAppErr && <p className="text-xs text-red-600 mb-2">{eAppErr}</p>}
-              {eAppLink && (
-                <div className="mb-2">
-                  <p className="text-[11px] text-slate-500 mb-1">Share this link with the customer:</p>
-                  <div className="flex items-center gap-2">
-                    <input readOnly value={eAppLink} className="flex-1 text-xs border border-slate-200 rounded-lg px-2 py-1.5 text-slate-600" onFocus={(e) => e.currentTarget.select()} />
-                    <button
-                      onClick={() => navigator.clipboard.writeText(eAppLink)}
-                      className="text-xs font-semibold text-blue-600 hover:text-blue-700 flex-shrink-0"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                </div>
-              )}
-              {eApp?.status === "Submitted" && (
-                <div className="pt-2 border-t border-slate-100 space-y-1.5 text-xs">
-                  <DataRow label="Submitted" value={eApp.submitted_at ? new Date(eApp.submitted_at).toLocaleString() : "—"} />
-                  <DataRow label="Family History Entries" value={String(eApp.family_history?.entries?.length ?? 0)} />
-                  <DataRow label="Signature" value={eApp.declaration?.signature_name ?? "—"} />
-                </div>
-              )}
-              {(!eApp || eApp.status === "NotSent") && (
-                <p className="text-xs text-slate-400">No link has been sent to the customer yet.</p>
-              )}
-            </Accordion>
 
-            <Accordion
-              title="Agent's Confidential Report"
-              action={
-                acr?.status === "Submitted" ? undefined : (
-                  <button
-                    disabled={userRole !== "Agent" && userRole !== "Admin"}
-                    onClick={() => setShowACRModal(true)}
-                    title={userRole !== "Agent" && userRole !== "Admin" ? "Only the assigned agent can file this" : undefined}
-                    className={`text-xs font-semibold ${userRole !== "Agent" && userRole !== "Admin" ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-600 hover:text-blue-700"}`}
-                  >
-                    {acr?.status === "Draft" ? "Continue ACR" : "Fill ACR"}
-                  </button>
-                )
-              }
-            >
-              <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-slate-500">Status</span>
-                <span className={`font-semibold ${acr?.status === "Submitted" ? "text-blue-600" : acr?.status === "Draft" ? "text-amber-600" : "text-slate-400"}`}>
-                  {acr?.status ?? "NotStarted"}
-                </span>
-              </div>
-              {acr?.status === "Submitted" && (
-                <div className="space-y-1.5 text-xs">
-                  <DataRow label="Recommendation" value={acr.recommendation ?? "—"} />
-                  <DataRow label="Submitted" value={acr.submitted_at ? new Date(acr.submitted_at).toLocaleString() : "—"} />
-                  {acr.remarks && <DataRow label="Remarks" value={acr.remarks} />}
-                </div>
-              )}
-            </Accordion>
 
-            <Accordion
-              title="Initial Premium Payment"
-              action={
-                ipp?.status === "Realized" ? undefined : (
-                  <button
-                    onClick={() => setShowIPPModal(true)}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                  >
-                    {ipp?.status === "Initiated" ? "Complete Payment" : "Collect Payment"}
-                  </button>
-                )
-              }
-            >
-              <div className="flex items-center justify-between text-xs mb-2">
-                <span className="text-slate-500">Status</span>
-                <span className={`font-semibold ${
-                  ipp?.status === "Realized" ? "text-blue-600"
-                  : ipp?.status === "Failed" ? "text-red-600"
-                  : ipp?.status === "Initiated" ? "text-amber-600"
-                  : "text-slate-400"
-                }`}>
-                  {ipp?.status ?? "NotStarted"}
-                </span>
-              </div>
-              {ipp?.status === "Realized" ? (
-                <div className="space-y-1.5 text-xs">
-                  <DataRow label="Amount" value={ipp.amount != null ? `PKR ${Math.round(ipp.amount).toLocaleString()}` : "—"} />
-                  <DataRow label="Method" value={ipp.method ?? "—"} />
-                  <DataRow label="Reference" value={ipp.reference ?? "—"} />
-                  <DataRow label="Paid" value={ipp.realized_at ? new Date(ipp.realized_at).toLocaleString() : "—"} />
-                </div>
-              ) : (
-                <p className="text-xs text-slate-400">
-                  Per Section 30 of the Insurance Ordinance 2000, this must clear before the case proceeds to underwriting.
-                </p>
-              )}
-            </Accordion>
-
-            <Accordion
-              title="Compliance (PEP / Sanctions)"
-              action={
-                checks.length === 0 ? undefined : (
-                  <button
-                    onClick={handleRunCompliance}
-                    disabled={compBusy || !detail?.policy_id}
-                    className="text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-40"
-                  >
-                    Re-run
-                  </button>
-                )
-              }
-            >
-              {!detail?.policy_id ? (
-                <p className="text-xs text-slate-400">A policy must be attached to this case to run compliance.</p>
-              ) : checks.length === 0 ? (
-                <div className="flex flex-col gap-2 items-start">
-                  <p className="text-xs text-slate-400">No compliance screening has been run yet.</p>
-                  <button
-                    onClick={handleRunCompliance}
-                    disabled={compBusy}
-                    className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-md text-xs font-semibold transition-colors disabled:opacity-40"
-                  >
-                    Run AML / Sanctions / SECP
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-1.5">
-                  {checks.map((c) => {
-                    const tone = c.status === "Passed" ? "text-blue-700 bg-blue-50 border-blue-200"
-                      : c.status === "Flagged" ? "text-amber-700 bg-amber-50 border-amber-200"
-                        : c.status === "Failed" ? "text-red-700 bg-red-50 border-red-200" : "text-slate-500 bg-slate-50 border-slate-200";
-                    const details = (c.details ?? {}) as { matched?: any[]; list?: string; note?: string; source?: string };
-                    const isLive = details.source === "opensanctions";
-                    return (
-                      <div key={c.id} className="rounded-md px-2.5 py-1.5 bg-slate-50 space-y-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <div>
-                            <p className="text-xs font-medium text-slate-700">{c.check_type}
-                              <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded border ${tone}`}>
-                                {c.status === "Flagged" ? "Pending" : c.status}
-                              </span>
-                              {c.check_type === "Sanctions" && (
-                                <span className={`ml-1.5 text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${isLive ? "bg-blue-100 text-blue-700" : "bg-slate-200 text-slate-500"}`}
-                                  title={isLive ? "Screened against OpenSanctions (PEP + NACTA + global sanctions)" : "OPENSANCTIONS_API_KEY not configured — internal watchlist only"}>
-                                  {isLive ? "Live PEP/Sanctions" : "Internal only"}
-                                </span>
-                              )}
-                            </p>
-                            {c.score != null && <p className="text-[10px] text-slate-400">score {c.score}</p>}
-                          </div>
-                          {c.status === "Flagged" && (
-                            <div className="flex gap-1.5 flex-shrink-0">
-                              <button disabled={compBusy} onClick={() => handleClearCompliance(c.id)} className="px-2 py-0.5 rounded text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40">Approve</button>
-                              <button disabled={compBusy} onClick={() => handleFailCompliance(c.id)} className="px-2 py-0.5 rounded text-xs font-semibold bg-white border border-red-200 text-red-700 hover:bg-red-50 disabled:opacity-40">Reject</button>
-                            </div>
-                          )}
-                        </div>
-                        {c.check_type === "Sanctions" && details.matched && details.matched.length > 0 && (
-                          <div className="space-y-1 pl-0.5">
-                            {details.matched.map((m: any, i: number) => (
-                              <div key={i} className="text-[10px] text-slate-500 border-l-2 border-amber-300 pl-2">
-                                <span className="font-semibold text-slate-700">{m.matched_name ?? m}</span>
-                                {m.score != null && <span className="ml-1">· {m.score}% match</span>}
-                                {m.topics && m.topics.length > 0 && <span className="ml-1">· {m.topics.join(", ")}</span>}
-                                {m.datasets && m.datasets.length > 0 && <span className="ml-1 text-slate-400">({m.datasets.join(", ")})</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </Accordion>
-          </div>
+          {showResultModal && medical && (
+            <MedicalResultModal
+              order={medical}
+              busy={medBusy}
+              onClose={() => setShowResultModal(false)}
+              onSubmit={handleRecordResults}
+            />
+          )}
 
           {showACRModal && (
             <ACRModal
@@ -2149,6 +2077,103 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Medical results entry — one field per mandated test, keyed by the test code
+// the panel lab reports against. Numeric panels (FBS, HbA1c, lipids) take the
+// reported value; qualitative ones (ECG, X-ray, serology) take the lab's own
+// wording. The rating happens server-side against the underwriting manual, so
+// this form deliberately does no interpretation of its own.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const QUALITATIVE_HINTS: Record<string, string> = {
+  MER: "Normal / adverse findings",
+  ECG: "Normal / abnormal",
+  CXR: "Normal / abnormal",
+  TMT: "Negative / positive",
+  ECHO: "Normal / abnormal",
+  URINE_RE: "Normal / abnormal",
+  HIV: "Negative / reactive",
+  HEPATITIS: "Negative / reactive",
+  COTININE: "Negative / positive",
+  PSA: "Normal / raised",
+  PAP: "Normal / abnormal",
+};
+
+function MedicalResultModal({
+  order, busy, onClose, onSubmit,
+}: Readonly<{
+  order: MedicalExamOrder;
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (results: Record<string, string>) => void;
+}>) {
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  const filled = Object.values(values).filter((v) => v.trim() !== "").length;
+
+  const submit = () => {
+    const payload: Record<string, string> = {};
+    for (const [code, v] of Object.entries(values)) {
+      if (v.trim() !== "") payload[code] = v.trim();
+    }
+    onSubmit(payload);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={onClose}>
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <div className="bg-slate-800 px-5 py-3">
+          <p className="text-white/70 text-[11px] font-semibold uppercase tracking-wider">Panel Clinic Report</p>
+          <h2 className="text-white text-lg font-bold">Record Medical Results</h2>
+          <p className="text-white/70 text-xs">
+            {order.clinic?.name ?? "Panel clinic"}
+            {order.completed_at ? ` · reported ${new Date(order.completed_at).toLocaleDateString()}` : ""}
+          </p>
+        </div>
+
+        <div className="p-5 space-y-3 max-h-[60vh] overflow-y-auto">
+          {order.required_tests.map((t) => (
+            <div key={t.code}>
+              <label className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+                {t.name}
+                <span className="text-[9px] font-mono text-slate-400 normal-case">{t.code}</span>
+              </label>
+              <input
+                value={values[t.code] ?? ""}
+                onChange={(e) => setValues((s) => ({ ...s, [t.code]: e.target.value }))}
+                placeholder={QUALITATIVE_HINTS[t.code] ?? "Reported value"}
+                className="mt-1 w-full text-sm border border-slate-200 rounded-lg px-3 py-2"
+              />
+            </div>
+          ))}
+          <p className="text-[11px] text-slate-400 pt-1">
+            Leave a test blank if the lab has not reported it yet — it will be listed as outstanding
+            rather than rated. Values are graded against the underwriting manual on save.
+          </p>
+        </div>
+
+        <div className="px-5 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+          <span className="text-[11px] text-slate-500 font-medium">
+            {filled} of {order.required_tests.length} reported
+          </span>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">
+              Cancel
+            </button>
+            <button
+              onClick={submit}
+              disabled={busy || filled === 0}
+              className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-slate-800 hover:bg-slate-900 text-white disabled:opacity-40"
+            >
+              {busy ? "Saving…" : "Save & rate"}
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -64,10 +64,20 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         # Step back — undoes an accidental Start Review before anyone's acted on it.
         PolicyStatusEnum.PROPOSED,
     },
+    # A referred case comes back with the reinsurer's terms attached. Clean
+    # acceptance lands on Approved; an imposed extra mortality or exclusion is
+    # a change to what the customer was offered, so it has to travel back out
+    # as revised terms (CounterOffer) rather than binding silently. A reinsurer
+    # asking to see the case again later is a Postpone, and a refusal to take
+    # the excess is a Decline the ceding insurer cannot write around.
     PolicyStatusEnum.REINSURER_REFERRED: {
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+        PolicyStatusEnum.COUNTER_OFFER,
+        PolicyStatusEnum.POSTPONED,
         PolicyStatusEnum.DECLINED,
+        # Step back — withdrawing a referral returns the case to the underwriter.
+        PolicyStatusEnum.UNDER_REVIEW,
     },
     PolicyStatusEnum.POSTPONED: {
         PolicyStatusEnum.UNDER_REVIEW,

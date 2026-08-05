@@ -854,6 +854,16 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v37c — add signature_obtained_in_presence to agent_confidential_reports",
         "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS signature_obtained_in_presence BOOLEAN",
     ),
+    # ── Pre-underwriting gates 5 & 6 + post-underwriting reinsurance ──────────
+    # insurance_history_checks, panel_clinics, medical_exam_orders, reinsurers
+    # and reinsurance_referrals are brand-new tables — create_all() builds them
+    # and _create_enums_idempotent() creates their enum types. The only existing
+    # table touched is `policies`: demo_bypass_flags now carries a fourth flag
+    # (ReinsuranceBypassed) and the comma-joined list no longer fits in 50 chars.
+    (
+        "v38 — widen policies.demo_bypass_flags for the reinsurance bypass flag",
+        "ALTER TABLE policies ALTER COLUMN demo_bypass_flags TYPE VARCHAR(200)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

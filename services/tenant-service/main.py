@@ -65,6 +65,9 @@ from routers.post_issuance import router as post_issuance_router
 from routers.e_application import router as e_application_router
 from routers.agent_confidential_report import router as agent_confidential_report_router
 from routers.initial_premium_payment import router as initial_premium_payment_router
+from routers.insurance_history import router as insurance_history_router
+from routers.medical_exam import router as medical_exam_router
+from routers.reinsurance import router as reinsurance_router
 from routers.demo import router as demo_router
 # STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
 # from routers.renewal_scheduler import start_renewal_scheduler
@@ -182,6 +185,11 @@ app.include_router(post_issuance_router)
 app.include_router(e_application_router)
 app.include_router(agent_confidential_report_router)
 app.include_router(initial_premium_payment_router)
+# Pre-underwriting clearance gates 5 & 6 — insurance history, panel medicals.
+app.include_router(insurance_history_router)
+app.include_router(medical_exam_router)
+# Post-underwriting — facultative reinsurance referral (before final approval).
+app.include_router(reinsurance_router)
 app.include_router(demo_router)
 
 

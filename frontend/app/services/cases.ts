@@ -27,6 +27,10 @@ export interface CaseQueueItem {
   acr_status?: "NotStarted" | "Draft" | "Submitted";
   compliance_status?: "NotStarted" | "Passed" | "Flagged" | "Failed";
   ipp_status?: "NotStarted" | "Initiated" | "Realized" | "Failed";
+  insurance_history_status?: "NotStarted" | "Clear" | "Flagged" | "Failed";
+  medical_exam_status?:
+    | "NotAssessed" | "NotRequired" | "Required" | "Invited"
+    | "Scheduled" | "Completed" | "Waived" | "Expired";
 }
 
 export async function listCases(

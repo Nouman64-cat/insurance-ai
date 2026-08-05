@@ -11,7 +11,9 @@ Gate rules for the ISSUE action (drafting the contract → PENDING_PAYMENT):
   • no counter-offer still Pending (revised terms must be accepted/declined),
   • every PolicyRequirement is Verified or Waived,
   • all three ComplianceChecks (AML / Sanctions / SECP) are Passed or cleared,
-  • beneficiaries exist and their shares sum to 100%.
+  • beneficiaries exist and their shares sum to 100%,
+  • any facultative reinsurance cession is placed — the excess over retention
+    must sit with a reinsurer before this insurer writes the cover.
 
 For DEMO mode, compliance and beneficiary gates are downgraded to "warnings" —
 the issue still proceeds but the UI shows an orange alert explaining these would
@@ -36,13 +38,17 @@ from shared.models.core import (
     ComplianceStatusEnum,
     CounterOffer,
     CounterOfferStatusEnum,
+    Customer,
     Policy,
     PolicyDocument,
     PolicyRequirement,
     PremiumSchedule,
     PremiumScheduleStatusEnum,
+    ReinsuranceReferral,
+    ReinsuranceReferralStatusEnum,
     RequirementStatusEnum,
 )
+from services.underwriting_limits import age_from_dob, compute_cession
 
 _REQUIRED_COMPLIANCE = {
     ComplianceCheckTypeEnum.AML.value,
@@ -53,6 +59,82 @@ _REQUIRED_COMPLIANCE = {
 
 def _v(x) -> str:
     return x.value if hasattr(x, "value") else str(x)
+
+
+async def _reinsurance_step(
+    session: AsyncSession, policy: Policy, warnings: list[str]
+) -> tuple[dict, bool]:
+    """Whether this policy's cession is placed.
+
+    Read from the same limit book the referral router uses, so the checklist can
+    never disagree with what the underwriter was asked to place. Like compliance
+    and beneficiaries above, an unplaced cession is downgraded to a warning in
+    DEMO mode and recorded in demo_bypass_flags rather than blocking the issue.
+    """
+    customer = await session.get(Customer, policy.customer_id)
+    cession = compute_cession(
+        float(policy.coverage_amount or 0),
+        age_from_dob(customer.dob) if customer else None,
+    )
+
+    referral = (await session.exec(
+        select(ReinsuranceReferral)
+        .where(ReinsuranceReferral.policy_id == policy.id)
+        .order_by(ReinsuranceReferral.created_at.desc())  # type: ignore[arg-type]
+    )).first()
+
+    if not cession["referral_required"]:
+        return {
+            "status": "not_required",
+            "retention_limit": cession["retention_limit"],
+            "automatic_capacity": cession["automatic_capacity"],
+            "retained_amount": cession["retained_amount"],
+            "treaty_ceded_amount": cession["treaty_ceded_amount"],
+            "facultative_ceded_amount": 0.0,
+            "referral": None,
+        }, False
+
+    ref_status = _v(referral.status) if referral else None
+    placed = bool(
+        referral
+        and referral.terms_applied
+        and ref_status == ReinsuranceReferralStatusEnum.ACCEPTED.value
+    )
+
+    if placed:
+        status = "placed"
+    elif referral is None:
+        status = "not_referred"
+    elif ref_status == ReinsuranceReferralStatusEnum.DECLINED.value:
+        status = "declined"
+    else:
+        status = "pending"
+
+    bypassed = not placed
+    if bypassed:
+        warnings.append(
+            f"Facultative cession of PKR {cession['facultative_ceded_amount']:,.0f} above the "
+            f"retention of PKR {cession['retention_limit']:,.0f} is not placed "
+            f"({status.replace('_', ' ')}) — demo bypass, required in production"
+        )
+
+    return {
+        "status": status,
+        "retention_limit": cession["retention_limit"],
+        "automatic_capacity": cession["automatic_capacity"],
+        "retained_amount": cession["retained_amount"],
+        "treaty_ceded_amount": cession["treaty_ceded_amount"],
+        "facultative_ceded_amount": cession["facultative_ceded_amount"],
+        "referral": (
+            {
+                "id": str(referral.id),
+                "status": ref_status,
+                "reinsurer_decision": _v(referral.reinsurer_decision),
+                "terms_applied": referral.terms_applied,
+            }
+            if referral else None
+        ),
+    }, bypassed
 
 
 async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
@@ -144,6 +226,12 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
         "total": len(docs), "generated": len(non_stub),
     }
 
+    # ── Step 7 — Reinsurance cession (post-underwriting, pre-issue) ───────────
+    # Cover written above retention with the excess unplaced leaves the insurer
+    # carrying a risk it never intended to hold net, so this is a real gate —
+    # but it only bites on policies that actually breach automatic capacity.
+    reinsurance, reinsurance_bypassed = await _reinsurance_step(session, policy, warnings)
+
     # Which mandatory gates are being waved through in DEMO mode. Persisted onto
     # the policy at issuance so Stage B (and audit) knows what to backfill before
     # this contract can be treated as production-grade.
@@ -151,6 +239,7 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
     if compliance_bypassed: demo_flags.append("ComplianceBypassed")
     if beneficiary_bypassed: demo_flags.append("BeneficiaryBypassed")
     if requirement_bypassed: demo_flags.append("RequirementBypassed")
+    if reinsurance_bypassed: demo_flags.append("ReinsuranceBypassed")
     demo_bypass_flags = ",".join(demo_flags) if demo_flags else "NotFlagged"
 
     return {
@@ -164,6 +253,7 @@ async def compute_readiness(session: AsyncSession, policy: Policy) -> dict:
             "compliance": compliance,
             "beneficiaries": beneficiaries,
             "documents": documents,
+            "reinsurance": reinsurance,
         },
         "ready_to_issue": len(blockers) == 0,  # warnings alone do NOT block
         "blockers": blockers,

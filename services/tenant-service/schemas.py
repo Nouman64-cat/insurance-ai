@@ -855,6 +855,9 @@ class CaseRead(BaseModel):
     acr_status:              Optional[str] = None
     compliance_status:       Optional[str] = None
     ipp_status:               Optional[str] = None
+    # Pre-underwriting gates 5 & 6 — anti-selection screen and panel medical.
+    insurance_history_status: Optional[str] = None
+    medical_exam_status:      Optional[str] = None
 
     model_config = {"from_attributes": True}
 

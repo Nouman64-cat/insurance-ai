@@ -716,10 +716,12 @@ class Policy(SQLModel, table=True):
     # End of the free-look window (delivery_date + FREE_LOOK_DAYS). A cancellation
     # on or before this date is a full-refund exit; Stage B enforces that.
     free_look_end_date: Optional[date] = Field(default=None)
-    # Which mandatory Stage A gates were bypassed in DEMO mode at issuance:
-    # NotFlagged | ComplianceBypassed | BeneficiaryBypassed | BothBypassed.
-    # In production those gates are hard blockers, so a real issue stays NotFlagged.
-    demo_bypass_flags: Optional[str] = Field(default="NotFlagged", max_length=50)
+    # Which mandatory Stage A gates were bypassed in DEMO mode at issuance —
+    # a comma-separated list drawn from ComplianceBypassed / BeneficiaryBypassed /
+    # RequirementBypassed / ReinsuranceBypassed, or "NotFlagged". In production
+    # those gates are hard blockers, so a real issue stays NotFlagged. Width is
+    # generous because every flag can be set at once.
+    demo_bypass_flags: Optional[str] = Field(default="NotFlagged", max_length=200)
     # Stage B recurring collection — mock standing instruction / auto-debit mandate.
     autopay_enabled: bool = Field(default=False)
     # ── Issuance formalities ──────────────────────────────────────────────────
@@ -2114,3 +2116,317 @@ class PolicyEndorsement(SQLModel, table=True):
     actor: Optional[str] = Field(default=None, max_length=255)
     document_path: Optional[str] = Field(default=None, max_length=1000)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PRE-UNDERWRITING — INSURANCE HISTORY (anti-selection / over-insurance screen)
+#
+# Runs alongside the AML/Sanctions/SECP compliance screen, before the risk
+# engine evaluates the case. Two sources are reconciled:
+#   • internal  — every other Policy this tenant already holds for the customer,
+#   • external  — the other-insurer policies the proposer declared on their
+#                 E-Application (CustomerEApplication.existing_insurance).
+# The engine (services/insurance_history.py) turns that into an aggregate
+# in-force exposure, a Human Life Value multiple, and replacement/non-disclosure
+# findings — the three things an underwriter actually decides on.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class InsuranceHistoryStatusEnum(str, Enum):
+    NOT_STARTED = "NotStarted"
+    CLEAR = "Clear"           # no adverse history, aggregate within HLV
+    FLAGGED = "Flagged"       # needs underwriter review (over-insurance, replacement, non-disclosure)
+    FAILED = "Failed"         # hard adverse history (prior decline / fraud / claim repudiation)
+
+
+class InsuranceHistoryCheck(SQLModel, table=True):
+    """
+    One insurance-history screen for a pre-underwriting case.
+
+    A Flagged result can be cleared by an underwriter (same clear/fail pattern
+    as ComplianceCheck); a Failed result is an adverse-history hard stop that
+    the risk engine and the pre-underwriting gate both honour.
+    """
+    __tablename__ = "insurance_history_checks"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, unique=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False)
+    policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
+
+    status: InsuranceHistoryStatusEnum = Field(
+        default=InsuranceHistoryStatusEnum.NOT_STARTED, max_length=50
+    )
+    score: Optional[float] = Field(default=None)   # 0–100 anti-selection concern score
+
+    # Money view — everything in PKR.
+    proposed_sum_assured: float = Field(default=0.0, ge=0)
+    internal_inforce_sum_assured: float = Field(default=0.0, ge=0)   # this insurer, in force
+    external_declared_sum_assured: float = Field(default=0.0, ge=0)  # other insurers, self-declared
+    aggregate_sum_assured: float = Field(default=0.0, ge=0)          # proposed + internal + external
+    hlv_limit: Optional[float] = Field(default=None)                 # Human Life Value ceiling
+    hlv_ratio: Optional[float] = Field(default=None)                 # aggregate ÷ HLV limit
+
+    # Behavioural flags an underwriter must see.
+    has_prior_decline: bool = Field(default=False)       # previously declined / postponed here
+    has_prior_lapse: bool = Field(default=False)         # lapsed / NTU history
+    replacement_suspected: bool = Field(default=False)   # churning an existing policy
+    non_disclosure_suspected: bool = Field(default=False)  # internal policies the e-app omitted
+
+    # [{policy_number, insurer, product, sum_assured, status, effective_date, source}]
+    internal_policies_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    external_policies_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    findings_json: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    checked_at: Optional[datetime] = Field(default=None, nullable=True)
+    cleared_by: Optional[str] = Field(default=None, max_length=255)
+    cleared_at: Optional[datetime] = Field(default=None, nullable=True)
+    clearance_note: Optional[str] = Field(default=None, max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PRE-UNDERWRITING — MEDICAL EXAMINATION (Non-Medical Limit → panel clinics)
+#
+# Every insurer publishes a Non-Medical Limit grid: below it a proposal is
+# underwritten on the E-Application alone; above it physical diagnostics are
+# mandatory (fasting blood sugar, lipid profile, resting ECG, chest X-ray, …)
+# and are performed at a contracted panel lab — Chughtai, Aga Khan, IDC,
+# Shaukat Khanum. The grid + test panel live in services/underwriting_limits.py.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class MedicalExamStatusEnum(str, Enum):
+    NOT_ASSESSED = "NotAssessed"   # NML rule has not been run for this case yet
+    NOT_REQUIRED = "NotRequired"   # under the Non-Medical Limit — no exam needed
+    REQUIRED = "Required"          # over the NML; tests determined, not yet invited
+    INVITED = "Invited"            # tokenized booking link issued to the customer
+    SCHEDULED = "Scheduled"        # clinic + appointment slot confirmed
+    COMPLETED = "Completed"        # results received and attached
+    WAIVED = "Waived"              # underwriter waived (e.g. recent exam on file)
+    EXPIRED = "Expired"            # booking link lapsed without an appointment
+
+
+class MedicalExamOutcomeEnum(str, Enum):
+    NORMAL = "Normal"                 # all values within range
+    MINOR_FINDINGS = "MinorFindings"  # ratable — feeds a loading
+    ADVERSE = "Adverse"               # material impairment — decline/postpone territory
+
+
+class PanelClinic(SQLModel, table=True):
+    """
+    A diagnostic lab/clinic on the insurer's panel. Seeded per tenant with the
+    Pakistani labs insurers actually contract with; a tenant can add its own.
+    """
+    __tablename__ = "panel_clinics"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_panel_clinic_code_per_tenant"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    code: str = Field(max_length=50)            # e.g. "CHUGHTAI-LHR"
+    name: str = Field(max_length=255)           # e.g. "Chughtai Lab — Jail Road"
+    network: Optional[str] = Field(default=None, max_length=120)   # Chughtai / Aga Khan / IDC / SKMCH
+    city: Optional[str] = Field(default=None, max_length=100, index=True)
+    address: Optional[str] = Field(default=None, max_length=500)
+    phone: Optional[str] = Field(default=None, max_length=50)
+
+    # Which of the standard test codes this site can perform (see
+    # underwriting_limits.TEST_CATALOGUE). Empty/None means "all".
+    supported_tests: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    home_sampling: bool = Field(default=False)  # phlebotomist visits the customer
+    turnaround_hours: int = Field(default=48, ge=1)
+    is_active: bool = Field(default=True, nullable=False)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class MedicalExamOrder(SQLModel, table=True):
+    """
+    The medical requirement raised for one pre-underwriting case: why it was
+    raised (which NML rule fired), which tests are mandated, where and when the
+    customer is booked, and what came back.
+
+    Distinct from PolicyRequirement(MedicalReport), which is the *document*
+    checklist item at Stage A pre-issuance — this is the clinical order that
+    produces that document, and it gates the underwriting decision, not issuance.
+    """
+    __tablename__ = "medical_exam_orders"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, unique=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False)
+    policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
+
+    status: MedicalExamStatusEnum = Field(default=MedicalExamStatusEnum.NOT_ASSESSED, max_length=50)
+
+    # ── Why this order exists ────────────────────────────────────────────────
+    applicant_age: Optional[int] = Field(default=None, ge=0, le=120)
+    sum_assured_at_risk: float = Field(default=0.0, ge=0)  # aggregate exposure the grid was read against
+    non_medical_limit: Optional[float] = Field(default=None)  # the NML for this age band
+    trigger_reasons: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    # [{code, name, category, fasting_required}] — resolved from the grid.
+    required_tests: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    estimated_cost: float = Field(default=0.0, ge=0)   # insurer-borne panel cost, PKR
+
+    # ── Appointment ──────────────────────────────────────────────────────────
+    clinic_id: Optional[UUID] = Field(default=None, foreign_key="panel_clinics.id", nullable=True)
+    appointment_at: Optional[datetime] = Field(default=None, nullable=True)
+    home_sampling: bool = Field(default=False)
+    appointment_note: Optional[str] = Field(default=None, max_length=500)
+
+    # Tokenized customer booking link — same hashed/expiring scheme as the
+    # E-Application invite; the customer never has a login.
+    invite_token_hash: Optional[str] = Field(default=None, index=True, max_length=64, nullable=True)
+    invite_expires_at: Optional[datetime] = Field(default=None, nullable=True)
+    invited_at: Optional[datetime] = Field(default=None, nullable=True)
+    invited_by: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+
+    # ── Results ──────────────────────────────────────────────────────────────
+    # {test_code: {value, unit, reference_range, flag}} as reported by the lab.
+    results_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    outcome: Optional[MedicalExamOutcomeEnum] = Field(default=None, max_length=50, nullable=True)
+    abnormal_findings: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    suggested_loading_pct: Optional[float] = Field(default=None, ge=0)
+    result_artifact_id: Optional[UUID] = Field(default=None, foreign_key="artifacts.id", nullable=True)
+    completed_at: Optional[datetime] = Field(default=None, nullable=True)
+    reported_by: Optional[str] = Field(default=None, max_length=255)
+
+    waived_by: Optional[str] = Field(default=None, max_length=255)
+    waived_at: Optional[datetime] = Field(default=None, nullable=True)
+    waiver_reason: Optional[str] = Field(default=None, max_length=500)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# POST-UNDERWRITING — FACULTATIVE REINSURANCE REFERRAL
+#
+# Runs *after* the underwriter has formed a view and *before* final approval:
+# when the sum assured exceeds the insurer's own retention, the excess must be
+# ceded. Automatic treaty capacity absorbs it silently; beyond that the case is
+# referred facultatively to a reinsurer (Munich Re, Swiss Re, Hannover Re, RGA,
+# SCOR, Pak Re), whose terms are then written back onto the policy as loadings
+# and exclusions. Policy.status parks at ReinsurerReferred while this is open —
+# the transition already exists in shared/services/policy_state_machine.py.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class ReinsuranceReferralTypeEnum(str, Enum):
+    TREATY = "Treaty"              # inside automatic treaty capacity — no referral needed
+    FACULTATIVE = "Facultative"    # beyond treaty capacity — individual reinsurer consent
+
+
+class ReinsuranceReferralStatusEnum(str, Enum):
+    NOT_REQUIRED = "NotRequired"   # sum assured within retention
+    REQUIRED = "Required"          # cession needed, slip not yet sent
+    SUBMITTED = "Submitted"        # slip sent to the reinsurer, awaiting terms
+    QUOTED = "Quoted"              # reinsurer returned terms, not yet applied
+    ACCEPTED = "Accepted"          # terms applied to the policy
+    DECLINED = "Declined"          # reinsurer refused the risk
+    WITHDRAWN = "Withdrawn"        # insurer pulled the referral
+
+
+class ReinsurerDecisionEnum(str, Enum):
+    ACCEPT = "Accept"                       # standard terms
+    ACCEPT_WITH_LOADING = "AcceptWithLoading"   # extra mortality / EMR
+    ACCEPT_WITH_EXCLUSION = "AcceptWithExclusion"
+    POSTPONE = "Postpone"
+    DECLINE = "Decline"
+
+
+class Reinsurer(SQLModel, table=True):
+    """
+    A reinsurance counterparty and the commercial terms of its relationship
+    with this insurer. `treaty_capacity` is the automatic (obligatory) capacity
+    per life; anything above it needs a facultative submission to this company.
+    """
+    __tablename__ = "reinsurers"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code", name="uq_reinsurer_code_per_tenant"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+
+    code: str = Field(max_length=50)             # e.g. "MUNICH-RE"
+    name: str = Field(max_length=255)            # e.g. "Munich Re"
+    country: Optional[str] = Field(default=None, max_length=100)
+    am_best_rating: Optional[str] = Field(default=None, max_length=20)   # e.g. "A+"
+    contact_email: Optional[str] = Field(default=None, max_length=255)
+
+    is_lead: bool = Field(default=False)         # the panel's lead reinsurer
+    treaty_capacity: float = Field(default=0.0, ge=0)      # automatic capacity per life, PKR
+    facultative_capacity: float = Field(default=0.0, ge=0) # max they will consider facultatively
+    typical_response_days: int = Field(default=5, ge=1)
+    is_active: bool = Field(default=True, nullable=False)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class ReinsuranceReferral(SQLModel, table=True):
+    """
+    One cession decision for a policy: how much this insurer keeps, how much is
+    ceded, to whom, on what terms — and whether those terms have been written
+    back onto the contract.
+
+    A policy has at most one open referral; the row is kept after the fact as
+    the audit record of the cession (SECP + reinsurer bordereaux both need it).
+    """
+    __tablename__ = "reinsurance_referrals"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", index=True, nullable=False)
+    case_id: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", index=True, nullable=True)
+
+    referral_type: ReinsuranceReferralTypeEnum = Field(
+        default=ReinsuranceReferralTypeEnum.FACULTATIVE, max_length=50
+    )
+    status: ReinsuranceReferralStatusEnum = Field(
+        default=ReinsuranceReferralStatusEnum.NOT_REQUIRED, max_length=50
+    )
+
+    # ── The cession maths (all PKR) ──────────────────────────────────────────
+    total_sum_assured: float = Field(default=0.0, ge=0)
+    retention_limit: float = Field(default=0.0, ge=0)   # the insurer's own retention for this risk
+    retained_amount: float = Field(default=0.0, ge=0)
+    treaty_ceded_amount: float = Field(default=0.0, ge=0)      # absorbed by automatic treaty
+    facultative_ceded_amount: float = Field(default=0.0, ge=0) # needing this referral
+    cession_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    reinsurance_premium: Optional[float] = Field(default=None, ge=0)
+
+    reinsurer_id: Optional[UUID] = Field(default=None, foreign_key="reinsurers.id", index=True, nullable=True)
+
+    # ── The submitted slip ───────────────────────────────────────────────────
+    # Underwriting evidence bundled for the reinsurer: risk summary, AI scores,
+    # medical results, financial justification, ACR extract.
+    slip_json: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    submitted_at: Optional[datetime] = Field(default=None, nullable=True)
+    submitted_by: Optional[str] = Field(default=None, max_length=255)
+    response_due_at: Optional[datetime] = Field(default=None, nullable=True)
+
+    # ── The reinsurer's terms ────────────────────────────────────────────────
+    reinsurer_decision: Optional[ReinsurerDecisionEnum] = Field(default=None, max_length=50, nullable=True)
+    reinsurer_reference: Optional[str] = Field(default=None, max_length=100)  # their file/slip number
+    extra_mortality_pct: Optional[float] = Field(default=None, ge=0)  # EMR loading on the ceded portion
+    extra_premium_per_mille: Optional[float] = Field(default=None, ge=0)
+    imposed_exclusions: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    reinsurer_conditions: Optional[str] = Field(default=None, max_length=1000)
+    responded_at: Optional[datetime] = Field(default=None, nullable=True)
+
+    # ── Write-back onto the contract ─────────────────────────────────────────
+    terms_applied: bool = Field(default=False)
+    terms_applied_at: Optional[datetime] = Field(default=None, nullable=True)
+    applied_counter_offer_id: Optional[UUID] = Field(
+        default=None, foreign_key="counter_offers.id", nullable=True
+    )
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
