@@ -815,6 +815,13 @@ class RiskAssessment(SQLModel, table=True):
     # Policy linkage — optional since older rows predate this column
     policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", index=True, nullable=True)
 
+    # Idempotency key for the Kafka path. Kafka delivers at-least-once, so a
+    # redelivered RiskEvaluated event would otherwise append a duplicate
+    # assessment. Set to RiskEvaluatedEvent.correlation_id by
+    # api-gateway/risk_result_worker.py and checked before insert; always NULL
+    # for assessments written by the synchronous /evaluate/stream path.
+    correlation_id: Optional[UUID] = Field(default=None, index=True, nullable=True)
+
     # Scoring  (0–100 for medical/financial; 0.0–1.0 for fraud probability)
     medical_score: int = Field(ge=0, le=100)
     financial_score: int = Field(ge=0, le=100)

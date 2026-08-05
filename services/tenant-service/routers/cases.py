@@ -308,11 +308,16 @@ async def list_cases(
         cc_list = (
             compliance_checks_by_policy.get(c.policy_id, []) if c.policy_id else []
         ) or compliance_checks_by_customer.get(c.customer_id, [])
+        # Derived from compliance_engine.effective_status — the same rule the
+        # Stage A panel and the issuance gate apply. These used to differ: this
+        # queue read a stored Passed row as "Passed" while Stage A displayed the
+        # very same row as "Flagged".
+        cc_effective = [compliance_engine.effective_status(chk) for chk in cc_list]
         if not cc_list:
             comp_status = "NotStarted"
-        elif any(chk.status == ComplianceStatusEnum.FAILED for chk in cc_list):
+        elif any(s == ComplianceStatusEnum.FAILED for s in cc_effective):
             comp_status = "Failed"
-        elif any(chk.status == ComplianceStatusEnum.FLAGGED and not chk.cleared_by for chk in cc_list):
+        elif any(s == ComplianceStatusEnum.FLAGGED for s in cc_effective):
             comp_status = "Flagged"
         else:
             comp_status = "Passed"
@@ -629,34 +634,23 @@ async def run_case_compliance(
         
     if not policy:
         raise HTTPException(status_code=409, detail="Case has no linked policy for compliance screening.")
-        
-    # Delete prior compliance checks for this policy to stay idempotent
-    await session.exec(delete(ComplianceCheck).where(ComplianceCheck.policy_id == policy.id))
-        
-    now = datetime.utcnow()
-    created = []
-    for result in await compliance_engine.screen(customer, policy):
-        chk = ComplianceCheck(
-            tenant_id=tenant_id,
-            policy_id=policy.id,
-            customer_id=customer.id,
-            check_type=ComplianceCheckTypeEnum(result["check_type"]),
-            status=ComplianceStatusEnum(result["status"]),
-            score=result.get("score"),
-            details_json=result.get("details"),
-            screened_at=now,
-        )
-        session.add(chk)
-        created.append(chk)
-        
+
+    # Shares compliance_engine.screen_and_store with the Stage A panel
+    # (routers/pre_issuance.py). Both screen the SAME policy and write the SAME
+    # rows, each replacing the other's — so they must agree on what gets stored,
+    # or running one silently un-clears the other's gate.
+    created = await compliance_engine.screen_and_store(session, tenant_id, customer, policy)
     await session.commit()
     for c in created:
         await session.refresh(c)
-        
-    has_failed = any(c.status == ComplianceStatusEnum.FAILED for c in created)
-    has_flagged = any(c.status == ComplianceStatusEnum.FLAGGED for c in created)
+
+    # Reported on the shared effective status, not the raw stored one, so this
+    # queue and the Stage A panel never describe the same check differently.
+    effective = {c.id: compliance_engine.effective_status(c) for c in created}
+    has_failed = any(s == ComplianceStatusEnum.FAILED for s in effective.values())
+    has_flagged = any(s == ComplianceStatusEnum.FLAGGED for s in effective.values())
     overall_status = "Failed" if has_failed else ("Flagged" if has_flagged else "Passed")
-    
+
     return {
         "case_id": str(case_id),
         "overall_status": overall_status,
@@ -664,7 +658,8 @@ async def run_case_compliance(
             {
                 "id": str(c.id),
                 "check_type": c.check_type.value if hasattr(c.check_type, "value") else str(c.check_type),
-                "status": c.status.value if hasattr(c.status, "value") else str(c.status),
+                "status": effective[c.id].value,
+                "raw_status": c.status.value if hasattr(c.status, "value") else str(c.status),
                 "score": c.score,
                 "details": c.details_json,
                 "screened_at": c.screened_at.isoformat() if c.screened_at else None,

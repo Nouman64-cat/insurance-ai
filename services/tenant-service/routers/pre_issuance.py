@@ -485,10 +485,22 @@ async def create_requirements(
     return [_req_dict(r) for r in created]
 
 
-async def _get_req(session: AsyncSession, tenant_id: UUID, req_id: UUID) -> PolicyRequirement:
+async def _get_req(session: AsyncSession, tenant_id: UUID, req_id: UUID,
+                   action: Optional[str] = None) -> PolicyRequirement:
+    """Load a requirement, and (when ``action`` is given) assert its policy is
+    still in Stage A.
+
+    These three endpoints address the requirement by id alone, so without this
+    check a requirement on a live, bound contract could be re-submitted or
+    re-verified — quietly rewriting a Stage A record that the issued policy was
+    already gated against. A live contract changes by endorsement only.
+    """
     r = await session.get(PolicyRequirement, req_id)
     if not r or r.tenant_id != tenant_id:
         raise HTTPException(404, "Requirement not found")
+    if action is not None:
+        policy = await _get_policy(session, tenant_id, r.policy_id)
+        _assert_stage_a(policy, action)
     return r
 
 
@@ -498,7 +510,7 @@ async def submit_requirement(
     body: RequirementActionBody,
     session: AsyncSession = Depends(get_session),
 ):
-    r = await _get_req(session, tenant_id, req_id)
+    r = await _get_req(session, tenant_id, req_id, "Submitting a requirement")
     r.status = RequirementStatusEnum.SUBMITTED
     r.submitted_at = datetime.utcnow()
     if body.note:
@@ -515,7 +527,7 @@ async def verify_requirement(
     body: RequirementActionBody,
     session: AsyncSession = Depends(get_session),
 ):
-    r = await _get_req(session, tenant_id, req_id)
+    r = await _get_req(session, tenant_id, req_id, "Verifying a requirement")
     r.status = RequirementStatusEnum.VERIFIED
     r.verified_at = datetime.utcnow()
     r.verified_by = body.actor
@@ -533,7 +545,7 @@ async def waive_requirement(
     body: RequirementActionBody,
     session: AsyncSession = Depends(get_session),
 ):
-    r = await _get_req(session, tenant_id, req_id)
+    r = await _get_req(session, tenant_id, req_id, "Waiving a requirement")
     r.status = RequirementStatusEnum.WAIVED
     r.verified_at = datetime.utcnow()
     r.verified_by = body.actor
@@ -550,10 +562,14 @@ async def waive_requirement(
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _check_dict(c: ComplianceCheck) -> dict:
+    # Presented status comes from compliance_engine.effective_status so this
+    # panel and the pre-underwriting case queue can never report the same row
+    # differently — they used to, one saying Passed and the other Flagged.
     return {
         "id": str(c.id),
         "check_type": c.check_type.value if hasattr(c.check_type, "value") else str(c.check_type),
-        "status": c.status.value if hasattr(c.status, "value") else str(c.status),
+        "status": compliance_engine.effective_status(c).value,
+        "raw_status": c.status.value if hasattr(c.status, "value") else str(c.status),
         "score": c.score,
         "details": c.details_json,
         "screened_at": c.screened_at.isoformat() if c.screened_at else None,
@@ -570,15 +586,7 @@ async def list_compliance(
 ):
     await _get_policy(session, tenant_id, policy_id)
     res = await session.exec(select(ComplianceCheck).where(ComplianceCheck.policy_id == policy_id))
-    
-    checks = []
-    for c in res.all():
-        d = _check_dict(c)
-        # For the demo, treat previously auto-passed checks as Flagged unless an officer manually cleared them
-        if not c.cleared_by and c.status == ComplianceStatusEnum.PASSED:
-            d["status"] = ComplianceStatusEnum.FLAGGED.value
-        checks.append(d)
-    return checks
+    return [_check_dict(c) for c in res.all()]
 
 
 @router.post("/tenants/{tenant_id}/policies/{policy_id}/compliance/run")
@@ -586,30 +594,19 @@ async def run_compliance(
     tenant_id: UUID, policy_id: UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    """Re-run all three screenings, replacing any prior results for this policy."""
+    """Re-run all three screenings, replacing any prior results for this policy.
+
+    Shares compliance_engine.screen_and_store with the pre-underwriting entry
+    point (routers/cases.py) — both write the same rows for the same policy, so
+    running one must not invalidate the other's gate.
+    """
     policy = await _get_policy(session, tenant_id, policy_id)
     _assert_stage_a(policy, "Running compliance screening")
     customer = await session.get(Customer, policy.customer_id)
     if customer is None:
         raise HTTPException(404, "Customer not found")
 
-    # Clear previous checks so re-runs stay idempotent.
-    for old in (await session.exec(select(ComplianceCheck).where(ComplianceCheck.policy_id == policy_id))).all():
-        await session.delete(old)
-
-    now = datetime.utcnow()
-    created = []
-    for result in await compliance_engine.screen(customer, policy):
-        chk = ComplianceCheck(
-            tenant_id=tenant_id, policy_id=policy_id, customer_id=customer.id,
-            check_type=ComplianceCheckTypeEnum(result["check_type"]),
-            status=ComplianceStatusEnum.FLAGGED, # Forced for demo
-            score=result.get("score"),
-            details_json=result.get("details"),
-            screened_at=now,
-        )
-        session.add(chk)
-        created.append(chk)
+    created = await compliance_engine.screen_and_store(session, tenant_id, customer, policy)
     await session.commit()
     for c in created:
         await session.refresh(c)
@@ -643,9 +640,17 @@ async def clear_compliance(
 async def fail_compliance(
     tenant_id: UUID, check_id: UUID,
     body: ComplianceClearBody,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
-    """Manually fail a check (officer confirmation of failure)."""
+    """Manually fail a check (officer confirmation of failure).
+
+    A confirmed compliance failure declines the proposal. That decline is a real
+    lifecycle event: it must reach the PolicyEvent audit trail and the Kafka
+    fan-out like any other. This used to sit behind a bare ``except: pass`` with
+    the returned event discarded, so a policy could stay in pre-issuance with a
+    Failed check against it and nothing downstream ever heard about it.
+    """
     chk = await session.get(ComplianceCheck, check_id)
     if not chk or chk.tenant_id != tenant_id:
         raise HTTPException(404, "Compliance check not found")
@@ -654,21 +659,42 @@ async def fail_compliance(
     chk.cleared_at = datetime.utcnow()
     chk.clearance_note = body.note
     session.add(chk)
-    
-    # Also fail the policy if it's currently in pre-issuance
-    policy = await session.get(Policy, chk.policy_id)
-    if policy:
+
+    policy = await session.get(Policy, chk.policy_id) if chk.policy_id else None
+    event = None
+    illegal: Optional[str] = None
+    if policy is not None and _st(policy) != PolicyStatusEnum.DECLINED.value:
         try:
             event = apply_transition(
                 session, policy, PolicyStatusEnum.DECLINED,
                 event_type="ComplianceFailed", actor=chk.cleared_by,
-                detail={"compliance_check_id": str(chk.id), "reason": body.note}
+                detail={"compliance_check_id": str(chk.id), "reason": body.note},
             )
-        except Exception:
-            pass
-            
+        except IllegalStateTransition as exc:
+            # The policy has already moved somewhere a decline cannot reach (it
+            # is bound, or already terminal). The officer's finding still has to
+            # be recorded — so log it against the policy and let the commit below
+            # persist the check, then tell the caller rather than silently
+            # doing nothing.
+            illegal = str(exc)
+            record_event(
+                session, policy,
+                event_type="ComplianceFailedPostBind",
+                actor=chk.cleared_by,
+                detail={"compliance_check_id": str(chk.id), "reason": body.note,
+                        "blocked_transition": illegal},
+            )
+
     await session.commit()
     await session.refresh(chk)
+    if event is not None:
+        await _publish_policy_event(request, policy, event)
+    if illegal is not None:
+        raise HTTPException(
+            409,
+            f"Compliance failure was recorded, but the policy could not be declined: {illegal}. "
+            "Cancel or endorse the bound contract instead.",
+        )
     return _check_dict(chk)
 
 

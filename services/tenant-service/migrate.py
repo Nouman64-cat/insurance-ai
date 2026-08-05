@@ -864,6 +864,20 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v38 — widen policies.demo_bypass_flags for the reinsurance bypass flag",
         "ALTER TABLE policies ALTER COLUMN demo_bypass_flags TYPE VARCHAR(200)",
     ),
+    # ── Async evaluation results ─────────────────────────────────────────────
+    # POST /evaluate publishes to Kafka and the result now lands via
+    # api-gateway/risk_result_worker.py. Kafka is at-least-once, so the worker
+    # keys on RiskEvaluatedEvent.correlation_id to avoid writing the same
+    # assessment twice on redelivery. NULL for rows written by /evaluate/stream.
+    (
+        "v39a — add correlation_id to risk_assessments (Kafka idempotency key)",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS correlation_id UUID",
+    ),
+    (
+        "v39b — index risk_assessments.correlation_id for the dedupe lookup",
+        "CREATE INDEX IF NOT EXISTS ix_risk_assessments_correlation_id "
+        "ON risk_assessments (correlation_id)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
