@@ -14,7 +14,7 @@ import {
 
 const LOGO = require('../assets/rizvi.png');
 
-const CAPABILITIES: { icon: 'people-outline' | 'sparkles-outline' | 'shield-checkmark-outline' | 'sync-outline'; title: string; description: string }[] = [
+const CAPABILITIES: { icon: 'people-outline' | 'chatbubble-ellipses-outline' | 'shield-checkmark-outline' | 'sync-outline'; title: string; description: string }[] = [
   {
     icon: 'people-outline',
     title: 'Lead capture',
@@ -31,7 +31,7 @@ const CAPABILITIES: { icon: 'people-outline' | 'sparkles-outline' | 'shield-chec
     description: 'E-applications, confidential reports and risk assessment in one flow.',
   },
   {
-    icon: 'sparkles-outline',
+    icon: 'chatbubble-ellipses-outline',
     title: 'AI copilot',
     description: 'Ask questions and drive the workflow in plain language.',
   },

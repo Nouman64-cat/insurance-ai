@@ -90,10 +90,13 @@ export interface ElevationStyle {
 export const elevation = (level: 0 | 1 | 2 | 3 | 4, shadowColor = '#0f172a'): ElevationStyle => {
   const presets: Record<number, Omit<ElevationStyle, 'shadowColor'>> = {
     0: { shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0, shadowRadius: 0, elevation: 0 },
-    1: { shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3, elevation: 1 },
-    2: { shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.07, shadowRadius: 8, elevation: 3 },
-    3: { shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 16, elevation: 8 },
-    4: { shadowOffset: { width: 0, height: 16 }, shadowOpacity: 0.14, shadowRadius: 28, elevation: 16 },
+    // A tight, slightly stronger shadow reads as a crisp edge; the very soft
+    // large-radius version it replaced made cards look like flat grey blocks
+    // against the app background.
+    1: { shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.09, shadowRadius: 2, elevation: 2 },
+    2: { shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 6, elevation: 4 },
+    3: { shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.16, shadowRadius: 14, elevation: 10 },
+    4: { shadowOffset: { width: 0, height: 18 }, shadowOpacity: 0.2, shadowRadius: 24, elevation: 18 },
   };
   return { shadowColor, ...presets[level] };
 };

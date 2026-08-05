@@ -36,11 +36,11 @@ interface QuickAction {
 }
 
 const QUICK_ACTIONS: QuickAction[] = [
-  { label: 'New lead', icon: 'add-circle', tone: 'brand', screen: 'SelectLeadCategory' },
-  { label: 'Proposals', icon: 'document-text', tone: 'success', screen: 'Proposals' },
-  { label: 'Cases', icon: 'folder-open', tone: 'warning', screen: 'Cases' },
-  { label: 'Copilot', icon: 'sparkles', tone: 'accent', screen: 'Chat' },
-  { label: 'Underwriting', icon: 'shield-checkmark', tone: 'info', screen: 'Underwriting' },
+  { label: 'New lead', icon: 'add-circle-outline', tone: 'brand', screen: 'SelectLeadCategory' },
+  { label: 'Proposals', icon: 'document-text-outline', tone: 'success', screen: 'Proposals' },
+  { label: 'Cases', icon: 'folder-open-outline', tone: 'warning', screen: 'Cases' },
+  { label: 'Copilot', icon: 'chatbubble-ellipses-outline', tone: 'accent', screen: 'Chat' },
+  { label: 'Underwriting', icon: 'shield-checkmark-outline', tone: 'info', screen: 'Underwriting' },
 ];
 
 const greeting = (): string => {
@@ -169,7 +169,7 @@ export default function DashboardScreen() {
 
       {/* ── Quick actions ─────────────────────────────────────────────────── */}
 
-      <SectionHeader title="Quick actions" icon="flash-outline" />
+      <SectionHeader title="Quick actions" icon="apps-outline" />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -206,7 +206,7 @@ export default function DashboardScreen() {
           label={statusLabel.LEAD}
           value={stats.newLeads}
           caption="Awaiting first contact"
-          icon="star"
+          icon="ellipse-outline"
           tone="brand"
           loading={loading}
           onPress={goToLeads}
@@ -215,7 +215,7 @@ export default function DashboardScreen() {
           label={statusLabel.PROSPECT}
           value={stats.inProgress}
           caption="Being actively worked"
-          icon="time"
+          icon="hourglass-outline"
           tone="warning"
           loading={loading}
           onPress={goToLeads}
@@ -226,7 +226,7 @@ export default function DashboardScreen() {
           label={statusLabel.UNDERWRITING_READY}
           value={stats.underwriting}
           caption="Handed to underwriting"
-          icon="shield-checkmark"
+          icon="shield-checkmark-outline"
           tone="accent"
           loading={loading}
           onPress={goToLeads}
@@ -235,7 +235,7 @@ export default function DashboardScreen() {
           label={statusLabel.NOT_INTERESTED}
           value={stats.dead}
           caption="Out of the pipeline"
-          icon="close-circle"
+          icon="remove-circle-outline"
           tone="neutral"
           loading={loading}
           onPress={goToLeads}
@@ -244,7 +244,7 @@ export default function DashboardScreen() {
 
       {/* ── Target ────────────────────────────────────────────────────────── */}
 
-      <SectionHeader title="Monthly target" icon="trophy-outline" />
+      <SectionHeader title="Monthly target" icon="stats-chart-outline" />
       <Card padding="lg" style={styles.section}>
         <ProgressBar
           value={stats.converted / MONTHLY_TARGET}

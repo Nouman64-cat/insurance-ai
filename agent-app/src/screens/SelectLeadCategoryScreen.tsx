@@ -26,19 +26,19 @@ const TYPES: TypeOption[] = [
     type: 'INDIVIDUAL',
     title: 'Individual',
     description: 'A single person taking a life or health policy.',
-    icon: 'person',
+    icon: 'person-outline',
   },
   {
     type: 'FAMILY',
     title: 'Family (Floater)',
     description: 'One policy covering a whole household.',
-    icon: 'people',
+    icon: 'people-outline',
   },
   {
     type: 'CORPORATE',
     title: 'Corporate',
     description: 'Group health or an enterprise master policy.',
-    icon: 'business',
+    icon: 'business-outline',
   },
 ];
 
@@ -53,14 +53,14 @@ const DEPTHS: {
     depth: 'quick',
     title: 'Quick lead',
     description: 'Just a name and a phone number. Capture it now, complete it later.',
-    icon: 'flash',
+    icon: 'timer-outline',
     duration: 'Under a minute',
   },
   {
     depth: 'normal',
     title: 'Full profile',
     description: 'Identity, income, medical and lifestyle — everything underwriting needs.',
-    icon: 'document-text',
+    icon: 'document-text-outline',
     duration: '5–10 minutes',
   },
 ];

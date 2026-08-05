@@ -54,11 +54,16 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
   const editingId = family?.id ?? null;
 
   useEffect(() => {
-    if (!open || mode !== "full") return;
+    if (!open) return;
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
-    listBranches(tenantId).then(setBranchOptions).catch(() => setBranchOptions([]));
+    // Agents are needed in both modes — the quick form assigns an owner too,
+    // which is what routes the lead to that agent's mobile app. Branches are
+    // only asked for on the full form.
     listAgents(tenantId).then(setAgentOptions).catch(() => setAgentOptions([]));
+    if (mode === "full") {
+      listBranches(tenantId).then(setBranchOptions).catch(() => setBranchOptions([]));
+    }
   }, [open, mode]);
 
   useEffect(() => {
@@ -103,6 +108,9 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
         name: name.trim(),
         contact_person: contactPerson.trim() || null,
         contact_phone: contactPhone.trim() || null,
+        // Without this the lead is created unassigned and never reaches any
+        // agent's mobile app, which filters by assigned_agent_id.
+        assigned_agent_id: assignedAgentId || null,
       });
       onSaved(`Family "${name.trim()}" added — add members and a policy when ready.`, { id: resp.data?.id, isNew: true });
       onClose();
@@ -182,6 +190,23 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
                 placeholder="+92 300 1234567"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
+            </div>
+            <div className="space-y-1.5">
+              <label className="block text-xs font-semibold text-slate-600">Assign to Agent</label>
+              <select
+                value={assignedAgentId} onChange={(e) => setAssignedAgentId(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+              >
+                <option value="">-- Unassigned --</option>
+                {agentOptions.map((a) => (
+                  <option key={a.id} value={a.id}>{a.full_name}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500">
+                {assignedAgentId
+                  ? "This lead will appear on the agent's mobile app, and they will be notified."
+                  : "Unassigned leads stay in the portal only — no agent will be notified."}
+              </p>
             </div>
             <p className="text-[11px] text-slate-400">
               Adds the household now — add members, household income, and a policy later via "Complete Detail" or the Manage page.

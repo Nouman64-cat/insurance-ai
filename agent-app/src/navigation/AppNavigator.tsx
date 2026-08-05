@@ -10,9 +10,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createDrawerNavigator } from '@react-navigation/drawer';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { useTheme } from '../theme/ThemeContext';
 import { typography } from '../theme/tokens';
+import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { LeadSyncProvider } from '../sync/LeadSyncProvider';
@@ -90,12 +92,19 @@ const TAB_ICONS: Record<keyof MainTabParamList, [keyof typeof Ionicons.glyphMap,
   Leads: ['people', 'people-outline'],
   Proposals: ['document-text', 'document-text-outline'],
   Cases: ['folder-open', 'folder-open-outline'],
-  Chat: ['sparkles', 'sparkles-outline'],
+  Chat: ['chatbubble-ellipses', 'chatbubble-ellipses-outline'],
 };
 
 function MainTabs() {
   const { colors } = useTheme();
   const { unreadCount } = useNotifications();
+  const insets = useSafeAreaInsets();
+
+  // Derived from the device's real bottom inset rather than a per-platform
+  // constant: a fixed 84pt wastes a visible band on iPhones with a home button
+  // (inset 0) and can clip on Android devices with gesture navigation.
+  const barContentHeight = 56;
+  const bottomInset = Math.max(insets.bottom, Platform.OS === 'ios' ? 0 : 8);
 
   return (
     <Tab.Navigator
@@ -110,9 +119,9 @@ function MainTabs() {
           // Removing the default elevation stops Android drawing a hard grey
           // band over the themed border.
           elevation: 0,
-          height: Platform.OS === 'ios' ? 84 : 62,
+          height: barContentHeight + bottomInset,
           paddingTop: 6,
-          paddingBottom: Platform.OS === 'ios' ? 28 : 8,
+          paddingBottom: bottomInset,
         },
         tabBarLabelStyle: {
           ...typography.micro,
@@ -151,20 +160,27 @@ function MainTabs() {
 
 function MainDrawer() {
   const { colors } = useTheme();
+  const { width } = useResponsive();
+
+  // A fixed width leaves only a sliver of the screen visible on a small phone
+  // and looks lost on a tablet. Cap it so the underlying screen always stays
+  // recognisable behind the scrim.
+  const drawerWidth = Math.min(Math.round(width * 0.82), 340);
 
   return (
     <Drawer.Navigator
-      useLegacyImplementation={false}
       drawerContent={(props) => <CustomDrawer {...props} />}
       screenOptions={{
         headerShown: false,
-        // Edge-swipe would fight the horizontal scroll views on the Leads
-        // board, so the drawer opens from its header button only.
-        swipeEnabled: false,
         drawerType: 'front',
+        // Edge-swipe is the gesture users expect, but the Leads and Cases
+        // boards scroll horizontally. Restricting the gesture to a narrow
+        // strip at the screen edge gives both behaviours without conflict.
+        swipeEnabled: true,
+        swipeEdgeWidth: 24,
         drawerStyle: {
           backgroundColor: colors.surface,
-          width: 300,
+          width: drawerWidth,
         },
         overlayColor: colors.overlay,
       }}

@@ -34,6 +34,12 @@ export interface UnifiedLead {
   email?: string | null;
   /** Members for a family, employees for an organization. */
   memberCount?: number;
+  /**
+   * Roll-up policy status for family and corporate leads ("Active" | "Pending"),
+   * computed by the list endpoints. Individual leads carry their policies
+   * directly instead, so this stays undefined for them.
+   */
+  groupPolicyStatus?: string | null;
 }
 
 export interface Branch {
@@ -172,6 +178,7 @@ export const fetchLeads = async (options: FetchLeadsOptions = {}): Promise<Unifi
         city: f.city ?? null,
         email: f.contact_email ?? null,
         memberCount: f.member_count ?? 0,
+        groupPolicyStatus: f.family_policy_status ?? null,
       });
     });
   };
@@ -192,6 +199,7 @@ export const fetchLeads = async (options: FetchLeadsOptions = {}): Promise<Unifi
         city: o.city ?? null,
         email: o.contact_email ?? null,
         memberCount: o.employee_count ?? 0,
+        groupPolicyStatus: o.master_policy_status ?? null,
       });
     });
   };

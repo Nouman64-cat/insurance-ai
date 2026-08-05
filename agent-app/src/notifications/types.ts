@@ -56,14 +56,14 @@ export interface NotificationPreset {
 }
 
 export const NOTIFICATION_PRESETS: Record<NotificationKind, NotificationPreset> = {
-  'lead.created': { tone: 'success', icon: 'person-add' },
-  'lead.updated': { tone: 'brand', icon: 'sync-circle' },
-  'lead.assigned': { tone: 'accent', icon: 'git-branch' },
-  'lead.deleted': { tone: 'neutral', icon: 'trash' },
-  'proposal.created': { tone: 'info', icon: 'document-text' },
-  'case.updated': { tone: 'warning', icon: 'folder-open' },
-  'sync.error': { tone: 'danger', icon: 'cloud-offline' },
-  generic: { tone: 'neutral', icon: 'notifications' },
+  'lead.created': { tone: 'success', icon: 'person-add-outline' },
+  'lead.updated': { tone: 'brand', icon: 'swap-horizontal-outline' },
+  'lead.assigned': { tone: 'accent', icon: 'person-circle-outline' },
+  'lead.deleted': { tone: 'neutral', icon: 'trash-outline' },
+  'proposal.created': { tone: 'info', icon: 'document-text-outline' },
+  'case.updated': { tone: 'warning', icon: 'folder-open-outline' },
+  'sync.error': { tone: 'danger', icon: 'cloud-offline-outline' },
+  generic: { tone: 'neutral', icon: 'notifications-outline' },
 };
 
 /** "just now" / "12m ago" / "3h ago" / "5 Aug" — matches how agents scan a feed. */

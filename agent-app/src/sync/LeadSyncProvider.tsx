@@ -79,15 +79,53 @@ interface LeadSnapshot {
   status: string;
   assignedAgentId?: string | null;
   name: string;
+  /**
+   * Roll-up policy status for family/corporate leads. Tracked so a lead moving
+   * from "Pending" to "Active" in the portal reaches the owning agent, even
+   * though its `profile_status` never changes.
+   */
+  groupPolicyStatus?: string | null;
 }
 
 const snapshotOf = (leads: UnifiedLead[]): Map<string, LeadSnapshot> =>
   new Map(
     leads.map((l) => [
       l.id,
-      { status: l.status, assignedAgentId: l.assignedAgentId ?? null, name: l.name },
+      {
+        status: l.status,
+        assignedAgentId: l.assignedAgentId ?? null,
+        name: l.name,
+        groupPolicyStatus: l.groupPolicyStatus ?? null,
+      },
     ])
   );
+
+/**
+ * How a `profile_status` change reads to the agent who owns the lead. The
+ * portal drives these transitions; the agent only ever observes them.
+ */
+const STAGE_ANNOUNCEMENT: Record<string, { title: string; body: string }> = {
+  PROSPECT: {
+    title: 'moved to Proposal',
+    body: 'A quotation is being prepared for this lead.',
+  },
+  UNDERWRITING_READY: {
+    title: 'entered Underwriting',
+    body: 'Risk assessment and medical checks are under way.',
+  },
+  POLICYHOLDER: {
+    title: 'is now a Policyholder',
+    body: 'The policy has been issued and cover is live.',
+  },
+  NOT_INTERESTED: {
+    title: 'was marked Not Interested',
+    body: 'This lead has been moved out of the active pipeline.',
+  },
+  LEAD: {
+    title: 'was reopened',
+    body: 'This lead is back in the new-leads stage.',
+  },
+};
 
 export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated, canSeeAllLeads } = useSession();
@@ -165,12 +203,39 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         if (isSelfChange(lead.id)) continue;
 
         if (before.status !== lead.status) {
+          const announcement = STAGE_ANNOUNCEMENT[lead.status];
           notify({
             kind: 'lead.updated',
-            title: `${lead.name} moved to ${statusLabel[lead.status] ?? lead.status}`,
-            body: `Was ${statusLabel[before.status] ?? before.status}.`,
+            title: announcement
+              ? `${lead.name} ${announcement.title}`
+              : `${lead.name} moved to ${statusLabel[lead.status] ?? lead.status}`,
+            body: announcement
+              ? announcement.body
+              : `Was ${statusLabel[before.status] ?? before.status}.`,
             target: { screen: 'LeadDetail', params: { leadId: lead.id } },
             data: { leadId: lead.id },
+            // The agent who owns the lead is the one who needs to act on a
+            // stage change, so interrupt them; others just get the feed entry.
+            popup: mine,
+          });
+        }
+
+        // Family and corporate leads progress through their group policy while
+        // `profile_status` stays put, so that transition is announced too.
+        if ((before.groupPolicyStatus ?? null) !== (lead.groupPolicyStatus ?? null)) {
+          const now = lead.groupPolicyStatus;
+          notify({
+            kind: 'lead.updated',
+            title: `${lead.name} policy is now ${now ?? 'unset'}`,
+            body:
+              now === 'Active'
+                ? 'The group policy is live — cover has started.'
+                : now === 'Pending'
+                ? 'A group policy has been set up and is awaiting activation.'
+                : 'The group policy status changed.',
+            target: { screen: 'LeadDetail', params: { leadId: lead.id } },
+            data: { leadId: lead.id },
+            popup: mine && now === 'Active',
           });
         }
 

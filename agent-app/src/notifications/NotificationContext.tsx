@@ -85,7 +85,7 @@ const TONE_ICONS: Record<ToneName, keyof typeof Ionicons.glyphMap> = {
   warning: 'warning',
   danger: 'alert-circle',
   neutral: 'information-circle',
-  accent: 'sparkles',
+  accent: 'information-circle-outline',
 };
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

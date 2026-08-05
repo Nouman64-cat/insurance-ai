@@ -4,14 +4,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeContext';
 import { spacing, radii } from '../theme/tokens';
 import { statusTone, entityTone, statusLabel, entityLabel } from '../theme/palette';
-import { UnifiedLead, ProfileStatus } from '../api/leads';
+import { UnifiedLead } from '../api/leads';
 import { formatRelativeTime } from '../notifications/types';
 import { Text, Card, Badge, Avatar, Pressable } from './ui';
 
 export interface LeadCardProps {
   lead: UnifiedLead;
   onPress?: () => void;
-  onStatusChange?: (status: ProfileStatus) => void;
   onMenu?: () => void;
   /** Shows who owns the lead — used on the admin/all-leads board. */
   showOwner?: boolean;
@@ -27,14 +26,15 @@ const ENTITY_ICON: Record<string, keyof typeof Ionicons.glyphMap> = {
 };
 
 /**
- * The primary lead representation. Quick actions live on the card itself
- * because moving a lead through the pipeline is the single most frequent thing
- * an agent does, and making that a two-tap detour is what kills adoption.
+ * The primary lead representation.
+ *
+ * Deliberately carries no status controls: advancing a lead through the
+ * pipeline is underwriting's and operations' decision, made in the portal.
+ * The agent's job here is to capture the lead and track where it has reached.
  */
 export default function LeadCard({
   lead,
   onPress,
-  onStatusChange,
   onMenu,
   showOwner = false,
   compact = false,
@@ -44,13 +44,6 @@ export default function LeadCard({
 
   const tone = statusTone[lead.status] ?? 'neutral';
   const typeTone = entityTone[lead.type] ?? 'neutral';
-
-  const primaryAction =
-    lead.status === 'LEAD'
-      ? { label: 'Move to In Progress', status: 'PROSPECT' as ProfileStatus, icon: 'play-forward' as const }
-      : lead.status === 'NOT_INTERESTED'
-      ? { label: 'Reactivate', status: 'LEAD' as ProfileStatus, icon: 'refresh' as const }
-      : null;
 
   return (
     <Card
@@ -121,44 +114,12 @@ export default function LeadCard({
         </Text>
       </View>
 
-      {!compact && onStatusChange ? (
-        <View style={styles.actions}>
-          {primaryAction ? (
-            <Pressable
-              onPress={() => onStatusChange(primaryAction.status)}
-              pressedScale={0.97}
-              accessibilityRole="button"
-              accessibilityLabel={`${primaryAction.label} for ${lead.name}`}
-              style={[styles.action, { backgroundColor: colors.tone.brand.solid }]}
-            >
-              <Ionicons name={primaryAction.icon} size={15} color={colors.tone.brand.onSolid} />
-              <Text
-                variant="captionStrong"
-                style={{ color: colors.tone.brand.onSolid }}
-                numberOfLines={1}
-              >
-                {primaryAction.label}
-              </Text>
-            </Pressable>
-          ) : null}
-
-          {lead.status !== 'NOT_INTERESTED' ? (
-            <Pressable
-              onPress={() => onStatusChange('NOT_INTERESTED')}
-              pressedScale={0.97}
-              accessibilityRole="button"
-              accessibilityLabel={`Mark ${lead.name} as not interested`}
-              style={[
-                styles.action,
-                { backgroundColor: colors.surfaceSunken, borderColor: colors.border, borderWidth: 1 },
-              ]}
-            >
-              <Ionicons name="close-circle-outline" size={15} color={colors.textMuted} />
-              <Text variant="captionStrong" color="muted" numberOfLines={1}>
-                Not interested
-              </Text>
-            </Pressable>
-          ) : null}
+      {!compact && onPress ? (
+        <View style={[styles.viewHint, { borderTopColor: colors.borderSubtle }]}>
+          <Text variant="captionStrong" style={{ color: colors.tone.brand.on }}>
+            View journey
+          </Text>
+          <Ionicons name="arrow-forward" size={14} color={colors.tone.brand.on} />
         </View>
       ) : null}
     </Card>
@@ -229,19 +190,13 @@ const styles = StyleSheet.create({
     paddingTop: spacing.md,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  actions: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-    marginTop: spacing.md,
-  },
-  action: {
-    flex: 1,
+  viewHint: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     gap: spacing.xs,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radii.md,
+    marginTop: spacing.md,
+    paddingTop: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
 });
