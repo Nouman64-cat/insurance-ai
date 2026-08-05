@@ -4,7 +4,7 @@
 
 import Link from "next/link";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 
 import { useEffect, useState } from "react";
 
@@ -141,6 +141,10 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        subLinks: [
+          { href: "/underwriting?tab=pre-underwriting", label: "Pre-Underwriting" },
+          { href: "/underwriting?tab=risk-engine", label: "Risk Engine & AI Cases" }
+        ]
       },
       {
         href: "/admin/acquisition-sources",
@@ -173,10 +177,14 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        subLinks: [
+          { href: "/policy-issuance?tab=queue", label: "Pre-Issuance Queue" },
+          { href: "/policy-issuance?tab=active", label: "Post-Issuance Queue" }
+        ]
       },
     ],
   },
-{
+  {
     group: "Customer Management",
     links: [
 
@@ -740,11 +748,13 @@ const NAV_ITEMS = [
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [activeHref, setActiveHref] = useState(pathname);
   const [userName, setUserName] = useState("Saira Reviewer");
   const [userEmail, setUserEmail] = useState("Senior Underwriter");
   const [userRole, setUserRole] = useState("");
   const [navMode, setNavMode] = useState<"all" | "working">("all");
+  const [expandedMenus, setExpandedMenus] = useState<Record<string, boolean>>({});
 
   // Drag and Drop state
   const initialOrder = NAV_ITEMS.map((g: any) => ({ group: g.group, links: g.links.map((l: any) => l.href) }));
@@ -753,8 +763,13 @@ export function Sidebar() {
   const [draggedOverItem, setDraggedOverItem] = useState<{ groupIndex: number, linkIndex: number } | null>(null);
 
   useEffect(() => {
-    setActiveHref(pathname);
-  }, [pathname]);
+    const tab = searchParams.get("tab");
+    if (pathname === "/underwriting" && tab) {
+      setActiveHref(`${pathname}?tab=${tab}`);
+    } else {
+      setActiveHref(pathname);
+    }
+  }, [pathname, searchParams]);
 
   useEffect(() => {
     const storedName = localStorage.getItem("user_name");
@@ -911,8 +926,13 @@ export function Sidebar() {
               )}
               <div className="space-y-0.5">
                 {visibleLinks.map((link: any, lIndex: number) => {
-                  const isActive = activeHref === link.href;
+                  const isActive = activeHref === link.href || (link.subLinks && link.subLinks.some((sub: any) => activeHref === sub.href));
                   const isDraggingThis = draggedItem?.groupIndex === gIndex && draggedItem?.linkIndex === lIndex;
+
+                  const toggleSubmenu = (e: React.MouseEvent) => {
+                    e.preventDefault();
+                    setExpandedMenus(prev => ({ ...prev, [link.href]: !prev[link.href] }));
+                  };
 
                   return (
                     <div
@@ -925,9 +945,12 @@ export function Sidebar() {
                       className={`relative group ${isDraggingThis ? "opacity-50 border border-dashed border-slate-300 rounded-xl" : ""}`}
                     >
                       <Link
-                        href={link.href}
+                        href={link.subLinks ? "#" : link.href}
                         title={collapsed ? link.label : undefined}
-                        onClick={() => setActiveHref(link.href)}
+                        onClick={(e) => {
+                          if (link.subLinks) toggleSubmenu(e);
+                          else setActiveHref(link.href);
+                        }}
                         className={`
                           sidebar-link flex items-center transition-all duration-150 text-[13px]
                           ${collapsed ? "w-11 h-11 justify-center rounded-xl mx-auto p-0" : "gap-2.5 px-3 py-2.5 rounded-xl mx-2"}
@@ -959,10 +982,55 @@ export function Sidebar() {
                             {link.badge}
                           </span>
                         )}
+                        {!collapsed && link.subLinks && (
+                          <svg
+                            className={`ml-auto w-4 h-4 transition-transform duration-200 text-slate-400 ${expandedMenus[link.href] ? "rotate-180" : ""}`}
+                            viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          >
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        )}
                         {collapsed && link.badge && (
                           <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-500" />
                         )}
                       </Link>
+
+                      {/* Sub-links Rendering */}
+                      {!collapsed && link.subLinks && expandedMenus[link.href] && (
+                        <div className="mt-1 mb-2 ml-[36px] relative space-y-1 animate-in slide-in-from-top-1 fade-in duration-200 mr-2">
+                          {/* Continuous vertical line for the tree */}
+                          <div className="absolute left-[9px] top-2 bottom-3.5 w-[2px] bg-slate-100 rounded-full" />
+
+                          {link.subLinks.map((sub: any) => {
+                            const isSubActive = activeHref === sub.href;
+                            return (
+                              <Link
+                                key={sub.href}
+                                href={sub.href}
+                                onClick={() => setActiveHref(sub.href)}
+                                className={`
+                                  group relative flex items-center pl-7 pr-3 py-1.5 text-[12px] rounded-lg transition-all duration-200
+                                  ${isSubActive
+                                    ? "text-blue-700 font-bold bg-blue-50/50 ring-1 ring-blue-100/50 shadow-sm"
+                                    : "text-slate-500 font-medium hover:text-slate-900 hover:bg-slate-50"}
+                                `}
+                              >
+                                {/* Active / Hover Dot */}
+                                <div
+                                  className={`absolute left-[6.5px] w-[7px] h-[7px] rounded-full transition-all duration-200 z-10
+                                    ${isSubActive
+                                      ? "bg-blue-500 ring-4 ring-blue-50"
+                                      : "bg-slate-200 ring-2 ring-white group-hover:bg-slate-400 group-hover:scale-125"
+                                    }
+                                  `}
+                                />
+
+                                <span className="truncate tracking-wide">{sub.label}</span>
+                              </Link>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
