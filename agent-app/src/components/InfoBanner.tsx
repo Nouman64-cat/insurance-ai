@@ -1,59 +1,41 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { ViewStyle, StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Banner from './ui/Banner';
+import { ToneName } from '../theme/palette';
 
 interface InfoBannerProps {
   title: string;
   subtitle: string;
   icon: keyof typeof Ionicons.glyphMap;
+  /** Legacy hex colour. Mapped onto the nearest semantic tone. */
   color?: string;
+  /** Legacy hex background. Ignored — the tone supplies a theme-aware fill. */
   bgColor?: string;
+  tone?: ToneName;
+  style?: StyleProp<ViewStyle>;
 }
 
-export default function InfoBanner({ title, subtitle, icon, color = '#ef4444', bgColor = '#fef2f2' }: InfoBannerProps) {
-  return (
-    <View style={styles.container}>
-      <View style={[styles.iconContainer, { backgroundColor: bgColor }]}>
-        <Ionicons name={icon} size={20} color={color} />
-      </View>
-      <View style={styles.textContainer}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
-      </View>
-    </View>
-  );
-}
+/**
+ * Maps the hard-coded hex colours the old call sites pass onto semantic tones,
+ * so those banners pick up dark mode without every screen being edited.
+ */
+const HEX_TONE: Record<string, ToneName> = {
+  '#ef4444': 'danger',
+  '#dc2626': 'danger',
+  '#f59e0b': 'warning',
+  '#d97706': 'warning',
+  '#3b82f6': 'brand',
+  '#2563eb': 'brand',
+  '#10b981': 'success',
+  '#059669': 'success',
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#f8fafc',
-    marginBottom: 16,
-    alignItems: 'center',
-  },
-  iconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  textContainer: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 2,
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-});
+/**
+ * Compatibility shim over the design-system Banner. New code should import
+ * `Banner` from `components/ui` directly.
+ */
+export default function InfoBanner({ title, subtitle, icon, color, tone, style }: InfoBannerProps) {
+  const resolved = tone ?? (color ? HEX_TONE[color.toLowerCase()] ?? 'info' : 'info');
+  return <Banner title={title} description={subtitle} icon={icon} tone={resolved} style={style} />;
+}

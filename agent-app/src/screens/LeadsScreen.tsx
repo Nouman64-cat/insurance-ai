@@ -1,456 +1,555 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, FlatList, ActivityIndicator, RefreshControl, Modal, TouchableOpacity, Alert, ScrollView, Dimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { fetchAgentLeads, updateLeadStatus, deleteLead, UnifiedLead, ProfileStatus, EntityType } from '../api/leads';
-import { useTheme } from '../theme/ThemeContext';
-import LeadCard from '../components/LeadCard';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, StyleSheet, FlatList, ScrollView, TextInput, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTheme } from '../theme/ThemeContext';
+import { spacing, radii, typography, hitTarget } from '../theme/tokens';
+import { statusLabel } from '../theme/palette';
+import { useResponsive } from '../hooks/useResponsive';
+import { useSession } from '../context/SessionContext';
+import { useNotifications } from '../notifications/NotificationContext';
+import { useLeadSync } from '../sync/LeadSyncProvider';
+import { updateLeadStatus, deleteLead, UnifiedLead, ProfileStatus } from '../api/leads';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import LeadCard from '../components/LeadCard';
+import {
+  Screen,
+  ScreenHeader,
+  Text,
+  Fab,
+  EmptyState,
+  SkeletonList,
+  SegmentedControl,
+  Sheet,
+  ListRow,
+  ConfirmDialog,
+  Banner,
+  Pressable,
+} from '../components/ui';
 
-type FilterType = 'ALL' | 'LEAD' | 'PROSPECT' | 'NOT_INTERESTED';
+type StatusFilter = 'ALL' | 'LEAD' | 'PROSPECT' | 'UNDERWRITING_READY' | 'NOT_INTERESTED';
+type ViewMode = 'list' | 'board';
+
+/** Columns of the board view, left to right in pipeline order. */
+const BOARD_COLUMNS: { status: ProfileStatus; title: string }[] = [
+  { status: 'LEAD', title: 'New Leads' },
+  { status: 'PROSPECT', title: 'In Progress' },
+  { status: 'UNDERWRITING_READY', title: 'Underwriting' },
+  { status: 'NOT_INTERESTED', title: 'Not Interested' },
+];
 
 export default function LeadsScreen() {
-  const [leads, setLeads] = useState<UnifiedLead[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [filter, setFilter] = useState<FilterType>('ALL');
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
-
-  // Modal State
-  const [modalVisible, setModalVisible] = useState(false);
-  const [step, setStep] = useState(1);
-  const [selectedType, setSelectedType] = useState<EntityType | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<'quick' | 'normal' | null>(null);
-
+  const { colors } = useTheme();
+  const { gutter, columns, isCompact, width } = useResponsive();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { canSeeAllLeads } = useSession();
+  const { toast } = useNotifications();
+  const { leads, loading, syncing, error, refresh, applyLocal, removeLocal } = useLeadSync();
 
-  const loadLeads = async () => {
-    try {
-      const data = await fetchAgentLeads();
-      setLeads(data);
-    } catch (err) {
-      console.log('Error loading leads', err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<StatusFilter>('ALL');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [menuLead, setMenuLead] = useState<UnifiedLead | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<UnifiedLead | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useFocusEffect(
-    useCallback(() => {
-      loadLeads();
-    }, [])
+  // ── Derived data ───────────────────────────────────────────────────────────
+
+  const counts = useMemo(() => {
+    const tally: Record<string, number> = { ALL: leads.length };
+    for (const lead of leads) tally[lead.status] = (tally[lead.status] ?? 0) + 1;
+    return tally;
+  }, [leads]);
+
+  const searched = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return leads;
+    return leads.filter(
+      (l) =>
+        l.name?.toLowerCase().includes(q) ||
+        l.contact_info?.toLowerCase().includes(q) ||
+        l.city?.toLowerCase().includes(q) ||
+        l.primaryIdentifier?.toLowerCase().includes(q) ||
+        l.assignedAgentName?.toLowerCase().includes(q)
+    );
+  }, [leads, query]);
+
+  const filtered = useMemo(
+    () => (filter === 'ALL' ? searched : searched.filter((l) => l.status === filter)),
+    [searched, filter]
   );
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    loadLeads();
-  };
+  const filterSegments = useMemo(
+    () =>
+      (['ALL', 'LEAD', 'PROSPECT', 'UNDERWRITING_READY', 'NOT_INTERESTED'] as StatusFilter[]).map(
+        (value) => ({
+          value,
+          label: value === 'ALL' ? 'All' : statusLabel[value] ?? value,
+          count: counts[value] ?? 0,
+        })
+      ),
+    [counts]
+  );
 
-  const handleStatusChange = async (lead: UnifiedLead, newStatus: ProfileStatus) => {
-    try {
-      await updateLeadStatus(lead, newStatus);
-      // Optimistic update
-      setLeads(prev => prev.map(l => l.id === lead.id ? { ...l, status: newStatus } : l));
-    } catch (err) {
-      console.log('Failed to update status', err);
-    }
-  };
+  // ── Mutations ──────────────────────────────────────────────────────────────
 
-  const handleDeleteLead = async (lead: UnifiedLead) => {
+  const changeStatus = useCallback(
+    async (lead: UnifiedLead, status: ProfileStatus) => {
+      const previousStatus = lead.status;
+      // Optimistic: the row moves immediately, and `applyLocal` also updates the
+      // sync baseline so the next poll does not announce the user's own change.
+      applyLocal(lead.id, { status });
+      try {
+        await updateLeadStatus(lead, status);
+        toast(`${lead.name} → ${statusLabel[status] ?? status}`, {
+          tone: 'success',
+          icon: 'checkmark-circle',
+        });
+      } catch (err: any) {
+        applyLocal(lead.id, { status: previousStatus });
+        toast('Could not update the lead', {
+          body: err?.message ?? 'Please try again.',
+          tone: 'danger',
+          icon: 'alert-circle',
+        });
+      }
+    },
+    [applyLocal, toast]
+  );
+
+  const confirmDelete = useCallback(async () => {
+    if (!pendingDelete) return;
+    const lead = pendingDelete;
+    setDeleting(true);
     try {
       await deleteLead(lead);
-      // Optimistic update
-      setLeads(prev => prev.filter(l => l.id !== lead.id));
-    } catch (err) {
-      console.log('Failed to delete lead', err);
+      removeLocal(lead.id);
+      setPendingDelete(null);
+      toast(`${lead.name} deleted`, { tone: 'neutral', icon: 'trash-outline' });
+    } catch (err: any) {
+      toast('Could not delete the lead', {
+        body: err?.message ?? 'Please try again.',
+        tone: 'danger',
+        icon: 'alert-circle',
+      });
+    } finally {
+      setDeleting(false);
     }
-  };
+  }, [pendingDelete, removeLocal, toast]);
 
-  const filteredLeads = leads.filter(l => {
-    if (filter === 'ALL') return true;
-    return l.status === filter;
-  });
+  const openLead = useCallback(
+    (lead: UnifiedLead) => navigation.navigate('LeadDetail', { leadId: lead.id }),
+    [navigation]
+  );
 
-  const FilterButton = ({ title, type }: { title: string, type: FilterType }) => {
-    const active = filter === type;
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  const gridColumns = viewMode === 'list' && !isCompact ? columns(300) : 1;
+
+  const renderList = () => {
+    if (loading) return <SkeletonList count={4} />;
+
+    if (filtered.length === 0) {
+      const isFiltered = query.trim().length > 0 || filter !== 'ALL';
+      return (
+        <EmptyState
+          icon={isFiltered ? 'search-outline' : 'people-outline'}
+          title={isFiltered ? 'No matching leads' : 'No leads yet'}
+          description={
+            isFiltered
+              ? 'Try a different search term, or clear the filter to see everything.'
+              : canSeeAllLeads
+              ? 'When an agent adds a lead — here or in the portal — it appears on this board straight away.'
+              : 'Add your first lead and it will sync to the portal instantly.'
+          }
+          actionLabel={isFiltered ? 'Clear filters' : 'Add a lead'}
+          onAction={
+            isFiltered
+              ? () => {
+                  setQuery('');
+                  setFilter('ALL');
+                }
+              : () => navigation.navigate('SelectLeadCategory')
+          }
+        />
+      );
+    }
+
     return (
-      <Text
-        onPress={() => setFilter(type)}
-        style={[styles.filterBtn, active && styles.filterBtnActive]}
-      >
-        {title}
-      </Text>
+      <FlatList
+        key={`list-${gridColumns}`}
+        data={filtered}
+        keyExtractor={(item) => item.id}
+        numColumns={gridColumns}
+        columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}
+        contentContainerStyle={[styles.listContent, { paddingHorizontal: gutter }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={syncing && !loading}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+            progressBackgroundColor={colors.surface}
+          />
+        }
+        // Keeps memory flat on a large book without blanking rows while scrolling.
+        initialNumToRender={8}
+        windowSize={11}
+        removeClippedSubviews
+        renderItem={({ item }) => (
+          <LeadCard
+            lead={item}
+            showOwner={canSeeAllLeads}
+            onPress={() => openLead(item)}
+            onStatusChange={(status) => changeStatus(item, status)}
+            onMenu={() => setMenuLead(item)}
+            style={gridColumns > 1 ? styles.gridItem : undefined}
+          />
+        )}
+      />
     );
   };
 
-  const openAddLeadModal = () => {
-    setStep(1);
-    setSelectedType(null);
-    setSelectedCategory(null);
-    setModalVisible(true);
-  };
+  const renderBoard = () => {
+    if (loading) {
+      return (
+        <View style={{ paddingHorizontal: gutter }}>
+          <SkeletonList count={3} />
+        </View>
+      );
+    }
 
-  const handleSelectType = (type: EntityType) => {
-    setSelectedType(type);
-    setStep(2);
-  };
+    // Column width leaves the next column peeking, which is what tells the user
+    // the board scrolls horizontally.
+    const columnWidth = isCompact ? width * 0.82 : 320;
 
-  const handleProceed = () => {
-    if (!selectedCategory) return;
-    setModalVisible(false);
-    navigation.navigate('AddLead', { type: selectedType || 'INDIVIDUAL', category: selectedCategory });
+    return (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.board, { paddingHorizontal: gutter }]}
+        refreshControl={
+          <RefreshControl
+            refreshing={syncing && !loading}
+            onRefresh={refresh}
+            tintColor={colors.primary}
+            colors={[colors.primary]}
+          />
+        }
+      >
+        {BOARD_COLUMNS.map((column) => {
+          const items = searched.filter((l) => l.status === column.status);
+          return (
+            <View key={column.status} style={[styles.boardColumn, { width: columnWidth }]}>
+              <View style={[styles.boardHeader, { backgroundColor: colors.surfaceSunken }]}>
+                <Text variant="calloutStrong" numberOfLines={1} style={styles.boardTitle}>
+                  {column.title}
+                </Text>
+                <View style={[styles.boardCount, { backgroundColor: colors.surface }]}>
+                  <Text variant="micro" color="muted">
+                    {items.length}
+                  </Text>
+                </View>
+              </View>
+
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={styles.boardList}
+                // The board scrolls horizontally; each column scrolls vertically.
+                nestedScrollEnabled
+              >
+                {items.length === 0 ? (
+                  <View style={[styles.boardEmpty, { borderColor: colors.border }]}>
+                    <Ionicons name="albums-outline" size={20} color={colors.textSubtle} />
+                    <Text variant="caption" color="subtle" align="center">
+                      Nothing here yet
+                    </Text>
+                  </View>
+                ) : (
+                  items.map((item) => (
+                    <LeadCard
+                      key={item.id}
+                      lead={item}
+                      compact
+                      showOwner={canSeeAllLeads}
+                      onPress={() => openLead(item)}
+                      onMenu={() => setMenuLead(item)}
+                    />
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          );
+        })}
+      </ScrollView>
+    );
   };
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top']}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>My Leads</Text>
-          <Text style={styles.subtitle}>Manage your pipeline</Text>
-        </View>
-        <View style={styles.viewToggle}>
-          <TouchableOpacity onPress={() => setViewMode('list')} style={[styles.toggleBtn, viewMode === 'list' && styles.toggleBtnActive]}>
-            <Ionicons name="list" size={20} color={viewMode === 'list' ? '#fff' : '#64748b'} />
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setViewMode('kanban')} style={[styles.toggleBtn, viewMode === 'kanban' && styles.toggleBtnActive]}>
-            <Ionicons name="apps" size={20} color={viewMode === 'kanban' ? '#fff' : '#64748b'} />
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.filters}>
-        <FilterButton title="All" type="ALL" />
-        <FilterButton title="New" type="LEAD" />
-        <FilterButton title="In Progress" type="PROSPECT" />
-        <FilterButton title="Dead" type="NOT_INTERESTED" />
-      </View>
-
-      {loading && !refreshing ? (
-        <View style={styles.loader}>
-          <ActivityIndicator size="large" color="#1D4ED8" />
-        </View>
-      ) : viewMode === 'kanban' ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.kanbanContainer}>
-          <View style={styles.kanbanColumn}>
-            <Text style={styles.columnTitle}>New Leads</Text>
-            <FlatList
-              data={leads.filter(l => l.status === 'LEAD')}
-              keyExtractor={item => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <LeadCard lead={item} onStatusChange={(newStatus) => handleStatusChange(item, newStatus)} onDelete={() => handleDeleteLead(item)} onEdit={() => Alert.alert('Coming Soon', 'Edit functionality coming in next update')} />
-              )}
-            />
-          </View>
-          <View style={styles.kanbanColumn}>
-            <Text style={styles.columnTitle}>In Progress</Text>
-            <FlatList
-              data={leads.filter(l => l.status === 'PROSPECT')}
-              keyExtractor={item => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <LeadCard lead={item} onStatusChange={(newStatus) => handleStatusChange(item, newStatus)} onDelete={() => handleDeleteLead(item)} onEdit={() => Alert.alert('Coming Soon', 'Edit functionality coming in next update')} />
-              )}
-            />
-          </View>
-          <View style={styles.kanbanColumn}>
-            <Text style={styles.columnTitle}>Dead</Text>
-            <FlatList
-              data={leads.filter(l => l.status === 'NOT_INTERESTED')}
-              keyExtractor={item => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => (
-                <LeadCard lead={item} onStatusChange={(newStatus) => handleStatusChange(item, newStatus)} onDelete={() => handleDeleteLead(item)} onEdit={() => Alert.alert('Coming Soon', 'Edit functionality coming in next update')} />
-              )}
-            />
-          </View>
-        </ScrollView>
-      ) : (
-        <FlatList
-          data={filteredLeads}
-          keyExtractor={item => item.id}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          renderItem={({ item }) => (
-            <LeadCard
-              lead={item}
-              onStatusChange={(newStatus) => handleStatusChange(item, newStatus)}
-              onDelete={() => handleDeleteLead(item)}
-              onEdit={() => Alert.alert('Coming Soon', 'Edit functionality coming in next update')}
-            />
-          )}
-          ListEmptyComponent={
-            <Text style={styles.emptyText}>No leads found in this category.</Text>
+    <Screen
+      scrollable={false}
+      padded={false}
+      header={
+        <ScreenHeader
+          title={canSeeAllLeads ? 'All Leads' : 'My Leads'}
+          subtitle={
+            syncing
+              ? 'Syncing…'
+              : `${leads.length} ${leads.length === 1 ? 'lead' : 'leads'} in your pipeline`
           }
-        />
-      )}
-
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab} onPress={openAddLeadModal} activeOpacity={0.8}>
-        <Ionicons name="add" size={20} color="#fff" style={{ marginRight: 4 }} />
-        <Text style={styles.fabText}>Add Lead</Text>
-      </TouchableOpacity>
-
-      {/* Add Lead Sequence Modal */}
-      <Modal
-        visible={modalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {step === 1 ? 'Select Category' : 'Select Lead Type'}
-              </Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#64748b" />
-              </TouchableOpacity>
+          leading="menu"
+          actions={[
+            {
+              icon: 'notifications-outline',
+              onPress: () => navigation.navigate('Notifications'),
+              accessibilityLabel: 'Notifications',
+            },
+          ]}
+        >
+          <View style={styles.controls}>
+            <View
+              style={[
+                styles.search,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+              ]}
+            >
+              <Ionicons name="search" size={18} color={colors.textSubtle} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder={canSeeAllLeads ? 'Search leads or agents…' : 'Search your leads…'}
+                placeholderTextColor={colors.textSubtle}
+                style={[styles.searchInput, typography.body, { color: colors.text }]}
+                autoCorrect={false}
+                returnKeyType="search"
+                accessibilityLabel="Search leads"
+              />
+              {query.length > 0 ? (
+                <Pressable
+                  onPress={() => setQuery('')}
+                  pressedScale={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                >
+                  <Ionicons name="close-circle" size={18} color={colors.textSubtle} />
+                </Pressable>
+              ) : null}
             </View>
 
-            {step === 1 ? (
-              <View style={styles.modalOptions}>
-                <TouchableOpacity style={styles.modalBtn} onPress={() => handleSelectType('INDIVIDUAL')}>
-                  <Text style={styles.modalBtnText}>Individual</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.modalBtn} onPress={() => handleSelectType('FAMILY')}>
-                  <Text style={styles.modalBtnText}>Family</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.modalBtn} onPress={() => handleSelectType('CORPORATE')}>
-                  <Text style={styles.modalBtnText}>Corporate</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.modalOptions}>
-                <TouchableOpacity
-                  style={[styles.modalOptionCard, selectedCategory === 'quick' && styles.modalOptionCardActive]}
-                  onPress={() => setSelectedCategory('quick')}
-                >
-                  <Text style={[styles.modalBtnTextSecondary, selectedCategory === 'quick' && { color: '#ffffff' }]}>Quick Lead</Text>
-                  <Text style={[styles.modalSubText, selectedCategory === 'quick' && { color: '#bfdbfe' }]}>Minimal information required</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modalOptionCard, selectedCategory === 'normal' && styles.modalOptionCardActive]}
-                  onPress={() => setSelectedCategory('normal')}
-                >
-                  <Text style={[styles.modalBtnTextSecondary, selectedCategory === 'normal' && { color: '#ffffff' }]}>Complete detail</Text>
-                  <Text style={[styles.modalSubText, selectedCategory === 'normal' && { color: '#bfdbfe' }]}>Full profile details</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.modalProceedBtn, !selectedCategory && { opacity: 0.5 }]}
-                  onPress={handleProceed}
-                  disabled={!selectedCategory}
-                >
-                  <Text style={styles.modalProceedText}>Continue</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.modalBackBtn} onPress={() => setStep(1)}>
-                  <Text style={styles.modalBackText}>Back</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+            <SegmentedControl<ViewMode>
+              segments={[
+                { value: 'list', label: '', icon: 'list' },
+                { value: 'board', label: '', icon: 'grid' },
+              ]}
+              value={viewMode}
+              onChange={setViewMode}
+              style={styles.viewToggle}
+            />
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+
+          {viewMode === 'list' ? (
+            <SegmentedControl<StatusFilter>
+              segments={filterSegments}
+              value={filter}
+              onChange={setFilter}
+              variant="chips"
+              style={styles.filters}
+            />
+          ) : null}
+        </ScreenHeader>
+      }
+    >
+      {error && !loading ? (
+        <Banner
+          tone="warning"
+          title="Working from cached data"
+          description={error}
+          actionLabel="Retry now"
+          onAction={refresh}
+          style={[styles.banner, { marginHorizontal: gutter }]}
+        />
+      ) : null}
+
+      {viewMode === 'list' ? renderList() : renderBoard()}
+
+      <Fab
+        icon="add"
+        label="Add Lead"
+        onPress={() => navigation.navigate('SelectLeadCategory')}
+        accessibilityLabel="Add a new lead"
+      />
+
+      <Sheet
+        visible={!!menuLead}
+        onClose={() => setMenuLead(null)}
+        title={menuLead?.name}
+        subtitle={menuLead ? statusLabel[menuLead.status] ?? menuLead.status : undefined}
+        scrollable={false}
+      >
+        {menuLead ? (
+          <View style={styles.menu}>
+            <ListRow
+              title="View details"
+              subtitle="Full profile, contact and pipeline history"
+              icon="open-outline"
+              tone="brand"
+              onPress={() => {
+                const lead = menuLead;
+                setMenuLead(null);
+                openLead(lead);
+              }}
+            />
+            {menuLead.status !== 'PROSPECT' ? (
+              <ListRow
+                title="Mark as In Progress"
+                subtitle="You are actively working this lead"
+                icon="play-forward-outline"
+                tone="warning"
+                onPress={() => {
+                  const lead = menuLead;
+                  setMenuLead(null);
+                  changeStatus(lead, 'PROSPECT');
+                }}
+              />
+            ) : null}
+            {menuLead.status !== 'NOT_INTERESTED' ? (
+              <ListRow
+                title="Mark as Not Interested"
+                subtitle="Moves the lead out of the active pipeline"
+                icon="close-circle-outline"
+                tone="neutral"
+                onPress={() => {
+                  const lead = menuLead;
+                  setMenuLead(null);
+                  changeStatus(lead, 'NOT_INTERESTED');
+                }}
+              />
+            ) : (
+              <ListRow
+                title="Reactivate lead"
+                subtitle="Return it to the new-leads column"
+                icon="refresh-outline"
+                tone="success"
+                onPress={() => {
+                  const lead = menuLead;
+                  setMenuLead(null);
+                  changeStatus(lead, 'LEAD');
+                }}
+              />
+            )}
+            <ListRow
+              title="Delete lead"
+              subtitle="Permanently removes it for everyone"
+              icon="trash-outline"
+              destructive
+              onPress={() => {
+                const lead = menuLead;
+                setMenuLead(null);
+                setPendingDelete(lead);
+              }}
+            />
+          </View>
+        ) : null}
+      </Sheet>
+
+      <ConfirmDialog
+        visible={!!pendingDelete}
+        title={`Delete ${pendingDelete?.name ?? 'this lead'}?`}
+        message="This removes the lead from the shared database, so it disappears from the portal too. This cannot be undone."
+        confirmLabel="Delete"
+        tone="danger"
+        icon="trash-outline"
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
+  controls: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    paddingBottom: 12,
+    gap: spacing.sm,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#0f172a',
+  search: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    height: hitTarget.comfortable,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
+    borderWidth: 1,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748b',
+  searchInput: {
+    flex: 1,
+    padding: 0,
   },
   viewToggle: {
-    flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    padding: 4,
-  },
-  toggleBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  toggleBtnActive: {
-    backgroundColor: '#1d4ed8',
+    width: 96,
   },
   filters: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    gap: 8,
+    marginTop: spacing.md,
   },
-  filterBtn: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748b',
-    backgroundColor: '#e2e8f0',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  filterBtnActive: {
-    backgroundColor: '#1D4ED8',
-    color: '#ffffff',
+  banner: {
+    marginBottom: spacing.md,
   },
   listContent: {
-    padding: 16,
-    paddingTop: 4,
-    paddingBottom: 80, // Space for FAB
+    paddingTop: spacing.lg,
+    paddingBottom: 120,
+    gap: spacing.md,
   },
-  kanbanContainer: {
-    padding: 16,
-    paddingBottom: 80,
-    gap: 16,
+  column: {
+    gap: spacing.md,
   },
-  kanbanColumn: {
-    width: Dimensions.get('window').width * 0.85,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-  },
-  columnTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 12,
-    paddingHorizontal: 4,
-  },
-  loader: {
+  gridItem: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
-  emptyText: {
-    textAlign: 'center',
-    color: '#94a3b8',
-    marginTop: 40,
-    fontSize: 14,
+  board: {
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
   },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    backgroundColor: '#1D4ED8',
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
-  },
-  fabText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  modalOverlay: {
+  boardColumn: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    justifyContent: 'flex-end',
   },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 40,
-  },
-  modalHeader: {
+  boardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
   },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0f172a',
+  boardTitle: {
+    flex: 1,
   },
-  modalOptions: {
-    gap: 12,
-  },
-  modalBtn: {
-    backgroundColor: '#f1f5f9',
-    paddingVertical: 16,
-    borderRadius: 12,
+  boardCount: {
+    minWidth: 24,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
     alignItems: 'center',
   },
-  modalBtnText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1e293b',
+  boardList: {
+    gap: spacing.md,
+    paddingBottom: 120,
   },
-  modalOptionCard: {
-    backgroundColor: '#ffffff',
+  boardEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xxxl,
+    borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 12,
+    borderStyle: 'dashed',
   },
-  modalOptionCardActive: {
-    backgroundColor: '#1D4ED8',
-    borderColor: '#1D4ED8',
+  menu: {
+    paddingBottom: spacing.md,
   },
-  modalBtnTextSecondary: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  modalSubText: {
-    fontSize: 12,
-    color: '#64748b',
-    marginTop: 4,
-  },
-  modalProceedBtn: {
-    backgroundColor: '#0f172a',
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  modalProceedText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  modalBackBtn: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  modalBackText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-  }
 });

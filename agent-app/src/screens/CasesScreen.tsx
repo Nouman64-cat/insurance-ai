@@ -1,352 +1,489 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  TouchableOpacity,
-  TextInput,
-  Platform,
-  RefreshControl,
-  ScrollView,
-  Dimensions,
-  Share,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../theme/ThemeContext';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { View, StyleSheet, FlatList, ScrollView, TextInput, RefreshControl, Share } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useTheme } from '../theme/ThemeContext';
+import { spacing, radii, typography, hitTarget } from '../theme/tokens';
+import { ToneName } from '../theme/palette';
+import { useResponsive } from '../hooks/useResponsive';
+import { useNotifications } from '../notifications/NotificationContext';
 import { fetchCases, CaseItem } from '../api/cases';
 import { inviteEApplication, buildEApplicationLink } from '../api/eApplication';
-import { useNavigation } from '@react-navigation/native';
+import { formatRelativeTime } from '../notifications/types';
+import {
+  Screen,
+  ScreenHeader,
+  Text,
+  Card,
+  Badge,
+  Avatar,
+  Fab,
+  EmptyState,
+  SkeletonList,
+  SegmentedControl,
+  Banner,
+  Divider,
+  Pressable,
+} from '../components/ui';
+
+type ViewMode = 'list' | 'board';
+
+const STATUS_META: Record<string, { tone: ToneName; label: string }> = {
+  DRAFT: { tone: 'neutral', label: 'Draft' },
+  NEW: { tone: 'brand', label: 'New' },
+  QUOTED: { tone: 'brand', label: 'Quoted' },
+  UNDERWRITING: { tone: 'warning', label: 'Underwriting' },
+  IN_PROGRESS: { tone: 'warning', label: 'In Progress' },
+  PENDING: { tone: 'warning', label: 'Pending' },
+  APPROVED: { tone: 'success', label: 'Approved' },
+  ISSUED: { tone: 'success', label: 'Issued' },
+  DECLINED: { tone: 'danger', label: 'Declined' },
+  CLOSED: { tone: 'neutral', label: 'Closed' },
+};
+
+const PRIORITY_TONE: Record<string, ToneName> = {
+  HIGH: 'danger',
+  URGENT: 'danger',
+  NORMAL: 'neutral',
+  MEDIUM: 'warning',
+  LOW: 'neutral',
+};
+
+const metaFor = (status: string) => {
+  const key = (status ?? '').toUpperCase();
+  return STATUS_META[key] ?? { tone: 'neutral' as ToneName, label: status || 'Unknown' };
+};
+
+const BOARD_COLUMNS: { title: string; statuses: string[] }[] = [
+  { title: 'New', statuses: ['DRAFT', 'NEW', 'QUOTED'] },
+  { title: 'Underwriting', statuses: ['UNDERWRITING', 'IN_PROGRESS', 'PENDING'] },
+  { title: 'Closed', statuses: ['APPROVED', 'ISSUED', 'DECLINED', 'CLOSED'] },
+];
 
 export default function CasesScreen() {
+  const { colors } = useTheme();
+  const { gutter, isCompact, width, columns } = useResponsive();
+  const navigation = useNavigation<any>();
+  const { toast } = useNotifications();
+
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sendingLinkFor, setSendingLinkFor] = useState<string | null>(null);
-  const navigation = useNavigation<any>();
 
-  const handleSendEAppLink = async (item: CaseItem) => {
-    setSendingLinkFor(item.id);
-    try {
-      const invite = await inviteEApplication(item.id);
-      const link = buildEApplicationLink(invite.link_path);
-      await Share.share({ message: `Please complete your life insurance application here: ${link}` });
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to generate E-Application link');
-    } finally {
-      setSendingLinkFor(null);
-    }
-  };
-
-  const loadData = async () => {
-    setLoading(true);
+  const load = useCallback(async (options: { silent?: boolean } = {}) => {
+    if (!options.silent) setRefreshing(true);
     try {
       const data = await fetchCases();
       setCases(data);
-    } catch (e) {
-      console.log('Failed to fetch cases', e);
+      setError(null);
+    } catch (err: any) {
+      setError(err?.message ?? 'Could not load cases.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    loadData();
   }, []);
 
-  const filtered = cases.filter((c) =>
-    c.applicant_name.toLowerCase().includes(search.toLowerCase()) ||
-    c.case_number.toLowerCase().includes(search.toLowerCase())
+  useEffect(() => {
+    load({ silent: true });
+  }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load({ silent: true });
+    }, [load])
   );
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <View style={styles.headerTitleRow}>
-          <View>
-            <Text style={styles.title}>Cases</Text>
-            <Text style={styles.subtitle}>Active underwriting cases</Text>
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return cases;
+    return cases.filter(
+      (c) =>
+        c.applicant_name?.toLowerCase().includes(q) ||
+        c.case_number?.toLowerCase().includes(q) ||
+        c.customer_cnic?.toLowerCase().includes(q)
+    );
+  }, [cases, search]);
+
+  const sendEApplicationLink = useCallback(
+    async (item: CaseItem) => {
+      setSendingLinkFor(item.id);
+      try {
+        const invite = await inviteEApplication(item.id);
+        const link = buildEApplicationLink(invite.link_path);
+        await Share.share({
+          message: `Please complete your life insurance application here: ${link}`,
+        });
+      } catch (err: any) {
+        toast('Could not generate the link', {
+          body: err?.message ?? 'Please try again.',
+          tone: 'danger',
+          icon: 'alert-circle',
+        });
+      } finally {
+        setSendingLinkFor(null);
+      }
+    },
+    [toast]
+  );
+
+  const renderCard = (item: CaseItem, compact = false) => {
+    const meta = metaFor(item.status);
+    const priorityTone = PRIORITY_TONE[(item.priority ?? '').toUpperCase()] ?? 'neutral';
+    const sending = sendingLinkFor === item.id;
+
+    return (
+      <Card key={item.id} padding="lg" style={compact ? undefined : styles.card}>
+        <View style={styles.cardHeader}>
+          <Avatar name={item.applicant_name} tone={meta.tone} size={42} shape="rounded" />
+          <View style={styles.cardIdentity}>
+            <Text variant="title3" numberOfLines={1}>
+              {item.applicant_name || 'Applicant'}
+            </Text>
+            <Text variant="caption" color="muted" numberOfLines={1}>
+              {item.case_number}
+            </Text>
           </View>
-          <View style={styles.viewToggle}>
-            <TouchableOpacity onPress={() => setViewMode('list')} style={[styles.toggleBtn, viewMode === 'list' && styles.toggleBtnActive]}>
-              <Ionicons name="list" size={18} color={viewMode === 'list' ? '#fff' : '#64748b'} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => setViewMode('kanban')} style={[styles.toggleBtn, viewMode === 'kanban' && styles.toggleBtnActive]}>
-              <Ionicons name="apps" size={18} color={viewMode === 'kanban' ? '#fff' : '#64748b'} />
-            </TouchableOpacity>
-          </View>
+          <Badge label={meta.label} tone={meta.tone} variant="soft" dot />
         </View>
-        <TouchableOpacity
-          style={styles.addBtn}
-          onPress={() => navigation.navigate('AddCase')}
+
+        <View style={styles.meta}>
+          <Badge label={item.case_type} tone="neutral" variant="outline" icon="albums-outline" />
+          <Badge label={item.priority} tone={priorityTone} variant="soft" icon="flag-outline" />
+          <Text variant="micro" color="subtle" style={styles.metaTime}>
+            {formatRelativeTime(new Date(item.created_at).getTime())}
+          </Text>
+        </View>
+
+        <Divider spacingY="md" />
+
+        <View style={styles.actions}>
+          <Pressable
+            onPress={() => sendEApplicationLink(item)}
+            disabled={sending}
+            pressedScale={0.97}
+            accessibilityRole="button"
+            accessibilityLabel={`Send e-application link to ${item.applicant_name}`}
+            accessibilityState={{ disabled: sending, busy: sending }}
+            style={[
+              styles.action,
+              { backgroundColor: colors.tone.brand.soft, borderColor: colors.tone.brand.softBorder },
+              sending ? styles.actionBusy : null,
+            ]}
+          >
+            <Ionicons
+              name={sending ? 'hourglass-outline' : 'link-outline'}
+              size={15}
+              color={colors.tone.brand.on}
+            />
+            <Text variant="captionStrong" style={{ color: colors.tone.brand.on }} numberOfLines={1}>
+              {sending ? 'Generating…' : 'E-Application'}
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() =>
+              navigation.navigate('AgentConfidentialReport', {
+                caseId: item.id,
+                applicantName: item.applicant_name,
+              })
+            }
+            pressedScale={0.97}
+            accessibilityRole="button"
+            accessibilityLabel={`File the agent's confidential report for ${item.applicant_name}`}
+            style={[
+              styles.action,
+              { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
+            ]}
+          >
+            <Ionicons name="lock-closed-outline" size={15} color={colors.textMuted} />
+            <Text variant="captionStrong" color="muted" numberOfLines={1}>
+              File ACR
+            </Text>
+          </Pressable>
+        </View>
+      </Card>
+    );
+  };
+
+  const gridColumns = viewMode === 'list' && !isCompact ? columns(320) : 1;
+
+  return (
+    <Screen
+      scrollable={false}
+      padded={false}
+      header={
+        <ScreenHeader
+          title="Cases"
+          subtitle={
+            loading ? 'Loading…' : `${cases.length} ${cases.length === 1 ? 'case' : 'cases'} in underwriting`
+          }
+          leading="menu"
         >
-          <Ionicons name="add-circle" size={18} color="#ffffff" />
-          <Text style={styles.addBtnText}>New Case</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.controls}>
+            <View style={[styles.search, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Ionicons name="search" size={18} color={colors.textSubtle} />
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder="Search by case number or applicant…"
+                placeholderTextColor={colors.textSubtle}
+                style={[styles.searchInput, typography.body, { color: colors.text }]}
+                autoCorrect={false}
+                returnKeyType="search"
+                accessibilityLabel="Search cases"
+              />
+              {search.length > 0 ? (
+                <Pressable
+                  onPress={() => setSearch('')}
+                  pressedScale={0.9}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                >
+                  <Ionicons name="close-circle" size={18} color={colors.textSubtle} />
+                </Pressable>
+              ) : null}
+            </View>
 
-      <View style={styles.searchBar}>
-        <Ionicons name="search-outline" size={18} color="#94a3b8" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search by case no or applicant..."
-          placeholderTextColor="#94a3b8"
-          value={search}
-          onChangeText={setSearch}
+            <SegmentedControl<ViewMode>
+              segments={[
+                { value: 'list', label: '', icon: 'list' },
+                { value: 'board', label: '', icon: 'grid' },
+              ]}
+              value={viewMode}
+              onChange={setViewMode}
+              style={styles.viewToggle}
+            />
+          </View>
+        </ScreenHeader>
+      }
+    >
+      {error && !loading ? (
+        <Banner
+          tone="warning"
+          title="Could not refresh cases"
+          description={error}
+          actionLabel="Retry"
+          onAction={() => load()}
+          style={[styles.banner, { marginHorizontal: gutter }]}
         />
-      </View>
+      ) : null}
 
-      {viewMode === 'kanban' ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.kanbanContainer}>
-          <View style={styles.kanbanColumn}>
-            <Text style={styles.columnTitle}>Draft / New</Text>
-            <FlatList
-              data={filtered.filter(c => ['DRAFT', 'NEW', 'QUOTED'].includes(c.status?.toUpperCase()))}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => renderCard(item)}
-            />
-          </View>
-          <View style={styles.kanbanColumn}>
-            <Text style={styles.columnTitle}>In Progress</Text>
-            <FlatList
-              data={filtered.filter(c => ['UNDERWRITING', 'IN_PROGRESS', 'PENDING'].includes(c.status?.toUpperCase()))}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => renderCard(item)}
-            />
-          </View>
-          <View style={styles.kanbanColumn}>
-            <Text style={styles.columnTitle}>Closed / Other</Text>
-            <FlatList
-              data={filtered.filter(c => !['DRAFT', 'NEW', 'QUOTED', 'UNDERWRITING', 'IN_PROGRESS', 'PENDING'].includes(c.status?.toUpperCase()))}
-              keyExtractor={(item) => item.id}
-              showsVerticalScrollIndicator={false}
-              renderItem={({ item }) => renderCard(item)}
-            />
-          </View>
+      {loading ? (
+        <View style={{ paddingHorizontal: gutter }}>
+          <SkeletonList count={3} />
+        </View>
+      ) : viewMode === 'board' ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.board, { paddingHorizontal: gutter }]}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={() => load()} tintColor={colors.primary} />
+          }
+        >
+          {BOARD_COLUMNS.map((column) => {
+            const items = filtered.filter((c) => column.statuses.includes((c.status ?? '').toUpperCase()));
+            return (
+              <View key={column.title} style={[styles.boardColumn, { width: isCompact ? width * 0.82 : 320 }]}>
+                <View style={[styles.boardHeader, { backgroundColor: colors.surfaceSunken }]}>
+                  <Text variant="calloutStrong" style={styles.boardTitle} numberOfLines={1}>
+                    {column.title}
+                  </Text>
+                  <View style={[styles.boardCount, { backgroundColor: colors.surface }]}>
+                    <Text variant="micro" color="muted">
+                      {items.length}
+                    </Text>
+                  </View>
+                </View>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.boardList}
+                  nestedScrollEnabled
+                >
+                  {items.length === 0 ? (
+                    <View style={[styles.boardEmpty, { borderColor: colors.border }]}>
+                      <Ionicons name="folder-outline" size={20} color={colors.textSubtle} />
+                      <Text variant="caption" color="subtle">
+                        Nothing here yet
+                      </Text>
+                    </View>
+                  ) : (
+                    items.map((item) => renderCard(item, true))
+                  )}
+                </ScrollView>
+              </View>
+            );
+          })}
         </ScrollView>
       ) : (
         <FlatList
+          key={`cases-${gridColumns}`}
           data={filtered}
           keyExtractor={(item) => item.id}
-          refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} />}
-          contentContainerStyle={styles.listContent}
+          numColumns={gridColumns}
+          columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}
+          contentContainerStyle={[
+            styles.listContent,
+            { paddingHorizontal: gutter },
+            filtered.length === 0 ? styles.listEmpty : null,
+          ]}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => load()}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+              progressBackgroundColor={colors.surface}
+            />
+          }
           renderItem={({ item }) => renderCard(item)}
+          ListEmptyComponent={
+            <EmptyState
+              icon={search ? 'search-outline' : 'folder-open-outline'}
+              title={search ? 'No matching cases' : 'No cases yet'}
+              description={
+                search
+                  ? 'Try a different case number or applicant name.'
+                  : 'Cases are created when a lead is ready for underwriting.'
+              }
+              actionLabel={search ? 'Clear search' : 'New case'}
+              onAction={search ? () => setSearch('') : () => navigation.navigate('AddCase')}
+            />
+          }
         />
       )}
-    </SafeAreaView>
-  );
 
-  function renderCard(item: CaseItem) {
-    return (
-      <View style={styles.card}>
-        <View style={styles.cardHeader}>
-          <View>
-            <Text style={styles.caseNum}>{item.case_number}</Text>
-            <Text style={styles.applicantName}>{item.applicant_name}</Text>
-          </View>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>{item.status}</Text>
-          </View>
-        </View>
-        <View style={styles.cardFooter}>
-          <Text style={styles.metaText}>Type: {item.case_type}</Text>
-          <Text style={styles.metaText}>Priority: {item.priority}</Text>
-        </View>
-        <View style={styles.preUwRow}>
-          <TouchableOpacity
-            style={styles.preUwBtn}
-            onPress={() => handleSendEAppLink(item)}
-            disabled={sendingLinkFor === item.id}
-          >
-            <Ionicons name="link-outline" size={14} color="#1d4ed8" />
-            <Text style={styles.preUwBtnText}>
-              {sendingLinkFor === item.id ? 'Generating…' : 'Send E-Application'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.preUwBtn}
-            onPress={() => navigation.navigate('AgentConfidentialReport', { caseId: item.id, applicantName: item.applicant_name })}
-          >
-            <Ionicons name="lock-closed-outline" size={14} color="#1d4ed8" />
-            <Text style={styles.preUwBtnText}>File ACR</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
-  }
+      <Fab
+        icon="add"
+        label="New Case"
+        onPress={() => navigation.navigate('AddCase')}
+        accessibilityLabel="Create a new case"
+      />
+    </Screen>
+  );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  search: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
-    padding: 16,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  addBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1d4ed8',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 6,
-  },
-  addBtnText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  viewToggle: {
-    flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    padding: 4,
-  },
-  toggleBtn: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  toggleBtnActive: {
-    backgroundColor: '#1d4ed8',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    margin: 16,
-    paddingHorizontal: 12,
-    borderRadius: 10,
+    gap: spacing.sm,
+    height: hitTarget.comfortable,
+    paddingHorizontal: spacing.md,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
   },
   searchInput: {
     flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    color: '#0f172a',
-    fontSize: 14,
+    padding: 0,
+  },
+  viewToggle: {
+    width: 96,
+  },
+  banner: {
+    marginBottom: spacing.md,
   },
   listContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    gap: 12,
+    paddingTop: spacing.lg,
+    paddingBottom: 120,
+    gap: spacing.md,
+  },
+  listEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  column: {
+    gap: spacing.md,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    marginBottom: 12,
-  },
-  kanbanContainer: {
-    padding: 16,
-    gap: 16,
-  },
-  kanbanColumn: {
-    width: Dimensions.get('window').width * 0.85,
-    backgroundColor: '#f8fafc',
-    borderRadius: 12,
-  },
-  columnTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 12,
-    paddingHorizontal: 4,
+    flex: 1,
   },
   cardHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    gap: spacing.md,
   },
-  caseNum: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1d4ed8',
-    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  cardIdentity: {
+    flex: 1,
   },
-  applicantName: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginTop: 2,
-  },
-  badge: {
-    backgroundColor: '#f1f5f9',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#cbd5e1',
-  },
-  badgeText: {
-    color: '#334155',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  cardFooter: {
+  meta: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-    paddingTop: 8,
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
-  metaText: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '500',
+  metaTime: {
+    marginLeft: 'auto',
   },
-  preUwRow: {
+  actions: {
     flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
+    gap: spacing.sm,
   },
-  preUwBtn: {
+  action: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 4,
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingVertical: 7,
   },
-  preUwBtnText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#1d4ed8',
+  actionBusy: {
+    opacity: 0.7,
+  },
+  board: {
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
+  },
+  boardColumn: {
+    flex: 1,
+  },
+  boardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.md,
+    borderRadius: radii.md,
+    marginBottom: spacing.md,
+  },
+  boardTitle: {
+    flex: 1,
+  },
+  boardCount: {
+    minWidth: 24,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 2,
+    borderRadius: radii.pill,
+    alignItems: 'center',
+  },
+  boardList: {
+    gap: spacing.md,
+    paddingBottom: 120,
+  },
+  boardEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.xxxl,
+    borderRadius: radii.lg,
+    borderWidth: 1,
+    borderStyle: 'dashed',
   },
 });

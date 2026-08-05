@@ -1,384 +1,411 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, RefreshControl, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import MetricCard from '../components/MetricCard';
-import { fetchAgentLeads, UnifiedLead } from '../api/leads';
-import { logout } from '../api/auth';
-import Button from '../components/Button';
-import { useNavigation, DrawerActions } from '@react-navigation/native';
+import React, { useMemo } from 'react';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
+import { spacing, radii } from '../theme/tokens';
+import { statusLabel, entityTone, ToneName } from '../theme/palette';
+import { useResponsive } from '../hooks/useResponsive';
+import { useSession } from '../context/SessionContext';
+import { useNotifications } from '../notifications/NotificationContext';
+import { useLeadSync } from '../sync/LeadSyncProvider';
+import { UnifiedLead } from '../api/leads';
+import LeadCard from '../components/LeadCard';
+import {
+  Screen,
+  ScreenHeader,
+  Text,
+  Card,
+  StatTile,
+  SectionHeader,
+  ProgressBar,
+  EmptyState,
+  Pressable,
+  Banner,
+  SkeletonList,
+} from '../components/ui';
+
+/** Monthly conversion target. Replace with a tenant setting once one exists. */
+const MONTHLY_TARGET = 20;
+
+interface QuickAction {
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+  tone: ToneName;
+  screen: string;
+}
+
+const QUICK_ACTIONS: QuickAction[] = [
+  { label: 'New lead', icon: 'add-circle', tone: 'brand', screen: 'SelectLeadCategory' },
+  { label: 'Proposals', icon: 'document-text', tone: 'success', screen: 'Proposals' },
+  { label: 'Cases', icon: 'folder-open', tone: 'warning', screen: 'Cases' },
+  { label: 'Copilot', icon: 'sparkles', tone: 'accent', screen: 'Chat' },
+  { label: 'Underwriting', icon: 'shield-checkmark', tone: 'info', screen: 'Underwriting' },
+];
+
+const greeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  return 'Good evening';
+};
 
 export default function DashboardScreen() {
-  const [leads, setLeads] = useState<UnifiedLead[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { colors } = useTheme();
+  const { gutter, isCompact } = useResponsive();
   const navigation = useNavigation<any>();
-  const { colors, isDark } = useTheme();
+  const { user, canSeeAllLeads } = useSession();
+  const { unreadCount } = useNotifications();
+  const { leads, loading, syncing, error, refresh } = useLeadSync();
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const data = await fetchAgentLeads();
-      setLeads(data);
-    } catch (err) {
-      console.log('Failed to fetch leads on dashboard', err);
-    } finally {
-      setLoading(false);
+  const stats = useMemo(() => {
+    const byStatus: Record<string, number> = {};
+    const byType: Record<string, number> = {};
+    // Anything created since local midnight counts as "today".
+    const startOfToday = new Date().setHours(0, 0, 0, 0);
+    let addedToday = 0;
+
+    for (const lead of leads) {
+      byStatus[lead.status] = (byStatus[lead.status] ?? 0) + 1;
+      byType[lead.type] = (byType[lead.type] ?? 0) + 1;
+      if (new Date(lead.created_at).getTime() >= startOfToday) addedToday += 1;
     }
-  };
 
-  useEffect(() => {
-    loadData();
-  }, []);
+    const converted = byStatus.UNDERWRITING_READY ?? 0;
+    return {
+      total: leads.length,
+      newLeads: byStatus.LEAD ?? 0,
+      inProgress: byStatus.PROSPECT ?? 0,
+      underwriting: converted,
+      dead: byStatus.NOT_INTERESTED ?? 0,
+      individual: byType.INDIVIDUAL ?? 0,
+      family: byType.FAMILY ?? 0,
+      corporate: byType.CORPORATE ?? 0,
+      addedToday,
+      // Active pipeline excludes dead leads — that is the number an agent works.
+      active: leads.length - (byStatus.NOT_INTERESTED ?? 0),
+      converted,
+    };
+  }, [leads]);
 
-  const indLeads = leads.filter(l => l.type === 'INDIVIDUAL').length;
-  const famLeads = leads.filter(l => l.type === 'FAMILY').length;
-  const corpLeads = leads.filter(l => l.type === 'CORPORATE').length;
+  const recentLeads = useMemo(() => leads.slice(0, 4), [leads]);
+
+  const goToLeads = () => navigation.navigate('Leads');
+
+  // React Navigation bubbles an unhandled `navigate` up the navigator tree, so
+  // one call reaches a sibling tab and a root-stack screen alike. Resolving the
+  // parent by hand is brittle — from a tab screen `getParent()` is the drawer,
+  // not the stack that actually owns these routes.
+  const runAction = (action: QuickAction) => navigation.navigate(action.screen);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
-      <ScrollView 
-        contentContainerStyle={styles.container}
-        refreshControl={<RefreshControl refreshing={loading} onRefresh={loadData} tintColor={colors.primary} />}
+    <Screen
+      refreshing={syncing && !loading}
+      onRefresh={refresh}
+      padded={false}
+      header={
+        <ScreenHeader
+          title={user?.fullName?.split(' ')[0] ?? 'Agent'}
+          subtitle={greeting()}
+          leading="menu"
+          actions={[
+            {
+              icon: 'notifications-outline',
+              onPress: () => navigation.navigate('Notifications'),
+              accessibilityLabel: 'Notifications',
+              badgeCount: unreadCount,
+            },
+          ]}
+        />
+      }
+      contentContainerStyle={{ paddingHorizontal: gutter }}
+    >
+      {error && !loading ? (
+        <Banner
+          tone="warning"
+          title="Showing the last synced data"
+          description={error}
+          actionLabel="Retry now"
+          onAction={refresh}
+          style={styles.banner}
+        />
+      ) : null}
+
+      {/* ── Hero ──────────────────────────────────────────────────────────── */}
+
+      <Card
+        padding="xl"
+        level={2}
+        style={[styles.hero, { backgroundColor: colors.tone.brand.solid, borderColor: 'transparent' }]}
+        onPress={goToLeads}
+        accessibilityLabel={`${stats.active} active leads. Opens the leads board.`}
       >
-        <View style={[styles.header, { backgroundColor: colors.surface, borderColor: colors.border, justifyContent: 'flex-start', alignItems: 'flex-start' }]}>
-          <TouchableOpacity style={[styles.menuIconBtn, { backgroundColor: isDark ? colors.border : '#eff6ff', marginRight: 16, marginTop: 2 }]} onPress={() => navigation.dispatch(DrawerActions.toggleDrawer())}>
-            <Ionicons name="menu-outline" size={26} color={colors.primary} />
-          </TouchableOpacity>
-          <View style={{ flex: 1 }}>
-            <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 12}}>
-              <Ionicons name="shield-checkmark" size={22} color={colors.primary} style={{marginRight: 6}} />
-              <Text style={{fontSize: 20, fontWeight: '900', color: colors.text, letterSpacing: -0.5}}>Rizviz</Text>
-            </View>
-            <Text style={[styles.greeting, { color: colors.textMuted }]}>Welcome back,</Text>
-            <Text style={[styles.title, { color: colors.text }]}>Agent Workspace</Text>
-            <Text style={[styles.subtitle, { color: colors.textMuted }]}>Insurance Portal & Lifecycle Hub</Text>
+        <View style={styles.heroTop}>
+          <View style={styles.heroText}>
+            <Text variant="overline" uppercase style={{ color: colors.tone.brand.onSolid, opacity: 0.75 }}>
+              {canSeeAllLeads ? 'Tenant pipeline' : 'Your pipeline'}
+            </Text>
+            <Text style={[styles.heroValue, { color: colors.tone.brand.onSolid }]}>
+              {loading ? '—' : stats.active}
+            </Text>
+            <Text variant="caption" style={{ color: colors.tone.brand.onSolid, opacity: 0.85 }}>
+              active {stats.active === 1 ? 'lead' : 'leads'}
+              {stats.addedToday > 0 ? ` · ${stats.addedToday} added today` : ''}
+            </Text>
+          </View>
+          <View style={styles.heroIcon}>
+            <Ionicons name="people" size={26} color={colors.tone.brand.onSolid} />
           </View>
         </View>
 
-        <View style={styles.metricsGrid}>
-          <View style={styles.metricCol}>
-            <MetricCard 
-              title="Total Leads" 
-              value={leads.length} 
-              accent="blue" 
-              iconName="people" 
-            />
-            <MetricCard 
-              title="Individual" 
-              value={indLeads} 
-              accent="slate" 
-              iconName="person" 
-            />
-          </View>
-          <View style={styles.metricCol}>
-            <MetricCard 
-              title="Family" 
-              value={famLeads} 
-              accent="slate" 
-              iconName="people-circle" 
-            />
-            <MetricCard 
-              title="Corporate" 
-              value={corpLeads} 
-              accent="slate" 
-              iconName="business" 
-            />
-          </View>
+        <View style={styles.heroDivider} />
+
+        <View style={styles.heroBreakdown}>
+          <HeroStat label="Individual" value={stats.individual} tone="brand" />
+          <HeroStat label="Family" value={stats.family} tone="brand" />
+          <HeroStat label="Corporate" value={stats.corporate} tone="brand" />
         </View>
+      </Card>
 
-        {/* Quick Module Access Grid */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Modules & Access</Text>
-            <Ionicons name="apps-outline" size={20} color={colors.textMuted} />
-          </View>
-          
-          <View style={styles.gridContainer}>
-            {/* Full Access Modules */}
-            <TouchableOpacity 
-              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
-              onPress={() => navigation.navigate('Proposals')}
+      {/* ── Quick actions ─────────────────────────────────────────────────── */}
+
+      <SectionHeader title="Quick actions" icon="flash-outline" />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.actions}
+        style={styles.actionsScroll}
+      >
+        {QUICK_ACTIONS.map((action) => {
+          const tone = colors.tone[action.tone];
+          return (
+            <Pressable
+              key={action.label}
+              onPress={() => runAction(action)}
+              pressedScale={0.94}
+              accessibilityRole="button"
+              accessibilityLabel={action.label}
+              style={styles.action}
             >
-              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
-                <Ionicons name="document-text" size={24} color={colors.primary} />
+              <View style={[styles.actionIcon, { backgroundColor: tone.soft, borderColor: tone.softBorder }]}>
+                <Ionicons name={action.icon} size={24} color={tone.on} />
               </View>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Proposals</Text>
-                <Text style={[styles.cardAccessWrite, { color: colors.primary }]}>Full Access</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
-              onPress={() => navigation.navigate('Cases')}
-            >
-              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
-                <Ionicons name="folder-open" size={24} color={colors.primary} />
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Cases</Text>
-                <Text style={[styles.cardAccessWrite, { color: colors.primary }]}>Full Access</Text>
-              </View>
-            </TouchableOpacity>
-
-            {/* Read Only Modules */}
-            <TouchableOpacity 
-              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
-              onPress={() => navigation.navigate('Underwriting')}
-            >
-              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
-                <Ionicons name="analytics" size={24} color={colors.primary} />
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Underwriting</Text>
-                <Text style={[styles.cardAccessRead, { color: colors.textMuted }]}>Read-Only</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
-              onPress={() => navigation.navigate('PrePolicyIssuance')}
-            >
-              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
-                <Ionicons name="shield-checkmark" size={24} color={colors.primary} />
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Pre-Issuance</Text>
-                <Text style={[styles.cardAccessRead, { color: colors.textMuted }]}>Read-Only</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
-              onPress={() => navigation.navigate('PostPolicyIssuance')}
-            >
-              <View style={[styles.cardIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
-                <Ionicons name="ribbon" size={24} color={colors.primary} />
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>Post-Issuance</Text>
-                <Text style={[styles.cardAccessRead, { color: colors.textMuted }]}>Read-Only</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity 
-              style={[styles.gridCard, { backgroundColor: colors.surface, borderColor: colors.border }]} 
-              onPress={() => navigation.navigate('Chat')}
-            >
-              <View style={[styles.cardIconBox, { backgroundColor: colors.primary }]}>
-                <Ionicons name="sparkles" size={24} color="#ffffff" />
-              </View>
-              <View style={styles.cardInfo}>
-                <Text style={[styles.cardTitle, { color: colors.text }]}>AI Copilot</Text>
-                <Text style={[styles.cardAccessAssistant, { color: colors.text }]}>Assistant</Text>
-              </View>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Pipeline Overview</Text>
-            <Ionicons name="stats-chart" size={20} color={colors.textMuted} />
-          </View>
-          <View style={[styles.pipelineCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.pipeStat}>
-              <View style={[styles.pipeIconBox, { backgroundColor: isDark ? colors.border : '#eff6ff' }]}>
-                <Ionicons name="star" size={18} color={colors.primary} />
-              </View>
-              <Text style={[styles.pipeVal, { color: colors.primary }]}>{leads.filter(l => l.status === 'LEAD').length}</Text>
-              <Text style={styles.pipeLabel}>New Leads</Text>
-            </View>
-            
-            <View style={[styles.pipeDivider, { backgroundColor: colors.border }]} />
-            
-            <View style={styles.pipeStat}>
-              <View style={[styles.pipeIconBox, { backgroundColor: isDark ? colors.border : '#f1f5f9' }]}>
-                <Ionicons name="time" size={18} color={colors.textMuted} />
-              </View>
-              <Text style={[styles.pipeVal, { color: colors.textMuted }]}>{leads.filter(l => l.status === 'PROSPECT').length}</Text>
-              <Text style={styles.pipeLabel}>In Progress</Text>
-            </View>
-
-            <View style={[styles.pipeDivider, { backgroundColor: colors.border }]} />
-
-            <View style={styles.pipeStat}>
-              <View style={[styles.pipeIconBox, { backgroundColor: isDark ? colors.border : '#f8fafc' }]}>
-                <Ionicons name="close-circle" size={18} color={isDark ? '#64748b' : '#94a3b8'} />
-              </View>
-              <Text style={[styles.pipeVal, { color: isDark ? '#64748b' : '#94a3b8' }]}>{leads.filter(l => l.status === 'NOT_INTERESTED').length}</Text>
-              <Text style={styles.pipeLabel}>Dead</Text>
-            </View>
-          </View>
-        </View>
+              <Text variant="micro" color="muted" numberOfLines={1} align="center">
+                {action.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </ScrollView>
-    </SafeAreaView>
+
+      {/* ── Pipeline stats ────────────────────────────────────────────────── */}
+
+      <SectionHeader title="Pipeline" icon="git-commit-outline" actionLabel="See all" onAction={goToLeads} />
+      <View style={[styles.grid, isCompact ? null : styles.gridWide]}>
+        <StatTile
+          label={statusLabel.LEAD}
+          value={stats.newLeads}
+          caption="Awaiting first contact"
+          icon="star"
+          tone="brand"
+          loading={loading}
+          onPress={goToLeads}
+        />
+        <StatTile
+          label={statusLabel.PROSPECT}
+          value={stats.inProgress}
+          caption="Being actively worked"
+          icon="time"
+          tone="warning"
+          loading={loading}
+          onPress={goToLeads}
+        />
+      </View>
+      <View style={[styles.grid, isCompact ? null : styles.gridWide]}>
+        <StatTile
+          label={statusLabel.UNDERWRITING_READY}
+          value={stats.underwriting}
+          caption="Handed to underwriting"
+          icon="shield-checkmark"
+          tone="accent"
+          loading={loading}
+          onPress={goToLeads}
+        />
+        <StatTile
+          label={statusLabel.NOT_INTERESTED}
+          value={stats.dead}
+          caption="Out of the pipeline"
+          icon="close-circle"
+          tone="neutral"
+          loading={loading}
+          onPress={goToLeads}
+        />
+      </View>
+
+      {/* ── Target ────────────────────────────────────────────────────────── */}
+
+      <SectionHeader title="Monthly target" icon="trophy-outline" />
+      <Card padding="lg" style={styles.section}>
+        <ProgressBar
+          value={stats.converted / MONTHLY_TARGET}
+          label="Leads handed to underwriting"
+          showValue
+          tone={stats.converted >= MONTHLY_TARGET ? 'success' : 'brand'}
+          height={10}
+        />
+        <Text variant="caption" color="muted" style={styles.targetCaption}>
+          {stats.converted} of {MONTHLY_TARGET} this month
+          {stats.converted >= MONTHLY_TARGET
+            ? ' — target met.'
+            : ` · ${MONTHLY_TARGET - stats.converted} to go.`}
+        </Text>
+      </Card>
+
+      {/* ── Recent ────────────────────────────────────────────────────────── */}
+
+      <SectionHeader
+        title="Recent leads"
+        icon="time-outline"
+        count={leads.length}
+        actionLabel={leads.length > 0 ? 'See all' : undefined}
+        onAction={leads.length > 0 ? goToLeads : undefined}
+      />
+
+      {loading ? (
+        <SkeletonList count={2} />
+      ) : recentLeads.length === 0 ? (
+        <Card padding="none" variant="outline" bordered={false} style={styles.section}>
+          <EmptyState
+            compact
+            icon="people-outline"
+            title="No leads yet"
+            description="Create your first lead — it syncs to the web portal straight away."
+            actionLabel="Add a lead"
+            onAction={() => navigation.navigate('SelectLeadCategory')}
+          />
+        </Card>
+      ) : (
+        <View style={styles.recent}>
+          {recentLeads.map((lead: UnifiedLead) => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              compact
+              showOwner={canSeeAllLeads}
+              onPress={() => navigation.navigate('LeadDetail', { leadId: lead.id })}
+            />
+          ))}
+        </View>
+      )}
+
+      <View style={styles.bottomSpace} />
+    </Screen>
+  );
+}
+
+function HeroStat({ label, value, tone }: { label: string; value: number; tone: ToneName }) {
+  const { colors } = useTheme();
+  const onSolid = colors.tone[tone].onSolid;
+  return (
+    <View style={styles.heroStat}>
+      <Text style={[styles.heroStatValue, { color: onSolid }]}>{value}</Text>
+      <Text variant="micro" style={{ color: onSolid, opacity: 0.75 }}>
+        {label}
+      </Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
+  banner: {
+    marginTop: spacing.md,
   },
-  container: {
-    padding: 16,
-    paddingBottom: 40,
+  hero: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.xxl,
   },
-  header: {
+  heroTop: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: '#f1f5f9',
+    gap: spacing.lg,
   },
-  greeting: {
-    fontSize: 14,
-    color: '#64748b',
-    fontWeight: '600',
-    marginBottom: 4,
+  heroText: {
+    flex: 1,
   },
-  title: {
-    fontSize: 26,
+  heroValue: {
+    fontSize: 44,
+    lineHeight: 50,
     fontWeight: '800',
-    color: '#0f172a',
-    letterSpacing: -0.5,
+    letterSpacing: -1.5,
+    marginTop: spacing.xs,
   },
-  subtitle: {
-    fontSize: 13,
-    marginTop: 2,
+  heroIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: radii.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // A translucent white tile reads correctly on the solid brand fill in both
+    // themes, where a fixed hex would not.
+    backgroundColor: 'rgba(255, 255, 255, 0.18)',
   },
-  menuIconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  heroDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255, 255, 255, 0.28)',
+    marginVertical: spacing.lg,
+  },
+  heroBreakdown: {
+    flexDirection: 'row',
+  },
+  heroStat: {
+    flex: 1,
+  },
+  heroStatValue: {
+    fontSize: 20,
+    lineHeight: 26,
+    fontWeight: '800',
+  },
+  actionsScroll: {
+    marginBottom: spacing.xxl,
+    // Lets the row bleed past the screen gutter without clipping the tiles.
+    marginHorizontal: -spacing.xs,
+  },
+  actions: {
+    gap: spacing.lg,
+    paddingHorizontal: spacing.xs,
+  },
+  action: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    width: 68,
+  },
+  actionIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: radii.lg,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  metricsGrid: {
+  grid: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.md,
+    marginBottom: spacing.md,
   },
-  metricCol: {
-    flex: 1,
+  gridWide: {
+    gap: spacing.lg,
   },
   section: {
-    marginTop: 28,
+    marginBottom: spacing.xxl,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
-    paddingHorizontal: 4,
+  targetCaption: {
+    marginTop: spacing.md,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1e293b',
-    letterSpacing: -0.3,
+  recent: {
+    gap: spacing.md,
   },
-  gridContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
+  bottomSpace: {
+    height: spacing.xxl,
   },
-  gridCard: {
-    width: '48%',
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  cardIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  cardInfo: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 2,
-  },
-  cardAccessWrite: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#1d4ed8',
-  },
-  cardAccessRead: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  cardAccessAssistant: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  pipelineCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    padding: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.03,
-    shadowRadius: 10,
-    elevation: 2,
-  },
-  pipeStat: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  pipeIconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  pipeDivider: {
-    width: 1,
-    backgroundColor: '#e2e8f0',
-    marginHorizontal: 10,
-  },
-  pipeVal: {
-    fontSize: 22,
-    fontWeight: '800',
-    marginBottom: 4,
-  },
-  pipeLabel: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '600',
-  }
 });

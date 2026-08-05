@@ -1,567 +1,895 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Input from '../components/Input';
-import Button from '../components/Button';
-import Accordion from '../components/Accordion';
-import InfoBanner from '../components/InfoBanner';
-import CheckboxCard from '../components/CheckboxCard';
-import SelectInput from '../components/SelectInput';
-import { Ionicons } from '@expo/vector-icons';
-import { createIndividualLead, createFamilyLead, createCorporateLead, EntityType, fetchBranches, fetchInsurancePlans, Branch, InsurancePlan } from '../api/leads';
-import api from '../api/api';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { useTheme } from '../theme/ThemeContext';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTheme } from '../theme/ThemeContext';
+import { spacing } from '../theme/tokens';
+import { entityLabel } from '../theme/palette';
+import { useResponsive } from '../hooks/useResponsive';
+import { useSession } from '../context/SessionContext';
+import { useNotifications } from '../notifications/NotificationContext';
+import { useLeadSync } from '../sync/LeadSyncProvider';
+import {
+  createIndividualLead,
+  createFamilyLead,
+  createCorporateLead,
+  fetchBranches,
+  fetchInsurancePlans,
+  EntityType,
+  Branch,
+  InsurancePlan,
+} from '../api/leads';
 import { RootStackParamList } from '../navigation/AppNavigator';
+import Accordion from '../components/Accordion';
+import CheckboxCard from '../components/CheckboxCard';
+import {
+  Screen,
+  ScreenHeader,
+  Text,
+  Card,
+  Field,
+  Select,
+  Button,
+  Banner,
+  Badge,
+  Divider,
+} from '../components/ui';
 
-type AddLeadNavProp = NativeStackNavigationProp<RootStackParamList, 'AddLead'>;
-type AddLeadRouteProp = RouteProp<RootStackParamList, 'AddLead'>;
-type LeadCategory = 'quick' | 'normal';
+type AddLeadNav = NativeStackNavigationProp<RootStackParamList, 'AddLead'>;
+type AddLeadRoute = RouteProp<RootStackParamList, 'AddLead'>;
+type LeadDepth = 'quick' | 'normal';
 
 const PROVINCES = [
-  { label: 'Punjab', value: 'Punjab' },
-  { label: 'Sindh', value: 'Sindh' },
-  { label: 'Khyber Pakhtunkhwa', value: 'Khyber Pakhtunkhwa' },
-  { label: 'Balochistan', value: 'Balochistan' },
-  { label: 'Gilgit-Baltistan', value: 'Gilgit-Baltistan' },
-  { label: 'Azad Jammu & Kashmir', value: 'Azad Jammu & Kashmir' },
-  { label: 'Islamabad Capital Territory', value: 'Islamabad Capital Territory' },
-];
+  'Punjab',
+  'Sindh',
+  'Khyber Pakhtunkhwa',
+  'Balochistan',
+  'Gilgit-Baltistan',
+  'Azad Jammu & Kashmir',
+  'Islamabad Capital Territory',
+].map((p) => ({ label: p, value: p }));
+
+const GENDERS = ['Male', 'Female', 'Other'].map((g) => ({ label: g, value: g }));
+const MARITAL = ['Single', 'Married', 'Divorced', 'Widowed'].map((m) => ({ label: m, value: m }));
+const SMOKING = ['Non-smoker', 'Former smoker', 'Occasional smoker', 'Regular smoker'].map((s) => ({
+  label: s,
+  value: s,
+}));
+const ALCOHOL = ['None', 'Occasional', 'Moderate', 'Frequent'].map((a) => ({ label: a, value: a }));
+const EXERCISE = ['Sedentary', 'Light', 'Moderate', 'Active', 'Very active'].map((e) => ({
+  label: e,
+  value: e,
+}));
+const RELATIONSHIPS = ['Spouse', 'Child', 'Parent', 'Sibling', 'Other'].map((r) => ({
+  label: r,
+  value: r,
+}));
+
+/** Empty for every field, so `resetForm` and the initial state cannot drift. */
+const EMPTY_FORM = {
+  // Individual
+  firstName: '', lastName: '', phone: '', cnic: '', dob: '', gender: 'Male',
+  maritalStatus: 'Single', nationality: 'Pakistani', occupation: '', declaredIncome: '',
+  cnicIssueDate: '', cnicExpiryDate: '', employerName: '', industrySector: '',
+  yearsOfExperience: '', height: '', weight: '', exerciseFrequency: 'Sedentary',
+  smokingStatus: 'Non-smoker', alcoholConsumption: 'None', creditScore: '',
+  beneficiaryFirstName: '', beneficiaryLastName: '', beneficiaryCnic: '',
+  beneficiaryRelationship: 'Spouse', beneficiaryShare: '100',
+  streetAddress: '', postalCode: '', emergencyContactName: '',
+  travelDestinations: '', movingViolations: '', extremeSports: '',
+  // Family
+  familyName: '', householdIncome: '',
+  // Corporate
+  companyName: '', registrationNumber: '', industry: '',
+  // Shared
+  contactPerson: '', contactPhone: '', contactEmail: '',
+  city: '', province: '', branch: '', insurancePlanId: '',
+};
+
+type FormState = typeof EMPTY_FORM;
+type FormErrors = Partial<Record<keyof FormState, string>>;
+
+const EMPTY_FLAGS = {
+  recreationalDrugUse: false,
+  participatesExtremeSports: false,
+  privateAviation: false,
+  frequentHighRiskTravel: false,
+};
+
+/** `YYYY-MM-DD`, and a real calendar date rather than just the right shape. */
+const isValidDate = (value: string) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && value === parsed.toISOString().slice(0, 10);
+};
+
+const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+/** Pakistani mobile numbers, tolerating spaces, dashes and a +92 prefix. */
+const isValidPhone = (value: string) => /^\+?[\d\s-]{10,15}$/.test(value.trim());
 
 export default function AddLeadScreen() {
-  const route = useRoute<AddLeadRouteProp>();
-  const [type, setType] = useState<EntityType>(route.params?.type || 'INDIVIDUAL');
-  const [category, setCategory] = useState<LeadCategory>(route.params?.category || 'quick');
+  const route = useRoute<AddLeadRoute>();
+  const navigation = useNavigation<AddLeadNav>();
+  const { colors } = useTheme();
+  const { isCompact } = useResponsive();
+  const { user } = useSession();
+  const { toast } = useNotifications();
+  const { refresh } = useLeadSync();
 
+  const type: EntityType = route.params?.type ?? 'INDIVIDUAL';
+  const depth: LeadDepth = route.params?.category ?? 'quick';
+  const isFull = depth === 'normal';
 
-  const [loading, setLoading] = useState(false);
-  
-  // INDIVIDUAL
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [cnic, setCnic] = useState('');
-  const [dob, setDob] = useState('');
-  const [gender, setGender] = useState('Male');
-  const [maritalStatus, setMaritalStatus] = useState('Single');
-  const [nationality, setNationality] = useState('Pakistani');
-  const [occupation, setOccupation] = useState('');
-  const [declaredIncome, setDeclaredIncome] = useState('');
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  const [flags, setFlags] = useState(EMPTY_FLAGS);
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  // INDIVIDUAL Extended fields
-  const [cnicIssueDate, setCnicIssueDate] = useState('');
-  const [cnicExpiryDate, setCnicExpiryDate] = useState('');
-  const [employerName, setEmployerName] = useState('');
-  const [industrySector, setIndustrySector] = useState('');
-  const [yearsOfExperience, setYearsOfExperience] = useState('');
-  const [height, setHeight] = useState('');
-  const [weight, setWeight] = useState('');
-  const [exerciseFrequency, setExerciseFrequency] = useState('Sedentary');
-  const [smokingStatus, setSmokingStatus] = useState('Non-smoker');
-  const [alcoholConsumption, setAlcoholConsumption] = useState('None');
-  const [creditScore, setCreditScore] = useState('');
-  const [beneficiaryFirstName, setBeneficiaryFirstName] = useState('');
-  const [beneficiaryLastName, setBeneficiaryLastName] = useState('');
-  const [beneficiaryCnic, setBeneficiaryCnic] = useState('');
-  const [beneficiaryRelationship, setBeneficiaryRelationship] = useState('Spouse');
-  const [beneficiaryShare, setBeneficiaryShare] = useState('100');
-
-  // FAMILY
-  const [familyName, setFamilyName] = useState('');
-  const [householdIncome, setHouseholdIncome] = useState('');
-
-  // CORPORATE
-  const [companyName, setCompanyName] = useState('');
-  const [regNumber, setRegNumber] = useState('');
-  const [industry, setIndustry] = useState('');
-
-  // Shared (Family & Corporate)
-  const [contactPerson, setContactPerson] = useState('');
-  const [contactPhone, setContactPhone] = useState('');
-  const [contactEmail, setContactEmail] = useState('');
-  
-  // New Missing Location & Contact Fields
-  const [streetAddress, setStreetAddress] = useState('');
-  const [postalCode, setPostalCode] = useState('');
-  const [emergencyContactName, setEmergencyContactName] = useState('');
-
-  // Habit check variables
-  const [travelDestinations, setTravelDestinations] = useState('');
-  const [movingViolations, setMovingViolations] = useState('');
-  const [extremeSports, setExtremeSports] = useState('');
-  const [recreationalDrugUse, setRecreationalDrugUse] = useState(false);
-  const [participatesExtremeSports, setParticipatesExtremeSports] = useState(false);
-  const [privateAviation, setPrivateAviation] = useState(false);
-  const [frequentHighRiskTravel, setFrequentHighRiskTravel] = useState(false);
-
-  // CNIC Images
-  const [cnicFront, setCnicFront] = useState('');
-  const [cnicBack, setCnicBack] = useState('');
-
-  const [city, setCity] = useState('');
-  const [province, setProvince] = useState('');
-  const [branch, setBranch] = useState('');
   const [branches, setBranches] = useState<Branch[]>([]);
-  const [agentName, setAgentName] = useState('');
-  
-  const [insurancePlanId, setInsurancePlanId] = useState('');
   const [plans, setPlans] = useState<InsurancePlan[]>([]);
-  const { colors, isDark } = useTheme();
-
-  const navigation = useNavigation<AddLeadNavProp>();
 
   useEffect(() => {
-    fetchBranches().then(data => setBranches(data)).catch(() => {});
-    fetchInsurancePlans().then(data => setPlans(data)).catch(() => {});
-    
-    // Attempt to load agent name from local storage, fallback to API if missing
-    AsyncStorage.getItem('agent_name').then(name => {
-      if (name) {
-        setAgentName(name);
-      } else {
-        api.get('/auth/me').then(res => {
-          if (res.data?.full_name) {
-            setAgentName(res.data.full_name);
-            AsyncStorage.setItem('agent_name', res.data.full_name);
-          }
-        }).catch(() => {});
-      }
-    });
+    let cancelled = false;
+    // Both helpers swallow their own errors and resolve to [], so the form
+    // still works when the lookup endpoints are unavailable.
+    fetchBranches().then((data) => !cancelled && setBranches(data));
+    fetchInsurancePlans().then((data) => !cancelled && setPlans(data));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
-  const handleTypeSelect = (selected: EntityType) => {
-    setType(selected);
-    resetForms();
-  };
+  const set = useCallback(
+    <K extends keyof FormState>(key: K, value: FormState[K]) => {
+      setForm((prev) => ({ ...prev, [key]: value }));
+      // Clearing on edit means the user sees the error resolve as they fix it,
+      // rather than only after another submit.
+      setErrors((prev) => (prev[key] ? { ...prev, [key]: undefined } : prev));
+    },
+    []
+  );
 
-  const resetForms = () => {
-    setFirstName(''); setLastName(''); setPhone('');
-    setCnic(''); setDob(''); setGender('Male'); setMaritalStatus('Single');
-    setNationality('Pakistani'); setOccupation(''); setDeclaredIncome('');
-    
-    setCnicIssueDate(''); setCnicExpiryDate('');
-    setEmployerName(''); setIndustrySector(''); setYearsOfExperience('');
-    setHeight(''); setWeight(''); setExerciseFrequency('Sedentary');
-    setSmokingStatus('Non-smoker'); setAlcoholConsumption('None');
-    setCreditScore('');
-    setBeneficiaryFirstName(''); setBeneficiaryLastName(''); setBeneficiaryCnic('');
-    setBeneficiaryRelationship('Spouse'); setBeneficiaryShare('100');
+  const toggleFlag = useCallback((key: keyof typeof EMPTY_FLAGS) => {
+    setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
-    setFamilyName(''); setHouseholdIncome('');
-    
-    setCompanyName(''); setRegNumber(''); setIndustry('');
-    
-    setContactPerson(''); setContactPhone(''); setContactEmail('');
-    setCity(''); setProvince('');
-    setStreetAddress(''); setPostalCode(''); setEmergencyContactName('');
-    setTravelDestinations(''); setMovingViolations(''); setExtremeSports('');
-    setRecreationalDrugUse(false); setParticipatesExtremeSports(false);
-    setPrivateAviation(false); setFrequentHighRiskTravel(false);
-    setCnicFront(''); setCnicBack('');
-    setBranch('');
-    setInsurancePlanId('');
-  };
+  // ── Validation ─────────────────────────────────────────────────────────────
 
-  const validate = () => {
+  const validate = useCallback((): boolean => {
+    const next: FormErrors = {};
+
     if (type === 'INDIVIDUAL') {
-      if (!firstName.trim()) { Alert.alert('Error', 'First Name is required.'); return false; }
-    } else if (type === 'FAMILY') {
-      if (!familyName.trim()) { Alert.alert('Error', 'Family Name is required.'); return false; }
-    } else if (type === 'CORPORATE') {
-      if (!companyName.trim()) { Alert.alert('Error', 'Company Name is required.'); return false; }
-    }
-    return true;
-  };
-
-  const handleSave = async () => {
-    if (!validate()) return;
-    
-    setLoading(true);
-    try {
-      if (type === 'INDIVIDUAL') {
-        await createIndividualLead({
-          leadCategory: category,
-          firstName, lastName, phone, cnic, dob, gender, maritalStatus, nationality, occupation, declaredIncome, city, province, contactEmail,
-          cnicIssueDate, cnicExpiryDate, employerName, industrySector, yearsOfExperience,
-          height, weight, exerciseFrequency, smokingStatus, alcoholConsumption,
-          creditScore, beneficiaryFirstName, beneficiaryLastName, beneficiaryCnic, beneficiaryRelationship, beneficiaryShare,
-          streetAddress, postalCode, emergencyContactName, travelDestinations, movingViolations, extremeSports,
-          cnicFront, cnicBack, recreationalDrugUse, participatesExtremeSports, privateAviation, frequentHighRiskTravel, branch, insurancePlanId
-        });
-      } else if (type === 'FAMILY') {
-        await createFamilyLead({
-          leadCategory: category,
-          name: familyName, contactPerson, contactPhone, contactEmail, householdIncome, city, province, branch
-        });
-      } else if (type === 'CORPORATE') {
-        await createCorporateLead({
-          leadCategory: category,
-          name: companyName, regNumber, industry, contactPerson, contactPhone, contactEmail, city, province, branch
-        });
+      if (!form.firstName.trim()) next.firstName = 'First name is required.';
+      if (form.phone && !isValidPhone(form.phone)) next.phone = 'Enter a valid phone number.';
+      if (isFull) {
+        if (!form.lastName.trim()) next.lastName = 'Last name is required.';
+        if (!form.dob.trim()) next.dob = 'Date of birth is required.';
+        else if (!isValidDate(form.dob)) next.dob = 'Use the format YYYY-MM-DD.';
+        if (!form.occupation.trim()) next.occupation = 'Occupation is required.';
+        if (!form.declaredIncome.trim()) next.declaredIncome = 'Declared income is required.';
+        else if (Number(form.declaredIncome) <= 0) next.declaredIncome = 'Enter an amount above zero.';
+        if (form.cnicIssueDate && !isValidDate(form.cnicIssueDate))
+          next.cnicIssueDate = 'Use the format YYYY-MM-DD.';
+        if (form.cnicExpiryDate && !isValidDate(form.cnicExpiryDate))
+          next.cnicExpiryDate = 'Use the format YYYY-MM-DD.';
+        const share = Number(form.beneficiaryShare);
+        if (form.beneficiaryShare && (Number.isNaN(share) || share <= 0 || share > 100))
+          next.beneficiaryShare = 'Share must be between 1 and 100.';
       }
-      
-      Alert.alert('Success', 'Lead created successfully.', [
-        { text: 'OK', onPress: () => navigation.goBack() }
-      ]);
-      
-      resetForms();
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to create lead.');
-    } finally {
-      setLoading(false);
+    } else if (type === 'FAMILY') {
+      if (!form.familyName.trim()) next.familyName = 'Family name is required.';
+      if (form.contactPhone && !isValidPhone(form.contactPhone))
+        next.contactPhone = 'Enter a valid phone number.';
+    } else {
+      if (!form.companyName.trim()) next.companyName = 'Company name is required.';
+      if (form.contactPhone && !isValidPhone(form.contactPhone))
+        next.contactPhone = 'Enter a valid phone number.';
     }
-  };
+
+    if (form.contactEmail && !isValidEmail(form.contactEmail))
+      next.contactEmail = 'Enter a valid email address.';
+
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }, [form, type, isFull]);
+
+  // ── Submit ─────────────────────────────────────────────────────────────────
+
+  const handleSave = useCallback(async () => {
+    setSubmitError(null);
+    if (!validate()) {
+      toast('Check the highlighted fields', { tone: 'warning', icon: 'alert-circle' });
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const shared = { leadCategory: depth, ...form, ...flags };
+
+      if (type === 'INDIVIDUAL') {
+        await createIndividualLead(shared);
+      } else if (type === 'FAMILY') {
+        await createFamilyLead({ ...shared, name: form.familyName });
+      } else {
+        await createCorporateLead({ ...shared, name: form.companyName });
+      }
+
+      // Pull the new row in immediately so the Leads board is already correct
+      // when the user lands back on it, rather than after the next poll tick.
+      await refresh();
+
+      toast('Lead created', {
+        body: 'It is now visible in the portal too.',
+        tone: 'success',
+        icon: 'checkmark-circle',
+      });
+      navigation.goBack();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not create the lead. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }, [validate, depth, form, flags, type, refresh, toast, navigation]);
+
+  // ── Field groups ───────────────────────────────────────────────────────────
+
+  const branchOptions = useMemo(
+    () => branches.map((b) => ({ label: b.name, value: b.id, description: b.branch_code })),
+    [branches]
+  );
+  const planOptions = useMemo(
+    () => plans.map((p) => ({ label: p.label, value: p.id, description: p.description })),
+    [plans]
+  );
+
+  /** Owner, branch and plan — identical across all three entity types. */
+  const administrative = (
+    <>
+      <Select
+        label="Branch"
+        placeholder="Select a branch"
+        value={form.branch}
+        onSelect={(v) => set('branch', v)}
+        options={branchOptions}
+        leftIcon="business-outline"
+        clearable
+        helperText={branchOptions.length === 0 ? 'No branches configured for this tenant.' : undefined}
+      />
+      <Field
+        label="Assigned agent"
+        value={user?.fullName ?? ''}
+        editable={false}
+        leftIcon="person-outline"
+        helperText="New leads are assigned to you automatically."
+      />
+    </>
+  );
+
+  const addressFields = (
+    <>
+      <Field label="City" placeholder="Lahore" value={form.city} onChangeText={(v) => set('city', v)} leftIcon="location-outline" />
+      <Select
+        label="Province"
+        placeholder="Select a province"
+        value={form.province}
+        onSelect={(v) => set('province', v)}
+        options={PROVINCES}
+        clearable
+      />
+    </>
+  );
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
-      <KeyboardAvoidingView 
-        style={{ flex: 1 }} 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerStyle={styles.container}>
-          <View style={styles.header}>
-            <Text style={[styles.title, { color: colors.text }]}>Generate Lead</Text>
-            <Text style={[styles.subtitle, { color: colors.textMuted }]}>Enter preliminary contact info</Text>
+    <Screen
+      keyboardAvoiding
+      fabClearance
+      header={
+        <ScreenHeader
+          title={`New ${entityLabel[type] ?? type} Lead`}
+          subtitle={isFull ? 'Full underwriting profile' : 'Quick capture'}
+          leading="back"
+        />
+      }
+      footer={
+        <Button
+          title={saving ? 'Creating…' : `Create ${isFull ? 'full' : 'quick'} lead`}
+          onPress={handleSave}
+          loading={saving}
+          size="lg"
+          fullWidth
+          icon="checkmark"
+        />
+      }
+    >
+      <View style={styles.intro}>
+        <Badge
+          label={isFull ? 'Full profile' : 'Quick lead'}
+          tone={isFull ? 'brand' : 'warning'}
+          variant="soft"
+          icon={isFull ? 'document-text-outline' : 'flash-outline'}
+        />
+        <Text variant="caption" color="muted" style={styles.introText}>
+          {isFull
+            ? 'Everything underwriting needs. You can still edit any of it later.'
+            : 'Capture the essentials now — you can complete the full profile at any time.'}
+        </Text>
+      </View>
+
+      {submitError ? (
+        <Banner
+          tone="danger"
+          title="Could not create the lead"
+          description={submitError}
+          onDismiss={() => setSubmitError(null)}
+          style={styles.banner}
+        />
+      ) : null}
+
+      {/* ── Individual ────────────────────────────────────────────────────── */}
+
+      {type === 'INDIVIDUAL' && !isFull ? (
+        <Card padding="lg" style={styles.card}>
+          <View style={isCompact ? undefined : styles.nameRow}>
+            <Field
+              label="First name"
+              required
+              placeholder="Ali"
+              value={form.firstName}
+              onChangeText={(v) => set('firstName', v)}
+              error={errors.firstName}
+              containerStyle={isCompact ? undefined : styles.half}
+              autoCapitalize="words"
+            />
+            <Field
+              label="Last name"
+              placeholder="Khan"
+              value={form.lastName}
+              onChangeText={(v) => set('lastName', v)}
+              error={errors.lastName}
+              containerStyle={isCompact ? undefined : styles.half}
+              autoCapitalize="words"
+            />
           </View>
-
-          {/* Lead Category Toggle */}
-          <View style={[styles.toggleContainer, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <TouchableOpacity 
-              style={[styles.toggleBtn, category === 'quick' && [styles.toggleBtnActive, { backgroundColor: colors.primary }]]}
-              onPress={() => setCategory('quick')}
-            >
-              <Text style={[styles.toggleBtnText, { color: colors.textMuted }, category === 'quick' && styles.toggleBtnTextActive]}>
-                Quick Lead
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity 
-              style={[styles.toggleBtn, category === 'normal' && [styles.toggleBtnActive, { backgroundColor: colors.primary }]]}
-              onPress={() => setCategory('normal')}
-            >
-              <Text style={[styles.toggleBtnText, { color: colors.textMuted }, category === 'normal' && styles.toggleBtnTextActive]}>
-                Normal Lead
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-            {type === 'INDIVIDUAL' && category === 'quick' && (
-              <View style={[styles.formCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Input label="First Name *" placeholder="Ali" value={firstName} onChangeText={setFirstName} />
-                <Input label="Last Name" placeholder="Khan" value={lastName} onChangeText={setLastName} />
-                <Input label="Phone Number" placeholder="0300 1234567" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-              </View>
-            )}
-
-            {type === 'INDIVIDUAL' && category === 'normal' && (
-              <>
-                <Accordion title="Identity & Contact" defaultExpanded>
-                  <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>CORE IDENTITY PARAMETERS</Text>
-                  <Input label="First Name *" placeholder="Ali" value={firstName} onChangeText={setFirstName} />
-                  <Input label="Last Name *" placeholder="Khan" value={lastName} onChangeText={setLastName} />
-                  <Input label="Date of Birth *" placeholder="YYYY-MM-DD" value={dob} onChangeText={setDob} />
-                  <Input label="Gender *" placeholder="Male / Female" value={gender} onChangeText={setGender} />
-                  <Input label="Marital Status" placeholder="Single / Married" value={maritalStatus} onChangeText={setMaritalStatus} />
-                  <Input label="Nationality" placeholder="Pakistani" value={nationality} onChangeText={setNationality} />
-                  
-                  <Text style={[styles.sectionHeader, { color: colors.textMuted, marginTop: 24 }]}>CONTACT DETAILS</Text>
-                  <Input label="Mobile Number" placeholder="0300 1234567" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-                  <Input label="Email Address" placeholder="example@email.com" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" />
-                  <Input label="Emergency Contact Name" placeholder="Ayesha Khan" value={emergencyContactName} onChangeText={setEmergencyContactName} />
-                  
-                  <Text style={[styles.sectionHeader, { color: colors.textMuted, marginTop: 24 }]}>ADDRESS INFORMATION</Text>
-                  <Input label="Street Address" placeholder="123 Main St" value={streetAddress} onChangeText={setStreetAddress} />
-                  <Input label="City" placeholder="Lahore" value={city} onChangeText={setCity} />
-                  <SelectInput label="Province" placeholder="Select province" value={province} onSelect={setProvince} options={PROVINCES} />
-                  <Input label="Postal Code" placeholder="54000" value={postalCode} onChangeText={setPostalCode} />
-                  
-                  <Text style={[styles.sectionHeader, { color: colors.textMuted, marginTop: 24 }]}>ADMINISTRATIVE</Text>
-                  <SelectInput label="Branch" placeholder="Select branch" value={branch} onSelect={setBranch} options={branches.map(b => ({ label: b.name, value: b.id }))} />
-                  <Input label="Assigned Agent" value={agentName} editable={false} placeholder="Loading..." />
-                </Accordion>
-
-                <Accordion title="CNIC & Docs">
-                  <Text style={[styles.sectionHeader, { color: colors.textMuted }]}>CNIC DOCUMENTS</Text>
-                  <Input label="CNIC (Optional for Lead)" placeholder="35201-XXXXXXX-X" value={cnic} onChangeText={setCnic} keyboardType="numeric" />
-                  <Input label="CNIC Issue Date" placeholder="YYYY-MM-DD" value={cnicIssueDate} onChangeText={setCnicIssueDate} />
-                  <Input label="CNIC Expiry Date" placeholder="YYYY-MM-DD" value={cnicExpiryDate} onChangeText={setCnicExpiryDate} />
-                  
-                  <Text style={[styles.sectionHeader, { color: colors.textMuted, marginTop: 24 }]}>CNIC IMAGES (OPTIONAL)</Text>
-                  <View style={styles.imageUploadRow}>
-                    <TouchableOpacity style={[styles.imageUploadBtn, { backgroundColor: isDark ? colors.background : '#f8fafc', borderColor: colors.border }]} onPress={() => Alert.alert('Upload', 'CNIC Front upload UI')}>
-                      <Ionicons name="camera-outline" size={24} color={colors.textMuted} />
-                      <Text style={[styles.imageUploadText, { color: colors.textMuted }]}>Front Side</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.imageUploadBtn, { backgroundColor: isDark ? colors.background : '#f8fafc', borderColor: colors.border }]} onPress={() => Alert.alert('Upload', 'CNIC Back upload UI')}>
-                      <Ionicons name="camera-outline" size={24} color={colors.textMuted} />
-                      <Text style={[styles.imageUploadText, { color: colors.textMuted }]}>Back Side</Text>
-                    </TouchableOpacity>
-                  </View>
-                </Accordion>
-
-                <Accordion title="Occupation & Income">
-                  <Text style={styles.sectionHeader}>OCCUPATION DETAILS</Text>
-                  <Input label="Occupation *" placeholder="Engineer" value={occupation} onChangeText={setOccupation} />
-                  <Input label="Employer Name" placeholder="TechCorp" value={employerName} onChangeText={setEmployerName} />
-                  <Input label="Industry Sector" placeholder="IT" value={industrySector} onChangeText={setIndustrySector} />
-                  <Input label="Years of Experience" placeholder="5" value={yearsOfExperience} onChangeText={setYearsOfExperience} keyboardType="numeric" />
-                  
-                  <Text style={[styles.sectionHeader, { marginTop: 24 }]}>INCOME PROFILE</Text>
-                  <Input label="Declared Annual Income (PKR) *" placeholder="1000000" value={declaredIncome} onChangeText={setDeclaredIncome} keyboardType="numeric" />
-                </Accordion>
-
-                <Accordion title="Medical & Lifestyle">
-                  <Text style={styles.sectionHeader}>MEDICAL & BODY METRICS</Text>
-                  <Input label="Height (cm)" placeholder="175" value={height} onChangeText={setHeight} keyboardType="numeric" />
-                  <Input label="Weight (kg)" placeholder="70" value={weight} onChangeText={setWeight} keyboardType="numeric" />
-                  
-                  <Text style={[styles.sectionHeader, { marginTop: 24 }]}>LIFESTYLE</Text>
-                  <Input label="Exercise Frequency" placeholder="Sedentary / Active" value={exerciseFrequency} onChangeText={setExerciseFrequency} />
-                </Accordion>
-
-                <Accordion title="Habit Check">
-                  <InfoBanner 
-                    title="Substance Consumption" 
-                    subtitle="Critical fields for mortality pricing & risk assessment." 
-                    icon="warning" 
-                    color="#ef4444" 
-                    bgColor="#fef2f2" 
-                  />
-                  <Input label="Smoking Status" placeholder="Non-smoker / Smoker" value={smokingStatus} onChangeText={setSmokingStatus} />
-                  <Input label="Alcohol Consumption Frequency" placeholder="None / Frequent" value={alcoholConsumption} onChangeText={setAlcoholConsumption} />
-                  <CheckboxCard 
-                    title="Recreational Drug Use History (Past 3-5 Years)"
-                    subtitle="Check if the customer has used illegal or non-prescribed substances."
-                    checked={recreationalDrugUse}
-                    onPress={() => setRecreationalDrugUse(!recreationalDrugUse)}
-                  />
-
-                  <View style={{ height: 24 }} />
-
-                  <InfoBanner 
-                    title="High-Risk Hobbies (Avocations)" 
-                    subtitle="Identifies activities with high fatality rates." 
-                    icon="flash" 
-                    color="#f59e0b" 
-                    bgColor="#fef3c7" 
-                  />
-                  <CheckboxCard 
-                    title="Participates in Extreme Sports"
-                    subtitle="Trigger flag for adventure/high-risk sports."
-                    checked={participatesExtremeSports}
-                    onPress={() => setParticipatesExtremeSports(!participatesExtremeSports)}
-                  />
-                  <CheckboxCard 
-                    title="Private Aviation"
-                    subtitle="Flies private aircraft or experimental planes (commercial passengers exempt)."
-                    checked={privateAviation}
-                    onPress={() => setPrivateAviation(!privateAviation)}
-                  />
-                  <Input label="Extreme Sports Details (If applicable)" placeholder="Skydiving, Scuba etc." value={extremeSports} onChangeText={setExtremeSports} />
-
-                  <View style={{ height: 24 }} />
-
-                  <InfoBanner 
-                    title="Travel & Location Risks" 
-                    subtitle="Underwriting travel to politically unstable or disease outbreak zones." 
-                    icon="airplane" 
-                    color="#3b82f6" 
-                    bgColor="#eff6ff" 
-                  />
-                  <CheckboxCard 
-                    title="Frequent High-Risk Travel"
-                    subtitle="Travel planned or taken to politically unstable regions, active war zones, or severe outbreak areas."
-                    checked={frequentHighRiskTravel}
-                    onPress={() => setFrequentHighRiskTravel(!frequentHighRiskTravel)}
-                  />
-                  <Input label="Travel Destinations (Past/Next 12 Months)" placeholder="e.g. Dubai, London" value={travelDestinations} onChangeText={setTravelDestinations} />
-                  <Input label="Moving Violations (Past 3 Years)" placeholder="0" value={movingViolations} onChangeText={setMovingViolations} keyboardType="numeric" />
-                </Accordion>
-
-                <Accordion title="Financial Profile">
-                  <Text style={styles.sectionHeader}>CREDIT BUREAU INFO</Text>
-                  <Input label="Credit Score" placeholder="750" value={creditScore} onChangeText={setCreditScore} keyboardType="numeric" />
-                </Accordion>
-
-                <Accordion title="Nominee Details">
-                  <Text style={styles.sectionHeader}>PRIMARY BENEFICIARY</Text>
-                  <Input label="First Name" placeholder="Ayesha" value={beneficiaryFirstName} onChangeText={setBeneficiaryFirstName} />
-                  <Input label="Last Name" placeholder="Khan" value={beneficiaryLastName} onChangeText={setBeneficiaryLastName} />
-                  <Input label="CNIC Number" placeholder="35201-XXXXXXX-X" value={beneficiaryCnic} onChangeText={setBeneficiaryCnic} keyboardType="numeric" />
-                  <Input label="Relationship" placeholder="Spouse" value={beneficiaryRelationship} onChangeText={setBeneficiaryRelationship} />
-                  <Input label="Share Percentage (%)" placeholder="100" value={beneficiaryShare} onChangeText={setBeneficiaryShare} keyboardType="numeric" />
-                </Accordion>
-
-                <Accordion title="Insurance Plans">
-                  <SelectInput 
-                    label="Select Plan" 
-                    placeholder="Choose a plan" 
-                    value={insurancePlanId} 
-                    onSelect={setInsurancePlanId} 
-                    options={plans.map(p => ({ label: p.label, value: p.id, info: p.description }))} 
-                  />
-                </Accordion>
-              </>
-            )}
-
-            {type === 'FAMILY' && (
-              <View style={[styles.formCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Input label="Family Name *" placeholder="e.g. Rehman Family" value={familyName} onChangeText={setFamilyName} />
-                <Input label="Contact Person (Proposer)" placeholder="e.g. Asad Rehman" value={contactPerson} onChangeText={setContactPerson} />
-                <Input label="Contact Email" placeholder="family@example.com" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" />
-                <Input label="Contact Phone" placeholder="+92 300 1234567" value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" />
-                
-                {category === 'normal' && (
-                  <>
-                    <Input 
-                      label="Household Annual Income (PKR)" 
-                      placeholder="2400000" 
-                      value={householdIncome} 
-                      onChangeText={setHouseholdIncome} 
-                      keyboardType="numeric" 
-                      helperText="Used for the floater's income-eligibility check — children and non-earning members don't have their own income."
-                    />
-                    <Input label="City" placeholder="e.g. Lahore" value={city} onChangeText={setCity} />
-                    <SelectInput label="Province" placeholder="Select province" value={province} onSelect={setProvince} options={PROVINCES} />
-                    <SelectInput label="Branch" placeholder="Select branch" value={branch} onSelect={setBranch} options={branches.map(b => ({ label: b.name, value: b.id }))} />
-                    <Input label="Assigned Agent" value={agentName} editable={false} placeholder="Loading..." />
-                  </>
-                )}
-              </View>
-            )}
-
-            {type === 'CORPORATE' && (
-              <View style={[styles.formCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Input label="Company Name *" placeholder="TechPak Solutions" value={companyName} onChangeText={setCompanyName} />
-                <Input label="Contact Person" placeholder="Ali Raza (HR)" value={contactPerson} onChangeText={setContactPerson} />
-                <Input label="Contact Phone" placeholder="0300 1234567" value={contactPhone} onChangeText={setContactPhone} keyboardType="phone-pad" />
-                
-                {category === 'normal' && (
-                  <>
-                    <Input label="Registration Number" placeholder="XX-12345" value={regNumber} onChangeText={setRegNumber} />
-                    <Input label="Industry" placeholder="Software Development" value={industry} onChangeText={setIndustry} />
-                    <Input label="Contact Email" placeholder="hr@company.com" value={contactEmail} onChangeText={setContactEmail} keyboardType="email-address" autoCapitalize="none" />
-                    <Input label="City" placeholder="Lahore" value={city} onChangeText={setCity} />
-                    <SelectInput label="Province" placeholder="Select province" value={province} onSelect={setProvince} options={PROVINCES} />
-                    <SelectInput label="Branch" placeholder="Select branch" value={branch} onSelect={setBranch} options={branches.map(b => ({ label: b.name, value: b.id }))} />
-                    <Input label="Assigned Agent" value={agentName} editable={false} placeholder="Loading..." />
-                  </>
-                )}
-              </View>
-            )}
-
-          <Button 
-            title={`Create ${category === 'quick' ? 'Quick' : 'Normal'} Lead`} 
-            onPress={handleSave} 
-            loading={loading}
-            style={styles.saveBtn}
+          <Field
+            label="Phone number"
+            placeholder="0300 1234567"
+            keyboardType="phone-pad"
+            leftIcon="call-outline"
+            value={form.phone}
+            onChangeText={(v) => set('phone', v)}
+            error={errors.phone}
           />
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        </Card>
+      ) : null}
+
+      {type === 'INDIVIDUAL' && isFull ? (
+        <>
+          <Accordion title="Identity & contact" icon="person-outline" tone="brand" defaultExpanded>
+            <View style={isCompact ? undefined : styles.nameRow}>
+              <Field
+                label="First name"
+                required
+                placeholder="Ali"
+                value={form.firstName}
+                onChangeText={(v) => set('firstName', v)}
+                error={errors.firstName}
+                containerStyle={isCompact ? undefined : styles.half}
+                autoCapitalize="words"
+              />
+              <Field
+                label="Last name"
+                required
+                placeholder="Khan"
+                value={form.lastName}
+                onChangeText={(v) => set('lastName', v)}
+                error={errors.lastName}
+                containerStyle={isCompact ? undefined : styles.half}
+                autoCapitalize="words"
+              />
+            </View>
+            <Field
+              label="Date of birth"
+              required
+              placeholder="1990-05-21"
+              value={form.dob}
+              onChangeText={(v) => set('dob', v)}
+              error={errors.dob}
+              helperText="Format: YYYY-MM-DD"
+              leftIcon="calendar-outline"
+              keyboardType="numbers-and-punctuation"
+            />
+            <Select label="Gender" value={form.gender} onSelect={(v) => set('gender', v)} options={GENDERS} required />
+            <Select
+              label="Marital status"
+              value={form.maritalStatus}
+              onSelect={(v) => set('maritalStatus', v)}
+              options={MARITAL}
+            />
+            <Field
+              label="Nationality"
+              value={form.nationality}
+              onChangeText={(v) => set('nationality', v)}
+              leftIcon="flag-outline"
+            />
+
+            <Divider label="Contact" />
+
+            <Field
+              label="Mobile number"
+              placeholder="0300 1234567"
+              keyboardType="phone-pad"
+              leftIcon="call-outline"
+              value={form.phone}
+              onChangeText={(v) => set('phone', v)}
+              error={errors.phone}
+            />
+            <Field
+              label="Email address"
+              placeholder="ali@example.com"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              leftIcon="mail-outline"
+              value={form.contactEmail}
+              onChangeText={(v) => set('contactEmail', v)}
+              error={errors.contactEmail}
+            />
+            <Field
+              label="Emergency contact name"
+              placeholder="Ayesha Khan"
+              value={form.emergencyContactName}
+              onChangeText={(v) => set('emergencyContactName', v)}
+              autoCapitalize="words"
+            />
+
+            <Divider label="Address" />
+
+            <Field
+              label="Street address"
+              placeholder="123 Main Street"
+              value={form.streetAddress}
+              onChangeText={(v) => set('streetAddress', v)}
+            />
+            {addressFields}
+            <Field
+              label="Postal code"
+              placeholder="54000"
+              keyboardType="number-pad"
+              value={form.postalCode}
+              onChangeText={(v) => set('postalCode', v)}
+            />
+
+            <Divider label="Administrative" />
+            {administrative}
+          </Accordion>
+
+          <Accordion title="CNIC & documents" icon="card-outline" tone="accent">
+            <Field
+              label="CNIC number"
+              placeholder="35201-1234567-8"
+              keyboardType="numbers-and-punctuation"
+              leftIcon="card-outline"
+              value={form.cnic}
+              onChangeText={(v) => set('cnic', v)}
+              helperText="Optional at lead stage — required before underwriting."
+            />
+            <Field
+              label="CNIC issue date"
+              placeholder="2015-03-10"
+              value={form.cnicIssueDate}
+              onChangeText={(v) => set('cnicIssueDate', v)}
+              error={errors.cnicIssueDate}
+              keyboardType="numbers-and-punctuation"
+            />
+            <Field
+              label="CNIC expiry date"
+              placeholder="2025-03-10"
+              value={form.cnicExpiryDate}
+              onChangeText={(v) => set('cnicExpiryDate', v)}
+              error={errors.cnicExpiryDate}
+              keyboardType="numbers-and-punctuation"
+            />
+            <Banner
+              tone="info"
+              title="Document upload"
+              description="CNIC scans are captured during the e-application step, once the lead becomes a case."
+              icon="cloud-upload-outline"
+            />
+          </Accordion>
+
+          <Accordion title="Occupation & income" icon="briefcase-outline" tone="success">
+            <Field
+              label="Occupation"
+              required
+              placeholder="Software Engineer"
+              value={form.occupation}
+              onChangeText={(v) => set('occupation', v)}
+              error={errors.occupation}
+              autoCapitalize="words"
+            />
+            <Field
+              label="Employer name"
+              placeholder="TechCorp"
+              value={form.employerName}
+              onChangeText={(v) => set('employerName', v)}
+              autoCapitalize="words"
+            />
+            <Field
+              label="Industry sector"
+              placeholder="Information Technology"
+              value={form.industrySector}
+              onChangeText={(v) => set('industrySector', v)}
+              autoCapitalize="words"
+            />
+            <Field
+              label="Years of experience"
+              placeholder="5"
+              keyboardType="number-pad"
+              value={form.yearsOfExperience}
+              onChangeText={(v) => set('yearsOfExperience', v)}
+            />
+            <Field
+              label="Declared annual income (PKR)"
+              required
+              placeholder="1200000"
+              keyboardType="number-pad"
+              leftIcon="cash-outline"
+              value={form.declaredIncome}
+              onChangeText={(v) => set('declaredIncome', v)}
+              error={errors.declaredIncome}
+              helperText="Drives the sum-assured eligibility check."
+            />
+          </Accordion>
+
+          <Accordion title="Medical & lifestyle" icon="fitness-outline" tone="info">
+            <View style={isCompact ? undefined : styles.nameRow}>
+              <Field
+                label="Height (cm)"
+                placeholder="175"
+                keyboardType="decimal-pad"
+                value={form.height}
+                onChangeText={(v) => set('height', v)}
+                containerStyle={isCompact ? undefined : styles.half}
+              />
+              <Field
+                label="Weight (kg)"
+                placeholder="70"
+                keyboardType="decimal-pad"
+                value={form.weight}
+                onChangeText={(v) => set('weight', v)}
+                containerStyle={isCompact ? undefined : styles.half}
+              />
+            </View>
+            <Select
+              label="Exercise frequency"
+              value={form.exerciseFrequency}
+              onSelect={(v) => set('exerciseFrequency', v)}
+              options={EXERCISE}
+            />
+          </Accordion>
+
+          <Accordion title="Habit check" icon="warning-outline" tone="warning">
+            <Banner
+              tone="danger"
+              title="Substance consumption"
+              description="These answers feed directly into mortality pricing, so accuracy matters."
+              icon="flame-outline"
+              style={styles.groupBanner}
+            />
+            <Select
+              label="Smoking status"
+              value={form.smokingStatus}
+              onSelect={(v) => set('smokingStatus', v)}
+              options={SMOKING}
+            />
+            <Select
+              label="Alcohol consumption"
+              value={form.alcoholConsumption}
+              onSelect={(v) => set('alcoholConsumption', v)}
+              options={ALCOHOL}
+            />
+            <CheckboxCard
+              title="Recreational drug use in the past 3–5 years"
+              subtitle="Includes illegal and non-prescribed substances."
+              checked={flags.recreationalDrugUse}
+              onPress={() => toggleFlag('recreationalDrugUse')}
+            />
+
+            <Banner
+              tone="warning"
+              title="High-risk hobbies"
+              description="Activities with materially elevated fatality rates."
+              icon="flash-outline"
+              style={styles.groupBanner}
+            />
+            <CheckboxCard
+              title="Participates in extreme sports"
+              subtitle="Skydiving, mountaineering, motorsport and similar."
+              checked={flags.participatesExtremeSports}
+              onPress={() => toggleFlag('participatesExtremeSports')}
+            />
+            <CheckboxCard
+              title="Private aviation"
+              subtitle="Flies private or experimental aircraft. Commercial passengers are exempt."
+              checked={flags.privateAviation}
+              onPress={() => toggleFlag('privateAviation')}
+            />
+            <Field
+              label="Extreme sports details"
+              placeholder="Skydiving, scuba diving"
+              value={form.extremeSports}
+              onChangeText={(v) => set('extremeSports', v)}
+              editable={flags.participatesExtremeSports}
+              helperText={
+                flags.participatesExtremeSports ? undefined : 'Tick the box above to fill this in.'
+              }
+            />
+
+            <Banner
+              tone="info"
+              title="Travel risk"
+              description="Travel to politically unstable regions or outbreak zones."
+              icon="airplane-outline"
+              style={styles.groupBanner}
+            />
+            <CheckboxCard
+              title="Frequent high-risk travel"
+              subtitle="Active war zones, severe outbreak areas, or politically unstable regions."
+              checked={flags.frequentHighRiskTravel}
+              onPress={() => toggleFlag('frequentHighRiskTravel')}
+            />
+            <Field
+              label="Travel destinations (past or next 12 months)"
+              placeholder="Dubai, London"
+              value={form.travelDestinations}
+              onChangeText={(v) => set('travelDestinations', v)}
+            />
+            <Field
+              label="Moving violations (past 3 years)"
+              placeholder="0"
+              keyboardType="number-pad"
+              value={form.movingViolations}
+              onChangeText={(v) => set('movingViolations', v)}
+            />
+          </Accordion>
+
+          <Accordion title="Financial profile" icon="stats-chart-outline" tone="success">
+            <Field
+              label="Credit score"
+              placeholder="750"
+              keyboardType="number-pad"
+              value={form.creditScore}
+              onChangeText={(v) => set('creditScore', v)}
+              helperText="Optional. Used as a secondary risk signal."
+            />
+          </Accordion>
+
+          <Accordion title="Nominee details" icon="people-outline" tone="accent">
+            <View style={isCompact ? undefined : styles.nameRow}>
+              <Field
+                label="First name"
+                placeholder="Ayesha"
+                value={form.beneficiaryFirstName}
+                onChangeText={(v) => set('beneficiaryFirstName', v)}
+                containerStyle={isCompact ? undefined : styles.half}
+                autoCapitalize="words"
+              />
+              <Field
+                label="Last name"
+                placeholder="Khan"
+                value={form.beneficiaryLastName}
+                onChangeText={(v) => set('beneficiaryLastName', v)}
+                containerStyle={isCompact ? undefined : styles.half}
+                autoCapitalize="words"
+              />
+            </View>
+            <Field
+              label="CNIC number"
+              placeholder="35201-1234567-8"
+              keyboardType="numbers-and-punctuation"
+              value={form.beneficiaryCnic}
+              onChangeText={(v) => set('beneficiaryCnic', v)}
+            />
+            <Select
+              label="Relationship"
+              value={form.beneficiaryRelationship}
+              onSelect={(v) => set('beneficiaryRelationship', v)}
+              options={RELATIONSHIPS}
+            />
+            <Field
+              label="Share percentage"
+              placeholder="100"
+              keyboardType="number-pad"
+              value={form.beneficiaryShare}
+              onChangeText={(v) => set('beneficiaryShare', v)}
+              error={errors.beneficiaryShare}
+            />
+          </Accordion>
+
+          <Accordion title="Insurance plan" icon="shield-checkmark-outline" tone="brand">
+            <Select
+              label="Preferred plan"
+              placeholder="Choose a plan"
+              value={form.insurancePlanId}
+              onSelect={(v) => set('insurancePlanId', v)}
+              options={planOptions}
+              clearable
+              helperText={
+                planOptions.length === 0
+                  ? 'No plans configured for this tenant.'
+                  : 'Optional at lead stage.'
+              }
+            />
+          </Accordion>
+        </>
+      ) : null}
+
+      {/* ── Family ────────────────────────────────────────────────────────── */}
+
+      {type === 'FAMILY' ? (
+        <Card padding="lg" style={styles.card}>
+          <Field
+            label="Family name"
+            required
+            placeholder="Rehman Family"
+            value={form.familyName}
+            onChangeText={(v) => set('familyName', v)}
+            error={errors.familyName}
+            leftIcon="people-outline"
+            autoCapitalize="words"
+          />
+          <Field
+            label="Contact person (proposer)"
+            placeholder="Asad Rehman"
+            value={form.contactPerson}
+            onChangeText={(v) => set('contactPerson', v)}
+            autoCapitalize="words"
+          />
+          <Field
+            label="Contact phone"
+            placeholder="0300 1234567"
+            keyboardType="phone-pad"
+            leftIcon="call-outline"
+            value={form.contactPhone}
+            onChangeText={(v) => set('contactPhone', v)}
+            error={errors.contactPhone}
+          />
+          <Field
+            label="Contact email"
+            placeholder="family@example.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            leftIcon="mail-outline"
+            value={form.contactEmail}
+            onChangeText={(v) => set('contactEmail', v)}
+            error={errors.contactEmail}
+          />
+
+          {isFull ? (
+            <>
+              <Divider label="Household" />
+              <Field
+                label="Household annual income (PKR)"
+                placeholder="2400000"
+                keyboardType="number-pad"
+                leftIcon="cash-outline"
+                value={form.householdIncome}
+                onChangeText={(v) => set('householdIncome', v)}
+                helperText="Used for the floater's income-eligibility check — children and non-earning members have no income of their own."
+              />
+              {addressFields}
+              <Divider label="Administrative" />
+              {administrative}
+            </>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {/* ── Corporate ─────────────────────────────────────────────────────── */}
+
+      {type === 'CORPORATE' ? (
+        <Card padding="lg" style={styles.card}>
+          <Field
+            label="Company name"
+            required
+            placeholder="TechPak Solutions"
+            value={form.companyName}
+            onChangeText={(v) => set('companyName', v)}
+            error={errors.companyName}
+            leftIcon="business-outline"
+            autoCapitalize="words"
+          />
+          <Field
+            label="Contact person"
+            placeholder="Ali Raza (HR)"
+            value={form.contactPerson}
+            onChangeText={(v) => set('contactPerson', v)}
+            autoCapitalize="words"
+          />
+          <Field
+            label="Contact phone"
+            placeholder="0300 1234567"
+            keyboardType="phone-pad"
+            leftIcon="call-outline"
+            value={form.contactPhone}
+            onChangeText={(v) => set('contactPhone', v)}
+            error={errors.contactPhone}
+          />
+
+          {isFull ? (
+            <>
+              <Divider label="Company details" />
+              <Field
+                label="Registration number"
+                placeholder="XX-12345"
+                value={form.registrationNumber}
+                onChangeText={(v) => set('registrationNumber', v)}
+                leftIcon="document-text-outline"
+              />
+              <Field
+                label="Industry"
+                placeholder="Software Development"
+                value={form.industry}
+                onChangeText={(v) => set('industry', v)}
+                autoCapitalize="words"
+              />
+              <Field
+                label="Contact email"
+                placeholder="hr@company.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                leftIcon="mail-outline"
+                value={form.contactEmail}
+                onChangeText={(v) => set('contactEmail', v)}
+                error={errors.contactEmail}
+              />
+              {addressFields}
+              <Divider label="Administrative" />
+              {administrative}
+            </>
+          ) : null}
+        </Card>
+      ) : null}
+
+      <Text variant="caption" color="subtle" align="center" style={styles.footnote}>
+        Created leads appear in the web portal immediately.
+      </Text>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  container: {
-    padding: 16,
-    paddingBottom: 64,
-  },
-  header: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  toggleContainer: {
+  intro: {
     flexDirection: 'row',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-  },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 6,
     alignItems: 'center',
-    justifyContent: 'center',
+    gap: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
   },
-  toggleBtnActive: {
-    backgroundColor: '#1D4ED8',
-  },
-  toggleBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748b',
-  },
-  toggleBtnTextActive: {
-    color: '#ffffff',
-  },
-  typeSelector: {
-    flexDirection: 'row',
-    backgroundColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 4,
-    marginBottom: 24,
-  },
-  typeBtn: {
+  introText: {
     flex: 1,
-    textAlign: 'center',
-    paddingVertical: 8,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748b',
-    borderRadius: 6,
-    overflow: 'hidden',
   },
-  typeBtnActive: {},
-  formCard: {
-    borderRadius: 12,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 24,
+  banner: {
+    marginBottom: spacing.lg,
   },
-  saveBtn: {
-    marginTop: 8,
+  card: {
+    marginBottom: spacing.lg,
   },
-  sectionHeader: {
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  imageUploadRow: {
+  nameRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.md,
   },
-  imageUploadBtn: {
+  half: {
     flex: 1,
-    borderWidth: 1,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    paddingVertical: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
-  imageUploadText: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 8,
-  }
+  groupBanner: {
+    marginBottom: spacing.lg,
+  },
+  footnote: {
+    marginTop: spacing.md,
+    marginBottom: spacing.xl,
+  },
 });

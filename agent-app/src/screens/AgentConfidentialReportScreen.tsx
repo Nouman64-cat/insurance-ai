@@ -1,197 +1,481 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, Switch, TouchableOpacity } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useRoute } from '@react-navigation/native';
-import Input from '../components/Input';
-import Button from '../components/Button';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useTheme } from '../theme/ThemeContext';
+import { spacing } from '../theme/tokens';
+import { ToneName } from '../theme/palette';
+import { useNotifications } from '../notifications/NotificationContext';
 import {
   fetchConfidentialReport,
   saveConfidentialReport,
   submitConfidentialReport,
   ACRRecommendation,
+  ConfidentialReportForm,
 } from '../api/confidentialReport';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import Accordion from '../components/Accordion';
+import CheckboxCard from '../components/CheckboxCard';
+import {
+  Screen,
+  ScreenHeader,
+  Text,
+  Card,
+  Field,
+  Select,
+  Button,
+  Banner,
+  Badge,
+  ConfirmDialog,
+  Divider,
+} from '../components/ui';
 
-const RECOMMENDATIONS: { value: ACRRecommendation; label: string }[] = [
-  { value: 'Recommend', label: 'Recommend' },
-  { value: 'RecommendWithCaution', label: 'Recommend with caution' },
-  { value: 'DoNotRecommend', label: 'Do not recommend' },
+type ACRRoute = RouteProp<RootStackParamList, 'AgentConfidentialReport'>;
+
+const RECOMMENDATIONS: { value: ACRRecommendation; label: string; description: string }[] = [
+  {
+    value: 'Recommend',
+    label: 'Recommend',
+    description: 'Nothing in the proposal gives you cause for concern.',
+  },
+  {
+    value: 'RecommendWithCaution',
+    label: 'Recommend with caution',
+    description: 'Proceed, but underwriting should look closely at the noted factors.',
+  },
+  {
+    value: 'DoNotRecommend',
+    label: 'Do not recommend',
+    description: 'You have material concerns about this proposal.',
+  },
 ];
 
-function ToggleRow({ label, value, onChange }: { label: string; value: boolean; onChange: (v: boolean) => void }) {
-  return (
-    <View style={styles.toggleRow}>
-      <Text style={styles.toggleLabel}>{label}</Text>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: '#1D4ED8' }} />
-    </View>
-  );
-}
+const RECOMMENDATION_TONE: Record<ACRRecommendation, ToneName> = {
+  Recommend: 'success',
+  RecommendWithCaution: 'warning',
+  DoNotRecommend: 'danger',
+};
 
+const EMPTY = {
+  knownSince: '',
+  relationship: '',
+  purpose: '',
+  adverseInfoDetails: '',
+  estimatedIncome: '',
+  incomeNote: '',
+  healthNote: '',
+  remarks: '',
+};
+
+/**
+ * The Agent's Confidential Report — the agent's own signed opinion on a
+ * proposal, filed alongside the customer's e-application. It locks on submit,
+ * which is why the screen confirms before sending and goes read-only after.
+ */
 export default function AgentConfidentialReportScreen() {
-  const navigation = useNavigation<any>();
-  const route = useRoute<any>();
-  const { caseId, applicantName } = route.params ?? {};
+  const { colors } = useTheme();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const route = useRoute<ACRRoute>();
+  const { caseId, applicantName } = route.params ?? ({} as ACRRoute['params']);
+  const { toast } = useNotifications();
 
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [confirmSubmit, setConfirmSubmit] = useState(false);
 
-  const [knownSince, setKnownSince] = useState('');
-  const [relationship, setRelationship] = useState('');
-  const [purpose, setPurpose] = useState('');
-  const [financialInterestExplained, setFinancialInterestExplained] = useState(true);
-  const [adverseInfoKnown, setAdverseInfoKnown] = useState(false);
-  const [adverseInfoDetails, setAdverseInfoDetails] = useState('');
-
-  const [occupationVerified, setOccupationVerified] = useState(true);
-  const [incomeSourceVerified, setIncomeSourceVerified] = useState(true);
-  const [estimatedIncome, setEstimatedIncome] = useState('');
-  const [incomeNote, setIncomeNote] = useState('');
-
-  const [healthNote, setHealthNote] = useState('');
-  const [hazardousKnown, setHazardousKnown] = useState(false);
-
+  const [text, setText] = useState(EMPTY);
+  const [flags, setFlags] = useState({
+    financialInterestExplained: true,
+    adverseInfoKnown: false,
+    occupationVerified: true,
+    incomeSourceVerified: true,
+    hazardousKnown: false,
+  });
   const [recommendation, setRecommendation] = useState<ACRRecommendation>('Recommend');
-  const [remarks, setRemarks] = useState('');
+  const [errors, setErrors] = useState<{ estimatedIncome?: string; adverseInfoDetails?: string }>({});
+
+  const setField = useCallback(<K extends keyof typeof EMPTY>(key: K, value: string) => {
+    setText((prev) => ({ ...prev, [key]: value }));
+    setErrors((prev) => (prev[key as keyof typeof prev] ? { ...prev, [key]: undefined } : prev));
+  }, []);
+
+  const toggle = useCallback((key: keyof typeof flags) => {
+    setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
+  }, []);
 
   useEffect(() => {
-    (async () => {
-      if (!caseId) return;
-      try {
-        const r = await fetchConfidentialReport(caseId);
-        if (r.status === 'Submitted') setAlreadySubmitted(true);
-        setKnownSince(r.known_proposer_since ?? '');
-        setRelationship(r.relationship_to_proposer ?? '');
-        setPurpose(r.purpose_of_insurance ?? '');
-        setFinancialInterestExplained(r.financial_interest_explained ?? true);
-        setAdverseInfoKnown(r.adverse_info_known ?? false);
-        setAdverseInfoDetails(r.adverse_info_details ?? '');
-        setOccupationVerified(r.occupation_verified ?? true);
-        setIncomeSourceVerified(r.income_source_verified ?? true);
-        setEstimatedIncome(r.estimated_income_opinion ? String(r.estimated_income_opinion) : '');
-        setIncomeNote(r.income_consistency_note ?? '');
-        setHealthNote(r.health_appearance_note ?? '');
-        setHazardousKnown(r.hazardous_activity_known ?? false);
-        setRecommendation(r.recommendation ?? 'Recommend');
-        setRemarks(r.remarks ?? '');
-      } catch (e) {
-        // No draft yet — fine, start blank.
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [caseId]);
-
-  const handleSubmit = async () => {
     if (!caseId) {
-      Alert.alert('Error', 'No case selected.');
+      setLoadError('No case was selected, so there is nothing to report on.');
+      setLoading(false);
       return;
     }
-    setSubmitting(true);
-    try {
-      await saveConfidentialReport(caseId, {
-        known_proposer_since: knownSince || undefined,
-        relationship_to_proposer: relationship || undefined,
-        purpose_of_insurance: purpose || undefined,
-        financial_interest_explained: financialInterestExplained,
-        adverse_info_known: adverseInfoKnown,
-        adverse_info_details: adverseInfoDetails || undefined,
-        occupation_verified: occupationVerified,
-        income_source_verified: incomeSourceVerified,
-        estimated_income_opinion: estimatedIncome ? Number(estimatedIncome) : undefined,
-        income_consistency_note: incomeNote || undefined,
-        health_appearance_note: healthNote || undefined,
-        hazardous_activity_known: hazardousKnown,
-        recommendation,
-        remarks: remarks || undefined,
+
+    let cancelled = false;
+    fetchConfidentialReport(caseId)
+      .then((report) => {
+        if (cancelled) return;
+        setSubmitted(report.status === 'Submitted');
+        setText({
+          knownSince: report.known_proposer_since ?? '',
+          relationship: report.relationship_to_proposer ?? '',
+          purpose: report.purpose_of_insurance ?? '',
+          adverseInfoDetails: report.adverse_info_details ?? '',
+          estimatedIncome: report.estimated_income_opinion
+            ? String(report.estimated_income_opinion)
+            : '',
+          incomeNote: report.income_consistency_note ?? '',
+          healthNote: report.health_appearance_note ?? '',
+          remarks: report.remarks ?? '',
+        });
+        setFlags({
+          financialInterestExplained: report.financial_interest_explained ?? true,
+          adverseInfoKnown: report.adverse_info_known ?? false,
+          occupationVerified: report.occupation_verified ?? true,
+          incomeSourceVerified: report.income_source_verified ?? true,
+          hazardousKnown: report.hazardous_activity_known ?? false,
+        });
+        setRecommendation(report.recommendation ?? 'Recommend');
+      })
+      // A 404 simply means no draft exists yet, which is the normal first visit.
+      .catch(() => undefined)
+      .finally(() => {
+        if (!cancelled) setLoading(false);
       });
-      await submitConfidentialReport(caseId);
-      Alert.alert('Submitted', "Agent's Confidential Report submitted.", [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to submit report');
-    } finally {
-      setSubmitting(false);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId]);
+
+  const buildPayload = (): ConfidentialReportForm => ({
+    known_proposer_since: text.knownSince || undefined,
+    relationship_to_proposer: text.relationship || undefined,
+    purpose_of_insurance: text.purpose || undefined,
+    financial_interest_explained: flags.financialInterestExplained,
+    adverse_info_known: flags.adverseInfoKnown,
+    adverse_info_details: text.adverseInfoDetails || undefined,
+    occupation_verified: flags.occupationVerified,
+    income_source_verified: flags.incomeSourceVerified,
+    estimated_income_opinion: text.estimatedIncome ? Number(text.estimatedIncome) : undefined,
+    income_consistency_note: text.incomeNote || undefined,
+    health_appearance_note: text.healthNote || undefined,
+    hazardous_activity_known: flags.hazardousKnown,
+    recommendation,
+    remarks: text.remarks || undefined,
+  });
+
+  const validate = (): boolean => {
+    const next: typeof errors = {};
+    if (text.estimatedIncome && !(Number(text.estimatedIncome) > 0)) {
+      next.estimatedIncome = 'Enter an amount above zero, or leave it blank.';
     }
+    // An adverse-information flag with no explanation is useless to underwriting.
+    if (flags.adverseInfoKnown && !text.adverseInfoDetails.trim()) {
+      next.adverseInfoDetails = 'Describe the adverse information you are aware of.';
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
   };
+
+  const saveDraft = useCallback(async () => {
+    if (!caseId || !validate()) return;
+    setSaving(true);
+    setSubmitError(null);
+    try {
+      await saveConfidentialReport(caseId, buildPayload());
+      toast('Draft saved', { tone: 'success', icon: 'save-outline' });
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not save the draft.');
+    } finally {
+      setSaving(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, text, flags, recommendation, toast]);
+
+  const submit = useCallback(async () => {
+    if (!caseId) return;
+    setConfirmSubmit(false);
+    setSaving(true);
+    setSubmitError(null);
+    try {
+      // Save first: submit locks whatever the server currently holds, so an
+      // unsaved edit would be silently dropped.
+      await saveConfidentialReport(caseId, buildPayload());
+      await submitConfidentialReport(caseId);
+      setSubmitted(true);
+      toast('Report submitted', {
+        body: 'It is now locked and visible to underwriting.',
+        tone: 'success',
+        icon: 'checkmark-circle',
+      });
+      navigation.goBack();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not submit the report.');
+    } finally {
+      setSaving(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [caseId, text, flags, recommendation, toast, navigation]);
+
+  const editable = !submitted && !saving;
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <Text style={styles.subtitle}>Loading…</Text>
-      </SafeAreaView>
+      <Screen header={<ScreenHeader title="Confidential Report" leading="back" />}>
+        <View style={styles.loading}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text variant="callout" color="muted">
+            Loading the report…
+          </Text>
+        </View>
+      </Screen>
     );
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Agent's Confidential Report</Text>
-        <Text style={styles.subtitle}>{applicantName ?? 'Applicant'}</Text>
-
-        {alreadySubmitted && (
-          <View style={styles.lockedBanner}>
-            <Text style={styles.lockedBannerText}>This report has already been submitted and is locked.</Text>
+    <Screen
+      keyboardAvoiding
+      header={
+        <ScreenHeader
+          title="Confidential Report"
+          subtitle={applicantName ?? 'Agent’s own assessment'}
+          leading="back"
+        />
+      }
+      footer={
+        submitted ? undefined : (
+          <View style={styles.footer}>
+            <Button
+              title="Save draft"
+              onPress={saveDraft}
+              variant="outline"
+              tone="neutral"
+              disabled={!editable}
+              style={styles.footerButton}
+            />
+            <Button
+              title="Submit"
+              onPress={() => validate() && setConfirmSubmit(true)}
+              loading={saving}
+              disabled={!editable}
+              icon="lock-closed"
+              style={styles.footerButton}
+            />
           </View>
-        )}
+        )
+      }
+    >
+      {loadError ? (
+        <Banner tone="danger" title="Cannot open this report" description={loadError} style={styles.banner} />
+      ) : null}
 
-        <View style={[styles.form, alreadySubmitted && styles.disabledForm]} pointerEvents={alreadySubmitted ? 'none' : 'auto'}>
-          <Text style={styles.sectionTitle}>Moral Hazard</Text>
-          <Input label="How long have you known the proposer?" placeholder="e.g. 3 years" value={knownSince} onChangeText={setKnownSince} />
-          <Input label="Relationship to proposer" placeholder="e.g. Referred client" value={relationship} onChangeText={setRelationship} />
-          <Input label="Purpose of insurance" placeholder="e.g. Family protection" value={purpose} onChangeText={setPurpose} />
-          <ToggleRow label="Financial interest explained to proposer" value={financialInterestExplained} onChange={setFinancialInterestExplained} />
-          <ToggleRow label="Aware of adverse information about proposer" value={adverseInfoKnown} onChange={setAdverseInfoKnown} />
-          {adverseInfoKnown && (
-            <Input label="Adverse info details" value={adverseInfoDetails} onChangeText={setAdverseInfoDetails} multiline numberOfLines={3} />
-          )}
+      {submitted ? (
+        <Banner
+          tone="success"
+          title="Submitted and locked"
+          description="This report has been filed with underwriting and can no longer be edited."
+          icon="lock-closed"
+          style={styles.banner}
+        />
+      ) : (
+        <Banner
+          tone="info"
+          title="Your confidential assessment"
+          description="Underwriting reads this alongside the customer's own application. It locks once submitted."
+          icon="eye-off-outline"
+          style={styles.banner}
+        />
+      )}
 
-          <Text style={styles.sectionTitle}>Financial Standing</Text>
-          <ToggleRow label="Occupation verified in person" value={occupationVerified} onChange={setOccupationVerified} />
-          <ToggleRow label="Source of income verified" value={incomeSourceVerified} onChange={setIncomeSourceVerified} />
-          <Input label="Your estimate of income (PKR/yr)" keyboardType="numeric" value={estimatedIncome} onChangeText={setEstimatedIncome} />
-          <Input label="Income consistency note" value={incomeNote} onChangeText={setIncomeNote} multiline numberOfLines={3} />
+      {submitError ? (
+        <Banner
+          tone="danger"
+          title="Could not save"
+          description={submitError}
+          onDismiss={() => setSubmitError(null)}
+          style={styles.banner}
+        />
+      ) : null}
 
-          <Text style={styles.sectionTitle}>General Lifestyle</Text>
-          <Input label="Health / appearance note" value={healthNote} onChangeText={setHealthNote} multiline numberOfLines={3} />
-          <ToggleRow label="Aware of undisclosed hazardous activity" value={hazardousKnown} onChange={setHazardousKnown} />
+      <Accordion title="The proposer" icon="person-outline" tone="brand" defaultExpanded>
+        <Field
+          label="Known the proposer since"
+          placeholder="2019"
+          value={text.knownSince}
+          onChangeText={(v) => setField('knownSince', v)}
+          editable={editable}
+          leftIcon="calendar-outline"
+        />
+        <Field
+          label="Your relationship to them"
+          placeholder="Existing client, referral, family friend"
+          value={text.relationship}
+          onChangeText={(v) => setField('relationship', v)}
+          editable={editable}
+        />
+        <Field
+          label="Purpose of the insurance"
+          placeholder="Family protection, loan cover, estate planning"
+          value={text.purpose}
+          onChangeText={(v) => setField('purpose', v)}
+          editable={editable}
+          multiline
+        />
+        <CheckboxCard
+          title="Insurable financial interest explained"
+          subtitle="You confirmed the proposer understands why cover is being taken."
+          checked={flags.financialInterestExplained}
+          onPress={() => toggle('financialInterestExplained')}
+          disabled={!editable}
+        />
+        <CheckboxCard
+          title="Aware of adverse information"
+          subtitle="Anything that could materially affect the risk."
+          checked={flags.adverseInfoKnown}
+          onPress={() => toggle('adverseInfoKnown')}
+          disabled={!editable}
+        />
+        {flags.adverseInfoKnown ? (
+          <Field
+            label="Details of the adverse information"
+            required
+            placeholder="Describe what you know."
+            value={text.adverseInfoDetails}
+            onChangeText={(v) => setField('adverseInfoDetails', v)}
+            error={errors.adverseInfoDetails}
+            editable={editable}
+            multiline
+          />
+        ) : null}
+      </Accordion>
 
-          <Text style={styles.sectionTitle}>Recommendation</Text>
-          <View style={styles.pillRow}>
-            {RECOMMENDATIONS.map((r) => (
-              <TouchableOpacity
-                key={r.value}
-                style={[styles.pill, recommendation === r.value && styles.pillActive]}
-                onPress={() => setRecommendation(r.value)}
-              >
-                <Text style={[styles.pillText, recommendation === r.value && styles.pillTextActive]}>{r.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          <Input label="Remarks" value={remarks} onChangeText={setRemarks} multiline numberOfLines={3} />
+      <Accordion title="Occupation & income" icon="briefcase-outline" tone="success">
+        <CheckboxCard
+          title="Occupation verified"
+          subtitle="You have seen evidence of the stated occupation."
+          checked={flags.occupationVerified}
+          onPress={() => toggle('occupationVerified')}
+          disabled={!editable}
+        />
+        <CheckboxCard
+          title="Income source verified"
+          subtitle="You are satisfied the declared income is genuine."
+          checked={flags.incomeSourceVerified}
+          onPress={() => toggle('incomeSourceVerified')}
+          disabled={!editable}
+        />
+        <Field
+          label="Your estimate of their annual income (PKR)"
+          placeholder="1200000"
+          keyboardType="number-pad"
+          leftIcon="cash-outline"
+          value={text.estimatedIncome}
+          onChangeText={(v) => setField('estimatedIncome', v)}
+          error={errors.estimatedIncome}
+          editable={editable}
+          helperText="Your own opinion, which may differ from the declared figure."
+        />
+        <Field
+          label="Notes on income consistency"
+          placeholder="Lifestyle and stated income are consistent."
+          value={text.incomeNote}
+          onChangeText={(v) => setField('incomeNote', v)}
+          editable={editable}
+          multiline
+        />
+      </Accordion>
 
-          <Button title="Submit ACR" onPress={handleSubmit} loading={submitting} style={{ marginTop: 8 }} />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+      <Accordion title="Health & activities" icon="fitness-outline" tone="info">
+        <Field
+          label="Notes on general appearance and health"
+          placeholder="Appears in good health; no visible impairment."
+          value={text.healthNote}
+          onChangeText={(v) => setField('healthNote', v)}
+          editable={editable}
+          multiline
+        />
+        <CheckboxCard
+          title="Aware of hazardous activities"
+          subtitle="Occupation or hobbies with elevated risk."
+          checked={flags.hazardousKnown}
+          onPress={() => toggle('hazardousKnown')}
+          disabled={!editable}
+        />
+      </Accordion>
+
+      <Card padding="lg" style={styles.recommendation}>
+        <Text variant="title3" style={styles.recommendationTitle}>
+          Your recommendation
+        </Text>
+        <Divider spacingY="md" />
+        <Select
+          label="Recommendation"
+          value={recommendation}
+          onSelect={(v) => setRecommendation(v as ACRRecommendation)}
+          options={RECOMMENDATIONS}
+          disabled={!editable}
+          required
+        />
+        <Badge
+          label={RECOMMENDATIONS.find((r) => r.value === recommendation)?.label ?? recommendation}
+          tone={RECOMMENDATION_TONE[recommendation]}
+          variant="soft"
+          icon="ribbon-outline"
+          style={styles.recommendationBadge}
+        />
+        <Field
+          label="Remarks"
+          placeholder="Anything else underwriting should know."
+          value={text.remarks}
+          onChangeText={(v) => setField('remarks', v)}
+          editable={editable}
+          multiline
+        />
+      </Card>
+
+      <ConfirmDialog
+        visible={confirmSubmit}
+        title="Submit this report?"
+        message="Once submitted, the report is locked and cannot be edited. Underwriting will see it immediately."
+        confirmLabel="Submit and lock"
+        icon="lock-closed"
+        loading={saving}
+        onConfirm={submit}
+        onCancel={() => setConfirmSubmit(false)}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#ffffff' },
-  container: { padding: 20 },
-  title: { fontSize: 22, fontWeight: '800', color: '#0f172a' },
-  subtitle: { fontSize: 14, color: '#64748b', marginBottom: 16 },
-  sectionTitle: { fontSize: 12, fontWeight: '800', color: '#334155', textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 12, marginBottom: 8 },
-  form: { gap: 4 },
-  disabledForm: { opacity: 0.5 },
-  lockedBanner: { backgroundColor: '#fef3c7', borderColor: '#fde68a', borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 12 },
-  lockedBannerText: { fontSize: 12, fontWeight: '600', color: '#78350f' },
-  toggleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8 },
-  toggleLabel: { flex: 1, fontSize: 13, color: '#334155', marginRight: 12 },
-  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
-  pill: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' },
-  pillActive: { backgroundColor: '#1D4ED8', borderColor: '#1D4ED8' },
-  pillText: { fontSize: 12, fontWeight: '600', color: '#475569' },
-  pillTextActive: { color: '#ffffff' },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.lg,
+  },
+  banner: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  recommendation: {
+    marginTop: spacing.md,
+    marginBottom: spacing.xxl,
+  },
+  recommendationTitle: {
+    marginBottom: spacing.xxs,
+  },
+  recommendationBadge: {
+    marginBottom: spacing.lg,
+  },
+  footer: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  footerButton: {
+    flex: 1,
+  },
 });

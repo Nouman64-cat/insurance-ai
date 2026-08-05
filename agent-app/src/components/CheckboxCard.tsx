@@ -1,72 +1,105 @@
 import React from 'react';
-import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import { View, StyleSheet, ViewStyle, StyleProp } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../theme/ThemeContext';
+import { spacing, radii } from '../theme/tokens';
+import { Text, Pressable } from './ui';
 
 interface CheckboxCardProps {
   title: string;
-  subtitle: string;
+  subtitle?: string;
   checked: boolean;
   onPress: () => void;
+  disabled?: boolean;
+  style?: StyleProp<ViewStyle>;
 }
 
-export default function CheckboxCard({ title, subtitle, checked, onPress }: CheckboxCardProps) {
+/**
+ * A checkbox with room to explain what ticking it means. Used throughout the
+ * underwriting forms, where a bare label would leave the agent guessing.
+ */
+export default function CheckboxCard({
+  title,
+  subtitle,
+  checked,
+  onPress,
+  disabled,
+  style,
+}: CheckboxCardProps) {
+  const { colors } = useTheme();
+
   return (
-    <TouchableOpacity 
-      style={[styles.container, checked && styles.containerChecked]} 
+    <Pressable
       onPress={onPress}
-      activeOpacity={0.7}
+      disabled={disabled}
+      pressedScale={0.99}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked, disabled: !!disabled }}
+      accessibilityLabel={title}
+      accessibilityHint={subtitle}
+      style={[
+        styles.container,
+        {
+          backgroundColor: checked ? colors.tone.brand.soft : colors.surface,
+          borderColor: checked ? colors.tone.brand.softBorder : colors.border,
+        },
+        disabled ? styles.disabled : null,
+        style,
+      ]}
     >
-      <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-        {checked && <Ionicons name="checkmark" size={16} color="#fff" />}
+      <View
+        style={[
+          styles.box,
+          {
+            backgroundColor: checked ? colors.tone.brand.solid : 'transparent',
+            borderColor: checked ? colors.tone.brand.solid : colors.borderStrong,
+          },
+        ]}
+      >
+        {checked ? <Ionicons name="checkmark" size={15} color={colors.tone.brand.onSolid} /> : null}
       </View>
-      <View style={styles.textContainer}>
-        <Text style={styles.title}>{title}</Text>
-        <Text style={styles.subtitle}>{subtitle}</Text>
+
+      <View style={styles.text}>
+        <Text variant="calloutStrong" style={checked ? { color: colors.tone.brand.on } : undefined}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text variant="caption" color="muted" style={styles.subtitle}>
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    padding: 16,
-    borderRadius: 12,
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radii.md,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    backgroundColor: '#ffffff',
-    marginBottom: 12,
-    alignItems: 'center',
+    marginBottom: spacing.md,
   },
-  containerChecked: {
-    borderColor: '#3b82f6',
-    backgroundColor: '#eff6ff',
-  },
-  checkbox: {
-    width: 20,
-    height: 20,
-    borderRadius: 4,
-    borderWidth: 1.5,
-    borderColor: '#cbd5e1',
-    marginRight: 12,
+  box: {
+    width: 22,
+    height: 22,
+    borderRadius: radii.xs,
+    borderWidth: 2,
     alignItems: 'center',
     justifyContent: 'center',
+    // Aligns the box with the first line of the title rather than the block.
+    marginTop: 1,
   },
-  checkboxChecked: {
-    backgroundColor: '#3b82f6',
-    borderColor: '#3b82f6',
-  },
-  textContainer: {
+  text: {
     flex: 1,
   },
-  title: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1e293b',
-    marginBottom: 2,
-  },
   subtitle: {
-    fontSize: 11,
-    color: '#94a3b8',
+    marginTop: spacing.xxs,
+  },
+  disabled: {
+    opacity: 0.5,
   },
 });

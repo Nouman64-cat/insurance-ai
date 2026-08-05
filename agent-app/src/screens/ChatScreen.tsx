@@ -1,362 +1,440 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
-  Text,
   StyleSheet,
   TextInput,
-  TouchableOpacity,
   FlatList,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../theme/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '../theme/ThemeContext';
+import { spacing, radii, typography, hitTarget } from '../theme/tokens';
+import { useResponsive } from '../hooks/useResponsive';
+import { useSession } from '../context/SessionContext';
 import { sendChatMessage, ChatMessage } from '../api/chat';
+import { Screen, ScreenHeader, Text, Pressable, ConfirmDialog } from '../components/ui';
 
-const DEFAULT_WELCOME: ChatMessage = {
-  id: 'welcome-1',
+const newThreadId = () => Math.random().toString(36).slice(2, 9);
+
+const WELCOME: ChatMessage = {
+  id: 'welcome',
   role: 'assistant',
-  text: 'Hello! I am your AI Underwriting Copilot. I can help you onboard applicants, run risk assessments, or check case details. What would you like to do today?',
+  text: "I'm your underwriting copilot. I can onboard applicants, run risk assessments, or pull up case details. What would you like to do?",
   quickActions: [
     { label: 'Add a customer', actionType: 'submit', payload: 'Add a new customer' },
     { label: 'Start underwriting', actionType: 'submit', payload: 'Start underwriting journey for a customer' },
     { label: 'Create a proposal', actionType: 'submit', payload: 'Create a proposal for a customer' },
-    { label: 'Check pending cases', actionType: 'submit', payload: 'Show me all pending cases' },
+    { label: 'Pending cases', actionType: 'submit', payload: 'Show me all pending cases' },
     { label: 'Run risk assessment', actionType: 'submit', payload: 'Run risk assessment' },
-    { label: 'Test with demo data', actionType: 'submit', payload: 'Test the full workflow with demo data' },
   ],
 };
 
 export default function ChatScreen() {
-  const [messages, setMessages] = useState<ChatMessage[]>([DEFAULT_WELCOME]);
+  const { colors, shadow } = useTheme();
+  const { isCompact } = useResponsive();
+  const { user } = useSession();
+
+  const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [threadId, setThreadId] = useState(() => Math.random().toString(36).substring(2, 9));
-  const flatListRef = useRef<FlatList>(null);
+  const [sending, setSending] = useState(false);
+  const [threadId, setThreadId] = useState(newThreadId);
+  const [confirmClear, setConfirmClear] = useState(false);
 
+  const listRef = useRef<FlatList<ChatMessage>>(null);
+  // Guards the auto-scroll from firing after the screen unmounts mid-stream.
+  const mounted = useRef(true);
   useEffect(() => {
-    flatListRef.current?.scrollToEnd({ animated: true });
-  }, [messages, loading]);
-
-  const handleSend = async (textToSend?: string) => {
-    const query = (textToSend || input).trim();
-    if (!query || loading) return;
-
-    if (!textToSend) setInput('');
-
-    const userMsg: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: query,
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
     };
+  }, []);
 
-    const assistantMsgId = (Date.now() + 1).toString();
-    const initialAssistantMsg: ChatMessage = {
-      id: assistantMsgId,
-      role: 'assistant',
-      text: '',
-      isStreaming: true,
-    };
+  const scrollToEnd = useCallback(() => {
+    // A frame's delay lets the new row lay out before we measure the offset.
+    requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
+  }, []);
 
-    setMessages((prev) => [...prev, userMsg, initialAssistantMsg]);
-    setLoading(true);
+  const send = useCallback(
+    async (textToSend?: string) => {
+      const query = (textToSend ?? input).trim();
+      if (!query || sending) return;
 
-    try {
-      let accumulated = '';
-      let receivedActions: any[] | undefined = undefined;
+      if (!textToSend) setInput('');
 
-      await sendChatMessage(
-        query,
-        threadId,
-        (token) => {
-          accumulated += token;
-          setMessages((prev) =>
-            prev.map((msg) =>
-              msg.id === assistantMsgId ? { ...msg, text: accumulated } : msg
-            )
-          );
-        },
-        (actions) => {
-          receivedActions = actions;
+      const userMessage: ChatMessage = { id: `u_${Date.now()}`, role: 'user', text: query };
+      const replyId = `a_${Date.now() + 1}`;
+      const placeholder: ChatMessage = { id: replyId, role: 'assistant', text: '', isStreaming: true };
+
+      setMessages((prev) => [...prev, userMessage, placeholder]);
+      setSending(true);
+      scrollToEnd();
+
+      try {
+        let accumulated = '';
+        let actions: any[] | undefined;
+
+        await sendChatMessage(
+          query,
+          threadId,
+          (token) => {
+            accumulated += token;
+            if (!mounted.current) return;
+            setMessages((prev) =>
+              prev.map((m) => (m.id === replyId ? { ...m, text: accumulated } : m))
+            );
+          },
+          (received) => {
+            actions = received;
+          }
+        );
+
+        if (!mounted.current) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === replyId
+              ? {
+                  ...m,
+                  text: accumulated || 'Done.',
+                  isStreaming: false,
+                  quickActions: actions,
+                }
+              : m
+          )
+        );
+      } catch (err: any) {
+        if (!mounted.current) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === replyId
+              ? {
+                  ...m,
+                  text: err?.message ?? 'Could not reach the copilot.',
+                  isStreaming: false,
+                  isError: true,
+                }
+              : m
+          )
+        );
+      } finally {
+        if (mounted.current) {
+          setSending(false);
+          scrollToEnd();
         }
-      );
+      }
+    },
+    [input, sending, threadId, scrollToEnd]
+  );
 
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMsgId
-            ? {
-              ...msg,
-              text: accumulated || 'Request processed successfully.',
-              isStreaming: false,
-              quickActions: receivedActions,
-            }
-            : msg
-        )
-      );
-    } catch (err: any) {
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMsgId
-            ? {
-              ...msg,
-              text: `⚠️ Error: ${err.message || 'Could not connect to AI Copilot.'}`,
-              isStreaming: false,
-            }
-            : msg
-        )
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  const startNewThread = useCallback(() => {
+    setThreadId(newThreadId());
+    setMessages([WELCOME]);
+    setConfirmClear(false);
+  }, []);
 
-  const handleClear = () => {
-    setThreadId(Math.random().toString(36).substring(2, 9));
-    setMessages([DEFAULT_WELCOME]);
-  };
-
-  const renderItem = ({ item }: { item: ChatMessage }) => {
+  const renderMessage = ({ item }: { item: ChatMessage & { isError?: boolean } }) => {
     const isUser = item.role === 'user';
+    const errored = !!item.isError;
+
     return (
-      <View style={[styles.msgWrapper, isUser ? styles.userMsgWrapper : styles.botMsgWrapper]}>
-        {!isUser && (
-          <View style={styles.avatar}>
-            <Ionicons name="sparkles" size={16} color="#ffffff" />
+      <View style={[styles.row, isUser ? styles.rowUser : styles.rowBot]}>
+        {!isUser ? (
+          <View
+            style={[
+              styles.avatar,
+              {
+                backgroundColor: errored ? colors.tone.danger.soft : colors.tone.accent.soft,
+                borderColor: errored ? colors.tone.danger.softBorder : colors.tone.accent.softBorder,
+              },
+            ]}
+          >
+            <Ionicons
+              name={errored ? 'alert-circle' : 'sparkles'}
+              size={15}
+              color={errored ? colors.tone.danger.on : colors.tone.accent.on}
+            />
           </View>
-        )}
-        <View style={[styles.bubble, isUser ? styles.userBubble : styles.botBubble]}>
-          <Text style={[styles.msgText, isUser ? styles.userMsgText : styles.botMsgText]}>
-            {item.text || (item.isStreaming ? 'Thinking...' : '')}
-          </Text>
+        ) : null}
 
-          {item.isStreaming && !item.text && (
-            <ActivityIndicator size="small" color="#1d4ed8" style={{ marginTop: 4 }} />
-          )}
+        <View style={[styles.bubbleColumn, isCompact ? styles.bubbleNarrow : styles.bubbleWide]}>
+          <View
+            style={[
+              styles.bubble,
+              isUser
+                ? { backgroundColor: colors.tone.brand.solid, borderColor: 'transparent' }
+                : {
+                    backgroundColor: errored ? colors.tone.danger.soft : colors.surface,
+                    borderColor: errored ? colors.tone.danger.softBorder : colors.border,
+                  },
+              isUser ? styles.bubbleUser : styles.bubbleBot,
+              shadow(isUser ? 1 : 0),
+            ]}
+          >
+            {item.text ? (
+              <Text
+                variant="body"
+                style={
+                  isUser
+                    ? { color: colors.tone.brand.onSolid }
+                    : errored
+                    ? { color: colors.tone.danger.on }
+                    : undefined
+                }
+              >
+                {item.text}
+              </Text>
+            ) : item.isStreaming ? (
+              <View style={styles.thinking}>
+                <ActivityIndicator size="small" color={colors.tone.accent.solid} />
+                <Text variant="callout" color="muted">
+                  Thinking…
+                </Text>
+              </View>
+            ) : null}
+          </View>
 
-          {item.quickActions && item.quickActions.length > 0 && !item.isStreaming && (
-            <View style={styles.quickActionsContainer}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                {item.quickActions.map((action, idx) => (
-                  <TouchableOpacity
-                    key={idx}
-                    style={styles.actionChip}
-                    onPress={() => handleSend(action.payload || action.label)}
-                  >
-                    <Text style={styles.actionChipText}>{action.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          )}
+          {item.quickActions && item.quickActions.length > 0 && !item.isStreaming ? (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.chips}
+              style={styles.chipsScroll}
+            >
+              {item.quickActions.map((action, index) => (
+                <Pressable
+                  key={`${item.id}_${index}`}
+                  onPress={() => send(action.payload || action.label)}
+                  disabled={sending}
+                  pressedScale={0.95}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.tone.brand.softBorder,
+                      opacity: sending ? 0.5 : 1,
+                    },
+                  ]}
+                >
+                  <Text variant="captionStrong" style={{ color: colors.tone.brand.on }}>
+                    {action.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          ) : null}
         </View>
       </View>
     );
   };
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <View style={styles.headerTitleRow}>
-          <View style={styles.headerIcon}>
-            <Ionicons name="chatbubbles" size={20} color="#1d4ed8" />
-          </View>
-          <View>
-            <Text style={styles.title}>AI Copilot</Text>
-            <Text style={styles.subtitle}>Underwriting & Case Assistant</Text>
-          </View>
-        </View>
-        <TouchableOpacity style={styles.clearBtn} onPress={handleClear}>
-          <Ionicons name="refresh-outline" size={20} color="#64748b" />
-        </TouchableOpacity>
-      </View>
+  const canSend = input.trim().length > 0 && !sending;
 
+  return (
+    <Screen
+      scrollable={false}
+      padded={false}
+      header={
+        <ScreenHeader
+          title="Copilot"
+          subtitle={sending ? 'Thinking…' : `Underwriting assistant for ${user?.fullName ?? 'you'}`}
+          leading="menu"
+          actions={[
+            {
+              icon: 'add-circle-outline',
+              onPress: () => setConfirmClear(true),
+              accessibilityLabel: 'Start a new conversation',
+            },
+          ]}
+        />
+      }
+    >
       <KeyboardAvoidingView
-        style={styles.container}
+        style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        // Clears the bottom tab bar, which the keyboard otherwise overlaps.
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
         <FlatList
-          ref={flatListRef}
+          ref={listRef}
           data={messages}
           keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-          onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: true })}
+          renderItem={renderMessage}
+          contentContainerStyle={styles.list}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          onContentSizeChange={scrollToEnd}
         />
 
-        <View style={styles.inputContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Ask AI Copilot..."
-            placeholderTextColor="#94a3b8"
-            value={input}
-            onChangeText={setInput}
-            onSubmitEditing={() => handleSend()}
-            returnKeyType="send"
-            editable={!loading}
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
-            onPress={() => handleSend()}
-            disabled={!input.trim() || loading}
+        <View
+          style={[
+            styles.composer,
+            { backgroundColor: colors.surface, borderTopColor: colors.border },
+          ]}
+        >
+          <View
+            style={[
+              styles.inputWrap,
+              { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
+            ]}
           >
-            {loading ? (
-              <ActivityIndicator size="small" color="#ffffff" />
+            <TextInput
+              value={input}
+              onChangeText={setInput}
+              placeholder="Ask the copilot…"
+              placeholderTextColor={colors.textSubtle}
+              style={[styles.input, typography.body, { color: colors.text }]}
+              multiline
+              // Caps growth at roughly five lines so the composer never eats
+              // the conversation.
+              maxLength={2000}
+              editable={!sending}
+              onSubmitEditing={() => send()}
+              accessibilityLabel="Message the copilot"
+            />
+          </View>
+
+          <Pressable
+            onPress={() => send()}
+            disabled={!canSend}
+            pressedScale={0.92}
+            accessibilityRole="button"
+            accessibilityLabel="Send message"
+            accessibilityState={{ disabled: !canSend, busy: sending }}
+            style={[
+              styles.sendButton,
+              {
+                backgroundColor: canSend ? colors.tone.brand.solid : colors.surfaceSunken,
+              },
+            ]}
+          >
+            {sending ? (
+              <ActivityIndicator size="small" color={colors.textMuted} />
             ) : (
-              <Ionicons name="send" size={18} color="#ffffff" />
+              <Ionicons
+                name="arrow-up"
+                size={20}
+                color={canSend ? colors.tone.brand.onSolid : colors.textSubtle}
+              />
             )}
-          </TouchableOpacity>
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+
+      <ConfirmDialog
+        visible={confirmClear}
+        title="Start a new conversation?"
+        message="The current thread will be cleared. Nothing you have already saved is affected."
+        confirmLabel="Start new"
+        icon="add-circle-outline"
+        onConfirm={startNewThread}
+        onCancel={() => setConfirmClear(false)}
+      />
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8fafc',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  headerTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerIcon: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
-    backgroundColor: '#eff6ff',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 12,
-    color: '#64748b',
-  },
-  clearBtn: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f1f5f9',
-  },
-  container: {
+  flex: {
     flex: 1,
   },
-  listContent: {
-    padding: 16,
-    gap: 16,
+  list: {
+    padding: spacing.lg,
+    gap: spacing.lg,
   },
-  msgWrapper: {
+  row: {
     flexDirection: 'row',
-    marginVertical: 4,
-    maxWidth: '85%',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
   },
-  userMsgWrapper: {
-    alignSelf: 'flex-end',
+  rowUser: {
     justifyContent: 'flex-end',
   },
-  botMsgWrapper: {
-    alignSelf: 'flex-start',
-    gap: 8,
+  rowBot: {
+    justifyContent: 'flex-start',
   },
   avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#1d4ed8',
-    justifyContent: 'center',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
     alignItems: 'center',
-    marginTop: 4,
+    justifyContent: 'center',
+    marginBottom: 2,
+  },
+  bubbleColumn: {
+    flexShrink: 1,
+  },
+  bubbleNarrow: {
+    maxWidth: '84%',
+  },
+  bubbleWide: {
+    maxWidth: 560,
   },
   bubble: {
-    borderRadius: 16,
-    padding: 12,
-  },
-  userBubble: {
-    backgroundColor: '#1d4ed8',
-    borderBottomRightRadius: 4,
-  },
-  botBubble: {
-    backgroundColor: '#ffffff',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radii.lg,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderBottomLeftRadius: 4,
   },
-  msgText: {
-    fontSize: 15,
-    lineHeight: 22,
+  // Squaring off the corner nearest the sender is what makes a bubble read as
+  // pointing at its author.
+  bubbleUser: {
+    borderBottomRightRadius: radii.xs,
   },
-  userMsgText: {
-    color: '#ffffff',
+  bubbleBot: {
+    borderBottomLeftRadius: radii.xs,
   },
-  botMsgText: {
-    color: '#1e293b',
-  },
-  quickActionsContainer: {
-    marginTop: 10,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f1f5f9',
-  },
-  actionChip: {
-    backgroundColor: '#eff6ff',
-    borderColor: '#bfdbfe',
-    borderWidth: 1,
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-  },
-  actionChipText: {
-    color: '#1d4ed8',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  inputContainer: {
+  thinking: {
     flexDirection: 'row',
-    padding: 12,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
     alignItems: 'center',
-    gap: 8,
+    gap: spacing.sm,
+  },
+  chipsScroll: {
+    marginTop: spacing.sm,
+  },
+  chips: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    paddingVertical: spacing.xxs,
+  },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radii.pill,
+    borderWidth: 1,
+  },
+  composer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  inputWrap: {
+    flex: 1,
+    borderRadius: radii.xl,
+    borderWidth: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: Platform.OS === 'ios' ? spacing.md : spacing.sm,
+    minHeight: hitTarget.comfortable,
+    justifyContent: 'center',
   },
   input: {
-    flex: 1,
-    backgroundColor: '#f1f5f9',
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#0f172a',
+    maxHeight: 120,
+    padding: 0,
   },
-  sendBtn: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#1d4ed8',
-    justifyContent: 'center',
+  sendButton: {
+    width: hitTarget.comfortable,
+    height: hitTarget.comfortable,
+    borderRadius: hitTarget.comfortable / 2,
     alignItems: 'center',
-  },
-  sendBtnDisabled: {
-    backgroundColor: '#94a3b8',
+    justifyContent: 'center',
   },
 });

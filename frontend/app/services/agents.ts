@@ -38,3 +38,33 @@ export async function listAgents(tenantId: string): Promise<Agent[]> {
 export async function listUnderwriters(tenantId: string): Promise<Agent[]> {
   return listUsersByRole(tenantId, "Underwriter");
 }
+
+/**
+ * Every user in the tenant keyed by id, for turning an `assigned_agent_id` into
+ * a display name. The list endpoints return only the id, so any screen showing
+ * "who owns this lead" needs this lookup.
+ *
+ * Cached per tenant because the Leads board resolves names on every refresh,
+ * and the directory changes far less often than the leads do.
+ */
+let directoryCache: { tenantId: string; byId: Map<string, string> } | null = null;
+
+export async function getUserDirectory(tenantId: string): Promise<Map<string, string>> {
+  if (directoryCache?.tenantId === tenantId) return directoryCache.byId;
+  try {
+    const res = await api.get<UserRow[]>(`/tenants/${tenantId}/users/directory`);
+    const byId = new Map<string, string>(
+      (res.data || []).map((u) => [String(u.id), u.full_name || u.email || "Unknown"]),
+    );
+    directoryCache = { tenantId, byId };
+    return byId;
+  } catch {
+    // Names are a nicety — the board must still render without them.
+    return new Map();
+  }
+}
+
+/** Drops the cache so a newly created user shows up without a page reload. */
+export function invalidateUserDirectory() {
+  directoryCache = null;
+}

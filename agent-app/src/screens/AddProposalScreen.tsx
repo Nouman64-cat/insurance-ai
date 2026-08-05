@@ -1,117 +1,189 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import Input from '../components/Input';
-import Button from '../components/Button';
-import { useTheme } from '../theme/ThemeContext';
-import { createProposal } from '../api/proposals';
+import React, { useState, useCallback } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { spacing } from '../theme/tokens';
+import { useNotifications } from '../notifications/NotificationContext';
+import { createProposal } from '../api/proposals';
+import {
+  Screen,
+  ScreenHeader,
+  Card,
+  Text,
+  Field,
+  Select,
+  Button,
+  Banner,
+} from '../components/ui';
+
+const PRODUCTS = [
+  { label: 'Term Life Plus', value: 'Term Life Plus', description: 'Pure protection, fixed term' },
+  { label: 'Whole Life', value: 'Whole Life', description: 'Lifetime cover with cash value' },
+  { label: 'Endowment', value: 'Endowment', description: 'Protection plus savings at maturity' },
+  { label: 'Family Floater Health', value: 'Family Floater Health', description: 'One sum insured for the household' },
+  { label: 'Group Health', value: 'Group Health', description: 'Employer-sponsored corporate cover' },
+];
+
+const TERMS = [5, 10, 15, 20, 25, 30].map((y) => ({
+  label: `${y} years`,
+  value: String(y),
+}));
+
+/** Renders 5000000 as "50.00 Lac" so an agent can sanity-check the zeros. */
+const describeAmount = (raw: string): string | undefined => {
+  const value = Number(raw);
+  if (!raw || !Number.isFinite(value) || value <= 0) return undefined;
+  if (value >= 10_000_000) return `${(value / 10_000_000).toFixed(2)} Crore`;
+  if (value >= 100_000) return `${(value / 100_000).toFixed(2)} Lac`;
+  return value.toLocaleString();
+};
 
 export default function AddProposalScreen() {
+  const navigation = useNavigation<any>();
+  const { toast } = useNotifications();
+
   const [customerName, setCustomerName] = useState('');
   const [cnic, setCnic] = useState('');
-  const [productName, setProductName] = useState('Term Life Plus');
+  const [productName, setProductName] = useState(PRODUCTS[0].value);
   const [coverageAmount, setCoverageAmount] = useState('5000000');
   const [termYears, setTermYears] = useState('20');
-  const [loading, setLoading] = useState(false);
-  const navigation = useNavigation<any>();
 
-  const handleSubmit = async () => {
-    if (!customerName || !coverageAmount) {
-      Alert.alert('Error', 'Please fill in Customer Name and Coverage Amount');
+  const [errors, setErrors] = useState<{ customerName?: string; coverageAmount?: string }>({});
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const submit = useCallback(async () => {
+    const next: typeof errors = {};
+    if (!customerName.trim()) next.customerName = 'Customer name is required.';
+    const coverage = Number(coverageAmount);
+    if (!coverageAmount.trim()) next.coverageAmount = 'Coverage amount is required.';
+    else if (!Number.isFinite(coverage) || coverage <= 0)
+      next.coverageAmount = 'Enter an amount above zero.';
+
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      toast('Check the highlighted fields', { tone: 'warning', icon: 'alert-circle' });
       return;
     }
 
-    setLoading(true);
+    setSaving(true);
+    setSubmitError(null);
     try {
       await createProposal({
-        customer_name: customerName,
-        customer_cnic: cnic || undefined,
+        customer_name: customerName.trim(),
+        customer_cnic: cnic.trim() || undefined,
         product_name: productName,
-        coverage_amount: Number(coverageAmount),
+        coverage_amount: coverage,
         term_years: Number(termYears),
       });
-      Alert.alert('Success', 'Proposal created successfully', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
-    } catch (e: any) {
-      Alert.alert('Error', e.message || 'Failed to create proposal');
+      toast('Proposal created', { tone: 'success', icon: 'checkmark-circle' });
+      // The Proposals screen refetches on focus, so going back is enough.
+      navigation.goBack();
+    } catch (err: any) {
+      setSubmitError(err?.message ?? 'Could not create the proposal.');
     } finally {
-      setLoading(false);
+      setSaving(false);
     }
-  };
+  }, [customerName, cnic, productName, coverageAmount, termYears, toast, navigation]);
+
+  const amountHint = describeAmount(coverageAmount);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Create Proposal</Text>
-        <Text style={styles.subtitle}>Define insurance terms for applicant</Text>
+    <Screen
+      keyboardAvoiding
+      header={
+        <ScreenHeader
+          title="New Proposal"
+          subtitle="Quote coverage for an applicant"
+          leading="back"
+        />
+      }
+      footer={
+        <Button
+          title={saving ? 'Creating…' : 'Create proposal'}
+          onPress={submit}
+          loading={saving}
+          size="lg"
+          fullWidth
+          icon="checkmark"
+        />
+      }
+    >
+      {submitError ? (
+        <Banner
+          tone="danger"
+          title="Could not create the proposal"
+          description={submitError}
+          onDismiss={() => setSubmitError(null)}
+          style={styles.banner}
+        />
+      ) : null}
 
-        <View style={styles.form}>
-          <Input
-            label="Customer Name"
-            placeholder="e.g. Ahmed Khan"
-            value={customerName}
-            onChangeText={setCustomerName}
-          />
-          <Input
-            label="CNIC (Optional)"
-            placeholder="35201-1234567-1"
-            value={cnic}
-            onChangeText={setCnic}
-          />
-          <Input
-            label="Product Name"
-            placeholder="e.g. Term Life Plus"
-            value={productName}
-            onChangeText={setProductName}
-          />
-          <Input
-            label="Coverage Amount (PKR)"
-            placeholder="5000000"
-            keyboardType="numeric"
-            value={coverageAmount}
-            onChangeText={setCoverageAmount}
-          />
-          <Input
-            label="Term Duration (Years)"
-            placeholder="20"
-            keyboardType="numeric"
-            value={termYears}
-            onChangeText={setTermYears}
-          />
+      <Card padding="lg" style={styles.card}>
+        <Field
+          label="Customer name"
+          required
+          placeholder="Ahmed Khan"
+          value={customerName}
+          onChangeText={(v) => {
+            setCustomerName(v);
+            if (errors.customerName) setErrors((e) => ({ ...e, customerName: undefined }));
+          }}
+          error={errors.customerName}
+          leftIcon="person-outline"
+          autoCapitalize="words"
+        />
+        <Field
+          label="CNIC"
+          placeholder="35201-1234567-1"
+          value={cnic}
+          onChangeText={setCnic}
+          leftIcon="card-outline"
+          keyboardType="numbers-and-punctuation"
+          helperText="Optional — helps match the proposal to an existing customer."
+        />
+        <Select
+          label="Product"
+          value={productName}
+          onSelect={setProductName}
+          options={PRODUCTS}
+          required
+          leftIcon="shield-checkmark-outline"
+        />
+        <Field
+          label="Coverage amount (PKR)"
+          required
+          placeholder="5000000"
+          keyboardType="number-pad"
+          leftIcon="cash-outline"
+          value={coverageAmount}
+          onChangeText={(v) => {
+            setCoverageAmount(v);
+            if (errors.coverageAmount) setErrors((e) => ({ ...e, coverageAmount: undefined }));
+          }}
+          error={errors.coverageAmount}
+          helperText={amountHint ? `PKR ${amountHint}` : undefined}
+        />
+        <Select label="Policy term" value={termYears} onSelect={setTermYears} options={TERMS} required />
+      </Card>
 
-          <Button
-            title="Create Proposal"
-            onPress={handleSubmit}
-            loading={loading}
-            style={{ marginTop: 16 }}
-          />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+      <View style={styles.note}>
+        <Text variant="caption" color="subtle" align="center">
+          The premium is calculated by the pricing engine once the proposal is created.
+        </Text>
+      </View>
+    </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#ffffff',
+  banner: {
+    marginTop: spacing.lg,
   },
-  container: {
-    padding: 20,
+  card: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.lg,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#0f172a',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 20,
-  },
-  form: {
-    gap: 12,
+  note: {
+    marginBottom: spacing.xxl,
   },
 });
