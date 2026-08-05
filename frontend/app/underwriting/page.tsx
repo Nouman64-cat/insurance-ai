@@ -60,6 +60,14 @@ function UnderwritingMainContent() {
 
   const [activeTab, setActiveTab] = useState<"pre-underwriting" | "risk-engine">(initialTab);
   const [cases, setCases] = useState<CaseQueueItem[]>([]);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "pre-underwriting" || tab === "risk-engine") {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<string | null>(null);
@@ -350,40 +358,7 @@ function UnderwritingMainContent() {
           </div>
         </div>
 
-        {/* Compact Segmented Switcher */}
-        <div className="flex bg-slate-100/90 p-1 rounded-xl border border-slate-200/80 shrink-0">
-          <button
-            onClick={() => setActiveTab("pre-underwriting")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === "pre-underwriting"
-                ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <span>1. Pre-Underwriting Clearance</span>
-            {preKpis.total > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-mono font-bold">
-                {preKpis.total - preKpis.ready}
-              </span>
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveTab("risk-engine")}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-              activeTab === "risk-engine"
-                ? "bg-white text-slate-900 shadow-xs border border-slate-200/60"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            <span>2. Risk Engine &amp; AI Cases</span>
-            {folders.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-mono font-bold">
-                {folders.length}
-              </span>
-            )}
-          </button>
-        </div>
+        {/* Segmented Switcher removed as sidebar handles navigation */}
       </div>
 
       {error && (
