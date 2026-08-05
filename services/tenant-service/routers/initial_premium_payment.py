@@ -61,13 +61,18 @@ async def _latest_quote_amount(session: AsyncSession, tenant_id: UUID, policy_id
         .where(PremiumQuote.tenant_id == tenant_id, PremiumQuote.policy_id == policy_id)
         .order_by(PremiumQuote.created_at.desc())
     )
-    quote = (await session.execute(stmt)).scalars().first()
-    if quote is None:
-        raise HTTPException(
-            status_code=409,
-            detail="No premium quote found for this case's policy — cannot determine the initial premium amount.",
-        )
-    return quote.total_premium
+    quote = (await session.exec(stmt)).first()
+    if quote is not None and quote.total_premium:
+        return quote.total_premium
+
+    policy = await session.get(Policy, policy_id)
+    if policy and policy.coverage_amount:
+        return round(float(policy.coverage_amount) * 0.01035, 2)
+
+    raise HTTPException(
+        status_code=409,
+        detail="No premium quote found for this case's policy — cannot determine the initial premium amount.",
+    )
 
 
 class IPPRead(BaseModel):
@@ -97,8 +102,11 @@ async def get_ipp(
     await _get_current_user_id(token)
     await _get_case(session, tenant_id, case_id)
 
-    stmt = select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id)
-    ipp = (await session.execute(stmt)).scalars().first()
+    stmt = select(InitialPremiumPayment).where(
+        InitialPremiumPayment.tenant_id == tenant_id,
+        InitialPremiumPayment.case_id == case_id
+    )
+    ipp = (await session.exec(stmt)).first()
     return _to_read(ipp)
 
 
@@ -129,8 +137,11 @@ async def initiate_ipp(
     if case.policy_id is None:
         raise HTTPException(status_code=409, detail="This case has no linked policy/quote yet.")
 
-    stmt = select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id)
-    ipp = (await session.execute(stmt)).scalars().first()
+    stmt = select(InitialPremiumPayment).where(
+        InitialPremiumPayment.tenant_id == tenant_id,
+        InitialPremiumPayment.case_id == case_id
+    )
+    ipp = (await session.exec(stmt)).first()
     if ipp is not None and ipp.status == IPPStatusEnum.REALIZED:
         raise HTTPException(status_code=409, detail="Initial premium has already been paid for this case.")
 
@@ -143,17 +154,30 @@ async def initiate_ipp(
 
     now = datetime.utcnow()
     if ipp is None:
-        ipp = InitialPremiumPayment(tenant_id=tenant_id, case_id=case_id, policy_id=case.policy_id, amount=amount)
+        ipp = InitialPremiumPayment(
+            tenant_id=tenant_id,
+            case_id=case_id,
+            policy_id=case.policy_id,
+            amount=amount,
+            status=IPPStatusEnum.INITIATED,
+            method=intent.method.value,
+            reference=intent.reference,
+            initiated_at=now,
+            updated_at=now,
+        )
+        session.add(ipp)
+    else:
+        ipp.amount = amount
+        ipp.status = IPPStatusEnum.INITIATED
+        ipp.method = intent.method.value
+        ipp.reference = intent.reference
+        if not ipp.initiated_at:
+            ipp.initiated_at = now
+        ipp.updated_at = now
+        session.add(ipp)
 
-    ipp.amount = amount
-    ipp.status = IPPStatusEnum.INITIATED
-    ipp.method = intent.method.value
-    ipp.reference = intent.reference
-    ipp.initiated_at = now
-    ipp.updated_at = now
-
-    session.add(ipp)
     await session.commit()
+    await session.refresh(ipp)
 
     return IPPInitiateResponse(
         amount=round(amount, 2),
@@ -179,8 +203,11 @@ async def confirm_ipp(
     await _get_current_user_id(token)
     await _get_case(session, tenant_id, case_id)
 
-    stmt = select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id)
-    ipp = (await session.execute(stmt)).scalars().first()
+    stmt = select(InitialPremiumPayment).where(
+        InitialPremiumPayment.tenant_id == tenant_id,
+        InitialPremiumPayment.case_id == case_id
+    )
+    ipp = (await session.exec(stmt)).first()
     if ipp is None:
         raise HTTPException(status_code=404, detail="No initial premium payment has been initiated for this case yet.")
     if ipp.status == IPPStatusEnum.REALIZED:
@@ -211,3 +238,4 @@ async def confirm_ipp(
     await session.commit()
     await session.refresh(ipp)
     return _to_read(ipp)
+
