@@ -391,68 +391,7 @@ function UnderwritingMainContent() {
 
   return (
     <div className="px-6 py-4 space-y-4 max-w-screen-2xl mx-auto w-full">
-      {/* Sleek Professional Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-850 to-blue-950 text-white rounded-2xl p-6 shadow-md relative overflow-hidden">
-        {/* Subtle background glow circle */}
-        <div className="absolute -right-10 -top-10 w-60 h-60 rounded-full bg-blue-500/10 blur-3xl pointer-events-none" />
 
-        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-blue-600/30 border border-blue-400/30 backdrop-blur-md flex items-center justify-center text-blue-300 shadow-inner shrink-0">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-6 h-6">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-                <path d="M9 12l2 2 4-4" />
-              </svg>
-            </div>
-            <div>
-              <div className="flex items-center gap-2.5">
-                <h1 className="text-xl font-black text-white tracking-tight">Underwriting Hub</h1>
-                <span className="px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[10px] font-extrabold uppercase tracking-wider">
-                  Unified Intelligence Portal
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-1">
-                Pre-underwriting clearance gates (E-App, ACR, PEP/Sanctions, IPP) &amp; AI Risk Engine evaluation.
-              </p>
-            </div>
-          </div>
-
-          {/* Tab Switcher */}
-          <div className="flex bg-slate-800/80 p-1.5 rounded-xl border border-slate-700/80 backdrop-blur-md shrink-0 self-start md:self-auto">
-            <button
-              onClick={() => setActiveTab("pre-underwriting")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                activeTab === "pre-underwriting"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <span>1. Pre-Underwriting Clearance</span>
-              {preKpis.total > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30 text-[10px] font-mono font-bold">
-                  {preKpis.total - preKpis.ready}
-                </span>
-              )}
-            </button>
-
-            <button
-              onClick={() => setActiveTab("risk-engine")}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${
-                activeTab === "risk-engine"
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-            >
-              <span>2. Risk Engine &amp; AI Cases</span>
-              {folders.length > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-blue-400/20 text-blue-300 border border-blue-400/30 text-[10px] font-mono font-bold">
-                  {folders.length}
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-      </div>
 
       {error && (
         <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl text-xs font-semibold">
