@@ -36,15 +36,18 @@ interface CustomerFolder {
 }
 
 function StatusPill({ done, pending, label }: { done: boolean; pending: string; label: string }) {
+  const isStarted = pending && pending !== "Not Started" && pending !== "NotSent" && pending !== "Draft";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-all ${
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold tracking-wide border transition-all ${
         done
-          ? "bg-emerald-50 text-emerald-700 border-emerald-200/80 shadow-xs"
-          : "bg-amber-50 text-amber-700 border-amber-200/80"
+          ? "bg-emerald-50 text-emerald-700 border-emerald-200/80 shadow-2xs"
+          : isStarted
+          ? "bg-blue-50 text-blue-700 border-blue-200/80"
+          : "bg-slate-100 text-slate-600 border-slate-200/80"
       }`}
     >
-      <span>{done ? "✓" : "!"}</span>
+      <span className="text-[9px]">{done ? "✓" : "●"}</span>
       <span>{done ? label : pending}</span>
     </span>
   );
@@ -316,10 +319,10 @@ function UnderwritingMainContent() {
     }
 
     return [
-      { title: "Folders", value: folders.length, subtitle: "active customer groups", accent: "blue" as const },
-      { title: "Awaiting Documents", value: pendingDocs, subtitle: "intake pending", accent: "amber" as const },
-      { title: "In Underwriting", value: underReview, subtitle: "under evaluation", accent: "blue" as const },
-      { title: "Approved", value: approved, subtitle: "cleared for issuance", accent: "emerald" as const },
+      { title: "Folders", value: folders.length, subtitle: "active customer groups", accent: "slate" as const },
+      { title: "Awaiting Documents", value: pendingDocs, subtitle: "intake pending", accent: "slate" as const },
+      { title: "In Underwriting", value: underReview, subtitle: "under evaluation", accent: "slate" as const },
+      { title: "Approved", value: approved, subtitle: "cleared for issuance", accent: "slate" as const },
     ];
   }, [folders]);
 
@@ -395,11 +398,11 @@ function UnderwritingMainContent() {
           {/* KPI Summary Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
             <MetricCard title="Active Proposals" value={preKpis.total} subtitle="intake pipeline" accent="slate" />
-            <MetricCard title="Missing E-App" value={preKpis.missingEApp} subtitle="medical form" accent="amber" />
-            <MetricCard title="Missing ACR" value={preKpis.missingAcr} subtitle="agent report" accent="amber" />
-            <MetricCard title="PEP / Sanctions" value={preKpis.missingComp} subtitle="screening check" accent="amber" />
-            <MetricCard title="Missing IPP" value={preKpis.missingIpp} subtitle="Section 30 payment" accent="amber" />
-            <MetricCard title="Fully Cleared" value={preKpis.ready} subtitle="ready for risk engine" accent="blue" />
+            <MetricCard title="Missing E-App" value={preKpis.missingEApp} subtitle="medical form" accent="slate" />
+            <MetricCard title="Missing ACR" value={preKpis.missingAcr} subtitle="agent report" accent="slate" />
+            <MetricCard title="PEP / Sanctions" value={preKpis.missingComp} subtitle="screening check" accent="slate" />
+            <MetricCard title="Missing IPP" value={preKpis.missingIpp} subtitle="Section 30 payment" accent="slate" />
+            <MetricCard title="Fully Cleared" value={preKpis.ready} subtitle="ready for risk engine" accent="slate" />
           </div>
 
           {/* Controls Bar */}
@@ -448,125 +451,175 @@ function UnderwritingMainContent() {
                 return (
                   <div
                     key={c.caseld}
-                    className={`bg-white rounded-2xl border transition-all duration-200 overflow-hidden ${
+                    className={`bg-white rounded-2xl border transition-all duration-300 overflow-hidden ${
                       cleared
-                        ? "border-emerald-200 shadow-sm bg-gradient-to-r from-emerald-50/20 to-white"
-                        : "border-slate-200/90 shadow-sm hover:shadow-md hover:border-blue-200"
+                        ? "border-emerald-300/80 shadow-xs bg-gradient-to-b from-emerald-50/10 via-white to-white"
+                        : "border-slate-200/90 shadow-xs hover:shadow-md hover:border-slate-300"
                     }`}
                   >
                     {/* Card Header */}
-                    <div className="px-6 py-4 bg-slate-50/70 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs ${cleared ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+                    <div className="px-5 py-4 bg-slate-50/70 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex items-center gap-3.5">
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs tracking-wider shadow-xs ${
+                          cleared 
+                            ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-emerald-500/20" 
+                            : "bg-gradient-to-br from-slate-800 to-slate-900 text-white shadow-slate-900/10"
+                        }`}>
                           {c.customer_name?.slice(0, 2).toUpperCase() ?? "CA"}
                         </div>
                         <div>
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-bold text-slate-900 text-sm">{c.customer_name}</h3>
-                            <span className="font-mono text-[10px] text-slate-500 bg-slate-200/60 px-2 py-0.5 rounded font-semibold">{c.caseNumber}</span>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 
+                              onClick={() => router.push(`/case/${c.caseld}`)}
+                              className="font-bold text-slate-900 text-sm tracking-tight hover:text-blue-600 cursor-pointer transition-colors"
+                            >
+                              {c.customer_name}
+                            </h3>
+                            <span className="font-mono text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded font-semibold border border-slate-300/50">
+                              {c.caseNumber}
+                            </span>
                             {c.customer_segment && (
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[c.customer_segment]}`}>
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase tracking-wider border ${SEGMENT_BADGE_STYLE[c.customer_segment]}`}>
                                 {SEGMENT_LABEL[c.customer_segment]}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-500 font-mono mt-0.5">CNIC: {c.customer_cnic ?? "—"} · Product: {c.product_name ?? "—"}</p>
+                          <div className="flex items-center gap-3 text-xs text-slate-500 mt-1 flex-wrap">
+                            <span className="inline-flex items-center gap-1 font-mono text-[11px]">
+                              <span className="text-slate-400 font-sans font-medium">CNIC:</span> {c.customer_cnic ?? "—"}
+                            </span>
+                            <span className="text-slate-300">•</span>
+                            <span className="inline-flex items-center gap-1 text-[11px] text-slate-600">
+                              <span className="text-slate-400 font-medium">Product:</span> {c.product_name ?? "Standard Plan"}
+                            </span>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Stepper Badge */}
-                      <div className="flex items-center gap-3">
-                        <div className="flex flex-col items-end">
-                          <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Clearance Gates</span>
-                          <span className={`text-xs font-extrabold ${cleared ? "text-emerald-700" : "text-blue-700"}`}>
-                            {stepCount} of 4 Gates Passed
-                          </span>
+                      {/* Stepper Progress & Action */}
+                      <div className="flex items-center gap-4 border-t md:border-t-0 pt-3 md:pt-0 border-slate-200/60">
+                        <div className="flex flex-col items-end min-w-[130px]">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Gate Progress</span>
+                            <span className={`text-xs font-black font-mono ${cleared ? "text-emerald-700" : "text-slate-800"}`}>
+                              {stepCount}/4
+                            </span>
+                          </div>
+                          {/* Segmented Progress Bar */}
+                          <div className="flex gap-1 w-full max-w-[120px]">
+                            {[1, 2, 3, 4].map((step) => (
+                              <div
+                                key={step}
+                                className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
+                                  step <= stepCount
+                                    ? cleared ? "bg-emerald-500" : "bg-blue-600"
+                                    : "bg-slate-200"
+                                }`}
+                              />
+                            ))}
+                          </div>
                         </div>
+
                         {cleared ? (
                           <button
                             onClick={() => router.push(`/case/${c.caseld}`)}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all flex items-center gap-1.5"
+                            className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-sm hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
                           >
                             <span>Trigger Risk Engine</span>
-                            <span>→</span>
+                            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
                           </button>
                         ) : (
                           <button
                             onClick={() => router.push(`/case/${c.caseld}`)}
-                            className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-semibold transition-all"
+                            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
                           >
-                            View Case Detail
+                            <span>View Case Detail</span>
+                            <svg className="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18l6-6-6-6"/></svg>
                           </button>
                         )}
                       </div>
                     </div>
 
                     {/* Gates Grid */}
-                    <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
                       {/* Gate 1: E-App */}
-                      <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between space-y-3">
+                      <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-blue-300 transition-all duration-200 flex flex-col justify-between space-y-3 group shadow-2xs hover:shadow-sm">
                         <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">1. E-Application</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                              1. E-Application
+                            </span>
                             <StatusPill done={c.e_application_status === "Submitted"} pending={c.e_application_status ?? "Not Sent"} label="Submitted" />
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">Medical disclosures &amp; declarative disclosures.</p>
+                          <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">Medical disclosures &amp; applicant statements.</p>
                         </div>
-                        <div className="pt-2 border-t border-slate-200/60">
+                        <div className="pt-2.5 border-t border-slate-200/60">
                           <button
                             onClick={() => handleGenerateLink(c)}
                             disabled={linkBusyFor === c.caseld}
-                            className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-40"
+                            className="w-full py-1.5 px-3 bg-white hover:bg-slate-100 text-blue-700 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-40"
                           >
                             {linkBusyFor === c.caseld ? "Generating Link…" : c.e_application_status && c.e_application_status !== "NotSent" ? "Resend Link" : "Generate Link"}
                           </button>
                           {generatedLinks[c.caseld] && (
-                            <div className="mt-2 flex items-center gap-1">
-                              <input readOnly value={generatedLinks[c.caseld]} onFocus={(e) => e.currentTarget.select()} className="text-[10px] border border-slate-200 rounded px-1.5 py-1 w-full font-mono text-slate-600 bg-white" />
-                              <button onClick={() => navigator.clipboard.writeText(generatedLinks[c.caseld])} className="text-[10px] font-bold text-blue-600 px-1.5 py-1 bg-blue-50 rounded">Copy</button>
+                            <div className="mt-2 flex items-center gap-1 animate-in fade-in duration-200">
+                              <input readOnly value={generatedLinks[c.caseld]} onFocus={(e) => e.currentTarget.select()} className="text-[10px] border border-slate-200 rounded px-2 py-1 w-full font-mono text-slate-600 bg-white shadow-inner" />
+                              <button onClick={() => navigator.clipboard.writeText(generatedLinks[c.caseld])} className="text-[10px] font-bold text-blue-700 px-2 py-1 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100 transition-colors">Copy</button>
                             </div>
                           )}
                         </div>
                       </div>
 
                       {/* Gate 2: ACR */}
-                      <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between space-y-3">
+                      <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-blue-300 transition-all duration-200 flex flex-col justify-between space-y-3 group shadow-2xs hover:shadow-sm">
                         <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">2. Agent's ACR</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
+                              2. Agent's ACR
+                            </span>
                             <StatusPill done={c.acr_status === "Submitted"} pending={c.acr_status ?? "Not Started"} label="Submitted" />
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">Moral hazard &amp; financial standing report.</p>
+                          <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">Moral hazard &amp; financial standing report.</p>
                         </div>
-                        <div className="pt-2 border-t border-slate-200/60">
+                        <div className="pt-2.5 border-t border-slate-200/60">
                           {c.acr_status !== "Submitted" ? (
                             <button
                               disabled={!canFileAcr || acrLoadingFor === c.caseld}
                               onClick={() => openAcrModal(c)}
-                              className={`text-xs font-bold ${!canFileAcr ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-600 hover:text-blue-700"}`}
+                              className={`w-full py-1.5 px-3 bg-white hover:bg-slate-100 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 ${
+                                !canFileAcr ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-700"
+                              }`}
                             >
                               {acrLoadingFor === c.caseld ? "Loading…" : c.acr_status === "Draft" ? "Continue ACR" : "File ACR"}
                             </button>
                           ) : (
-                            <span className="text-[11px] font-semibold text-emerald-700">✓ Report Filed</span>
+                            <div className="w-full py-1.5 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
+                              <span>✓</span>
+                              <span>Report Filed</span>
+                            </div>
                           )}
                         </div>
                       </div>
 
                       {/* Gate 3: PEP & Sanctions */}
-                      <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between space-y-3">
+                      <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-blue-300 transition-all duration-200 flex flex-col justify-between space-y-3 group shadow-2xs hover:shadow-sm">
                         <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">3. PEP / Sanctions</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                              3. PEP / Sanctions
+                            </span>
                             <StatusPill done={c.compliance_status === "Passed"} pending={c.compliance_status ?? "Not Started"} label="Passed" />
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">OpenSanctions &amp; SECP regulatory check.</p>
+                          <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">OpenSanctions &amp; SECP screening check.</p>
                         </div>
-                        <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between">
+                        <div className="pt-2.5 border-t border-slate-200/60 flex items-center justify-between">
                           <button
                             onClick={() => handleRunCompliance(c)}
                             disabled={compBusyFor === c.caseld}
-                            className="text-xs font-bold text-blue-600 hover:text-blue-700 disabled:opacity-40 flex items-center gap-1"
+                            className="w-full py-1.5 px-3 bg-white hover:bg-slate-100 text-blue-700 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-40"
                           >
                             {compBusyFor === c.caseld ? (
                               <>
@@ -581,24 +634,30 @@ function UnderwritingMainContent() {
                       </div>
 
                       {/* Gate 4: IPP */}
-                      <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100 flex flex-col justify-between space-y-3">
+                      <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-blue-300 transition-all duration-200 flex flex-col justify-between space-y-3 group shadow-2xs hover:shadow-sm">
                         <div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">4. IPP Clearance</span>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                              <svg className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-600 transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+                              4. IPP Clearance
+                            </span>
                             <StatusPill done={c.ipp_status === "Realized"} pending={c.ipp_status ?? "Not Started"} label="Cleared" />
                           </div>
-                          <p className="text-[11px] text-slate-500 mt-1">Section 30 Insurance Ordinance requirement.</p>
+                          <p className="text-[11px] text-slate-500 mt-2 leading-relaxed">Section 30 payment requirement.</p>
                         </div>
-                        <div className="pt-2 border-t border-slate-200/60">
+                        <div className="pt-2.5 border-t border-slate-200/60">
                           {c.ipp_status !== "Realized" ? (
                             <button
                               onClick={() => setIppModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined })}
-                              className="text-xs font-bold text-blue-600 hover:text-blue-700"
+                              className="w-full py-1.5 px-3 bg-white hover:bg-slate-100 text-blue-700 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
                             >
                               {c.ipp_status === "Initiated" ? "Complete Payment" : "Collect Payment"}
                             </button>
                           ) : (
-                            <span className="text-[11px] font-semibold text-emerald-700">✓ Premium Realized</span>
+                            <div className="w-full py-1.5 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
+                              <span>✓</span>
+                              <span>Premium Realized</span>
+                            </div>
                           )}
                         </div>
                       </div>
