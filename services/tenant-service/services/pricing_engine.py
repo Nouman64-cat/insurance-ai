@@ -7,6 +7,10 @@ Design goals:
      requires only a new subclass — no changes to the router.
   3. All inputs come from the Policy and InsurancePlan models; no domain knowledge
      leaks into the routing layer.
+  4. The arithmetic itself lives in shared/pricing/calculator.py, NOT here. This
+     module only chooses *which* rating treatment a product gets and shapes the
+     result for the issuance routers. That is what keeps `POST /quote` and
+     `POST /issue` at the same number — they run the same function.
 
 Rate table (PKR per 1,000 sum assured per year) — v1 estimates:
   These mirror the values seeded in migrate.py v12a-g. A future pricing admin UI
@@ -22,13 +26,24 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Optional
 
+from shared.pricing.calculator import calculate_premium
+
 log = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
 GRACE_PERIOD_DAYS: int = int(os.environ.get("GRACE_PERIOD_DAYS", "30"))
-POLICY_FEE: float = float(os.environ.get("POLICY_FEE_PKR", "500"))
-STAMP_DUTY_RATE: float = float(os.environ.get("STAMP_DUTY_RATE", "0.01"))  # 1% federal
+
+# The statutory charges (POLICY_FEE / STAMP_DUTY_RATE) deliberately live in
+# shared/pricing/calculator.py, not here, so the quote and the bound contract
+# cannot drift apart on what the customer owes.
+
+# Rating defaults for an applicant whose biometrics were never captured (e.g. a
+# Live Evaluation what-if, or a legacy row). Mid-band age and a normal-range BMI
+# keep the factors at ~1.0 instead of silently mis-rating the contract.
+_DEFAULT_AGE: int = 35
+_DEFAULT_HEIGHT_CM: float = 170.0
+_DEFAULT_WEIGHT_KG: float = 70.0
 
 # Per-product fallback rates (used when InsurancePlan.base_premium_rate == 0)
 _DEFAULT_RATES: dict[str, tuple[float, float]] = {
@@ -72,8 +87,17 @@ class PremiumBreakdown:
 class _BaseCalculator:
     """
     Subclass this for each product family.
-    Implements the shared fee + tax wrapper; subclasses supply _net_premium().
+
+    Every subclass funnels into shared.pricing.calculator.calculate_premium —
+    the same function POST /quote uses — and only varies which rating treatment
+    applies (individual age/BMI rating vs. negotiated group rates). Note there is
+    no ``term_years`` in the arithmetic: these are ANNUAL premiums, and a 20-year
+    term does not make one year of cover cost twenty times as much.
     """
+
+    #: Individually age-rated products apply the age band and statutory charges.
+    _age_rated: bool = True
+    _charged: bool = True
 
     def calculate(
         self,
@@ -81,27 +105,36 @@ class _BaseCalculator:
         term_years: int,
         base_rate: float,
         loading_pct: float,
+        smoker_factor: float = 1.0,
+        is_smoker: bool = False,
+        age: Optional[int] = None,
+        height_cm: Optional[float] = None,
+        weight_kg: Optional[float] = None,
+        age_index: float = 1.0,
         **kwargs,
     ) -> PremiumBreakdown:
-        net = self._net_premium(coverage_amount, term_years, base_rate, loading_pct, **kwargs)
-        subtotal = net + POLICY_FEE
-        tax = subtotal * STAMP_DUTY_RATE
-        total = subtotal + tax
+        shared = calculate_premium(
+            coverage_amount=coverage_amount,
+            base_premium_rate=base_rate,
+            smoker_factor=smoker_factor,
+            age=age if age is not None else _DEFAULT_AGE,
+            is_smoker=is_smoker,
+            height_cm=height_cm if height_cm is not None else _DEFAULT_HEIGHT_CM,
+            weight_kg=weight_kg if weight_kg is not None else _DEFAULT_WEIGHT_KG,
+            loading_pct=loading_pct,
+            age_index=age_index,
+            apply_age_factor=self._age_rated,
+            apply_charges=self._charged,
+        )
         return PremiumBreakdown(
-            base_premium=round(net - round(net * loading_pct / 100.0, 2), 2),
-            loading_amount=round(net * loading_pct / 100.0, 2),
-            policy_fee=POLICY_FEE,
-            tax_amount=round(tax, 2),
-            total_premium=round(total, 2),
+            base_premium=shared.base_premium,
+            loading_amount=shared.loading_applied,
+            policy_fee=shared.policy_fee,
+            tax_amount=shared.tax_amount,
+            total_premium=shared.total_premium,
             rating_basis=self._rating_basis(),
             loading_pct=loading_pct,
         )
-
-    def _net_premium(
-        self, coverage_amount: float, term_years: int,
-        base_rate: float, loading_pct: float, **kwargs
-    ) -> float:
-        raise NotImplementedError
 
     def _rating_basis(self) -> str:
         raise NotImplementedError
@@ -114,23 +147,16 @@ class _LifeCalculator(_BaseCalculator):
     Used for: TERM_LIFE, WHOLE_LIFE, ENDOWMENT, SAVINGS, SINGLE_PREMIUM,
               CHILD_EDUCATION_MARRIAGE, FAMILY_FLOATER
 
-    Formula:
-      base_premium = (effective_rate / 1000) × coverage_amount × term_years
-      effective_rate = base_rate × smoker_factor   (if is_smoker else base_rate)
-      net = base_premium × (1 + loading_pct / 100)
+    Annual premium:
+      base    = (rate / 1000) × coverage × age_factor
+      loading = base × (smoker_factor - 1) + base × (bmi_factor - 1)
+              + base × (loading_pct / 100)
+      total   = base + loading + policy_fee + stamp_duty
     """
 
-    def _net_premium(
-        self, coverage_amount: float, term_years: int,
-        base_rate: float, loading_pct: float,
-        smoker_factor: float = 1.0, is_smoker: bool = False, **kwargs
-    ) -> float:
-        effective_rate = base_rate * (smoker_factor if is_smoker else 1.0)
-        base = (effective_rate / 1000.0) * coverage_amount * term_years
-        return base * (1.0 + loading_pct / 100.0)
-
     def _rating_basis(self) -> str:
-        return "Life: (rate/1000 × coverage × term × smoker_factor) × (1 + loading%)"
+        return ("Life: annual (rate/1000 × coverage × age_factor) "
+                "+ smoker/BMI/underwriting loadings + fee + duty")
 
 
 # ── Health / Hospital Cash calculator ─────────────────────────────────────────
@@ -143,29 +169,33 @@ class _HealthCalculator(_LifeCalculator):
     """
 
     def _rating_basis(self) -> str:
-        return "Health: (utilisation_rate/1000 × coverage × term × smoker_factor) × (1 + loading%)"
+        return ("Health: annual (utilisation_rate/1000 × coverage × age_factor) "
+                "+ smoker/BMI/underwriting loadings + fee + duty")
 
 
 # ── Group Life calculator (negotiated, age-banded) ────────────────────────────
 
 class _GroupLifeCalculator(_BaseCalculator):
     """
-    GROUP_LIFE — simplified flat rate; no individual smoker loading.
-    Real group pricing is age-banded and negotiated per-MasterPolicy;
-    this is a reasonable STP placeholder for member certificates.
+    GROUP_LIFE — simplified flat rate; no individual age band and no smoker
+    loading, because group business is negotiated at pool level per-MasterPolicy.
+    This is a reasonable STP placeholder for member certificates.
 
-    Formula:
-      net = (base_rate / 1000) × coverage_amount × term_years
+    Annual premium:
+      total = (rate / 1000) × coverage   (+ underwriting loading, if any)
     """
 
-    def _net_premium(
-        self, coverage_amount: float, term_years: int,
-        base_rate: float, loading_pct: float, **kwargs
-    ) -> float:
-        return (base_rate / 1000.0) * coverage_amount * term_years
+    _age_rated = False
+    _charged = False
+
+    def calculate(self, *args, **kwargs) -> PremiumBreakdown:
+        # Group members are not individually smoker-rated.
+        kwargs["is_smoker"] = False
+        kwargs["smoker_factor"] = 1.0
+        return super().calculate(*args, **kwargs)
 
     def _rating_basis(self) -> str:
-        return "Group Life: flat rate/1000 × coverage × term (no individual smoker loading)"
+        return "Group Life: annual flat rate/1000 × coverage (no individual age/smoker rating)"
 
 
 # ── Registry & factory ────────────────────────────────────────────────────────
@@ -217,11 +247,17 @@ class PricingEngine:
             term_years=policy.term_years,
             base_rate=plan.base_premium_rate,
             smoker_factor=plan.smoker_factor,
-            loading_pct=20.0,         # from RiskAssessment.suggested_loading
+            loading_pct=20.0,         # see routers/policies.py::_effective_loading_pct
             is_smoker=customer.is_smoker,
+            age=42,                   # drives the age band — omit only if unknown
+            height_cm=customer.height_cm,
+            weight_kg=customer.weight_kg,
             age_index=1.0,            # 1.02^(renewal_year-1) for renewals
         )
-        total = breakdown.total_premium
+        total = breakdown.total_premium   # ANNUAL premium, not a term total
+
+    ``term_years`` is accepted (and recorded on the contract) but is NOT a
+    multiplier: the result is the premium for one policy year.
     """
 
     @staticmethod
@@ -233,22 +269,32 @@ class PricingEngine:
         smoker_factor: float,
         loading_pct: float = 0.0,
         is_smoker: bool = False,
+        age: Optional[int] = None,
+        height_cm: Optional[float] = None,
+        weight_kg: Optional[float] = None,
         age_index: float = 1.0,         # multiplier for renewal re-rating
     ) -> PremiumBreakdown:
         """
         Polymorphic entry point. Routes to the correct _BaseCalculator subclass
-        based on insurance_type. Applies age_index to base_rate before dispatch
-        (used by the renewal engine to escalate rates year-on-year).
+        based on insurance_type, which then delegates the arithmetic to
+        shared.pricing.calculator.calculate_premium — the same function POST
+        /quote runs, so a quote and its issued contract agree.
+
+        ``age_index`` re-rates the base for renewals; it is passed through
+        rather than pre-multiplied so the shared calculator reports it.
         """
         calc = get_calculator(insurance_type)
-        adjusted_rate = base_rate * age_index
         return calc.calculate(
             coverage_amount=coverage_amount,
             term_years=term_years,
-            base_rate=adjusted_rate,
+            base_rate=base_rate,
             loading_pct=loading_pct,
             smoker_factor=smoker_factor,
             is_smoker=is_smoker,
+            age=age,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
+            age_index=age_index,
         )
 
     @staticmethod
@@ -260,6 +306,9 @@ class PricingEngine:
         smoker_factor: float = 1.0,
         loading_pct: float = 0.0,
         is_smoker: bool = False,
+        age: Optional[int] = None,
+        height_cm: Optional[float] = None,
+        weight_kg: Optional[float] = None,
     ) -> PremiumBreakdown:
         """
         Same as calculate() but falls back to default rates when base_rate == 0.
@@ -275,4 +324,7 @@ class PricingEngine:
             smoker_factor=smoker_factor,
             loading_pct=loading_pct,
             is_smoker=is_smoker,
+            age=age,
+            height_cm=height_cm,
+            weight_kg=weight_kg,
         )

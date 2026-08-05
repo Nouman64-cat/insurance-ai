@@ -125,6 +125,19 @@ async def _process(
             ),
             ai_decision=result["ai_decision"],
             reasons=_coerce_reasons(result.get("reasons", [])),
+            # Echo the identity the gateway sent so its result worker can attach
+            # the RiskAssessment to the right rows, and carry the loading through
+            # — it is priced into the contract at issuance.
+            tenant_id=event.tenant_id,
+            customer_id=event.payload.customer_id,
+            policy_id=event.payload.policy_id,
+            case_id=event.payload.case_id,
+            suggested_loading=result.get("suggested_loading"),
+            is_valid=bool(result.get("is_valid", False)),
+            validation_errors=list(result.get("validation_errors", [])),
+            medical_reasons=_coerce_reasons(result.get("medical_reasons", [])),
+            financial_reasons=_coerce_reasons(result.get("financial_reasons", [])),
+            fraud_reasons=_coerce_reasons(result.get("fraud_reasons", [])),
         ),
     )
 
