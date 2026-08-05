@@ -35,6 +35,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from services import compliance_engine
 from services.policy_documents import generate_and_store_documents
+from services.underwriting_limits import age_from_dob, non_medical_limit
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition, record_event
 from services.pre_issuance_gate import compute_readiness
 from routers.policies import _get_policy, _publish_policy_event, _st
@@ -390,9 +391,15 @@ async def decline_counter_offer(
 # STEP 2 — Clear Pending Requirements
 # ══════════════════════════════════════════════════════════════════════════════
 
-def _default_requirements(policy: Policy) -> list[RequirementItem]:
+def _default_requirements(policy: Policy, applicant_age: Optional[int] = None) -> list[RequirementItem]:
     """The standard pre-issuance checklist for an individually-underwritten life
-    or health policy. Medical report only kicked in above a sum-assured floor."""
+    or health policy.
+
+    The medical-report item is driven by the same Non-Medical Limit grid the
+    pre-underwriting medical order reads (services/underwriting_limits.py), not
+    by a flat sum-assured floor — a 55-year-old at PKR 2M is over their limit
+    while a 30-year-old at the same sum assured is not, and the checklist must
+    not contradict the exam that was actually ordered."""
     items = [
         RequirementItem(requirement_type=RequirementTypeEnum.KYC_CNIC.value,
                         label="KYC / CNIC Verification",
@@ -402,11 +409,15 @@ def _default_requirements(policy: Policy) -> list[RequirementItem]:
                         description="Salary slip / tax return supporting the declared income."),
     ]
     ins = policy.insurance_type.value if hasattr(policy.insurance_type, "value") else str(policy.insurance_type)
-    if policy.coverage_amount >= 5_000_000 or ins in (InsuranceTypeEnum.HEALTH_CASH.value,):
+    nml = non_medical_limit(applicant_age)
+    if policy.coverage_amount > nml or ins in (InsuranceTypeEnum.HEALTH_CASH.value,):
         items.append(RequirementItem(
             requirement_type=RequirementTypeEnum.MEDICAL_REPORT.value,
             label="Medical Report",
-            description="Medical examination / lab report for the sum assured band."))
+            description=(
+                f"Panel-clinic examination report — sum assured PKR {policy.coverage_amount:,.0f} "
+                f"exceeds the non-medical limit of PKR {nml:,.0f} for this age."
+            )))
     return items
 
 
@@ -452,7 +463,11 @@ async def create_requirements(
         (r.requirement_type.value if hasattr(r.requirement_type, "value") else str(r.requirement_type))
         for r in (await session.exec(select(PolicyRequirement).where(PolicyRequirement.policy_id == policy_id))).all()
     }
-    to_create = items if items else _default_requirements(policy)
+    if items:
+        to_create = items
+    else:
+        customer = await session.get(Customer, policy.customer_id)
+        to_create = _default_requirements(policy, age_from_dob(customer.dob) if customer else None)
     created = []
     for it in to_create:
         if it.requirement_type in existing:

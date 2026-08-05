@@ -66,7 +66,12 @@ export type DemoBypassFlag =
   | "NotFlagged"
   | "ComplianceBypassed"
   | "BeneficiaryBypassed"
-  | "BothBypassed";
+  | "RequirementBypassed"
+  | "ReinsuranceBypassed"
+  | "BothBypassed"
+  // The backend joins every triggered flag with commas, so an arbitrary
+  // combination is possible — the UI falls back to showing the raw string.
+  | string;
 
 export interface BeneficiaryVersion {
   version_sequence: number;
@@ -88,6 +93,22 @@ export interface Readiness {
     compliance: { status: string; checks: { id: string; check_type: string; status: string; score: number | null }[] };
     beneficiaries: { status: string; total_share: number; count: number };
     documents: { status: string; total: number; generated: number };
+    // Post-underwriting cession — "not_required" when the sum assured sits
+    // inside retention + treaty; otherwise the placement's state.
+    reinsurance: {
+      status: "not_required" | "not_referred" | "pending" | "placed" | "declined";
+      retention_limit: number;
+      automatic_capacity: number;
+      retained_amount: number;
+      treaty_ceded_amount: number;
+      facultative_ceded_amount: number;
+      referral: {
+        id: string;
+        status: string;
+        reinsurer_decision: string | null;
+        terms_applied: boolean;
+      } | null;
+    };
   };
   ready_to_issue: boolean;
   blockers: string[];

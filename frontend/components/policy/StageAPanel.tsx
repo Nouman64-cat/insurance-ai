@@ -11,6 +11,11 @@ import {
   type Beneficiary, type BeneficiaryVersion,
 } from "@/app/services/preIssuance";
 import { getPolicyDetail, type PolicyDocument } from "@/app/services/policies";
+import {
+  getReinsurance, referToReinsurer, recordReinsurerResponse, applyReinsurerTerms, withdrawReferral,
+  type ReinsuranceView, type ReinsurerDecision,
+} from "@/app/services/reinsurance";
+import { ReinsurancePanel } from "@/components/policy/ReinsurancePanel";
 
 // Statuses during which Stage A mutations are legal (mirrors the backend
 // PRE_ISSUANCE_STATUSES guard). Outside this set the contract is drafted/bound
@@ -410,6 +415,13 @@ export function StageAPanel({ policyId, onChanged }: StageAPanelProps) {
               <button onClick={() => run(() => generateDocuments(policyId))} disabled={locked}
                 className="text-[11px] text-slate-500 hover:text-slate-700 underline">Regenerate documents</button>
             )}
+          </div>
+        </StepShell>
+
+        {/* 7 - Facultative Reinsurance Referral */}
+        <StepShell n={6} title="Facultative Reinsurance Referral" state="idle" hint="reinsurance panel">
+          <div className="mt-2">
+            <ReinsurancePanel policyId={policyId} onChanged={load} />
           </div>
         </StepShell>
       </div>

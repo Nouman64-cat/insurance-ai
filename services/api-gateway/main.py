@@ -457,6 +457,112 @@ async def public_submit_e_application(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/e-application/{raw_token}/submit")
 
 
+# ── Pre-Underwriting — Medical Examination (panel clinics) ────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/medical-exam/assess",
+    tags=["Pre-Underwriting"],
+    summary="Apply the non-medical-limit grid and raise the medical requirement",
+)
+async def assess_medical_exam(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam/assess")
+
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/medical-exam/invite",
+    tags=["Pre-Underwriting"],
+    summary="Issue a tokenized panel-clinic booking link to the customer",
+)
+async def invite_medical_exam(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam/invite")
+
+
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/medical-exam",
+    tags=["Pre-Underwriting"],
+    summary="Get the medical examination order for a case (staff view)",
+)
+async def get_medical_exam(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam")
+
+
+# Public — no auth, scoped only by the booking token itself.
+@app.get(
+    "/public/medical-exam/{raw_token}",
+    tags=["Pre-Underwriting"],
+    summary="[Public] Fetch the mandated tests, preparation notes and panel clinics",
+)
+async def public_get_medical_exam(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}")
+
+
+@app.post(
+    "/public/medical-exam/{raw_token}/book",
+    tags=["Pre-Underwriting"],
+    summary="[Public] Book a panel-clinic appointment slot",
+)
+async def public_book_medical_exam(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/book")
+
+
+# ── Pre-Underwriting — Insurance History ──────────────────────────────────────
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/insurance-history/run",
+    tags=["Pre-Underwriting"],
+    summary="Screen prior/other-insurer cover for over-insurance, replacement and non-disclosure",
+)
+async def run_insurance_history(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/insurance-history/run")
+
+
+@app.get(
+    "/tenants/{tenant_id}/cases/{case_id}/insurance-history",
+    tags=["Pre-Underwriting"],
+    summary="Get the insurance-history screen result for a case",
+)
+async def get_insurance_history(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/insurance-history")
+
+
+# ── Post-Underwriting — Facultative Reinsurance ───────────────────────────────
+
+@app.get(
+    "/tenants/{tenant_id}/policies/{policy_id}/reinsurance",
+    tags=["Post-Underwriting"],
+    summary="Cession position for a policy — retained / treaty / facultative",
+)
+async def get_reinsurance(tenant_id: UUID, policy_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/policies/{policy_id}/reinsurance")
+
+
+@app.post(
+    "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/refer",
+    tags=["Post-Underwriting"],
+    summary="Submit the facultative slip to a reinsurer",
+)
+async def refer_to_reinsurer(tenant_id: UUID, policy_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/policies/{policy_id}/reinsurance/refer")
+
+
+@app.post(
+    "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/response",
+    tags=["Post-Underwriting"],
+    summary="Record the reinsurer's decision and terms",
+)
+async def record_reinsurer_response(tenant_id: UUID, policy_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/policies/{policy_id}/reinsurance/response")
+
+
+@app.post(
+    "/tenants/{tenant_id}/policies/{policy_id}/reinsurance/apply",
+    tags=["Post-Underwriting"],
+    summary="Write the reinsurer's terms onto the policy and release it",
+)
+async def apply_reinsurer_terms(tenant_id: UUID, policy_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/policies/{policy_id}/reinsurance/apply")
+
+
 # ── Pre-Underwriting — Agent's Confidential Report (ACR) ───────────────────────
 
 @app.get(
@@ -607,6 +713,20 @@ async def proxy_tenant_requirements(tenant_id: UUID, path: str, request: Request
 @app.api_route("/tenants/{tenant_id}/compliance{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_tenant_compliance(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/compliance{path}")
+
+
+# Pre-underwriting medical scheduling: the panel-clinic directory. The exam
+# order itself is case-scoped and already covered by the /cases wildcard above.
+@app.api_route("/tenants/{tenant_id}/panel-clinics{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_panel_clinics(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/panel-clinics{path}")
+
+
+# Post-underwriting reinsurance: the reinsurer panel. The referral itself is
+# policy-scoped and already covered by the /policies wildcard above.
+@app.api_route("/tenants/{tenant_id}/reinsurers{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_reinsurers(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/reinsurers{path}")
 
 
 @app.api_route("/tenants/{tenant_id}/demo{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)

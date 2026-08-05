@@ -212,9 +212,25 @@ async def list_cases(
     for a in (await session.execute(assessments_stmt)).scalars().all():
         latest_by_case.setdefault(a.case_id, a)
 
-    # Pre-Underwriting status — E-Application / Agent's Confidential Report / Compliance Screening / IPP,
-    # bulk-fetched by case_id like everything else above (avoids N+1 on the queue).
-    from shared.models.core import AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck, ComplianceStatusEnum
+    # Pre-Underwriting status — E-Application / Agent's Confidential Report / Compliance Screening /
+    # IPP / Insurance History / Panel Medical, bulk-fetched by case_id like everything else above
+    # (avoids N+1 on the queue).
+    from shared.models.core import (
+        AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck,
+        ComplianceStatusEnum, InsuranceHistoryCheck, MedicalExamOrder,
+    )
+    history_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(InsuranceHistoryCheck.case_id, InsuranceHistoryCheck.status)
+            .where(InsuranceHistoryCheck.case_id.in_(case_ids))
+        )).all()
+    }
+    medical_status_by_case = {
+        row[0]: row[1] for row in (await session.execute(
+            select(MedicalExamOrder.case_id, MedicalExamOrder.status)
+            .where(MedicalExamOrder.case_id.in_(case_ids))
+        )).all()
+    }
     e_app_status_by_case = {
         row[0]: row[1] for row in (await session.execute(
             select(CustomerEApplication.case_id, CustomerEApplication.status)
@@ -304,6 +320,12 @@ async def list_cases(
 
         ipp_status = ipp_status_by_case.get(c.caseld)
         row["ipp_status"] = ipp_status.value if ipp_status else "NotStarted"
+
+        hist_status = history_status_by_case.get(c.caseld)
+        row["insurance_history_status"] = hist_status.value if hist_status else "NotStarted"
+        med_status = medical_status_by_case.get(c.caseld)
+        row["medical_exam_status"] = med_status.value if med_status else "NotAssessed"
+
         out.append(row)
     return out
 
@@ -477,11 +499,16 @@ async def get_case_detail(
             })
 
     # Pre-underwriting statuses calculation
-    from shared.models.core import AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck, ComplianceStatusEnum
+    from shared.models.core import (
+        AgentConfidentialReport, CustomerEApplication, InitialPremiumPayment, ComplianceCheck,
+        ComplianceStatusEnum, InsuranceHistoryCheck, MedicalExamOrder,
+    )
     e_app = (await session.execute(select(CustomerEApplication).where(CustomerEApplication.case_id == case_id))).scalars().first()
     acr = (await session.execute(select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id))).scalars().first()
     ipp = (await session.execute(select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id))).scalars().first()
-    
+    hist = (await session.execute(select(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == case_id))).scalars().first()
+    medical = (await session.execute(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).scalars().first()
+
     comp_checks = []
     if policy:
         comp_checks = (await session.execute(select(ComplianceCheck).where(ComplianceCheck.policy_id == policy.id))).scalars().all()
@@ -501,11 +528,27 @@ async def get_case_detail(
     else:
         comp_status_val = "Passed"
         
+    # Gate 5 — insurance history. NotStarted is not a pass: an unscreened case
+    # has simply never been checked for over-insurance or non-disclosure.
+    hist_status_val = (
+        (hist.status.value if hasattr(hist.status, "value") else str(hist.status))
+        if hist else "NotStarted"
+    )
+    # Gate 6 — panel medical. Cleared when the grid says none is needed, when
+    # the results are in, or when an underwriter has waived it.
+    med_status_val = (
+        (medical.status.value if hasattr(medical.status, "value") else str(medical.status))
+        if medical else "NotAssessed"
+    )
+    medical_cleared = med_status_val in ("NotRequired", "Completed", "Waived")
+
     is_pre_underwriting_ready = (
         e_app_status_val == "Submitted" and
         acr_status_val == "Submitted" and
         comp_status_val == "Passed" and
-        ipp_status_val == "Realized"
+        ipp_status_val == "Realized" and
+        hist_status_val == "Clear" and
+        medical_cleared
     )
 
     return {
@@ -529,6 +572,8 @@ async def get_case_detail(
             "acr": acr_status_val,
             "compliance": comp_status_val,
             "ipp": ipp_status_val,
+            "insurance_history": hist_status_val,
+            "medical_exam": med_status_val,
             "is_ready": is_pre_underwriting_ready,
         },
         "latest_assessment": (

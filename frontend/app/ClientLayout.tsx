@@ -23,7 +23,11 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   // Public, unauthenticated pages meant to be opened by someone outside the
   // portal (e.g. a customer with no account) — must skip both the auth
   // redirect below and the Sidebar/TopBar/Footer portal shell entirely.
-  const isPublicStandalonePage = pathname?.startsWith("/e-application/") ?? false;
+  const isPublicStandalonePage =
+    pathname?.startsWith("/e-application/") ||
+    pathname?.startsWith("/e-app/") ||
+    pathname?.startsWith("/medical-exam/") ||
+    false;
   const bypassAuthShell = isLoginPage || isPublicStandalonePage;
   const [authChecked, setAuthChecked] = useState(false);
   const [tenantName, setTenantName] = useState("Adamjee Life");
