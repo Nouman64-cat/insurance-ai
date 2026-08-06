@@ -182,21 +182,70 @@ export default function PostUnderwritingPage() {
   // Per-policy interactive tracking state
   const [courierLogs, setCourierLogs] = useState<
     Record<string, { partner: string; trackingNo: string; dispatchedAt: string; podStatus: string }>
-  >({
-    default: {
-      partner: "TCS Courier Express",
-      trackingNo: "TCS-98234110",
-      dispatchedAt: "2026-08-04",
-      podStatus: "Delivered (POD Signed)",
-    },
+  >(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("pu_courierLogs");
+      if (stored) return JSON.parse(stored);
+    }
+    return {
+      default: {
+        partner: "TCS Courier Express",
+        trackingNo: "TCS-98234110",
+        dispatchedAt: "2026-08-04",
+        podStatus: "Delivered (POD Signed)",
+      },
+    };
   });
 
   const [welcomeCalls, setWelcomeCalls] = useState<
     Record<string, { callStatus: string; confirmedAt: string | null; freeLookEnd: string | null }>
-  >({});
+  >(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("pu_welcomeCalls");
+      if (stored) return JSON.parse(stored);
+    }
+    return {};
+  });
 
-  const [acceptedCounterOffers, setAcceptedCounterOffers] = useState<Record<string, boolean>>({});
-  const [reinsuranceReferrals, setReinsuranceReferrals] = useState<Record<string, string>>({});
+  const [acceptedCounterOffers, setAcceptedCounterOffers] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("pu_acceptedCounterOffers");
+      if (stored) return JSON.parse(stored);
+    }
+    return {};
+  });
+
+  const [reinsuranceReferrals, setReinsuranceReferrals] = useState<Record<string, string>>(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("pu_reinsuranceReferrals");
+      if (stored) return JSON.parse(stored);
+    }
+    return {};
+  });
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pu_courierLogs", JSON.stringify(courierLogs));
+    }
+  }, [courierLogs]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pu_welcomeCalls", JSON.stringify(welcomeCalls));
+    }
+  }, [welcomeCalls]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pu_acceptedCounterOffers", JSON.stringify(acceptedCounterOffers));
+    }
+  }, [acceptedCounterOffers]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("pu_reinsuranceReferrals", JSON.stringify(reinsuranceReferrals));
+    }
+  }, [reinsuranceReferrals]);
 
   const loadData = async () => {
     setLoading(true);
@@ -278,6 +327,10 @@ export default function PostUnderwritingPage() {
     const stepCount = [isCounterAccepted, isReinsured, isHistoryClear, isDispatched, isWelcomeDone].filter(Boolean).length;
     const isFullyCleared = stepCount === 5;
 
+    if (isFullyCleared && typeof window !== "undefined") {
+      localStorage.setItem("pu_cleared_" + p.id, "true");
+    }
+
     return {
       isCounterAccepted,
       isReinsured,
@@ -289,11 +342,9 @@ export default function PostUnderwritingPage() {
     };
   };
 
-  // Filtered Policies matching search, segment, and cleared toggle
-  const filtered = useMemo(() => {
+  // Filtered Policies matching search and cleared toggle (before segment filter)
+  const baseFiltered = useMemo(() => {
     let list = policies;
-
-    if (segment !== "all") list = list.filter((p) => (p.segment ?? "individual") === segment);
 
     if (!showCompleted) {
       list = list.filter((p) => !getPolicyGates(p).isFullyCleared);
@@ -309,11 +360,24 @@ export default function PostUnderwritingPage() {
       );
     }
     return list;
-  }, [policies, segment, showCompleted, search, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
+  }, [policies, showCompleted, search, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
+
+  const filtered = useMemo(() => {
+    let list = baseFiltered;
+    if (segment !== "all") list = list.filter((p) => (p.segment ?? "individual") === segment);
+    return list;
+  }, [baseFiltered, segment]);
+
+  const segmentCounts = useMemo(() => ({
+    all: baseFiltered.length,
+    individual: baseFiltered.filter((p) => (p.segment ?? "individual") === "individual").length,
+    family: baseFiltered.filter((p) => p.segment === "family").length,
+    organization: baseFiltered.filter((p) => p.segment === "organization").length,
+  }), [baseFiltered]);
 
   // Executive Metrics Suite
   const kpis = useMemo(() => {
-    const total = policies.length;
+    const total = policies.filter((p) => !getPolicyGates(p).isFullyCleared).length;
     const pendingCounter = policies.filter((p) => (p.status || "").toUpperCase() === "COUNTEROFFER" && !acceptedCounterOffers[p.id]).length;
     const facultativeNeeded = policies.filter((p) => p.coverage_amount >= 10000000 && !reinsuranceReferrals[p.id]).length;
     const dispatched = Object.keys(courierLogs).length;
@@ -506,7 +570,7 @@ export default function PostUnderwritingPage() {
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           </div>
-          <SegmentDropdown value={segment} onChange={setSegment} counts={{ all: policies.length, individual: 0, organization: 0, family: 0 }} />
+          <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
         </div>
 
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -622,233 +686,197 @@ export default function PostUnderwritingPage() {
                   </div>
                 </div>
 
-                {/* 5 Post-Underwriting Operational Verification Gates Grid (Sequential Locking) */}
-                <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {(() => {
-                    const isGate1Done = gates.isCounterAccepted;
-                    const isGate2Done = gates.isReinsured;
-                    const isGate3Done = gates.isHistoryClear;
-                    const isGate4Done = !!courier;
-                    const isGate5Done = !!call;
-
-                    const isGate2Locked = !isGate1Done;
-                    const isGate3Locked = !isGate1Done || !isGate2Done;
-                    const isGate4Locked = !isGate1Done || !isGate2Done || !isGate3Done;
-                    const isGate5Locked = !isGate1Done || !isGate2Done || !isGate3Done || !isGate4Done;
-
-                    return (
-                      <>
-                        {/* Gate 1: Counter-Offer Sign-off */}
-                        <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-amber-300 transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs hover:shadow-sm">
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                                Counter-Offer Sign-off
-                              </span>
-                              <StatusPill done={isGate1Done} pending={(p.status || "").toUpperCase() === "COUNTEROFFER" ? "Pending Sign-off" : "No Loadings"} label="Accepted" />
+                {/* 5 Post-Underwriting Operational Verification Timeline */}
+                <div className="p-5 md:p-7 relative bg-slate-50/30">
+                  {/* Vertical connecting line */}
+                  <div className="absolute top-8 bottom-8 left-[39px] w-[3px] bg-slate-200/80 rounded-full z-0"></div>
+                  
+                  <div className="space-y-6 relative z-10">
+                    {/* Gate 1: Counter-Offer Sign-off */}
+                    <div className="relative flex gap-4 group">
+                      <div className="shrink-0 mt-1">
+                        <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isCounterAccepted ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
+                          {gates.isCounterAccepted ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
+                        </div>
+                      </div>
+                      <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isCounterAccepted ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                          <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isCounterAccepted ? 'text-slate-700' : 'text-purple-900'}`}>
+                            <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Counter-Offer Sign-off
+                          </span>
+                          <StatusPill done={gates.isCounterAccepted} pending={(p.status || "").toUpperCase() === "COUNTEROFFER" ? "Pending Sign-off" : "No Loadings"} label="Accepted" />
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                          Proposer legal consent for loading & exclusion terms (Pakistani Contract Act).
+                        </p>
+                        <div>
+                          {gates.isCounterAccepted ? (
+                            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
+                              <span>✓</span>
+                              <span>Legal Sign-off Recorded</span>
                             </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              Proposer legal consent for loading &amp; exclusion terms (Pakistani Contract Act).
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate1Done ? (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
-                                <span>✓ Legal Sign-off Recorded</span>
-                                <button
-                                  onClick={() => setActiveCounterPolicy(p)}
-                                  className="text-[10px] underline font-bold text-amber-800 hover:text-amber-950"
-                                >
-                                  Rating Engine
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setActiveCounterPolicy(p)}
-                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-amber-700 font-bold text-xs rounded-lg border border-amber-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                              >
-                                Configure &amp; Sign-Off Counter-Offer →
-                              </button>
-                            )}
+                          ) : (
+                            <button
+                              onClick={() => handleAcceptCounterOffer(p.id)}
+                              disabled={actionLoading}
+                              className="w-full sm:w-auto py-2 px-5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]"
+                            >
+                              Record Proposer Sign-off →
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Gate 2: Facultative Reinsurance */}
+                    {gates.isCounterAccepted && (
+                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
+                        <div className="shrink-0 mt-1">
+                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isReinsured ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
+                            {gates.isReinsured ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
                           </div>
                         </div>
-
-                        {/* Gate 2: Facultative Reinsurance Placement */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate2Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-sky-300 hover:shadow-sm"
-                        }`}>
+                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isReinsured ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isReinsured ? 'text-slate-700' : 'text-purple-900'}`}>
+                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0h4m-4 0v-4m0 4h4" />
+                              </svg>
+                              Facultative Reinsurance
+                            </span>
+                            <StatusPill done={gates.isReinsured} pending={p.coverage_amount >= 10000000 ? "Referral Required" : "Within Retention"} label={reinsurer ? `Placed (${reinsurer})` : "Within Limit"} />
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                            Ceding retention excess (&gt; PKR 10M) to Swiss Re, Munich Re, or Pak Re.
+                          </p>
                           <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate2Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0h4m-4 0v-4m0 4h4" />
-                                </svg>
-                                Facultative Reinsurance Placement
-                              </span>
-                              {isGate2Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate2Done} pending={p.coverage_amount >= 10000000 ? "Referral Required" : "Within Retention"} label={reinsurer ? `Placed (${reinsurer})` : "Within Limit"} />
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate2Locked ? "Requires completion of Counter-Offer Sign-off before proceeding." : "Ceding retention excess (> PKR 10M) to Swiss Re, Munich Re, PRCL, or Hannover Re."}
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate2Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Complete Sign-off First</span>
-                              </div>
-                            ) : isGate2Done ? (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
-                                <span>✓ Reinsured with {reinsurer || "Swiss Re"}</span>
-                                <button
-                                  onClick={() => setActiveReinsurancePolicy(p)}
-                                  className="text-[10px] underline font-bold text-sky-700 hover:text-sky-900"
-                                >
-                                  View Slip
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setActiveReinsurancePolicy(p)}
-                                className="w-full py-2 px-3 bg-white hover:bg-sky-50 text-sky-700 font-bold text-xs rounded-lg border border-sky-200 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                              >
-                                Configure &amp; Place Reinsurance →
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Gate 3: Industry Cover & HLV Check */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate3Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-blue-300 hover:shadow-sm"
-                        }`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate3Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M3 3v18h18" />
-                                  <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
-                                </svg>
-                                Industry Cover &amp; HLV Check
-                              </span>
-                              {isGate3Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate3Done} pending="Audited" label="Clear" />
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate3Locked ? "Requires completion of Reinsurance Placement before proceeding." : "Aggregate life cover across industry verified against Human Life Value (HLV) cap."}
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate3Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Complete Reinsurance First</span>
-                              </div>
-                            ) : (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
+                            {gates.isReinsured ? (
+                              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
                                 <span>✓</span>
-                                <span>Aggregate Cover Within HLV</span>
+                                <span>{reinsurer ? `Reinsured with ${reinsurer}` : "Within Retention Limit"}</span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-2">
+                                <button onClick={() => handleReferReinsurance(p.id, "Swiss Re")} className="py-2 px-4 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-lg border border-purple-200 transition-colors">Swiss Re</button>
+                                <button onClick={() => handleReferReinsurance(p.id, "Munich Re")} className="py-2 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 transition-colors">Munich Re</button>
+                                <button onClick={() => handleReferReinsurance(p.id, "Pak Re")} className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 transition-colors">Pak Re</button>
                               </div>
                             )}
                           </div>
                         </div>
+                      </div>
+                    )}
 
-                        {/* Gate 4: Courier Dispatch & POD Tracking */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate4Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-teal-300 hover:shadow-sm"
-                        }`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate4Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-teal-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M5 8h14M5 12h14M5 16h10" />
-                                </svg>
-                                Courier Dispatch &amp; POD Tracking
-                              </span>
-                              {isGate4Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate4Done} pending="Pending Dispatch" label="POD Verified" />
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate4Locked ? "Requires completion of Industry Cover Check before dispatching policy package." : "TCS / Leopard Express proof of delivery establishing statutory timeline commencement."}
-                            </p>
+                    {/* Gate 3: Industry Cover Check */}
+                    {gates.isCounterAccepted && gates.isReinsured && (
+                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
+                        <div className="shrink-0 mt-1">
+                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isHistoryClear ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
+                            {gates.isHistoryClear ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
                           </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate4Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Complete Cover Check First</span>
-                              </div>
-                            ) : isGate4Done ? (
-                              <div className="w-full py-2 px-3 bg-teal-50 text-teal-700 font-bold text-xs rounded-lg border border-teal-200/80 flex items-center justify-between">
-                                <span className="font-mono text-[10px] font-semibold">{courier.trackingNo}</span>
-                                <span className="text-[10px]">POD Verified</span>
+                        </div>
+                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isHistoryClear ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isHistoryClear ? 'text-slate-700' : 'text-purple-900'}`}>
+                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M3 3v18h18" />
+                                <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+                              </svg>
+                              Industry Cover Check
+                            </span>
+                            <StatusPill done={true} pending="Audited" label="Clear" />
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                            Aggregate life cover across industry verified against Human Life Value (HLV) cap.
+                          </p>
+                          <div>
+                            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
+                              <span>✓</span>
+                              <span>Aggregate Cover Within HLV</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Gate 4: Courier Dispatch & POD */}
+                    {gates.isCounterAccepted && gates.isReinsured && gates.isHistoryClear && (
+                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
+                        <div className="shrink-0 mt-1">
+                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isDispatched ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
+                            {gates.isDispatched ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
+                          </div>
+                        </div>
+                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isDispatched ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isDispatched ? 'text-slate-700' : 'text-purple-900'}`}>
+                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M5 8h14M5 12h14M5 16h10" />
+                              </svg>
+                              Courier Dispatch & POD
+                            </span>
+                            <StatusPill done={!!courier} pending="Pending Dispatch" label="POD Verified" />
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                            TCS / Leopard Express proof of delivery establishing statutory timeline commencement.
+                          </p>
+                          <div>
+                            {courier ? (
+                              <div className="inline-flex items-center gap-2 text-xs font-bold text-teal-700 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200/80">
+                                <span className="font-mono">{courier.trackingNo}</span>
+                                <span className="text-[10px] text-teal-600 border-l border-teal-300 pl-2">POD Verified</span>
                               </div>
                             ) : (
-                              <button
-                                onClick={() => handleDispatchCourier(p.id)}
-                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-teal-700 font-bold text-xs rounded-lg border border-teal-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                              >
+                              <button onClick={() => handleDispatchCourier(p.id)} className="w-full sm:w-auto py-2 px-5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]">
                                 Dispatch via TCS Express →
                               </button>
                             )}
                           </div>
                         </div>
+                      </div>
+                    )}
 
-                        {/* Gate 5: SECP Welcome Call & Free-Look */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate5Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-emerald-300 hover:shadow-sm"
-                        }`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate5Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                                </svg>
-                                SECP Welcome Call &amp; Free-Look
-                              </span>
-                              {isGate5Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate5Done} pending="Call Pending" label="14-Day Clock Active" />
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate5Locked ? "Requires policy delivery via courier before initiating SECP welcome call." : "Mandated 14-day Free-Look cancellation window triggered upon call verification."}
-                            </p>
+                    {/* Gate 5: SECP Welcome Call */}
+                    {gates.isCounterAccepted && gates.isReinsured && gates.isHistoryClear && gates.isDispatched && (
+                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
+                        <div className="shrink-0 mt-1">
+                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isWelcomeDone ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
+                            {gates.isWelcomeDone ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
                           </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate5Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Await Courier Dispatch</span>
-                              </div>
-                            ) : isGate5Done ? (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
-                                <span>✓ Welcome Call Verified</span>
-                                <span className="font-mono text-[10px] font-semibold">{call.freeLookEnd}</span>
+                        </div>
+                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isWelcomeDone ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
+                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isWelcomeDone ? 'text-slate-700' : 'text-purple-900'}`}>
+                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                              </svg>
+                              SECP Welcome Call
+                            </span>
+                            <StatusPill done={!!call} pending="Call Pending" label="14-Day Clock Active" />
+                          </div>
+                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
+                            Mandated 14-day Free-Look cancellation window triggered upon call verification.
+                          </p>
+                          <div>
+                            {call ? (
+                              <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
+                                <span>✓</span>
+                                <span>Welcome Call Verified</span>
+                                <span className="font-mono text-[10px] text-emerald-600 border-l border-emerald-300 pl-2">{call.freeLookEnd}</span>
                               </div>
                             ) : (
-                              <button
-                                onClick={() => handleCompleteWelcomeCall(p.id)}
-                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                              >
+                              <button onClick={() => handleCompleteWelcomeCall(p.id)} className="w-full sm:w-auto py-2 px-5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]">
                                 Verify Welcome Call →
                               </button>
                             )}
                           </div>
                         </div>
-                      </>
-                    );
-                  })()}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             );

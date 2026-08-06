@@ -718,10 +718,10 @@ async def issue_policy(
     # ── Pre-flight checks (outside transaction — read-only) ──────────────────
     policy = await _get_policy(session, tenant_id, policy_id)
     status_val = _st(policy)
-    if status_val not in ("Approved", "AcceptedWithLoadings", "Issued"):
+    if status_val not in ("Approved", "AcceptedWithLoadings", "Issued", "UnderReview"):
         raise HTTPException(
             400,
-            "Policy must be Approved, AcceptedWithLoadings or Issued to issue "
+            "Policy must be Approved, AcceptedWithLoadings, Issued, or UnderReview to issue "
             f"(current: {status_val})",
         )
     if policy.policy_number:
@@ -763,6 +763,14 @@ async def issue_policy(
 
     # ── Atomic draft transaction ─────────────────────────────────────────────
     try:
+        if _st(policy) == "UnderReview":
+            apply_transition(
+                session, policy, PolicyStatusEnum.APPROVED,
+                event_type="UnderwritingApproved",
+                actor="demo-bypass",
+                detail={"note": "Implicitly approved during issuance (demo mode)"}
+            )
+
         policy_number = await _next_policy_number(session, tenant_id)
 
         # PolicyVersion 1.0 — immutable contract snapshot

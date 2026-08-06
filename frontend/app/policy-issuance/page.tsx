@@ -520,6 +520,11 @@ function PolicyIssuanceContent() {
   const queue = useMemo(() =>
     policies.filter(p => {
       const status = (p.status || "").toUpperCase();
+      if (status === "ACTIVE") return false;
+
+      const isPuCleared = typeof window !== "undefined" ? localStorage.getItem("pu_cleared_" + p.id) === "true" : false;
+      if (isPuCleared) return true;
+
       const caseStatus = (p.case_status || "").toUpperCase();
       if (status === "APPROVED") return caseStatus === "APPROVED";
       return ["ACCEPTEDWITHLOADINGS", "COUNTEROFFER", "PENDINGPAYMENT", "ISSUED"].includes(status);
