@@ -238,6 +238,7 @@ export default function ChatScreen() {
     <Screen
       scrollable={false}
       padded={false}
+      contentContainerStyle={{ paddingBottom: 0 }}
       header={
         <ScreenHeader
           title="Copilot"

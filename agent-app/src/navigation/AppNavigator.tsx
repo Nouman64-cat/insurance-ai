@@ -119,9 +119,6 @@ function MainTabs() {
           // Removing the default elevation stops Android drawing a hard grey
           // band over the themed border.
           elevation: 0,
-          height: barContentHeight + bottomInset,
-          paddingTop: 6,
-          paddingBottom: bottomInset,
         },
         tabBarLabelStyle: {
           ...typography.micro,

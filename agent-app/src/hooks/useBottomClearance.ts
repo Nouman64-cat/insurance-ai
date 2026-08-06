@@ -28,9 +28,11 @@ export function useBottomClearance(): BottomClearance {
   // The hook form of this throws outside a tab navigator; the context does not.
   const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
 
-  // A tab bar already contains the safe-area inset, so only one of the two is
-  // ever added — otherwise the home indicator is counted twice.
-  const base = tabBarHeight || insets.bottom;
+  // React Navigation's default tab bar does not overlay the screen content;
+  // it sits below it. Therefore, if we are inside a tab navigator, we do NOT
+  // need to clear the tab bar height. We only need the safe area inset on screens
+  // without a tab bar.
+  const base = tabBarHeight > 0 ? 0 : insets.bottom;
 
   return {
     tabBarHeight,

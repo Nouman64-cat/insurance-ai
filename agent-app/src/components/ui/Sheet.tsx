@@ -93,7 +93,7 @@ export default function Sheet({
   if (!mounted) return null;
 
   const maxHeight = height * maxHeightRatio;
-  const asDialog = !isCompact;
+  const asDialog = true;
 
   const translateY = progress.interpolate({
     inputRange: [0, 1],
@@ -107,7 +107,6 @@ export default function Sheet({
         {
           backgroundColor: colors.surfaceElevated,
           maxHeight,
-          paddingBottom: asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl),
           opacity: asDialog ? progress : 1,
           transform: [{ translateY }],
         },
@@ -131,18 +130,28 @@ export default function Sheet({
 
       {scrollable ? (
         <ScrollView
-          contentContainerStyle={styles.content}
+          contentContainerStyle={[styles.content, !footer && { paddingBottom: asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl) }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           {children}
         </ScrollView>
       ) : (
-        <View style={styles.content}>{children}</View>
+        <View style={[styles.content, !footer && { paddingBottom: asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl) }]}>
+          {children}
+        </View>
       )}
 
       {footer ? (
-        <View style={[styles.footer, { borderTopColor: colors.borderSubtle }]}>{footer}</View>
+        <View style={[
+          styles.footer, 
+          { 
+            borderTopColor: colors.borderSubtle,
+            paddingBottom: asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl)
+          }
+        ]}>
+          {footer}
+        </View>
       ) : null}
     </Animated.View>
   );

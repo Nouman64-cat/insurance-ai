@@ -61,7 +61,7 @@ const formatCurrency = (amount: number): string => {
 export default function ProposalsScreen() {
   const { colors } = useTheme();
   const { gutter, isCompact, width, columns } = useResponsive();
-  const { fabPadding } = useBottomClearance();
+  const { listPadding } = useBottomClearance();
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
 
@@ -217,15 +217,7 @@ export default function ProposalsScreen() {
               ) : null}
             </View>
 
-            <SegmentedControl<ViewMode>
-              segments={[
-                { value: 'list', label: '', icon: 'list' },
-                { value: 'board', label: '', icon: 'grid' },
-              ]}
-              value={viewMode}
-              onChange={setViewMode}
-              style={styles.viewToggle}
-            />
+
           </View>
         </ScreenHeader>
       }
@@ -270,7 +262,7 @@ export default function ProposalsScreen() {
                 </View>
                 <ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={[styles.boardList, { paddingBottom: fabPadding }]}
+                  contentContainerStyle={[styles.boardList, { paddingBottom: listPadding }]}
                   nestedScrollEnabled
                 >
                   {items.length === 0 ? (
@@ -297,7 +289,7 @@ export default function ProposalsScreen() {
           columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}
           contentContainerStyle={[
             styles.listContent,
-            { paddingHorizontal: gutter, paddingBottom: fabPadding },
+            { paddingHorizontal: gutter, paddingBottom: listPadding },
             filtered.length === 0 ? styles.listEmpty : null,
           ]}
           showsVerticalScrollIndicator={false}
@@ -329,12 +321,6 @@ export default function ProposalsScreen() {
         />
       )}
 
-      <Fab
-        icon="add"
-        label="New Proposal"
-        onPress={() => navigation.navigate('AddProposal')}
-        accessibilityLabel="Create a new proposal"
-      />
     </Screen>
   );
 }

@@ -64,7 +64,7 @@ const BOARD_COLUMNS: { title: string; statuses: string[] }[] = [
 export default function CasesScreen() {
   const { colors } = useTheme();
   const { gutter, isCompact, width, columns } = useResponsive();
-  const { fabPadding } = useBottomClearance();
+  const { listPadding } = useBottomClearance();
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
 
@@ -251,15 +251,7 @@ export default function CasesScreen() {
               ) : null}
             </View>
 
-            <SegmentedControl<ViewMode>
-              segments={[
-                { value: 'list', label: '', icon: 'list' },
-                { value: 'board', label: '', icon: 'grid' },
-              ]}
-              value={viewMode}
-              onChange={setViewMode}
-              style={styles.viewToggle}
-            />
+
           </View>
         </ScreenHeader>
       }
@@ -304,7 +296,7 @@ export default function CasesScreen() {
                 </View>
                 <ScrollView
                   showsVerticalScrollIndicator={false}
-                  contentContainerStyle={[styles.boardList, { paddingBottom: fabPadding }]}
+                  contentContainerStyle={[styles.boardList, { paddingBottom: listPadding }]}
                   nestedScrollEnabled
                 >
                   {items.length === 0 ? (
@@ -331,7 +323,7 @@ export default function CasesScreen() {
           columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}
           contentContainerStyle={[
             styles.listContent,
-            { paddingHorizontal: gutter, paddingBottom: fabPadding },
+            { paddingHorizontal: gutter, paddingBottom: listPadding },
             filtered.length === 0 ? styles.listEmpty : null,
           ]}
           showsVerticalScrollIndicator={false}
@@ -361,12 +353,6 @@ export default function CasesScreen() {
         />
       )}
 
-      <Fab
-        icon="add"
-        label="New Case"
-        onPress={() => navigation.navigate('AddCase')}
-        accessibilityLabel="Create a new case"
-      />
     </Screen>
   );
 }

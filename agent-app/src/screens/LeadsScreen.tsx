@@ -43,7 +43,7 @@ const BOARD_COLUMNS: { status: ProfileStatus; title: string }[] = [
 export default function LeadsScreen() {
   const { colors } = useTheme();
   const { gutter, columns, isCompact, width } = useResponsive();
-  const { fabPadding } = useBottomClearance();
+  const { listPadding, fabPadding } = useBottomClearance();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { canSeeAllLeads } = useSession();
   const { toast } = useNotifications();
@@ -318,15 +318,7 @@ export default function LeadsScreen() {
               ) : null}
             </View>
 
-            <SegmentedControl<ViewMode>
-              segments={[
-                { value: 'list', label: '', icon: 'list' },
-                { value: 'board', label: '', icon: 'grid' },
-              ]}
-              value={viewMode}
-              onChange={setViewMode}
-              style={styles.viewToggle}
-            />
+
           </View>
 
           {viewMode === 'list' ? (
@@ -354,12 +346,6 @@ export default function LeadsScreen() {
 
       {viewMode === 'list' ? renderList() : renderBoard()}
 
-      <Fab
-        icon="add"
-        label="Add Lead"
-        onPress={() => navigation.navigate('SelectLeadCategory')}
-        accessibilityLabel="Add a new lead"
-      />
 
       <Sheet
         visible={!!menuLead}
@@ -421,6 +407,14 @@ export default function LeadsScreen() {
         onConfirm={confirmDelete}
         onCancel={() => setPendingDelete(null)}
       />
+
+      {leads.length > 0 ? (
+        <Fab
+          icon="add"
+          onPress={() => navigation.navigate('SelectLeadCategory')}
+          accessibilityLabel="Add new lead"
+        />
+      ) : null}
     </Screen>
   );
 }

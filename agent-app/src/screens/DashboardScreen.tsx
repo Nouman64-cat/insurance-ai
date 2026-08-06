@@ -58,6 +58,8 @@ export default function DashboardScreen() {
   const { unreadCount } = useNotifications();
   const { leads, loading, syncing, error, refresh } = useLeadSync();
 
+  const [pipelineExpanded, setPipelineExpanded] = React.useState(false);
+
   const stats = useMemo(() => {
     const byStatus: Record<string, number> = {};
     const byType: Record<string, number> = {};
@@ -200,8 +202,14 @@ export default function DashboardScreen() {
 
       {/* ── Pipeline stats ────────────────────────────────────────────────── */}
 
-      <SectionHeader title="Pipeline" icon="git-commit-outline" actionLabel="See all" onAction={goToLeads} />
-      <View style={[styles.grid, isCompact ? null : styles.gridWide]}>
+      <SectionHeader 
+        title="Pipeline" 
+        icon={pipelineExpanded ? "remove-circle" : "add-circle"} 
+        onIconPress={() => setPipelineExpanded(!pipelineExpanded)}
+      />
+      {pipelineExpanded ? (
+        <>
+          <View style={[styles.grid, isCompact ? null : styles.gridWide]}>
         <StatTile
           label={statusLabel.LEAD}
           value={stats.newLeads}
@@ -241,6 +249,8 @@ export default function DashboardScreen() {
           onPress={goToLeads}
         />
       </View>
+        </>
+      ) : null}
 
       {/* ── Target ────────────────────────────────────────────────────────── */}
 
@@ -389,7 +399,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   grid: {
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: spacing.md,
     marginBottom: spacing.md,
   },
