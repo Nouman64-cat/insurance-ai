@@ -519,6 +519,61 @@ function StepMedical({ medical, setMedical }: { medical: MedicalQuestionnaire; s
           </div>
         ))}
       </div>
+
+      {/* Additional custom questions specified by portal user */}
+      {(medical as any).custom_questions && (medical as any).custom_questions.length > 0 && (
+        <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 space-y-3">
+          <p className="text-xs font-bold text-blue-900 uppercase tracking-wide">
+            Additional Questions Requested by Underwriter
+          </p>
+          {(medical as any).custom_questions.map((cq: any, idx: number) => (
+            <div key={cq.id || idx} className="bg-white border border-slate-200 rounded-lg p-3 space-y-2">
+              <p className="text-sm font-medium text-slate-800">{cq.question}</p>
+              {cq.type === "yes_no" ? (
+                <div className="flex gap-4">
+                  {["Yes", "No"].map((opt) => (
+                    <label key={opt} className="flex items-center gap-1.5 text-sm text-slate-700">
+                      <input
+                        type="radio"
+                        name={`cq_${cq.id || idx}`}
+                        checked={cq.answer === opt}
+                        onChange={() => {
+                          const updated = [...(medical as any).custom_questions];
+                          updated[idx] = { ...cq, answer: opt };
+                          setMedical({ ...medical, custom_questions: updated } as any);
+                        }}
+                      />
+                      {opt}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <TextInput
+                  placeholder="Your answer"
+                  value={cq.answer || ""}
+                  onChange={(e) => {
+                    const updated = [...(medical as any).custom_questions];
+                    updated[idx] = { ...cq, answer: e.target.value };
+                    setMedical({ ...medical, custom_questions: updated } as any);
+                  }}
+                />
+              )}
+              {cq.type === "yes_no" && cq.answer === "Yes" && (
+                <TextArea
+                  placeholder="Please provide details"
+                  rows={2}
+                  value={cq.details || ""}
+                  onChange={(e) => {
+                    const updated = [...(medical as any).custom_questions];
+                    updated[idx] = { ...cq, details: e.target.value };
+                    setMedical({ ...medical, custom_questions: updated } as any);
+                  }}
+                />
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

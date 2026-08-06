@@ -9,6 +9,7 @@ from datetime import datetime
 from database import get_session
 from document_requirements import get_required_documents
 from routers.auth import oauth2_scheme, _get_current_user, _role_name
+from services import compliance_engine
 from shared.models.core import (
     Customer,
     Artifact,
@@ -22,6 +23,7 @@ from shared.models.core import (
     CaseAuditTrail,
     AssignmentTypeEnum,
     AssignmentStatusEnum,
+    ComplianceStatusEnum,
     Policy,
     PolicyStatusEnum,
     RiskAssessment,

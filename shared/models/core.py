@@ -1357,6 +1357,7 @@ class EApplicationStatusEnum(str, Enum):
     SENT = "Sent"
     IN_PROGRESS = "InProgress"
     SUBMITTED = "Submitted"
+    VERIFIED = "Verified"
     EXPIRED = "Expired"
 
 
@@ -1385,6 +1386,8 @@ class CustomerEApplication(SQLModel, table=True):
     started_at: Optional[datetime] = Field(default=None, nullable=True)
     submitted_at: Optional[datetime] = Field(default=None, nullable=True)
     submitted_ip: Optional[str] = Field(default=None, max_length=45, nullable=True)
+    verified_at: Optional[datetime] = Field(default=None, nullable=True)
+    verified_by: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
 
     # Yes/No disclosure list + free-text details for each "Yes" — see
     # requirements: medical condition/illness, doctor diagnosis, physical

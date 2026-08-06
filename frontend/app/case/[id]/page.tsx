@@ -1276,10 +1276,97 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const missingRequiredDocs = docs?.missing ?? [];
   const missingPreChecks: string[] = [];
   if (missingRequiredDocs.length > 0) missingPreChecks.push(`Docs: ${missingRequiredDocs.join(", ")}`);
-  if (eApp?.status !== "Submitted") missingPreChecks.push("E-Application");
+  if (eApp?.status !== "Submitted" && eApp?.status !== "Verified") missingPreChecks.push("E-Application");
   if (acr?.status !== "Submitted") missingPreChecks.push("Agent's Confidential Report");
   if (ipp?.status !== "Realized") missingPreChecks.push("Initial Premium Payment");
-  
+
+  const medicalDone = medical?.status === "Completed" || medical?.status === "NotRequired" || medical?.status === "Waived";
+  const historyDone = history?.status === "Clear";
+  const pepDone = checks.some((ck) => ck.status === "Passed");
+
+  const prereqSteps = [
+    {
+      id: "docs",
+      title: "Mandatory Documents Checklist",
+      done: missingRequiredDocs.length === 0,
+      statusLabel: missingRequiredDocs.length === 0 ? "Completed" : `Missing (${missingRequiredDocs.length})`,
+      description: missingRequiredDocs.length === 0 
+        ? "All required documents uploaded and processed by OCR." 
+        : `Missing required document(s): ${missingRequiredDocs.join(", ")}`,
+      actionLabel: missingRequiredDocs.length === 0 ? "Manage / Upload Docs" : "Upload Documents",
+      onAction: () => setShowUpload(true),
+    },
+    {
+      id: "eapp",
+      title: "Customer E-Application Questionnaire",
+      done: eApp?.status === "Submitted" || eApp?.status === "Verified",
+      statusLabel: eApp?.status ?? "Not Sent",
+      description: (eApp?.status === "Submitted" || eApp?.status === "Verified")
+        ? `Customer E-Application submitted (${eApp.status}).`
+        : "Customer health disclosures questionnaire pending submission or verification.",
+      actionLabel: "Open Pre-Underwriting",
+      actionHref: "/underwriting?tab=pre-underwriting",
+    },
+    {
+      id: "acr",
+      title: "Agent's Confidential Report (ACR)",
+      done: acr?.status === "Submitted",
+      statusLabel: acr?.status ?? "Not Started",
+      description: acr?.status === "Submitted" 
+        ? "Moral hazard & financial standing report filed by field agent." 
+        : "Agent confidential report needs to be completed.",
+      actionLabel: acr?.status === "Submitted" ? "View ACR" : "File ACR",
+      onAction: () => setShowACRModal(true),
+    },
+    {
+      id: "pep",
+      title: "PEP & Sanctions Screening",
+      done: pepDone,
+      statusLabel: pepDone ? "Passed" : "Pending",
+      description: pepDone 
+        ? "Compliance check cleared against SECP & OpenSanctions database." 
+        : "PEP & AML screening required.",
+      actionLabel: compBusy ? "Screening…" : "Run PEP Check",
+      onAction: handleRunCompliance,
+      busy: compBusy,
+    },
+    {
+      id: "ipp",
+      title: "Initial Premium Payment (IPP)",
+      done: ipp?.status === "Realized",
+      statusLabel: ipp?.status ?? "Not Started",
+      description: ipp?.status === "Realized" 
+        ? "Section 30 initial premium payment realized." 
+        : "Initial premium payment collection or realization pending.",
+      actionLabel: ipp?.status === "Realized" ? "View Payment" : "Collect Premium",
+      onAction: () => setShowIPPModal(true),
+    },
+    {
+      id: "history",
+      title: "Insurance History Clearance",
+      done: historyDone,
+      statusLabel: history?.status ?? "Not Started",
+      description: historyDone 
+        ? "Prior coverage & replacement history check clear." 
+        : "Prior policy coverage & over-insurance history check required.",
+      actionLabel: histBusy ? "Checking…" : "Run History Check",
+      onAction: handleRunHistory,
+      busy: histBusy,
+    },
+    {
+      id: "medical",
+      title: "Medical Examination / NML Grid",
+      done: medicalDone,
+      statusLabel: medical?.status ?? "Not Assessed",
+      description: medicalDone 
+        ? `Medical examination status: ${medical?.status}` 
+        : "Non-medical limit grid or panel diagnostic check required.",
+      actionLabel: medBusy ? "Assessing…" : "Assess Medical",
+      onAction: handleAssessMedical,
+      busy: medBusy,
+    },
+  ];
+
   const requiredDocsMissing = missingPreChecks.length > 0;
 
   // In a multi-plan group each plan streams in parallel into its own slice of the
@@ -1396,9 +1483,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               onClick={() => overrideStatus("Pending Documents")}
               disabled={overriding !== null || userRole === "Agent"}
               title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
-              className={`px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg transition-colors ${
-                userRole === "Agent" ? "opacity-50 cursor-not-allowed bg-slate-100" : "hover:bg-slate-50"
-              }`}
+              className={`px-4 py-2 text-sm font-semibold text-slate-700 border border-slate-300 rounded-lg transition-colors ${userRole === "Agent" ? "opacity-50 cursor-not-allowed bg-slate-100" : "hover:bg-slate-50"
+                }`}
             >
               {overriding === "Pending Documents" ? <Spinner className="w-3.5 h-3.5 border-slate-400 border-t-slate-700" /> : "Request Info"}
             </button>
@@ -1406,9 +1492,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               onClick={() => overrideStatus("Rejected")}
               disabled={overriding !== null || userRole === "Agent"}
               title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
-              className={`px-4 py-2 text-sm font-semibold text-red-700 border border-red-200 bg-red-50 rounded-lg transition-colors ${
-                userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-100"
-              }`}
+              className={`px-4 py-2 text-sm font-semibold text-red-700 border border-red-200 bg-red-50 rounded-lg transition-colors ${userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-100"
+                }`}
             >
               {overriding === "Rejected" ? <Spinner className="w-3.5 h-3.5 border-red-300 border-t-red-700" /> : "Override: Decline"}
             </button>
@@ -1416,9 +1501,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
               onClick={() => overrideStatus("Approved")}
               disabled={overriding !== null || !hasAny || userRole === "Agent"}
               title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : (!hasAny ? "Run AI Underwriting before approving" : undefined)}
-              className={`px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg transition-colors shadow-sm ${
-                userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"
-              }`}
+              className={`px-4 py-2 text-sm font-semibold text-white bg-blue-600 rounded-lg transition-colors shadow-sm ${userRole === "Agent" ? "opacity-50 cursor-not-allowed" : "hover:bg-blue-700"
+                }`}
             >
               {overriding === "Approved" ? <Spinner /> : "Override: Proceed"}
             </button>
@@ -1810,9 +1894,92 @@ export default function CasePage({ params }: { params: { id: string } }) {
                 {effStatus === "streaming" ? "Running…" : "Run AI Underwriting"}
               </button>
               {requiredDocsMissing && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2 max-w-sm">
-                  Missing prerequisites: <span className="font-semibold">{missingPreChecks.join("; ")}</span>. Complete them to enable underwriting.
-                </p>
+                <div className="w-full bg-slate-50/80 rounded-2xl border border-slate-200/90 p-5 mt-4 text-left shadow-2xs">
+                  <div className="flex items-center justify-between pb-3.5 mb-4 border-b border-slate-200/70 flex-wrap gap-2">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center font-bold text-sm border border-amber-200/60 shadow-2xs">
+                        ⚡
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                          Pre-Underwriting Prerequisites Checklist
+                        </h4>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          Complete all required workflow steps below to enable Risk Engine execution
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-xs font-bold font-mono px-3 py-1 rounded-full bg-white text-slate-700 border border-slate-200/90 shadow-2xs">
+                      <span className="text-emerald-600 font-extrabold">{prereqSteps.filter((s) => s.done).length}</span> / {prereqSteps.length} Steps Ready
+                    </span>
+                  </div>
+
+                  {/* Vertical Thread Stepper */}
+                  <div className="relative pl-7 space-y-4 before:absolute before:left-3 before:top-3 before:bottom-3 before:w-0.5 before:bg-slate-200">
+                    {prereqSteps.map((step, idx) => (
+                      <div key={step.id} className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-3 group">
+                        {/* Thread Node Circle */}
+                        <div
+                          className={`absolute -left-7 w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold transition-all z-10 ${
+                            step.done
+                              ? "bg-emerald-500 border-emerald-600 text-white shadow-xs"
+                              : "bg-white border-amber-500 text-amber-600 shadow-2xs animate-pulse"
+                          }`}
+                        >
+                          {step.done ? "✓" : idx + 1}
+                        </div>
+
+                        {/* Step Details */}
+                        <div className="min-w-0 flex-1 pl-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-xs ${step.done ? "font-bold text-slate-800" : "font-extrabold text-slate-900"}`}>
+                              {step.title}
+                            </span>
+                            <span
+                              className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                                step.done
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200/80"
+                                  : "bg-amber-50 text-amber-800 border-amber-300/80"
+                              }`}
+                            >
+                              {step.statusLabel}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1 leading-snug">
+                            {step.description}
+                          </p>
+                        </div>
+
+                        {/* Action Link / Button */}
+                        <div className="shrink-0 pl-1 sm:pl-0">
+                          {step.actionHref ? (
+                            <Link
+                              href={step.actionHref}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-blue-700 text-xs font-bold rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all"
+                            >
+                              <span>{step.actionLabel}</span>
+                              <span className="text-[10px]">↗</span>
+                            </Link>
+                          ) : step.onAction ? (
+                            <button
+                              onClick={step.onAction}
+                              disabled={step.busy || userRole === "Agent"}
+                              title={userRole === "Agent" ? "Currently, you have no access to do this, ask your manager" : undefined}
+                              className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition-all flex items-center gap-1.5 ${
+                                step.done
+                                  ? "bg-white hover:bg-slate-100 text-slate-700 border-slate-200/90"
+                                  : "bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-2xs"
+                              } ${userRole === "Agent" ? "opacity-50 cursor-not-allowed" : ""}`}
+                            >
+                              {step.busy ? <Spinner className="w-3 h-3 border-white border-t-transparent" /> : null}
+                              <span>{step.actionLabel}</span>
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
               {effStreamError && !requiredDocsMissing && <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-2">{effStreamError}</p>}
             </div>

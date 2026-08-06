@@ -139,6 +139,7 @@ class EApplicationRead(BaseModel):
     sent_at: Optional[datetime]
     started_at: Optional[datetime]
     submitted_at: Optional[datetime]
+    verified_at: Optional[datetime] = None
     medical_questionnaire: Optional[dict]
     family_history: Optional[dict]
     lifestyle_habits: Optional[dict]
@@ -164,7 +165,7 @@ async def get_e_application(
     if e_app is None:
         return EApplicationRead(
             status=EApplicationStatusEnum.NOT_SENT,
-            sent_at=None, started_at=None, submitted_at=None,
+            sent_at=None, started_at=None, submitted_at=None, verified_at=None,
             medical_questionnaire=None, family_history=None,
             lifestyle_habits=None, existing_insurance=None, declaration=None,
         )
@@ -173,12 +174,81 @@ async def get_e_application(
         sent_at=e_app.sent_at,
         started_at=e_app.started_at,
         submitted_at=e_app.submitted_at,
+        verified_at=e_app.verified_at,
         medical_questionnaire=e_app.medical_questionnaire,
         family_history=e_app.family_history,
         lifestyle_habits=e_app.lifestyle_habits,
         existing_insurance=e_app.existing_insurance,
         declaration=e_app.declaration,
     )
+
+
+class CustomQuestionsPayload(BaseModel):
+    custom_questions: list[dict]
+
+
+@router.put("/tenants/{tenant_id}/cases/{case_id}/e-application/custom-questions")
+async def update_custom_questions(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: CustomQuestionsPayload,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_current_user_id(token)
+    case = await _get_case(session, tenant_id, case_id)
+    stmt = select(CustomerEApplication).where(CustomerEApplication.case_id == case_id)
+    e_app = (await session.execute(stmt)).scalars().first()
+    if e_app is None:
+        e_app = CustomerEApplication(
+            tenant_id=tenant_id,
+            case_id=case_id,
+            customer_id=case.customer_id,
+        )
+
+    medical = dict(e_app.medical_questionnaire or {})
+    medical["custom_questions"] = body.custom_questions
+    e_app.medical_questionnaire = medical
+    e_app.updated_at = datetime.utcnow()
+    session.add(e_app)
+    await session.commit()
+    return {"status": e_app.status, "custom_questions": body.custom_questions}
+
+
+class VerifyPayload(BaseModel):
+    action: str  # "approve" | "reject"
+    notes: Optional[str] = None
+
+
+@router.post("/tenants/{tenant_id}/cases/{case_id}/e-application/verify")
+async def verify_e_application(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: VerifyPayload,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    user_id = await _get_current_user_id(token)
+    await _get_case(session, tenant_id, case_id)
+    stmt = select(CustomerEApplication).where(CustomerEApplication.case_id == case_id)
+    e_app = (await session.execute(stmt)).scalars().first()
+    if e_app is None:
+        raise HTTPException(status_code=404, detail="E-Application not found")
+
+    now = datetime.utcnow()
+    if body.action == "approve":
+        e_app.status = EApplicationStatusEnum.VERIFIED
+        e_app.verified_at = now
+        e_app.verified_by = user_id
+    elif body.action == "reject":
+        e_app.status = EApplicationStatusEnum.IN_PROGRESS
+    else:
+        raise HTTPException(status_code=400, detail="Invalid action, must be 'approve' or 'reject'")
+
+    e_app.updated_at = now
+    session.add(e_app)
+    await session.commit()
+    return {"status": e_app.status, "verified_at": e_app.verified_at}
 
 
 # ── Public, token-scoped (no tenant auth — the customer has no login) ───────
