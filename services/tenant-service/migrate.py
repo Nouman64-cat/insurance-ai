@@ -878,6 +878,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         "CREATE INDEX IF NOT EXISTS ix_risk_assessments_correlation_id "
         "ON risk_assessments (correlation_id)",
     ),
+    (
+        "v40a — add verified_at to customer_e_applications",
+        "ALTER TABLE customer_e_applications ADD COLUMN IF NOT EXISTS verified_at TIMESTAMP WITH TIME ZONE",
+    ),
+    (
+        "v40b — add verified_by to customer_e_applications",
+        "ALTER TABLE customer_e_applications ADD COLUMN IF NOT EXISTS verified_by UUID REFERENCES users(id)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
