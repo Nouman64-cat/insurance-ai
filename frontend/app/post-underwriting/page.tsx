@@ -13,6 +13,7 @@ import {
 } from "@/app/services/policies";
 import {
   getCounterOffer,
+  createCounterOffer,
   acceptCounterOffer,
   declineCounterOffer,
   CounterOffer,
@@ -23,7 +24,7 @@ import {
   getReinsurance,
   referToReinsurer,
   ReinsuranceView,
-  DEFAULT_REINSURERS,
+  Reinsurer,
 } from "@/app/services/reinsurance";
 import {
   getInsuranceHistory,
@@ -35,7 +36,17 @@ import {
   FreeLookStatus,
 } from "@/app/services/postIssuance";
 
-const PANEL_REINSURERS = [
+/** The subset of a reinsurer the placement modal renders — shared by the live
+ *  panel from tenant-service and the illustrative fallback below. */
+type PanelOption = {
+  id: string;
+  name: string;
+  am_best_rating: string | null;
+  facultative_capacity: number;
+  contact_email: string | null;
+};
+
+const PANEL_REINSURERS: PanelOption[] = [
   {
     id: "RE-001",
     name: "Swiss Reinsurance Company Ltd (Swiss Re)",
@@ -147,6 +158,96 @@ const getApprovalAuthority = (absDev: number) => {
   };
 };
 
+const PU_STORE = "postuw.v1";
+
+/**
+ * localStorage-backed state.
+ *
+ * Hydrates in an effect rather than a lazy `useState` initialiser: the server
+ * render has no localStorage, so reading it during render makes the first
+ * client render disagree with the server markup and React throws away the tree.
+ */
+function usePersistedState<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(initial);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`${PU_STORE}.${key}`);
+      if (raw) setValue(JSON.parse(raw) as T);
+    } catch {
+      // Missing or corrupt entry — keep the initial value.
+    }
+    setHydrated(true);
+  }, [key]);
+
+  useEffect(() => {
+    // Before hydration `value` is still the default; writing it would wipe
+    // whatever the previous session stored.
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(`${PU_STORE}.${key}`, JSON.stringify(value));
+    } catch {
+      // Quota exceeded or private mode — state still works for this session.
+    }
+  }, [key, value, hydrated]);
+
+  return [value, setValue] as const;
+}
+
+const normStatus = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
+
+/**
+ * Statuses a case can hold once underwriting has formed a view.
+ *
+ * A Quoted policy is an auto-priced indicative quote with no case open — there
+ * is nothing to sign off, place, or dispatch, and every gate action against one
+ * fails at the state machine ("Cannot issue a counter-offer from status
+ * Quoted"). They do not belong on a *post*-underwriting board.
+ */
+const POST_UW_STATUSES = new Set([
+  "proposed",
+  "underreview",
+  "informationrequested",
+  "counteroffer",
+  "approved",
+  "acceptedwithloadings",
+  "reinsurerreferred",
+  "pendingpayment",
+  "issued",
+  "active",
+]);
+
+/** Statuses create_counter_offer will accept, plus one that already has an offer open. */
+const COUNTER_OFFER_ISSUABLE = new Set([
+  "proposed",
+  "underreview",
+  "informationrequested",
+  "approved",
+  "acceptedwithloadings",
+  "counteroffer",
+]);
+
+/** Surface the real reason a tenant-service call failed instead of a generic string. */
+function apiError(e: any, fallback: string): string {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg; // 422 validation body
+  return e?.message || fallback;
+}
+
+/** "Pak Re" / "Swiss Re" → the matching panel member, by code or name. */
+function pickReinsurer(panel: Reinsurer[], label: string): Reinsurer | null {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const target = norm(label);
+  if (!target) return null;
+  return (
+    panel.find((r) => norm(r.code) === target || norm(r.name) === target) ??
+    panel.find((r) => norm(r.name).startsWith(target) || target.startsWith(norm(r.code))) ??
+    null
+  );
+}
+
 export default function PostUnderwritingPage() {
   const { notify } = useNotify();
 
@@ -171,87 +272,60 @@ export default function PostUnderwritingPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Reinsurance placement state per policy
-  const [reinsurancePlacements, setReinsurancePlacements] = useState<
+  // Live cession + panel for whichever policy the Gate 2 modal is showing.
+  const [activeReinsuranceView, setActiveReinsuranceView] = useState<ReinsuranceView | null>(null);
+
+  // ── Persisted workflow state ───────────────────────────────────────────────
+  // Gates 3–5 and the pricing engine have no server-side record, so localStorage
+  // is their only home. Gates 1 and 2 do have one, and their entries are written
+  // only after the tenant-service call succeeds — so anything that survives a
+  // refresh here is something the backend genuinely recorded.
+  const [reinsurancePlacements, setReinsurancePlacements] = usePersistedState<
     Record<string, { reinsurerId: string; reinsurerName: string; note: string; status: string; cededAmount: number }>
-  >({});
+  >("reinsurancePlacements", {});
 
   // Counter-Offer interactive details per policy
-  const [counterOfferStates, setCounterOfferStates] = useState<Record<string, CounterOfferState>>({});
+  const [counterOfferStates, setCounterOfferStates] = usePersistedState<Record<string, CounterOfferState>>(
+    "counterOfferStates",
+    {},
+  );
 
   // Per-policy interactive tracking state
-  const [courierLogs, setCourierLogs] = useState<
+  const [courierLogs, setCourierLogs] = usePersistedState<
     Record<string, { partner: string; trackingNo: string; dispatchedAt: string; podStatus: string }>
-  >(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_courierLogs");
-      if (stored) return JSON.parse(stored);
-    }
-    return {
-      default: {
-        partner: "TCS Courier Express",
-        trackingNo: "TCS-98234110",
-        dispatchedAt: "2026-08-04",
-        podStatus: "Delivered (POD Signed)",
-      },
-    };
+  >("courierLogs", {
+    default: {
+      partner: "TCS Courier Express",
+      trackingNo: "TCS-98234110",
+      dispatchedAt: "2026-08-04",
+      podStatus: "Delivered (POD Signed)",
+    },
   });
 
-  const [welcomeCalls, setWelcomeCalls] = useState<
+  const [welcomeCalls, setWelcomeCalls] = usePersistedState<
     Record<string, { callStatus: string; confirmedAt: string | null; freeLookEnd: string | null }>
-  >(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_welcomeCalls");
-      if (stored) return JSON.parse(stored);
-    }
-    return {};
-  });
+  >("welcomeCalls", {});
 
-  const [acceptedCounterOffers, setAcceptedCounterOffers] = useState<Record<string, boolean>>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_acceptedCounterOffers");
-      if (stored) return JSON.parse(stored);
-    }
-    return {};
-  });
+  const [acceptedCounterOffers, setAcceptedCounterOffers] = usePersistedState<Record<string, boolean>>(
+    "acceptedCounterOffers",
+    {},
+  );
+  const [reinsuranceReferrals, setReinsuranceReferrals] = usePersistedState<Record<string, string>>(
+    "reinsuranceReferrals",
+    {},
+  );
 
-  const [reinsuranceReferrals, setReinsuranceReferrals] = useState<Record<string, string>>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_reinsuranceReferrals");
-      if (stored) return JSON.parse(stored);
-    }
-    return {};
-  });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_courierLogs", JSON.stringify(courierLogs));
-    }
-  }, [courierLogs]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_welcomeCalls", JSON.stringify(welcomeCalls));
-    }
-  }, [welcomeCalls]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_acceptedCounterOffers", JSON.stringify(acceptedCounterOffers));
-    }
-  }, [acceptedCounterOffers]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_reinsuranceReferrals", JSON.stringify(reinsuranceReferrals));
-    }
-  }, [reinsuranceReferrals]);
+  // Quotes that never entered underwriting are excluded rather than listed and
+  // then failing on every gate; kept as a count so the board can say so.
+  const [preUnderwritingCount, setPreUnderwritingCount] = useState(0);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [pList, pStats] = await Promise.all([listPolicies(), getPolicyStats()]);
-      setPolicies(pList);
+      const underwritten = pList.filter((p) => POST_UW_STATUSES.has(normStatus(p.status)));
+      setPolicies(underwritten);
+      setPreUnderwritingCount(pList.length - underwritten.length);
       setStats(pStats);
     } catch (err: any) {
       notify("Failed to load post-underwriting cases.", false);
@@ -411,39 +485,122 @@ export default function PostUnderwritingPage() {
     }
   };
 
-  // Sign off counter-offer
-  const handleAcceptCounterOffer = async (policyId: string) => {
+  // Sign off counter-offer. Returns true only if tenant-service recorded it.
+  //
+  // accept_counter_offer only works against an offer already sitting in Pending.
+  // A case with no loadings has no such row, so the accept 404s — which is why
+  // this used to fall into its own catch block and report success anyway. Issue
+  // the offer first when there isn't a live one, then accept it, so the sign-off
+  // reaches the database on both paths.
+  const handleAcceptCounterOffer = async (policyId: string): Promise<boolean> => {
+    const policy = policies.find((p) => p.id === policyId);
+    if (policy && !COUNTER_OFFER_ISSUABLE.has(normStatus(policy.status))) {
+      notify(
+        `A counter-offer cannot be issued from status ${policy.status} — the case has to reach ` +
+          `underwriting first.`,
+        false,
+      );
+      return false;
+    }
+
     setActionLoading(true);
     try {
-      await acceptCounterOffer(policyId, "Customer explicitly signed counter-offer terms (Pakistani Contract Act verified).");
+      const existing = await getCounterOffer(policyId).catch(() => null);
+      const today = new Date().toISOString().slice(0, 10);
+      const isLive = existing?.status === "Pending" && existing.valid_until >= today;
+
+      if (!isLive) {
+        const co = counterOfferStates[policyId];
+        const loadingPct = co ? Math.max(0, getDeviationPct(co.expiringPremium, co.proposedPremium)) : 0;
+        await createCounterOffer(policyId, {
+          offer_type: "Loading",
+          revised_loading_pct: Number(loadingPct.toFixed(2)),
+          reason: co?.reasonCode || "Post-underwriting counter-offer sign-off",
+          valid_days: 30,
+          created_by: "underwriter",
+        });
+      }
+
+      await acceptCounterOffer(
+        policyId,
+        "Customer explicitly signed counter-offer terms (Pakistani Contract Act verified).",
+      );
       setAcceptedCounterOffers((prev) => ({ ...prev, [policyId]: true }));
-      notify("Counter-offer accepted & legal sign-off recorded!", true);
-      loadData();
+      notify("Counter-offer accepted & legal sign-off recorded.", true);
+      await loadData();
+      return true;
     } catch (e: any) {
-      setAcceptedCounterOffers((prev) => ({ ...prev, [policyId]: true }));
-      notify("Counter-offer legal sign-off recorded (Pakistani Contract Act).", true);
+      notify(apiError(e, "Could not record the counter-offer sign-off."), false);
+      return false;
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Trigger Reinsurance Referral
-  const handleReferReinsurance = async (policyId: string, reinsurerName: string) => {
+  // Trigger Reinsurance Referral. Returns the placed reinsurer, or null if
+  // nothing was placed — callers must not record a placement off a failed one.
+  //
+  // ReferRequest.reinsurer_id is typed UUID, so the old hardcoded "RE-SWISS-01"
+  // was rejected as a 422 before the handler body ever ran — no referral was
+  // ever persisted, for any reinsurer. Resolve the real panel member instead,
+  // and check the case is actually referable rather than firing a certain 409.
+  const handleReferReinsurance = async (
+    policyId: string,
+    reinsurerName: string,
+  ): Promise<Reinsurer | null> => {
     setActionLoading(true);
     try {
+      const view = await getReinsurance(policyId);
+
+      if (!view.can_refer) {
+        notify(`This case cannot be referred to a reinsurer from status ${view.policy_status}.`, false);
+        return null;
+      }
+      if (!view.referral_required) {
+        notify(
+          `No facultative referral needed — ${fmtPKR(view.cession.total_sum_assured)} sits within the ` +
+            `automatic capacity of ${fmtPKR(view.cession.automatic_capacity)}.`,
+          false,
+        );
+        return null;
+      }
+
+      const match = pickReinsurer(view.panel, reinsurerName);
+      if (!match) {
+        notify(`${reinsurerName} is not on this tenant's reinsurer panel.`, false);
+        return null;
+      }
+
       await referToReinsurer(policyId, {
-        reinsurer_id: "RE-SWISS-01",
-        underwriter_note: `Automatic facultative placement referral to ${reinsurerName}`,
+        reinsurer_id: match.id,
+        underwriter_note:
+          reinsurancePlacements[policyId]?.note?.trim() ||
+          `Facultative placement referral to ${match.name}`,
       });
-      setReinsuranceReferrals((prev) => ({ ...prev, [policyId]: reinsurerName }));
-      notify(`Facultative reinsurance referral created with ${reinsurerName}!`, true);
-      loadData();
+      setReinsuranceReferrals((prev) => ({ ...prev, [policyId]: match.name }));
+      notify(`Facultative reinsurance slip transmitted to ${match.name}.`, true);
+      await loadData();
+      return match;
     } catch (e: any) {
-      setReinsuranceReferrals((prev) => ({ ...prev, [policyId]: reinsurerName }));
-      notify(`Facultative referral registered with ${reinsurerName}.`, true);
+      notify(apiError(e, "Could not create the reinsurance referral."), false);
+      return null;
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // Open the Gate 2 modal against the server's real cession maths and panel,
+  // falling back to the illustrative constants if tenant-service is unreachable.
+  const openReinsuranceModal = async (p: PolicyListItem) => {
+    setActiveReinsurancePolicy(p);
+    setActiveReinsuranceView(null);
+    const view = await getReinsurance(p.id).catch(() => null);
+    setActiveReinsuranceView(view);
+  };
+
+  const closeReinsuranceModal = () => {
+    setActiveReinsurancePolicy(null);
+    setActiveReinsuranceView(null);
   };
 
   // Dispatch Policy Courier
@@ -503,6 +660,12 @@ export default function PostUnderwritingPage() {
             <p className="text-xs text-slate-500 mt-0.5">
               Legal counter-offer sign-offs, facultative reinsurance placement, industry cover checks, SECP 14-day free-look &amp; courier POD verification.
             </p>
+            {preUnderwritingCount > 0 && (
+              <p className="text-[11px] text-slate-400 mt-1">
+                {preUnderwritingCount.toLocaleString()} indicative quote
+                {preUnderwritingCount === 1 ? "" : "s"} not yet through underwriting are excluded from this board.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -929,7 +1092,12 @@ export default function PostUnderwritingPage() {
           notify(`Customer response recorded as ${decision}`, true);
         };
 
-        const handleSignOff = (roleName: string, levelName: string) => {
+        // Persist the sign-off before writing the audit trail — the trail should
+        // only ever show approvals the backend actually accepted.
+        const handleSignOff = async (roleName: string, levelName: string) => {
+          const recorded = await handleAcceptCounterOffer(p.id);
+          if (!recorded) return; // the error toast from the handler already explains why
+
           const nowStr = new Date().toISOString().replace("T", " ").slice(0, 19);
           updateCounterState(p.id, (prev) => ({
             ...prev,
@@ -945,8 +1113,7 @@ export default function PostUnderwritingPage() {
               },
             ],
           }));
-          setAcceptedCounterOffers((prev) => ({ ...prev, [p.id]: true }));
-          notify(`Counter-offer signed off successfully by ${roleName}!`, true);
+          notify(`Counter-offer signed off successfully by ${roleName}.`, true);
         };
 
         return (
@@ -1243,27 +1410,36 @@ export default function PostUnderwritingPage() {
           status: "Pending Placement",
           cededAmount: Math.max(0, p.coverage_amount - 10000000),
         };
-        const sumAssured = p.coverage_amount || 15000000;
-        const retentionLimit = 10000000;
-        const cededAmount = Math.max(0, sumAssured - retentionLimit);
-        const grossPremium = Math.round(sumAssured * 0.025);
-        const cededPremium = Math.round(cededAmount * 0.02);
+        // Prefer the engine's own cession maths; the illustrative constants are
+        // only a fallback for when tenant-service could not be reached.
+        const cession = activeReinsuranceView?.cession ?? null;
+        const sumAssured = cession?.total_sum_assured ?? p.coverage_amount ?? 15000000;
+        const retentionLimit = cession?.retention_limit ?? 10000000;
+        const cededAmount = cession?.total_ceded_amount ?? Math.max(0, sumAssured - retentionLimit);
+        const cessionPct = cession?.cession_pct ?? (sumAssured > 0 ? (cededAmount / sumAssured) * 100 : 0);
+        const cededPremium = Math.round(cession?.reinsurance_premium ?? cededAmount * 0.02);
         const cedingCommission = Math.round(cededPremium * 0.225); // 22.5%
         const netPayable = cededPremium - cedingCommission;
+        const panel: Reinsurer[] = activeReinsuranceView?.panel ?? [];
+        const panelOptions: PanelOption[] = panel.length ? panel : PANEL_REINSURERS;
+        const selectedReinsurerName =
+          panelOptions.find((r) => r.id === currentPlacement.reinsurerId)?.name ??
+          currentPlacement.reinsurerName;
 
         const handleModalSubmit = async (reinsurerName: string) => {
-          await handleReferReinsurance(p.id, reinsurerName);
+          const placed = await handleReferReinsurance(p.id, reinsurerName);
+          if (!placed) return; // referral rejected — leave the modal open with the error
           setReinsurancePlacements((prev) => ({
             ...prev,
             [p.id]: {
-              reinsurerId: "RE-001",
-              reinsurerName,
+              reinsurerId: placed.id,
+              reinsurerName: placed.name,
               note: currentPlacement.note,
               status: "Placed & Bound",
               cededAmount,
             },
           }));
-          setActiveReinsurancePolicy(null);
+          closeReinsuranceModal();
         };
 
         return (
@@ -1282,7 +1458,7 @@ export default function PostUnderwritingPage() {
                     Company Retention Limit: PKR 10,000,000 · Treaty Quota Share &amp; Facultative Placement
                   </p>
                 </div>
-                <button onClick={() => setActiveReinsurancePolicy(null)} className="text-white/60 hover:text-white text-xl">✕</button>
+                <button onClick={() => closeReinsuranceModal()} className="text-white/60 hover:text-white text-xl">✕</button>
               </div>
 
               <div className="px-6 py-5 overflow-y-auto space-y-5 text-xs">
@@ -1311,9 +1487,7 @@ export default function PostUnderwritingPage() {
                     </div>
                     <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
                       <span className="text-[10px] text-slate-400">Cession Share %</span>
-                      <p className="font-mono font-bold text-sky-300 mt-0.5">
-                        {sumAssured > 0 ? ((cededAmount / sumAssured) * 100).toFixed(1) : "0"}%
-                      </p>
+                      <p className="font-mono font-bold text-sky-300 mt-0.5">{cessionPct.toFixed(1)}%</p>
                     </div>
                   </div>
                 </div>
@@ -1344,14 +1518,30 @@ export default function PostUnderwritingPage() {
                   <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
                     Select Reinsurer &amp; Transmit Facultative Slip
                   </h3>
+
+                  {/* Say up front when the slip cannot be transmitted, rather than
+                      letting the underwriter fill it in and hit a 400/409. */}
+                  {activeReinsuranceView && !activeReinsuranceView.referral_required && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
+                      ✓ Fully retained — {fmtPKR(sumAssured)} sits within the automatic capacity of{" "}
+                      {fmtPKR(activeReinsuranceView.cession.automatic_capacity)}. No facultative slip is needed.
+                    </div>
+                  )}
+                  {activeReinsuranceView && activeReinsuranceView.referral_required && !activeReinsuranceView.can_refer && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
+                      Cession is required, but a case at status {activeReinsuranceView.policy_status} cannot be
+                      referred yet — complete the underwriting view first.
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {PANEL_REINSURERS.map((r) => (
+                    {panelOptions.map((r) => (
                       <div
                         key={r.id}
                         onClick={() =>
                           setReinsurancePlacements((prev) => ({
                             ...prev,
-                            [p.id]: { ...currentPlacement, reinsurerId: r.id, reinsurerName: r.name.split(" ")[0] + " Re" },
+                            [p.id]: { ...currentPlacement, reinsurerId: r.id, reinsurerName: r.name },
                           }))
                         }
                         className={`p-3 rounded-xl border cursor-pointer transition-all ${
@@ -1393,27 +1583,18 @@ export default function PostUnderwritingPage() {
                 {/* Modal Footer Actions */}
                 <div className="pt-2 flex items-center justify-between border-t border-slate-200">
                   <button
-                    onClick={() => setActiveReinsurancePolicy(null)}
+                    onClick={() => closeReinsuranceModal()}
                     className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200"
                   >
                     Cancel
                   </button>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleModalSubmit("Swiss Re")}
-                      disabled={actionLoading}
-                      className="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs"
-                    >
-                      Transmit Slip (Swiss Re) →
-                    </button>
-                    <button
-                      onClick={() => handleModalSubmit(currentPlacement.reinsurerName || "Swiss Re")}
-                      disabled={actionLoading}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs"
-                    >
-                      ✓ Sign-off &amp; Bind Terms
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleModalSubmit(selectedReinsurerName)}
+                    disabled={actionLoading || activeReinsuranceView?.referral_required === false}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading ? "Transmitting…" : `✓ Transmit Slip & Bind (${selectedReinsurerName})`}
+                  </button>
                 </div>
               </div>
             </div>
