@@ -86,7 +86,7 @@ function StatusPill({ done, pending, label }: { done: boolean; pending: string; 
         done
           ? "bg-emerald-50 text-emerald-700 border-emerald-200/80 shadow-2xs"
           : isStarted
-          ? "bg-purple-50 text-purple-700 border-purple-200/80"
+          ? "bg-blue-50 text-blue-700 border-blue-200/80"
           : "bg-slate-100 text-slate-600 border-slate-200/80"
       }`}
     >
@@ -153,7 +153,7 @@ const getApprovalAuthority = (absDev: number) => {
   return {
     level: "Level 3",
     role: "Chief Underwriter & Pricing Committee",
-    badgeClass: "bg-amber-50 text-amber-800 border-amber-200",
+    badgeClass: "bg-blue-50 text-blue-800 border-blue-200",
     description: "Deviation > 25%: Requires Chief Underwriter / Pricing Committee sign-off",
   };
 };
@@ -383,20 +383,36 @@ export default function PostUnderwritingPage() {
     });
   };
 
-  // Compute 5 Post-Underwriting Gates Status for a policy
+  // Compute 5 Post-Underwriting Gates Status for a policy (Strict Sequential Dependency)
   const getPolicyGates = (p: PolicyListItem) => {
     const coState = counterOfferStates[p.id];
     const isCounterAccepted =
       coState?.workflowState === "APPROVED" ||
       coState?.workflowState === "POLICY_ISSUED" ||
-      acceptedCounterOffers[p.id] ||
+      !!acceptedCounterOffers[p.id] ||
       (p.status || "").toUpperCase() === "ACCEPTEDWITHLOADINGS" ||
       (p.status || "").toUpperCase() === "ISSUED" ||
       (p.status || "").toUpperCase() === "ACTIVE";
-    const isReinsured = reinsuranceReferrals[p.id] || p.coverage_amount < 10000000 || (p.status || "").toUpperCase() === "ACTIVE";
-    const isHistoryClear = true; // Industry history cleared during UW
-    const isDispatched = !!courierLogs[p.id] || (p.status || "").toUpperCase() === "ACTIVE";
-    const isWelcomeDone = !!welcomeCalls[p.id] || (p.status || "").toUpperCase() === "ACTIVE";
+
+    // Gate 2 is ONLY done if Gate 1 is completed AND reinsurance is placed (or coverage is within retention limit)
+    const isReinsured =
+      isCounterAccepted &&
+      (!!reinsuranceReferrals[p.id] ||
+        p.coverage_amount < 10000000 ||
+        (p.status || "").toUpperCase() === "ACTIVE");
+
+    // Gate 3 is ONLY done if Gate 1 and Gate 2 are completed
+    const isHistoryClear = isCounterAccepted && isReinsured;
+
+    // Gate 4 is ONLY done if Gates 1, 2, 3 are completed AND courier pack is dispatched
+    const isDispatched =
+      isHistoryClear &&
+      (!!courierLogs[p.id] || (p.status || "").toUpperCase() === "ACTIVE");
+
+    // Gate 5 is ONLY done if Gates 1, 2, 3, 4 are completed AND welcome call is confirmed
+    const isWelcomeDone =
+      isDispatched &&
+      (!!welcomeCalls[p.id] || (p.status || "").toUpperCase() === "ACTIVE");
 
     const stepCount = [isCounterAccepted, isReinsured, isHistoryClear, isDispatched, isWelcomeDone].filter(Boolean).length;
     const isFullyCleared = stepCount === 5;
@@ -434,16 +450,31 @@ export default function PostUnderwritingPage() {
     return list;
   }, [policies, segment, showCompleted, search, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
 
+  // Dynamic Segment Counts matching the current view mode (active vs all)
+  const segmentCounts = useMemo(() => {
+    const list = showCompleted ? policies : policies.filter((p) => !getPolicyGates(p).isFullyCleared);
+    const ind = list.filter((p) => (p.segment ?? "individual") === "individual").length;
+    const org = list.filter((p) => p.segment === "organization").length;
+    const fam = list.filter((p) => p.segment === "family").length;
+    return {
+      all: list.length,
+      individual: ind,
+      organization: org,
+      family: fam,
+    };
+  }, [policies, showCompleted, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
+
   // Executive Metrics Suite
   const kpis = useMemo(() => {
     const total = policies.length;
+    const fullyCleared = policies.filter((p) => getPolicyGates(p).isFullyCleared).length;
+    const active = total - fullyCleared;
     const pendingCounter = policies.filter((p) => (p.status || "").toUpperCase() === "COUNTEROFFER" && !acceptedCounterOffers[p.id]).length;
     const facultativeNeeded = policies.filter((p) => p.coverage_amount >= 10000000 && !reinsuranceReferrals[p.id]).length;
     const dispatched = Object.keys(courierLogs).length;
     const activeFreeLook = Object.keys(welcomeCalls).length;
-    const fullyCleared = policies.filter((p) => getPolicyGates(p).isFullyCleared).length;
 
-    return { total, pendingCounter, facultativeNeeded, dispatched, activeFreeLook, fullyCleared };
+    return { total, active, pendingCounter, facultativeNeeded, dispatched, activeFreeLook, fullyCleared };
   }, [policies, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
 
   // Open policy inspection modal
@@ -629,7 +660,7 @@ export default function PostUnderwritingPage() {
       {/* Executive Header Banner matching Pre-Underwriting */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-200">
         <div className="flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-700 via-indigo-700 to-slate-900 flex items-center justify-center text-white shadow-md shrink-0">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-700 via-indigo-700 to-slate-900 flex items-center justify-center text-white shadow-md shrink-0">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-5 h-5">
               <path d="M9 11l3 3L22 4" />
               <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
@@ -638,7 +669,7 @@ export default function PostUnderwritingPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-bold text-slate-900 tracking-tight">Post-Underwriting Operations</h1>
-              <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-extrabold uppercase tracking-wider">
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-extrabold uppercase tracking-wider">
                 Adamjee Life Operations
               </span>
             </div>
@@ -659,11 +690,11 @@ export default function PostUnderwritingPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
           title="Post-UW Active Cases"
-          value={kpis.total}
-          subtitle="policy issuance pipeline total"
-          accent="purple"
+          value={kpis.active}
+          subtitle="requiring operational clearance"
+          accent="blue"
           icon={
-            <svg className="w-5 h-5 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           }
@@ -672,9 +703,9 @@ export default function PostUnderwritingPage() {
           title="Legal Counter-Offers"
           value={kpis.pendingCounter}
           subtitle="Pakistani Contract Act sign-offs"
-          accent="amber"
+          accent="sky"
           icon={
-            <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <svg className="w-5 h-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
             </svg>
           }
@@ -712,13 +743,13 @@ export default function PostUnderwritingPage() {
               placeholder="Search customer, CNIC, or policy number…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500/30 focus:border-purple-400 bg-slate-50"
+              className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50"
             />
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2">
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           </div>
-          <SegmentDropdown value={segment} onChange={setSegment} counts={{ all: policies.length, individual: 0, organization: 0, family: 0 }} />
+          <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
         </div>
 
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -726,7 +757,7 @@ export default function PostUnderwritingPage() {
             type="checkbox"
             checked={showCompleted}
             onChange={(e) => setShowCompleted(e.target.checked)}
-            className="rounded text-purple-600 focus:ring-purple-500"
+            className="rounded text-blue-600 focus:ring-blue-500"
           />
           Show fully-cleared post-underwriting cases
         </label>
@@ -736,7 +767,7 @@ export default function PostUnderwritingPage() {
       <div className="space-y-4">
         {loading ? (
           <div className="py-16 bg-white rounded-xl border border-slate-200 text-center">
-            <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-200 border-t-purple-600 mx-auto" />
+            <div className="animate-spin h-6 w-6 rounded-full border-2 border-slate-200 border-t-blue-600 mx-auto" />
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-16 bg-white rounded-xl border border-slate-200 text-center px-4">
@@ -756,7 +787,7 @@ export default function PostUnderwritingPage() {
                 className={`bg-white rounded-2xl border transition-all duration-300 overflow-hidden ${
                   gates.isFullyCleared
                     ? "border-emerald-300/80 shadow-xs bg-gradient-to-b from-emerald-50/10 via-white to-white"
-                    : "border-slate-200/90 shadow-xs hover:shadow-md hover:border-purple-300"
+                    : "border-slate-200/90 shadow-xs hover:shadow-md hover:border-blue-300"
                 }`}
               >
                 {/* Policy Card Header */}
@@ -766,14 +797,14 @@ export default function PostUnderwritingPage() {
                       className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs tracking-wider shadow-xs ${
                         gates.isFullyCleared
                           ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-emerald-500/20"
-                          : "bg-gradient-to-br from-purple-800 to-indigo-900 text-white shadow-purple-900/10"
+                          : "bg-gradient-to-br from-blue-700 to-indigo-800 text-white shadow-blue-900/10"
                       }`}
                     >
                       {p.customer_name?.slice(0, 2).toUpperCase() ?? "PO"}
                     </div>
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <h3 className="font-bold text-slate-900 text-sm tracking-tight hover:text-purple-600 cursor-pointer transition-colors">
+                        <h3 className="font-bold text-slate-900 text-sm tracking-tight hover:text-blue-600 cursor-pointer transition-colors">
                           {p.customer_name}
                         </h3>
                         <span className="font-mono text-[10px] text-slate-600 bg-slate-200/70 px-2 py-0.5 rounded font-semibold border border-slate-300/50">
@@ -803,7 +834,7 @@ export default function PostUnderwritingPage() {
                     <div className="flex flex-col items-end min-w-[130px]">
                       <div className="flex items-center gap-1.5 mb-1">
                         <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Operational Gates</span>
-                        <span className={`text-xs font-black font-mono ${gates.isFullyCleared ? "text-emerald-700" : "text-purple-800"}`}>
+                        <span className={`text-xs font-black font-mono ${gates.isFullyCleared ? "text-emerald-700" : "text-blue-800"}`}>
                           {gates.stepCount}/5
                         </span>
                       </div>
@@ -814,7 +845,7 @@ export default function PostUnderwritingPage() {
                             key={step}
                             className={`h-1.5 flex-1 rounded-full transition-all duration-300 ${
                               step <= gates.stepCount
-                                ? gates.isFullyCleared ? "bg-emerald-500" : "bg-purple-600"
+                                ? gates.isFullyCleared ? "bg-emerald-500" : "bg-blue-600"
                                 : "bg-slate-200"
                             }`}
                           />
@@ -827,238 +858,295 @@ export default function PostUnderwritingPage() {
                       className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow transition-all flex items-center gap-1.5 active:scale-[0.98]"
                     >
                       <span>Verify Details</span>
-                      <svg className="w-3.5 h-3.5 text-purple-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg className="w-3.5 h-3.5 text-blue-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <path d="M9 18l6-6-6-6" />
                       </svg>
                     </button>
                   </div>
                 </div>
 
-                {/* 5 Post-Underwriting Operational Verification Gates Grid (Sequential Locking) */}
-                <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* 5 Post-Underwriting Operational Verification Gates — Vertical Progress Lines */}
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                        Operational Progression Timeline
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/60 font-mono">
+                        Sequential Gating 1 → 5
+                      </span>
+                    </div>
+                    <span className="text-xs text-slate-500">
+                      Completed <strong className="text-slate-900 font-mono">{gates.stepCount}</strong> of 5 verification milestones
+                    </span>
+                  </div>
+
                   {(() => {
                     const isGate1Done = gates.isCounterAccepted;
                     const isGate2Done = gates.isReinsured;
                     const isGate3Done = gates.isHistoryClear;
-                    const isGate4Done = !!courier;
-                    const isGate5Done = !!call;
+                    const isGate4Done = gates.isDispatched;
+                    const isGate5Done = gates.isWelcomeDone;
 
                     const isGate2Locked = !isGate1Done;
                     const isGate3Locked = !isGate1Done || !isGate2Done;
                     const isGate4Locked = !isGate1Done || !isGate2Done || !isGate3Done;
                     const isGate5Locked = !isGate1Done || !isGate2Done || !isGate3Done || !isGate4Done;
 
+                    const gateSteps = [
+                      {
+                        num: 1,
+                        title: "Counter-Offer Sign-off",
+                        law: "Pakistani Contract Act 1872",
+                        desc: "Proposer legal consent for loading & exclusion terms prior to contract perfection.",
+                        isDone: isGate1Done,
+                        isLocked: false,
+                        isNextActive: !isGate1Done,
+                        badge: (
+                          <StatusPill
+                            done={isGate1Done}
+                            pending={(p.status || "").toUpperCase() === "COUNTEROFFER" ? "Pending Sign-off" : "No Loadings"}
+                            label="Accepted"
+                          />
+                        ),
+                        action: isGate1Done ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                              <span>✓ Legal Sign-off Recorded</span>
+                            </span>
+                            <button
+                              onClick={() => setActiveCounterPolicy(p)}
+                              className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                            >
+                              Rating Engine →
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setActiveCounterPolicy(p)}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
+                          >
+                            <span>Configure &amp; Sign-Off Counter-Offer →</span>
+                          </button>
+                        ),
+                      },
+                      {
+                        num: 2,
+                        title: "Facultative Reinsurance Placement",
+                        law: "SECP Rule 24 / Treaty 2026",
+                        desc: isGate2Locked
+                          ? "Requires completion of Counter-Offer Sign-off before proceeding."
+                          : "Ceding retention excess (> PKR 10M) to Swiss Re, Munich Re, PRCL, or Hannover Re.",
+                        isDone: isGate2Done,
+                        isLocked: isGate2Locked,
+                        isNextActive: isGate1Done && !isGate2Done,
+                        badge: isGate2Locked ? null : (
+                          <StatusPill
+                            done={isGate2Done}
+                            pending={p.coverage_amount >= 10000000 ? "Referral Required" : "Within Retention"}
+                            label={reinsurer ? `Placed (${reinsurer})` : "Within Limit"}
+                          />
+                        ),
+                        action: isGate2Locked ? (
+                          <span className="text-xs text-slate-400 font-medium italic">
+                            Prerequisite: Complete Gate 1 first
+                          </span>
+                        ) : isGate2Done ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                              <span>✓ Reinsured with {reinsurer || "Swiss Re"}</span>
+                            </span>
+                            <button
+                              onClick={() => openReinsuranceModal(p)}
+                              className="text-[11px] font-bold text-sky-800 hover:text-sky-950 underline px-2 py-1 bg-sky-50 rounded-lg border border-sky-200"
+                            >
+                              View Slip →
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => openReinsuranceModal(p)}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-sky-600 to-blue-700 hover:from-sky-700 hover:to-blue-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
+                          >
+                            <span>Configure &amp; Place Reinsurance →</span>
+                          </button>
+                        ),
+                      },
+                      {
+                        num: 3,
+                        title: "Industry Cover & HLV Check",
+                        law: "Human Life Value Standard",
+                        desc: isGate3Locked
+                          ? "Requires completion of Reinsurance Placement before proceeding."
+                          : "Aggregate life cover across industry verified against Human Life Value (HLV) cap.",
+                        isDone: isGate3Done,
+                        isLocked: isGate3Locked,
+                        isNextActive: isGate1Done && isGate2Done && !isGate3Done,
+                        badge: isGate3Locked ? null : (
+                          <StatusPill done={isGate3Done} pending="Audited" label="Clear" />
+                        ),
+                        action: isGate3Locked ? (
+                          <span className="text-xs text-slate-400 font-medium italic">
+                            Prerequisite: Complete Gate 2 first
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                            <span>✓ Aggregate Cover Within HLV</span>
+                          </span>
+                        ),
+                      },
+                      {
+                        num: 4,
+                        title: "Courier Dispatch & POD Tracking",
+                        law: "Statutory Proof of Delivery",
+                        desc: isGate4Locked
+                          ? "Requires completion of Industry Cover Check before dispatching policy package."
+                          : "TCS / Leopard Express proof of delivery establishing statutory timeline commencement.",
+                        isDone: isGate4Done,
+                        isLocked: isGate4Locked,
+                        isNextActive: isGate1Done && isGate2Done && isGate3Done && !isGate4Done,
+                        badge: isGate4Locked ? null : (
+                          <StatusPill done={isGate4Done} pending="Pending Dispatch" label="POD Verified" />
+                        ),
+                        action: isGate4Locked ? (
+                          <span className="text-xs text-slate-400 font-medium italic">
+                            Prerequisite: Complete Gate 3 first
+                          </span>
+                        ) : isGate4Done ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-xs font-mono font-bold text-teal-800 bg-teal-50 px-2.5 py-1 rounded-lg border border-teal-200">
+                              <span>✓ {courier.partner}: {courier.trackingNo}</span>
+                            </span>
+                            <span className="text-[10px] font-bold text-teal-700 bg-teal-100/70 px-2 py-0.5 rounded">
+                              POD Verified
+                            </span>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleDispatchCourier(p.id)}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-700 hover:to-teal-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
+                          >
+                            <span>Dispatch via TCS Express →</span>
+                          </button>
+                        ),
+                      },
+                      {
+                        num: 5,
+                        title: "SECP Welcome Call & 14-Day Free-Look",
+                        law: "SECP Consumer Protection Regulation",
+                        desc: isGate5Locked
+                          ? "Requires policy delivery via courier before initiating SECP welcome call."
+                          : "Mandated 14-day Free-Look cancellation window triggered upon call verification.",
+                        isDone: isGate5Done,
+                        isLocked: isGate5Locked,
+                        isNextActive: isGate1Done && isGate2Done && isGate3Done && isGate4Done && !isGate5Done,
+                        badge: isGate5Locked ? null : (
+                          <StatusPill done={isGate5Done} pending="Call Pending" label="14-Day Clock Active" />
+                        ),
+                        action: isGate5Locked ? (
+                          <span className="text-xs text-slate-400 font-medium italic">
+                            Prerequisite: Complete Gate 4 first
+                          </span>
+                        ) : isGate5Done ? (
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-800 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                              <span>✓ Welcome Call Verified</span>
+                            </span>
+                            <span className="text-[10px] font-mono font-semibold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded">
+                              Free-Look Active until {call.freeLookEnd}
+                            </span>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleCompleteWelcomeCall(p.id)}
+                            className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
+                          >
+                            <span>Verify Welcome Call →</span>
+                          </button>
+                        ),
+                      },
+                    ];
+
                     return (
-                      <>
-                        {/* Gate 1: Counter-Offer Sign-off */}
-                        <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-amber-300 transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs hover:shadow-sm">
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                                Counter-Offer Sign-off
-                              </span>
-                              <StatusPill done={isGate1Done} pending={(p.status || "").toUpperCase() === "COUNTEROFFER" ? "Pending Sign-off" : "No Loadings"} label="Accepted" />
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              Proposer legal consent for loading &amp; exclusion terms (Pakistani Contract Act).
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate1Done ? (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
-                                <span>✓ Legal Sign-off Recorded</span>
-                                <button
-                                  onClick={() => setActiveCounterPolicy(p)}
-                                  className="text-[10px] underline font-bold text-amber-800 hover:text-amber-950"
-                                >
-                                  Rating Engine
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setActiveCounterPolicy(p)}
-                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-amber-700 font-bold text-xs rounded-lg border border-amber-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                              >
-                                Configure &amp; Sign-Off Counter-Offer →
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                      <div className="relative pl-2">
+                        {gateSteps.map((step, idx) => {
+                          const isLast = idx === gateSteps.length - 1;
 
-                        {/* Gate 2: Facultative Reinsurance Placement */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate2Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-sky-300 hover:shadow-sm"
-                        }`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate2Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0h4m-4 0v-4m0 4h4" />
-                                </svg>
-                                Facultative Reinsurance Placement
-                              </span>
-                              {isGate2Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate2Done} pending={p.coverage_amount >= 10000000 ? "Referral Required" : "Within Retention"} label={reinsurer ? `Placed (${reinsurer})` : "Within Limit"} />
+                          return (
+                            <div key={step.num} className="relative flex gap-4 pb-6 last:pb-1 group">
+                              {/* Continuous Vertical Progress Line Track */}
+                              {!isLast && (
+                                <div
+                                  className={`absolute top-8 left-[17px] -ml-px w-0.5 h-[calc(100%-20px)] transition-colors duration-300 ${
+                                    step.isDone
+                                      ? "bg-emerald-500"
+                                      : step.isNextActive
+                                      ? "bg-gradient-to-b from-blue-500 to-slate-200"
+                                      : "bg-slate-200"
+                                  }`}
+                                />
                               )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate2Locked ? "Requires completion of Counter-Offer Sign-off before proceeding." : "Ceding retention excess (> PKR 10M) to Swiss Re, Munich Re, PRCL, or Hannover Re."}
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate2Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Complete Sign-off First</span>
-                              </div>
-                            ) : isGate2Done ? (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
-                                <span>✓ Reinsured with {reinsurer || "Swiss Re"}</span>
-                                <button
-                                  onClick={() => openReinsuranceModal(p)}
-                                  className="text-[10px] underline font-bold text-sky-700 hover:text-sky-900"
-                                >
-                                  View Slip
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => openReinsuranceModal(p)}
-                                className="w-full py-2 px-3 bg-white hover:bg-sky-50 text-sky-700 font-bold text-xs rounded-lg border border-sky-200 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                              >
-                                Configure &amp; Place Reinsurance →
-                              </button>
-                            )}
-                          </div>
-                        </div>
 
-                        {/* Gate 3: Industry Cover & HLV Check */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate3Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-blue-300 hover:shadow-sm"
-                        }`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate3Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M3 3v18h18" />
-                                  <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
-                                </svg>
-                                Industry Cover &amp; HLV Check
-                              </span>
-                              {isGate3Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate3Done} pending="Audited" label="Clear" />
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate3Locked ? "Requires completion of Reinsurance Placement before proceeding." : "Aggregate life cover across industry verified against Human Life Value (HLV) cap."}
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate3Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Complete Reinsurance First</span>
+                              {/* Progress Node Circle */}
+                              <div className="relative z-10 shrink-0">
+                                {step.isDone ? (
+                                  <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-emerald-600/20 ring-4 ring-emerald-50">
+                                    ✓
+                                  </div>
+                                ) : step.isNextActive ? (
+                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-600/25 ring-4 ring-blue-100 animate-pulse">
+                                    {step.num}
+                                  </div>
+                                ) : (
+                                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold">
+                                    {step.isLocked ? "🔒" : step.num}
+                                  </div>
+                                )}
                               </div>
-                            ) : (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
-                                <span>✓</span>
-                                <span>Aggregate Cover Within HLV</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
 
-                        {/* Gate 4: Courier Dispatch & POD Tracking */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate4Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-teal-300 hover:shadow-sm"
-                        }`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate4Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-teal-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M5 8h14M5 12h14M5 16h10" />
-                                </svg>
-                                Courier Dispatch &amp; POD Tracking
-                              </span>
-                              {isGate4Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate4Done} pending="Pending Dispatch" label="POD Verified" />
-                              )}
-                            </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate4Locked ? "Requires completion of Industry Cover Check before dispatching policy package." : "TCS / Leopard Express proof of delivery establishing statutory timeline commencement."}
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate4Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Complete Cover Check First</span>
-                              </div>
-                            ) : isGate4Done ? (
-                              <div className="w-full py-2 px-3 bg-teal-50 text-teal-700 font-bold text-xs rounded-lg border border-teal-200/80 flex items-center justify-between">
-                                <span className="font-mono text-[10px] font-semibold">{courier.trackingNo}</span>
-                                <span className="text-[10px]">POD Verified</span>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => handleDispatchCourier(p.id)}
-                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-teal-700 font-bold text-xs rounded-lg border border-teal-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
+                              {/* Step Content Container Row */}
+                              <div
+                                className={`flex-1 rounded-xl p-3.5 border transition-all duration-200 ${
+                                  step.isDone
+                                    ? "bg-emerald-50/30 border-emerald-200/80 hover:border-emerald-300"
+                                    : step.isNextActive
+                                    ? "bg-white border-blue-300/90 shadow-xs ring-1 ring-blue-200/50"
+                                    : "bg-slate-50/50 border-slate-200/70 opacity-75"
+                                }`}
                               >
-                                Dispatch via TCS Express →
-                              </button>
-                            )}
-                          </div>
-                        </div>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <h4
+                                        className={`text-xs font-bold tracking-tight ${
+                                          step.isDone
+                                            ? "text-emerald-950"
+                                            : step.isNextActive
+                                            ? "text-blue-950"
+                                            : "text-slate-600"
+                                        }`}
+                                      >
+                                        Gate {step.num}: {step.title}
+                                      </h4>
+                                      <span className="text-[10px] text-slate-400 font-mono">
+                                        • {step.law}
+                                      </span>
+                                      {step.badge}
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                                      {step.desc}
+                                    </p>
+                                  </div>
 
-                        {/* Gate 5: SECP Welcome Call & Free-Look */}
-                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
-                          isGate5Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-emerald-300 hover:shadow-sm"
-                        }`}>
-                          <div>
-                            <div className="flex items-center justify-between gap-2">
-                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate5Locked ? "text-slate-500" : "text-slate-800"}`}>
-                                <svg className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                                </svg>
-                                SECP Welcome Call &amp; Free-Look
-                              </span>
-                              {isGate5Locked ? (
-                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
-                              ) : (
-                                <StatusPill done={isGate5Done} pending="Call Pending" label="14-Day Clock Active" />
-                              )}
+                                  <div className="shrink-0 pt-1 sm:pt-0">
+                                    {step.action}
+                                  </div>
+                                </div>
+                              </div>
                             </div>
-                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-                              {isGate5Locked ? "Requires policy delivery via courier before initiating SECP welcome call." : "Mandated 14-day Free-Look cancellation window triggered upon call verification."}
-                            </p>
-                          </div>
-                          <div className="pt-2.5 border-t border-slate-200/60">
-                            {isGate5Locked ? (
-                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
-                                <span>🔒 Locked — Await Courier Dispatch</span>
-                              </div>
-                            ) : isGate5Done ? (
-                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
-                                <span>✓ Welcome Call Verified</span>
-                                <span className="font-mono text-[10px] font-semibold">{call.freeLookEnd}</span>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => handleCompleteWelcomeCall(p.id)}
-                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                              >
-                                Verify Welcome Call →
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </>
+                          );
+                        })}
+                      </div>
                     );
                   })()}
                 </div>
@@ -1330,6 +1418,16 @@ export default function PostUnderwritingPage() {
                           ✓ Accept Terms
                         </button>
                         <button
+                          onClick={() => handleCustomerDecision("RE_NEGOTIATE")}
+                          className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
+                            coState.customerDecision === "RE_NEGOTIATE"
+                              ? "bg-blue-700 text-white border-blue-800"
+                              : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
+                          }`}
+                        >
+                          ↻ Re-Negotiate
+                        </button>
+                        <button
                           onClick={() => handleCustomerDecision("DECLINED")}
                           className={`flex-1 py-1.5 rounded-lg text-xs font-bold border transition-colors ${
                             coState.customerDecision === "DECLINED"
@@ -1549,7 +1647,7 @@ export default function PostUnderwritingPage() {
                     </div>
                   )}
                   {activeReinsuranceView && activeReinsuranceView.referral_required && !activeReinsuranceView.can_refer && (
-                    <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
+                    <div className="bg-blue-50/80 border border-blue-200 text-blue-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
                       Cession is required, but a case at status {activeReinsuranceView.policy_status} cannot be
                       referred yet — complete the underwriting view first.
                     </div>
@@ -1626,20 +1724,20 @@ export default function PostUnderwritingPage() {
       {selectedPolicy && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs px-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 px-6 py-4 flex items-center justify-between text-white">
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 px-6 py-4 flex items-center justify-between text-white">
               <div>
                 <h2 className="text-base font-bold">{selectedPolicy.customer_name}</h2>
-                <p className="text-xs text-purple-200 font-mono mt-0.5">Post-Underwriting Verification · {selectedPolicy.product_name}</p>
+                <p className="text-xs text-blue-200 font-mono mt-0.5">Post-Underwriting Verification · {selectedPolicy.product_name}</p>
               </div>
               <button onClick={() => setSelectedPolicy(null)} className="text-white/60 hover:text-white text-lg">✕</button>
             </div>
 
             <div className="px-6 py-5 overflow-y-auto space-y-6 text-xs">
               {/* Customer Sign-off on Counter-Offers */}
-              <div className="bg-amber-50/60 border border-amber-200 rounded-xl p-4 space-y-2">
+              <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-4 space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-bold text-amber-900 text-sm">Customer Sign-off on Counter-Offers (Pakistani Contract Act)</h3>
-                  <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-mono font-bold text-[10px]">
+                  <h3 className="font-bold text-blue-950 text-sm">Customer Sign-off on Counter-Offers (Pakistani Contract Act)</h3>
+                  <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono font-bold text-[10px]">
                     {counterOffer ? counterOffer.status : "No Active Counter-Offer"}
                   </span>
                 </div>

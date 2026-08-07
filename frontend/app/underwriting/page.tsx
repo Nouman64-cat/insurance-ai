@@ -6,7 +6,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } from "@/components/SegmentDropdown";
 import { fmtCoverage } from "@/lib/mock-data";
-import { listCases, runCaseCompliance, type CaseQueueItem } from "@/app/services/cases";
+import { listCases, runCaseCompliance, clearComplianceCheck, type CaseQueueItem } from "@/app/services/cases";
 import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
 import { getACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
 import { ACRModal } from "@/components/entities/ACRModal";
@@ -97,6 +97,25 @@ function UnderwritingMainContent() {
   const [linkErr, setLinkErr] = useState<string | null>(null);
   const [compBusyFor, setCompBusyFor] = useState<string | null>(null);
   const [compModal, setCompModal] = useState<{ caseId: string; customerName?: string; data: any } | null>(null);
+
+  const [forceProceedBusy, setForceProceedBusy] = useState(false);
+
+  const handleForceProceedCompliance = async (checks: any[]) => {
+    setForceProceedBusy(true);
+    try {
+      const flaggedChecks = checks.filter(c => c.status === "Flagged");
+      for (const chk of flaggedChecks) {
+        await clearComplianceCheck(tenantId, chk.id);
+      }
+      setCompModal(null);
+      await loadData();
+    } catch (e: any) {
+      alert(e?.message ?? "Failed to force proceed");
+    } finally {
+      setForceProceedBusy(false);
+    }
+  };
+
   const [histBusyFor, setHistBusyFor] = useState<string | null>(null);
   const [histModal, setHistModal] = useState<{ caseId: string; customerName?: string; data: any } | null>(null);
   const [medBusyFor, setMedBusyFor] = useState<string | null>(null);
@@ -188,7 +207,7 @@ function UnderwritingMainContent() {
 
   const preKpis = useMemo(() => {
     const active = cases.filter((c) => ACTIVE_STATUSES.has(c.caseStatus));
-    const missingEApp = active.filter((c) => c.e_application_status !== "Submitted").length;
+    const missingEApp = active.filter((c) => c.e_application_status !== "Verified" && c.e_application_status !== "Submitted").length;
     const missingAcr = active.filter((c) => c.acr_status !== "Submitted").length;
     const missingComp = active.filter((c) => c.compliance_status !== "Passed").length;
     const missingIpp = active.filter((c) => c.ipp_status !== "Realized").length;
@@ -449,9 +468,9 @@ function UnderwritingMainContent() {
               title="Clearance In Progress"
               value={preKpis.total - preKpis.ready}
               subtitle="proposals undergoing gate checks"
-              accent="amber"
+              accent="sky"
               icon={
-                <svg className="w-5 h-5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-5 h-5 text-sky-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               }
@@ -471,7 +490,7 @@ function UnderwritingMainContent() {
               title="Diagnostics & PEP"
               value={preKpis.missingMedical + preKpis.missingComp}
               subtitle="medical exam & sanctions pending"
-              accent="purple"
+              accent="blue"
               icon={
                 <svg className="w-5 h-5 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -516,13 +535,20 @@ function UnderwritingMainContent() {
             ) : (
               preFiltered.map((c) => {
                 const cleared = isFullyReady(c);
+                const g1Done = c.e_application_status === "Verified";
+                const g2Done = c.acr_status === "Submitted";
+                const g3Done = c.compliance_status === "Passed";
+                const g4Done = c.ipp_status === "Realized";
+                const g5Done = c.insurance_history_status === "Clear";
+                const g6Done = medicalCleared(c);
+
                 const stepCount = [
-                  c.e_application_status === "Submitted",
-                  c.acr_status === "Submitted",
-                  c.compliance_status === "Passed",
-                  c.ipp_status === "Realized",
-                  c.insurance_history_status === "Clear",
-                  medicalCleared(c),
+                  g1Done,
+                  g2Done,
+                  g3Done,
+                  g4Done,
+                  g5Done,
+                  g6Done,
                 ].filter(Boolean).length;
 
                 return (
@@ -538,7 +564,7 @@ function UnderwritingMainContent() {
                       <div className="flex items-center gap-3.5">
                         <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-xs tracking-wider shadow-xs ${cleared
                             ? "bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-emerald-500/20"
-                            : "bg-gradient-to-br from-slate-800 to-slate-900 text-white shadow-slate-900/10"
+                            : "bg-gradient-to-br from-blue-700 to-indigo-800 text-white shadow-blue-900/10"
                           }`}>
                           {c.customer_name?.slice(0, 2).toUpperCase() ?? "CA"}
                         </div>
@@ -614,7 +640,7 @@ function UnderwritingMainContent() {
                       </div>
                     </div>
 
-                    {/* Gates Grid — 3 spacious columns per row for clean typography and no text clipping */}
+                    {/* Pre-Underwriting Operational Progression Timeline — Vertical Progress Lines */}
                     {(() => {
                       const g1Done = c.e_application_status === "Verified";
                       const g1Submitted = c.e_application_status === "Submitted";
@@ -629,271 +655,346 @@ function UnderwritingMainContent() {
                       const g6Unlocked = g5Done;
                       const g6Done = medicalCleared(c);
 
-                      return (
-                        <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                          {/* Gate 1: E-App */}
-                          <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-blue-300 transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs hover:shadow-sm">
-                            <div>
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                  <svg className="w-4 h-4 text-blue-600 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>
-                                  E-Application
-                                </span>
-                                <StatusPill done={g1Done} pending={c.e_application_status ?? "NotSent"} label="Verified" />
-                              </div>
-                              <p className="text-xs text-slate-500 mt-2 leading-relaxed">Medical disclosures &amp; applicant statements.</p>
+                      const canFileAcr = g1Done;
+
+                      const gateSteps = [
+                        {
+                          num: 1,
+                          title: "E-Application Verification",
+                          law: "Medical Disclosures & Declarations",
+                          desc: "Digital e-application verification & applicant medical disclosure.",
+                          isDone: g1Done,
+                          isLocked: false,
+                          isNextActive: !g1Done,
+                          badge: <StatusPill done={g1Done} pending={c.e_application_status ?? "NotSent"} label="Verified" />,
+                          action: g1Done ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                <span>✓ Verified</span>
+                              </span>
+                              <button
+                                onClick={() => handleOpenVerifyModal(c)}
+                                className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2.5 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                              >
+                                View Form →
+                              </button>
                             </div>
-                            <div className="pt-2.5 border-t border-slate-200/60 space-y-2">
+                          ) : g1Submitted ? (
+                            <button
+                              onClick={() => handleOpenVerifyModal(c)}
+                              disabled={verifyLoadingFor === c.caseld}
+                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
+                            >
+                              {verifyLoadingFor === c.caseld ? "Loading Details…" : "👁️ Review & Verify Submission →"}
+                            </button>
+                          ) : (
+                            <div className="flex items-center gap-2 flex-wrap">
                               <button
                                 onClick={() => setCustomizeModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined })}
-                                className="w-full py-1.5 px-3 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 shadow-2xs transition-all flex items-center justify-center gap-1.5"
+                                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 shadow-2xs transition-all flex items-center gap-1"
                               >
-                                <span>⚙️</span>
-                                <span>Customize Questionnaire</span>
+                                <span>⚙️ Customize</span>
                               </button>
-
                               <button
                                 onClick={() => handleGenerateLink(c)}
                                 disabled={linkBusyFor === c.caseld}
-                                className="w-full py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs rounded-lg border border-blue-200 shadow-2xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-40"
+                                className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
                               >
-                                {linkBusyFor === c.caseld ? "Generating Link…" : c.e_application_status && c.e_application_status !== "NotSent" ? "Resend Link" : "Generate & Send Link"}
+                                {linkBusyFor === c.caseld ? "Generating…" : c.e_application_status && c.e_application_status !== "NotSent" ? "Resend Link" : "Generate & Send Link"}
                               </button>
-
                               {generatedLinks[c.caseld] && (
-                                <div className="mt-2 flex items-center gap-1 animate-in fade-in duration-200">
-                                  <input readOnly value={generatedLinks[c.caseld]} onFocus={(e) => e.currentTarget.select()} className="text-[10px] border border-slate-200 rounded px-2 py-1 w-full font-mono text-slate-600 bg-white shadow-inner" />
-                                  <button onClick={() => navigator.clipboard.writeText(generatedLinks[c.caseld])} className="text-[10px] font-bold text-blue-700 px-2 py-1 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100 transition-colors">Copy</button>
+                                <div className="flex items-center gap-1">
+                                  <input readOnly value={generatedLinks[c.caseld]} onFocus={(e) => e.currentTarget.select()} className="text-[10px] border border-slate-200 rounded px-2 py-1 max-w-[120px] font-mono text-slate-600 bg-white" />
+                                  <button onClick={() => navigator.clipboard.writeText(generatedLinks[c.caseld])} className="text-[10px] font-bold text-blue-700 px-2 py-1 bg-blue-50 border border-blue-200/60 rounded hover:bg-blue-100">Copy</button>
                                 </div>
                               )}
-
-                              {g1Submitted && (
-                                <button
-                                  onClick={() => handleOpenVerifyModal(c)}
-                                  disabled={verifyLoadingFor === c.caseld}
-                                  className="w-full py-2.5 px-3 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-1.5 animate-bounce"
-                                >
-                                  {verifyLoadingFor === c.caseld ? "Loading Details…" : "👁️ Review & Verify Submission"}
-                                </button>
-                              )}
-
-                              {g1Done && (
-                                <button
-                                  onClick={() => handleOpenVerifyModal(c)}
-                                  disabled={verifyLoadingFor === c.caseld}
-                                  className="w-full py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200 transition-all flex items-center justify-center gap-1.5"
-                                >
-                                  <span>✓</span>
-                                  <span>Verified (View Form)</span>
-                                </button>
-                              )}
                             </div>
+                          ),
+                        },
+                        {
+                          num: 2,
+                          title: "Agent's Confidential Report (ACR)",
+                          law: "Moral Hazard & Financial Standing",
+                          desc: !g2Unlocked ? "Requires completion of Gate 1: E-App Verification before proceeding." : "Moral hazard, KYC witness, and financial standing report submitted by field agent.",
+                          isDone: g2Done,
+                          isLocked: !g2Unlocked,
+                          isNextActive: g2Unlocked && !g2Done,
+                          badge: !g2Unlocked ? null : <StatusPill done={g2Done} pending={c.acr_status ?? "Not Started"} label="Submitted" />,
+                          action: !g2Unlocked ? (
+                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 1 first</span>
+                          ) : g2Done ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                <span>✓ Report Filed</span>
+                              </span>
+                              <button
+                                onClick={() => openAcrModal(c)}
+                                className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                              >
+                                View ACR →
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              disabled={!canFileAcr || acrLoadingFor === c.caseld}
+                              onClick={() => openAcrModal(c)}
+                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {acrLoadingFor === c.caseld ? "Loading…" : c.acr_status === "Draft" ? "Continue ACR →" : "File ACR →"}
+                            </button>
+                          ),
+                        },
+                        {
+                          num: 3,
+                          title: "PEP / Sanctions Screening",
+                          law: "OpenSanctions & SECP AML Rules",
+                          desc: !g3Unlocked ? "Requires completion of Gate 2: ACR Submission before proceeding." : "Anti-money laundering, PEP watchlist, and UN/NACTA sanctions screening check.",
+                          isDone: g3Done,
+                          isLocked: !g3Unlocked,
+                          isNextActive: g3Unlocked && !g3Done,
+                          badge: !g3Unlocked ? null : <StatusPill done={g3Done} pending={c.compliance_status ?? "Not Started"} label="Passed" />,
+                          action: !g3Unlocked ? (
+                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 2 first</span>
+                          ) : g3Done ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                <span>✓ Screening Passed</span>
+                              </span>
+                              <button
+                                onClick={() => handleRunCompliance(c)}
+                                disabled={compBusyFor === c.caseld}
+                                className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                              >
+                                Re-Screen →
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleRunCompliance(c)}
+                              disabled={compBusyFor === c.caseld}
+                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {compBusyFor === c.caseld ? (
+                                <>
+                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  <span>Screening…</span>
+                                </>
+                              ) : (
+                                <span>{c.compliance_status && c.compliance_status !== "NotStarted" ? "Re-Screen PEP →" : "Run Screening →"}</span>
+                              )}
+                            </button>
+                          ),
+                        },
+                        {
+                          num: 4,
+                          title: "Initial Premium Payment (IPP)",
+                          law: "Section 30 Insurance Act 1938",
+                          desc: !g4Unlocked ? "Requires completion of Gate 3: PEP Screening before proceeding." : "Section 30 statutory advance payment requirement & premium realization verification.",
+                          isDone: g4Done,
+                          isLocked: !g4Unlocked,
+                          isNextActive: g4Unlocked && !g4Done,
+                          badge: !g4Unlocked ? null : <StatusPill done={g4Done} pending={c.ipp_status ?? "Not Started"} label="Cleared" />,
+                          action: !g4Unlocked ? (
+                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 3 first</span>
+                          ) : g4Done ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                              <span>✓ Premium Realized</span>
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setIppModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined })}
+                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5"
+                            >
+                              <span>{c.ipp_status === "Initiated" ? "Complete Payment →" : "Collect Payment →"}</span>
+                            </button>
+                          ),
+                        },
+                        {
+                          num: 5,
+                          title: "Industry Insurance History",
+                          law: "CII Shared Database Standard",
+                          desc: !g5Unlocked ? "Requires completion of Gate 4: IPP Clearance before proceeding." : "Prior and other-insurer cover verification, cumulative exposure, over-insurance, and replacement.",
+                          isDone: g5Done,
+                          isLocked: !g5Unlocked,
+                          isNextActive: g5Unlocked && !g5Done,
+                          badge: !g5Unlocked ? null : <StatusPill done={g5Done} pending={c.insurance_history_status ?? "Not Started"} label="Clear" />,
+                          action: !g5Unlocked ? (
+                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 4 first</span>
+                          ) : g5Done ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                <span>✓ History Clear</span>
+                              </span>
+                              <button
+                                onClick={() => handleRunHistory(c)}
+                                disabled={histBusyFor === c.caseld}
+                                className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                              >
+                                Re-check →
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleRunHistory(c)}
+                              disabled={histBusyFor === c.caseld}
+                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {histBusyFor === c.caseld ? (
+                                <>
+                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  <span>Checking…</span>
+                                </>
+                              ) : (
+                                <span>{c.insurance_history_status && c.insurance_history_status !== "NotStarted" ? "Re-check History →" : "Run History Check →"}</span>
+                              )}
+                            </button>
+                          ),
+                        },
+                        {
+                          num: 6,
+                          title: "Medical Examination & NML",
+                          law: "Non-Medical Limit Matrix",
+                          desc: !g6Unlocked ? "Requires completion of Gate 5: Insurance History Check before proceeding." : "Non-medical limit grid verification and panel-clinic diagnostics appointment.",
+                          isDone: g6Done,
+                          isLocked: !g6Unlocked,
+                          isNextActive: g6Unlocked && !g6Done,
+                          badge: !g6Unlocked ? null : <StatusPill done={g6Done} pending={c.medical_exam_status ?? "Not Assessed"} label={c.medical_exam_status === "NotRequired" ? "Within NML" : "Completed"} />,
+                          action: !g6Unlocked ? (
+                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 5 first</span>
+                          ) : g6Done ? (
+                            <div className="flex items-center gap-2">
+                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                                <span>✓ {c.medical_exam_status === "NotRequired" ? "No Exam Required" : c.medical_exam_status === "Waived" ? "Waived" : "Results Received"}</span>
+                              </span>
+                              <button
+                                onClick={() => handleMedical(c)}
+                                disabled={medBusyFor === c.caseld}
+                                className="text-[11px] font-bold text-blue-800 hover:text-blue-950 underline px-2 py-1 bg-blue-50/80 rounded-lg border border-blue-200/80"
+                              >
+                                Re-Apply NML →
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => handleMedical(c)}
+                              disabled={medBusyFor === c.caseld}
+                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              {medBusyFor === c.caseld ? (
+                                <>
+                                  <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  <span>Applying NML…</span>
+                                </>
+                              ) : (
+                                <span>
+                                  {c.medical_exam_status === "Scheduled"
+                                    ? "View Appointment →"
+                                    : c.medical_exam_status === "Invited"
+                                    ? "Resend Booking Link →"
+                                    : c.medical_exam_status === "Required"
+                                    ? "Invite for Checkup →"
+                                    : "Apply NML Grid →"}
+                                </span>
+                              )}
+                            </button>
+                          ),
+                        },
+                      ];
+
+                      return (
+                        <div className="p-6">
+                          <div className="flex items-center justify-between mb-4 pb-2 border-b border-slate-100">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                                Operational Progression Timeline
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200/60 font-mono">
+                                Sequential Gating 1 → 6
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-500">
+                              Completed <strong className="text-slate-900 font-mono">{stepCount}</strong> of 6 verification milestones
+                            </span>
                           </div>
 
-                          {/* Gate 2: ACR */}
-                          <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group ${!g2Unlocked
-                              ? "bg-slate-100/60 border-slate-200/80 opacity-60 backdrop-blur-[1px] select-none"
-                              : "bg-slate-50/70 hover:bg-white border-slate-200/70 hover:border-blue-300 shadow-2xs hover:shadow-sm"
-                            }`}>
-                            <div>
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                  <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><polyline points="17 11 19 13 23 9" /></svg>
-                                  Agent's ACR
-                                </span>
-                                <StatusPill done={g2Done} pending={c.acr_status ?? "Not Started"} label="Submitted" locked={!g2Unlocked} />
-                              </div>
-                              <p className="text-xs text-slate-500 mt-2 leading-relaxed">Moral hazard &amp; financial standing report.</p>
-                            </div>
-                            <div className="pt-2.5 border-t border-slate-200/60">
-                              {!g2Unlocked ? (
-                                <div className="text-[11px] font-semibold text-slate-500 bg-slate-200/60 px-2.5 py-1.5 rounded-lg border border-slate-300/50 flex items-center gap-1.5 justify-center">
-                                  <span>🔒</span>
-                                  <span>Requires Gate 1: E-App Verification</span>
-                                </div>
-                              ) : c.acr_status !== "Submitted" ? (
-                                <button
-                                  disabled={!canFileAcr || acrLoadingFor === c.caseld}
-                                  onClick={() => openAcrModal(c)}
-                                  className={`w-full py-2 px-3 bg-white hover:bg-slate-100 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 ${!canFileAcr ? "text-slate-400 opacity-50 cursor-not-allowed" : "text-blue-700"
+                          <div className="relative pl-2">
+                            {gateSteps.map((step, idx) => {
+                              const isLast = idx === gateSteps.length - 1;
+
+                              return (
+                                <div key={step.num} className="relative flex gap-4 pb-6 last:pb-1 group">
+                                  {/* Continuous Vertical Progress Line Track */}
+                                  {!isLast && (
+                                    <div
+                                      className={`absolute top-8 left-[17px] -ml-px w-0.5 h-[calc(100%-20px)] transition-colors duration-300 ${
+                                        step.isDone
+                                          ? "bg-emerald-500"
+                                          : step.isNextActive
+                                          ? "bg-gradient-to-b from-blue-500 to-slate-200"
+                                          : "bg-slate-200"
+                                      }`}
+                                    />
+                                  )}
+
+                                  {/* Progress Node Circle */}
+                                  <div className="relative z-10 shrink-0">
+                                    {step.isDone ? (
+                                      <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-emerald-600/20 ring-4 ring-emerald-50">
+                                        ✓
+                                      </div>
+                                    ) : step.isNextActive ? (
+                                      <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-600/25 ring-4 ring-blue-100 animate-pulse">
+                                        {step.num}
+                                      </div>
+                                    ) : (
+                                      <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold">
+                                        {step.isLocked ? "🔒" : step.num}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Step Content Container Row */}
+                                  <div
+                                    className={`flex-1 rounded-xl p-3.5 border transition-all duration-200 ${
+                                      step.isDone
+                                        ? "bg-emerald-50/30 border-emerald-200/80 hover:border-emerald-300"
+                                        : step.isNextActive
+                                        ? "bg-white border-blue-300/90 shadow-xs ring-1 ring-blue-200/50"
+                                        : "bg-slate-50/50 border-slate-200/70 opacity-75"
                                     }`}
-                                >
-                                  {acrLoadingFor === c.caseld ? "Loading…" : c.acr_status === "Draft" ? "Continue ACR" : "File ACR"}
-                                </button>
-                              ) : (
-                                <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
-                                  <span>✓</span>
-                                  <span>Report Filed</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
+                                  >
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                      <div>
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <h4
+                                            className={`text-xs font-bold tracking-tight ${
+                                              step.isDone
+                                                ? "text-emerald-950"
+                                                : step.isNextActive
+                                                ? "text-blue-950"
+                                                : "text-slate-600"
+                                            }`}
+                                          >
+                                            Gate {step.num}: {step.title}
+                                          </h4>
+                                          <span className="text-[10px] text-slate-400 font-mono">
+                                            • {step.law}
+                                          </span>
+                                          {step.badge}
+                                        </div>
+                                        <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                                          {step.desc}
+                                        </p>
+                                      </div>
 
-                          {/* Gate 3: PEP & Sanctions */}
-                          <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group ${!g3Unlocked
-                              ? "bg-slate-100/60 border-slate-200/80 opacity-60 backdrop-blur-[1px] select-none"
-                              : "bg-slate-50/70 hover:bg-white border-slate-200/70 hover:border-blue-300 shadow-2xs hover:shadow-sm"
-                            }`}>
-                            <div>
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                  <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg>
-                                  PEP / Sanctions
-                                </span>
-                                <StatusPill done={g3Done} pending={c.compliance_status ?? "Not Started"} label="Passed" locked={!g3Unlocked} />
-                              </div>
-                              <p className="text-xs text-slate-500 mt-2 leading-relaxed">OpenSanctions &amp; SECP screening check.</p>
-                            </div>
-                            <div className="pt-2.5 border-t border-slate-200/60">
-                              {!g3Unlocked ? (
-                                <div className="text-[11px] font-semibold text-slate-500 bg-slate-200/60 px-2.5 py-1.5 rounded-lg border border-slate-300/50 flex items-center gap-1.5 justify-center">
-                                  <span>🔒</span>
-                                  <span>Requires Gate 2: ACR Submission</span>
+                                      <div className="shrink-0 pt-1 sm:pt-0">
+                                        {step.action}
+                                      </div>
+                                    </div>
+                                  </div>
                                 </div>
-                              ) : (
-                                <button
-                                  onClick={() => handleRunCompliance(c)}
-                                  disabled={compBusyFor === c.caseld}
-                                  className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-blue-700 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-40"
-                                >
-                                  {compBusyFor === c.caseld ? (
-                                    <>
-                                      <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                                      <span>Screening…</span>
-                                    </>
-                                  ) : (
-                                    <span>{c.compliance_status && c.compliance_status !== "NotStarted" ? "Re-Screen PEP" : "Run Screening"}</span>
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Gate 4: IPP */}
-                          <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group ${!g4Unlocked
-                              ? "bg-slate-100/60 border-slate-200/80 opacity-60 backdrop-blur-[1px] select-none"
-                              : "bg-slate-50/70 hover:bg-white border-slate-200/70 hover:border-blue-300 shadow-2xs hover:shadow-sm"
-                            }`}>
-                            <div>
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                  <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="1" y="4" width="22" height="16" rx="2" ry="2" /><line x1="1" y1="10" x2="23" y2="10" /></svg>
-                                  IPP Clearance
-                                </span>
-                                <StatusPill done={g4Done} pending={c.ipp_status ?? "Not Started"} label="Cleared" locked={!g4Unlocked} />
-                              </div>
-                              <p className="text-xs text-slate-500 mt-2 leading-relaxed">Section 30 payment requirement.</p>
-                            </div>
-                            <div className="pt-2.5 border-t border-slate-200/60">
-                              {!g4Unlocked ? (
-                                <div className="text-[11px] font-semibold text-slate-500 bg-slate-200/60 px-2.5 py-1.5 rounded-lg border border-slate-300/50 flex items-center gap-1.5 justify-center">
-                                  <span>🔒</span>
-                                  <span>Requires Gate 3: PEP Clearance</span>
-                                </div>
-                              ) : c.ipp_status !== "Realized" ? (
-                                <button
-                                  onClick={() => setIppModal({ caseId: c.caseld, customerName: c.customer_name ?? undefined })}
-                                  className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-blue-700 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
-                                >
-                                  {c.ipp_status === "Initiated" ? "Complete Payment" : "Collect Payment"}
-                                </button>
-                              ) : (
-                                <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
-                                  <span>✓</span>
-                                  <span>Premium Realized</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Gate 5: Insurance History */}
-                          <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group ${!g5Unlocked
-                              ? "bg-slate-100/60 border-slate-200/80 opacity-60 backdrop-blur-[1px] select-none"
-                              : "bg-slate-50/70 hover:bg-white border-slate-200/70 hover:border-blue-300 shadow-2xs hover:shadow-sm"
-                            }`}>
-                            <div>
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                  <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 3v18h18" /><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" /></svg>
-                                  Insurance History
-                                </span>
-                                <StatusPill done={g5Done} pending={c.insurance_history_status ?? "Not Started"} label="Clear" locked={!g5Unlocked} />
-                              </div>
-                              <p className="text-xs text-slate-500 mt-2 leading-relaxed">Prior &amp; other-insurer cover, over-insurance, replacement.</p>
-                            </div>
-                            <div className="pt-2.5 border-t border-slate-200/60">
-                              {!g5Unlocked ? (
-                                <div className="text-[11px] font-semibold text-slate-500 bg-slate-200/60 px-2.5 py-1.5 rounded-lg border border-slate-300/50 flex items-center gap-1.5 justify-center">
-                                  <span>🔒</span>
-                                  <span>Requires Gate 4: IPP Clearance</span>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => handleRunHistory(c)}
-                                  disabled={histBusyFor === c.caseld}
-                                  className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-blue-700 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-40"
-                                >
-                                  {histBusyFor === c.caseld ? (
-                                    <>
-                                      <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                                      <span>Checking…</span>
-                                    </>
-                                  ) : (
-                                    <span>{c.insurance_history_status && c.insurance_history_status !== "NotStarted" ? "Re-check History" : "Run History Check"}</span>
-                                  )}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Gate 6: Medical Examination */}
-                          <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group ${!g6Unlocked
-                              ? "bg-slate-100/60 border-slate-200/80 opacity-60 backdrop-blur-[1px] select-none"
-                              : "bg-slate-50/70 hover:bg-white border-slate-200/70 hover:border-blue-300 shadow-2xs hover:shadow-sm"
-                            }`}>
-                            <div>
-                              <div className="flex items-center justify-between gap-2">
-                                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
-                                  <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4.8 2.3A.3.3 0 1 0 5 2H4a2 2 0 0 0-2 2v5a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6V4a2 2 0 0 0-2-2h-1a.2.2 0 1 0 .3.3" /><path d="M8 15v1a6 6 0 0 0 6 6v0a6 6 0 0 0 6-6v-4" /><circle cx="20" cy="10" r="2" /></svg>
-                                  Medical Exam
-                                </span>
-                                <StatusPill done={g6Done} pending={c.medical_exam_status ?? "Not Assessed"} label={c.medical_exam_status === "NotRequired" ? "Within NML" : "Completed"} locked={!g6Unlocked} />
-                              </div>
-                              <p className="text-xs text-slate-500 mt-2 leading-relaxed">Non-medical limit grid &amp; panel-clinic diagnostics.</p>
-                            </div>
-                            <div className="pt-2.5 border-t border-slate-200/60">
-                              {!g6Unlocked ? (
-                                <div className="text-[11px] font-semibold text-slate-500 bg-slate-200/60 px-2.5 py-1.5 rounded-lg border border-slate-300/50 flex items-center gap-1.5 justify-center">
-                                  <span>🔒</span>
-                                  <span>Requires Gate 5: Insurance History</span>
-                                </div>
-                              ) : g6Done ? (
-                                <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
-                                  <span>✓</span>
-                                  <span>{c.medical_exam_status === "NotRequired" ? "No Exam Required" : c.medical_exam_status === "Waived" ? "Waived" : "Results Received"}</span>
-                                </div>
-                              ) : (
-                                <button
-                                  onClick={() => handleMedical(c)}
-                                  disabled={medBusyFor === c.caseld}
-                                  className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-blue-700 font-bold text-xs rounded-lg border border-slate-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-40"
-                                >
-                                  {medBusyFor === c.caseld ? (
-                                    <>
-                                      <div className="w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                                      <span>Applying NML…</span>
-                                    </>
-                                  ) : (
-                                    <span>
-                                      {c.medical_exam_status === "Scheduled" ? "View Appointment"
-                                        : c.medical_exam_status === "Invited" ? "Resend Booking Link"
-                                          : c.medical_exam_status === "Required" ? "Invite for Checkup"
-                                            : "Apply NML Grid"}
-                                    </span>
-                                  )}
-                                </button>
-                              )}
-                            </div>
+                              );
+                            })}
                           </div>
                         </div>
                       );
@@ -1139,7 +1240,16 @@ function UnderwritingMainContent() {
                 </div>
               ))}
             </div>
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end gap-2">
+              {compModal.data.overall_status === "Flagged" && (
+                <button
+                  onClick={() => handleForceProceedCompliance(compModal.data.checks)}
+                  disabled={forceProceedBusy}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-semibold disabled:opacity-50"
+                >
+                  {forceProceedBusy ? "Proceeding..." : "Proceed Anyway"}
+                </button>
+              )}
               <button onClick={() => setCompModal(null)} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
                 Close &amp; Continue
               </button>
