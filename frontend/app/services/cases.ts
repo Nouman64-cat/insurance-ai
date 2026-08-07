@@ -51,3 +51,11 @@ export async function runCaseCompliance(tenantId: string, caseId: string): Promi
   const resp = await api.post(`/tenants/${tenantId}/cases/${caseId}/compliance/run`);
   return resp.data;
 }
+
+export async function clearComplianceCheck(tenantId: string, checkId: string): Promise<any> {
+  const resp = await api.post(`/tenants/${tenantId}/compliance/${checkId}/clear`, {
+    cleared_by: "underwriter",
+    note: "Force proceeded from Underwriting UI",
+  });
+  return resp.data;
+}

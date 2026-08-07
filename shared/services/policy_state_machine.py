@@ -93,6 +93,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.COUNTER_OFFER,
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ACCEPTED_WITH_LOADINGS,
+        PolicyStatusEnum.REINSURER_REFERRED,
         PolicyStatusEnum.DECLINED,
     },
     # Stage A step 1 — revised terms issued; awaiting the customer's explicit
@@ -108,6 +109,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.PENDING_PAYMENT,
         PolicyStatusEnum.ISSUED,
         PolicyStatusEnum.COUNTER_OFFER,
+        PolicyStatusEnum.REINSURER_REFERRED,
         PolicyStatusEnum.DECLINED,
         PolicyStatusEnum.CANCELLED,
     },
@@ -118,6 +120,7 @@ _TRANSITIONS: dict[PolicyStatusEnum, set[PolicyStatusEnum]] = {
         PolicyStatusEnum.APPROVED,
         PolicyStatusEnum.ISSUED,
         PolicyStatusEnum.COUNTER_OFFER,
+        PolicyStatusEnum.REINSURER_REFERRED,
         PolicyStatusEnum.DECLINED,
         PolicyStatusEnum.CANCELLED,
     },
