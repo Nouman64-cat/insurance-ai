@@ -45,7 +45,11 @@ export default function NotificationPopup() {
     <Sheet
       visible
       onClose={close}
-      scrollable={false}
+      // A centred card is the right shape for an alert on every screen size.
+      variant="dialog"
+      // Scrollable so a long lead name or body never clips; the footer stays
+      // pinned below it either way.
+      scrollable
       footer={
         <>
           <Button

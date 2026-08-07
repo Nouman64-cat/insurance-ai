@@ -44,7 +44,11 @@ export default function ConfirmDialog({
     <Sheet
       visible={visible}
       onClose={onCancel}
-      scrollable={false}
+      // Confirmations are centred cards on every screen size, matching what
+      // both platforms do natively.
+      variant="dialog"
+      // Scrollable so a long message never clips the confirm/cancel row.
+      scrollable
       // A destructive confirm must be an explicit choice, so a stray tap on the
       // scrim should not dismiss it.
       dismissOnBackdropPress={tone !== 'danger'}

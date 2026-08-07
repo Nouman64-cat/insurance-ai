@@ -44,11 +44,13 @@ export default function Fab({
 
   // Context rather than `useBottomTabBarHeight()`: the hook throws outside a
   // tab navigator, and this component is also used on plain stack screens.
-  const tabBarHeight = useContext(BottomTabBarHeightContext);
+  const tabBarHeight = useContext(BottomTabBarHeightContext) ?? 0;
 
-  // The tab bar already includes the safe-area inset, so the two must not be
-  // added together — that would double-count the home indicator.
-  const bottom = (tabBarHeight ?? insets.bottom) + spacing.lg + extraBottomOffset;
+  // React Navigation's default tab bar is not an overlay — the screen is laid
+  // out above it. So inside a tab navigator `bottom: 0` already sits clear of
+  // the bar, and adding its height would float the button in mid-air. Only
+  // screens without a tab bar need the safe-area inset.
+  const bottom = (tabBarHeight > 0 ? 0 : insets.bottom) + spacing.lg + extraBottomOffset;
 
   return (
     <Pressable
