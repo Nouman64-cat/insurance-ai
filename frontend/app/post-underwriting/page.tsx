@@ -13,6 +13,7 @@ import {
 } from "@/app/services/policies";
 import {
   getCounterOffer,
+  createCounterOffer,
   acceptCounterOffer,
   declineCounterOffer,
   CounterOffer,
@@ -23,7 +24,7 @@ import {
   getReinsurance,
   referToReinsurer,
   ReinsuranceView,
-  DEFAULT_REINSURERS,
+  Reinsurer,
 } from "@/app/services/reinsurance";
 import {
   getInsuranceHistory,
@@ -35,7 +36,17 @@ import {
   FreeLookStatus,
 } from "@/app/services/postIssuance";
 
-const PANEL_REINSURERS = [
+/** The subset of a reinsurer the placement modal renders — shared by the live
+ *  panel from tenant-service and the illustrative fallback below. */
+type PanelOption = {
+  id: string;
+  name: string;
+  am_best_rating: string | null;
+  facultative_capacity: number;
+  contact_email: string | null;
+};
+
+const PANEL_REINSURERS: PanelOption[] = [
   {
     id: "RE-001",
     name: "Swiss Reinsurance Company Ltd (Swiss Re)",
@@ -147,6 +158,96 @@ const getApprovalAuthority = (absDev: number) => {
   };
 };
 
+const PU_STORE = "postuw.v1";
+
+/**
+ * localStorage-backed state.
+ *
+ * Hydrates in an effect rather than a lazy `useState` initialiser: the server
+ * render has no localStorage, so reading it during render makes the first
+ * client render disagree with the server markup and React throws away the tree.
+ */
+function usePersistedState<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(initial);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(`${PU_STORE}.${key}`);
+      if (raw) setValue(JSON.parse(raw) as T);
+    } catch {
+      // Missing or corrupt entry — keep the initial value.
+    }
+    setHydrated(true);
+  }, [key]);
+
+  useEffect(() => {
+    // Before hydration `value` is still the default; writing it would wipe
+    // whatever the previous session stored.
+    if (!hydrated) return;
+    try {
+      window.localStorage.setItem(`${PU_STORE}.${key}`, JSON.stringify(value));
+    } catch {
+      // Quota exceeded or private mode — state still works for this session.
+    }
+  }, [key, value, hydrated]);
+
+  return [value, setValue] as const;
+}
+
+const normStatus = (s: string | null | undefined) => (s || "").toLowerCase().replace(/[^a-z]/g, "");
+
+/**
+ * Statuses a case can hold once underwriting has formed a view.
+ *
+ * A Quoted policy is an auto-priced indicative quote with no case open — there
+ * is nothing to sign off, place, or dispatch, and every gate action against one
+ * fails at the state machine ("Cannot issue a counter-offer from status
+ * Quoted"). They do not belong on a *post*-underwriting board.
+ */
+const POST_UW_STATUSES = new Set([
+  "proposed",
+  "underreview",
+  "informationrequested",
+  "counteroffer",
+  "approved",
+  "acceptedwithloadings",
+  "reinsurerreferred",
+  "pendingpayment",
+  "issued",
+  "active",
+]);
+
+/** Statuses create_counter_offer will accept, plus one that already has an offer open. */
+const COUNTER_OFFER_ISSUABLE = new Set([
+  "proposed",
+  "underreview",
+  "informationrequested",
+  "approved",
+  "acceptedwithloadings",
+  "counteroffer",
+]);
+
+/** Surface the real reason a tenant-service call failed instead of a generic string. */
+function apiError(e: any, fallback: string): string {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail) && detail[0]?.msg) return detail[0].msg; // 422 validation body
+  return e?.message || fallback;
+}
+
+/** "Pak Re" / "Swiss Re" → the matching panel member, by code or name. */
+function pickReinsurer(panel: Reinsurer[], label: string): Reinsurer | null {
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const target = norm(label);
+  if (!target) return null;
+  return (
+    panel.find((r) => norm(r.code) === target || norm(r.name) === target) ??
+    panel.find((r) => norm(r.name).startsWith(target) || target.startsWith(norm(r.code))) ??
+    null
+  );
+}
+
 export default function PostUnderwritingPage() {
   const { notify } = useNotify();
 
@@ -171,87 +272,60 @@ export default function PostUnderwritingPage() {
   const [readiness, setReadiness] = useState<Readiness | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
 
-  // Reinsurance placement state per policy
-  const [reinsurancePlacements, setReinsurancePlacements] = useState<
+  // Live cession + panel for whichever policy the Gate 2 modal is showing.
+  const [activeReinsuranceView, setActiveReinsuranceView] = useState<ReinsuranceView | null>(null);
+
+  // ── Persisted workflow state ───────────────────────────────────────────────
+  // Gates 3–5 and the pricing engine have no server-side record, so localStorage
+  // is their only home. Gates 1 and 2 do have one, and their entries are written
+  // only after the tenant-service call succeeds — so anything that survives a
+  // refresh here is something the backend genuinely recorded.
+  const [reinsurancePlacements, setReinsurancePlacements] = usePersistedState<
     Record<string, { reinsurerId: string; reinsurerName: string; note: string; status: string; cededAmount: number }>
-  >({});
+  >("reinsurancePlacements", {});
 
   // Counter-Offer interactive details per policy
-  const [counterOfferStates, setCounterOfferStates] = useState<Record<string, CounterOfferState>>({});
+  const [counterOfferStates, setCounterOfferStates] = usePersistedState<Record<string, CounterOfferState>>(
+    "counterOfferStates",
+    {},
+  );
 
   // Per-policy interactive tracking state
-  const [courierLogs, setCourierLogs] = useState<
+  const [courierLogs, setCourierLogs] = usePersistedState<
     Record<string, { partner: string; trackingNo: string; dispatchedAt: string; podStatus: string }>
-  >(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_courierLogs");
-      if (stored) return JSON.parse(stored);
-    }
-    return {
-      default: {
-        partner: "TCS Courier Express",
-        trackingNo: "TCS-98234110",
-        dispatchedAt: "2026-08-04",
-        podStatus: "Delivered (POD Signed)",
-      },
-    };
+  >("courierLogs", {
+    default: {
+      partner: "TCS Courier Express",
+      trackingNo: "TCS-98234110",
+      dispatchedAt: "2026-08-04",
+      podStatus: "Delivered (POD Signed)",
+    },
   });
 
-  const [welcomeCalls, setWelcomeCalls] = useState<
+  const [welcomeCalls, setWelcomeCalls] = usePersistedState<
     Record<string, { callStatus: string; confirmedAt: string | null; freeLookEnd: string | null }>
-  >(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_welcomeCalls");
-      if (stored) return JSON.parse(stored);
-    }
-    return {};
-  });
+  >("welcomeCalls", {});
 
-  const [acceptedCounterOffers, setAcceptedCounterOffers] = useState<Record<string, boolean>>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_acceptedCounterOffers");
-      if (stored) return JSON.parse(stored);
-    }
-    return {};
-  });
+  const [acceptedCounterOffers, setAcceptedCounterOffers] = usePersistedState<Record<string, boolean>>(
+    "acceptedCounterOffers",
+    {},
+  );
+  const [reinsuranceReferrals, setReinsuranceReferrals] = usePersistedState<Record<string, string>>(
+    "reinsuranceReferrals",
+    {},
+  );
 
-  const [reinsuranceReferrals, setReinsuranceReferrals] = useState<Record<string, string>>(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("pu_reinsuranceReferrals");
-      if (stored) return JSON.parse(stored);
-    }
-    return {};
-  });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_courierLogs", JSON.stringify(courierLogs));
-    }
-  }, [courierLogs]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_welcomeCalls", JSON.stringify(welcomeCalls));
-    }
-  }, [welcomeCalls]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_acceptedCounterOffers", JSON.stringify(acceptedCounterOffers));
-    }
-  }, [acceptedCounterOffers]);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("pu_reinsuranceReferrals", JSON.stringify(reinsuranceReferrals));
-    }
-  }, [reinsuranceReferrals]);
+  // Quotes that never entered underwriting are excluded rather than listed and
+  // then failing on every gate; kept as a count so the board can say so.
+  const [preUnderwritingCount, setPreUnderwritingCount] = useState(0);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [pList, pStats] = await Promise.all([listPolicies(), getPolicyStats()]);
-      setPolicies(pList);
+      const underwritten = pList.filter((p) => POST_UW_STATUSES.has(normStatus(p.status)));
+      setPolicies(underwritten);
+      setPreUnderwritingCount(pList.length - underwritten.length);
       setStats(pStats);
     } catch (err: any) {
       notify("Failed to load post-underwriting cases.", false);
@@ -327,10 +401,6 @@ export default function PostUnderwritingPage() {
     const stepCount = [isCounterAccepted, isReinsured, isHistoryClear, isDispatched, isWelcomeDone].filter(Boolean).length;
     const isFullyCleared = stepCount === 5;
 
-    if (isFullyCleared && typeof window !== "undefined") {
-      localStorage.setItem("pu_cleared_" + p.id, "true");
-    }
-
     return {
       isCounterAccepted,
       isReinsured,
@@ -342,9 +412,11 @@ export default function PostUnderwritingPage() {
     };
   };
 
-  // Filtered Policies matching search and cleared toggle (before segment filter)
-  const baseFiltered = useMemo(() => {
+  // Filtered Policies matching search, segment, and cleared toggle
+  const filtered = useMemo(() => {
     let list = policies;
+
+    if (segment !== "all") list = list.filter((p) => (p.segment ?? "individual") === segment);
 
     if (!showCompleted) {
       list = list.filter((p) => !getPolicyGates(p).isFullyCleared);
@@ -360,24 +432,11 @@ export default function PostUnderwritingPage() {
       );
     }
     return list;
-  }, [policies, showCompleted, search, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
-
-  const filtered = useMemo(() => {
-    let list = baseFiltered;
-    if (segment !== "all") list = list.filter((p) => (p.segment ?? "individual") === segment);
-    return list;
-  }, [baseFiltered, segment]);
-
-  const segmentCounts = useMemo(() => ({
-    all: baseFiltered.length,
-    individual: baseFiltered.filter((p) => (p.segment ?? "individual") === "individual").length,
-    family: baseFiltered.filter((p) => p.segment === "family").length,
-    organization: baseFiltered.filter((p) => p.segment === "organization").length,
-  }), [baseFiltered]);
+  }, [policies, segment, showCompleted, search, acceptedCounterOffers, reinsuranceReferrals, courierLogs, welcomeCalls]);
 
   // Executive Metrics Suite
   const kpis = useMemo(() => {
-    const total = policies.filter((p) => !getPolicyGates(p).isFullyCleared).length;
+    const total = policies.length;
     const pendingCounter = policies.filter((p) => (p.status || "").toUpperCase() === "COUNTEROFFER" && !acceptedCounterOffers[p.id]).length;
     const facultativeNeeded = policies.filter((p) => p.coverage_amount >= 10000000 && !reinsuranceReferrals[p.id]).length;
     const dispatched = Object.keys(courierLogs).length;
@@ -411,39 +470,122 @@ export default function PostUnderwritingPage() {
     }
   };
 
-  // Sign off counter-offer
-  const handleAcceptCounterOffer = async (policyId: string) => {
+  // Sign off counter-offer. Returns true only if tenant-service recorded it.
+  //
+  // accept_counter_offer only works against an offer already sitting in Pending.
+  // A case with no loadings has no such row, so the accept 404s — which is why
+  // this used to fall into its own catch block and report success anyway. Issue
+  // the offer first when there isn't a live one, then accept it, so the sign-off
+  // reaches the database on both paths.
+  const handleAcceptCounterOffer = async (policyId: string): Promise<boolean> => {
+    const policy = policies.find((p) => p.id === policyId);
+    if (policy && !COUNTER_OFFER_ISSUABLE.has(normStatus(policy.status))) {
+      notify(
+        `A counter-offer cannot be issued from status ${policy.status} — the case has to reach ` +
+          `underwriting first.`,
+        false,
+      );
+      return false;
+    }
+
     setActionLoading(true);
     try {
-      await acceptCounterOffer(policyId, "Customer explicitly signed counter-offer terms (Pakistani Contract Act verified).");
+      const existing = await getCounterOffer(policyId).catch(() => null);
+      const today = new Date().toISOString().slice(0, 10);
+      const isLive = existing?.status === "Pending" && existing.valid_until >= today;
+
+      if (!isLive) {
+        const co = counterOfferStates[policyId];
+        const loadingPct = co ? Math.max(0, getDeviationPct(co.expiringPremium, co.proposedPremium)) : 0;
+        await createCounterOffer(policyId, {
+          offer_type: "Loading",
+          revised_loading_pct: Number(loadingPct.toFixed(2)),
+          reason: co?.reasonCode || "Post-underwriting counter-offer sign-off",
+          valid_days: 30,
+          created_by: "underwriter",
+        });
+      }
+
+      await acceptCounterOffer(
+        policyId,
+        "Customer explicitly signed counter-offer terms (Pakistani Contract Act verified).",
+      );
       setAcceptedCounterOffers((prev) => ({ ...prev, [policyId]: true }));
-      notify("Counter-offer accepted & legal sign-off recorded!", true);
-      loadData();
+      notify("Counter-offer accepted & legal sign-off recorded.", true);
+      await loadData();
+      return true;
     } catch (e: any) {
-      setAcceptedCounterOffers((prev) => ({ ...prev, [policyId]: true }));
-      notify("Counter-offer legal sign-off recorded (Pakistani Contract Act).", true);
+      notify(apiError(e, "Could not record the counter-offer sign-off."), false);
+      return false;
     } finally {
       setActionLoading(false);
     }
   };
 
-  // Trigger Reinsurance Referral
-  const handleReferReinsurance = async (policyId: string, reinsurerName: string) => {
+  // Trigger Reinsurance Referral. Returns the placed reinsurer, or null if
+  // nothing was placed — callers must not record a placement off a failed one.
+  //
+  // ReferRequest.reinsurer_id is typed UUID, so the old hardcoded "RE-SWISS-01"
+  // was rejected as a 422 before the handler body ever ran — no referral was
+  // ever persisted, for any reinsurer. Resolve the real panel member instead,
+  // and check the case is actually referable rather than firing a certain 409.
+  const handleReferReinsurance = async (
+    policyId: string,
+    reinsurerName: string,
+  ): Promise<Reinsurer | null> => {
     setActionLoading(true);
     try {
+      const view = await getReinsurance(policyId);
+
+      if (!view.can_refer) {
+        notify(`This case cannot be referred to a reinsurer from status ${view.policy_status}.`, false);
+        return null;
+      }
+      if (!view.referral_required) {
+        notify(
+          `No facultative referral needed — ${fmtPKR(view.cession.total_sum_assured)} sits within the ` +
+            `automatic capacity of ${fmtPKR(view.cession.automatic_capacity)}.`,
+          false,
+        );
+        return null;
+      }
+
+      const match = pickReinsurer(view.panel, reinsurerName);
+      if (!match) {
+        notify(`${reinsurerName} is not on this tenant's reinsurer panel.`, false);
+        return null;
+      }
+
       await referToReinsurer(policyId, {
-        reinsurer_id: "RE-SWISS-01",
-        underwriter_note: `Automatic facultative placement referral to ${reinsurerName}`,
+        reinsurer_id: match.id,
+        underwriter_note:
+          reinsurancePlacements[policyId]?.note?.trim() ||
+          `Facultative placement referral to ${match.name}`,
       });
-      setReinsuranceReferrals((prev) => ({ ...prev, [policyId]: reinsurerName }));
-      notify(`Facultative reinsurance referral created with ${reinsurerName}!`, true);
-      loadData();
+      setReinsuranceReferrals((prev) => ({ ...prev, [policyId]: match.name }));
+      notify(`Facultative reinsurance slip transmitted to ${match.name}.`, true);
+      await loadData();
+      return match;
     } catch (e: any) {
-      setReinsuranceReferrals((prev) => ({ ...prev, [policyId]: reinsurerName }));
-      notify(`Facultative referral registered with ${reinsurerName}.`, true);
+      notify(apiError(e, "Could not create the reinsurance referral."), false);
+      return null;
     } finally {
       setActionLoading(false);
     }
+  };
+
+  // Open the Gate 2 modal against the server's real cession maths and panel,
+  // falling back to the illustrative constants if tenant-service is unreachable.
+  const openReinsuranceModal = async (p: PolicyListItem) => {
+    setActiveReinsurancePolicy(p);
+    setActiveReinsuranceView(null);
+    const view = await getReinsurance(p.id).catch(() => null);
+    setActiveReinsuranceView(view);
+  };
+
+  const closeReinsuranceModal = () => {
+    setActiveReinsurancePolicy(null);
+    setActiveReinsuranceView(null);
   };
 
   // Dispatch Policy Courier
@@ -503,6 +645,12 @@ export default function PostUnderwritingPage() {
             <p className="text-xs text-slate-500 mt-0.5">
               Legal counter-offer sign-offs, facultative reinsurance placement, industry cover checks, SECP 14-day free-look &amp; courier POD verification.
             </p>
+            {preUnderwritingCount > 0 && (
+              <p className="text-[11px] text-slate-400 mt-1">
+                {preUnderwritingCount.toLocaleString()} indicative quote
+                {preUnderwritingCount === 1 ? "" : "s"} not yet through underwriting are excluded from this board.
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -570,7 +718,7 @@ export default function PostUnderwritingPage() {
               <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
           </div>
-          <SegmentDropdown value={segment} onChange={setSegment} counts={segmentCounts} />
+          <SegmentDropdown value={segment} onChange={setSegment} counts={{ all: policies.length, individual: 0, organization: 0, family: 0 }} />
         </div>
 
         <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 cursor-pointer select-none bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
@@ -686,197 +834,233 @@ export default function PostUnderwritingPage() {
                   </div>
                 </div>
 
-                {/* 5 Post-Underwriting Operational Verification Timeline */}
-                <div className="p-5 md:p-7 relative bg-slate-50/30">
-                  {/* Vertical connecting line */}
-                  <div className="absolute top-8 bottom-8 left-[39px] w-[3px] bg-slate-200/80 rounded-full z-0"></div>
-                  
-                  <div className="space-y-6 relative z-10">
-                    {/* Gate 1: Counter-Offer Sign-off */}
-                    <div className="relative flex gap-4 group">
-                      <div className="shrink-0 mt-1">
-                        <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isCounterAccepted ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
-                          {gates.isCounterAccepted ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
-                        </div>
-                      </div>
-                      <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isCounterAccepted ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                          <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isCounterAccepted ? 'text-slate-700' : 'text-purple-900'}`}>
-                            <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Counter-Offer Sign-off
-                          </span>
-                          <StatusPill done={gates.isCounterAccepted} pending={(p.status || "").toUpperCase() === "COUNTEROFFER" ? "Pending Sign-off" : "No Loadings"} label="Accepted" />
-                        </div>
-                        <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                          Proposer legal consent for loading & exclusion terms (Pakistani Contract Act).
-                        </p>
-                        <div>
-                          {gates.isCounterAccepted ? (
-                            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
-                              <span>✓</span>
-                              <span>Legal Sign-off Recorded</span>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => handleAcceptCounterOffer(p.id)}
-                              disabled={actionLoading}
-                              className="w-full sm:w-auto py-2 px-5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]"
-                            >
-                              Record Proposer Sign-off →
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
+                {/* 5 Post-Underwriting Operational Verification Gates Grid (Sequential Locking) */}
+                <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {(() => {
+                    const isGate1Done = gates.isCounterAccepted;
+                    const isGate2Done = gates.isReinsured;
+                    const isGate3Done = gates.isHistoryClear;
+                    const isGate4Done = !!courier;
+                    const isGate5Done = !!call;
 
-                    {/* Gate 2: Facultative Reinsurance */}
-                    {gates.isCounterAccepted && (
-                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
-                        <div className="shrink-0 mt-1">
-                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isReinsured ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
-                            {gates.isReinsured ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
-                          </div>
-                        </div>
-                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isReinsured ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isReinsured ? 'text-slate-700' : 'text-purple-900'}`}>
-                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0h4m-4 0v-4m0 4h4" />
-                              </svg>
-                              Facultative Reinsurance
-                            </span>
-                            <StatusPill done={gates.isReinsured} pending={p.coverage_amount >= 10000000 ? "Referral Required" : "Within Retention"} label={reinsurer ? `Placed (${reinsurer})` : "Within Limit"} />
-                          </div>
-                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                            Ceding retention excess (&gt; PKR 10M) to Swiss Re, Munich Re, or Pak Re.
-                          </p>
+                    const isGate2Locked = !isGate1Done;
+                    const isGate3Locked = !isGate1Done || !isGate2Done;
+                    const isGate4Locked = !isGate1Done || !isGate2Done || !isGate3Done;
+                    const isGate5Locked = !isGate1Done || !isGate2Done || !isGate3Done || !isGate4Done;
+
+                    return (
+                      <>
+                        {/* Gate 1: Counter-Offer Sign-off */}
+                        <div className="bg-slate-50/70 hover:bg-white rounded-xl p-4 border border-slate-200/70 hover:border-amber-300 transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs hover:shadow-sm">
                           <div>
-                            {gates.isReinsured ? (
-                              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
-                                <span>✓</span>
-                                <span>{reinsurer ? `Reinsured with ${reinsurer}` : "Within Retention Limit"}</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap">
+                                <svg className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Counter-Offer Sign-off
+                              </span>
+                              <StatusPill done={isGate1Done} pending={(p.status || "").toUpperCase() === "COUNTEROFFER" ? "Pending Sign-off" : "No Loadings"} label="Accepted" />
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                              Proposer legal consent for loading &amp; exclusion terms (Pakistani Contract Act).
+                            </p>
+                          </div>
+                          <div className="pt-2.5 border-t border-slate-200/60">
+                            {isGate1Done ? (
+                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
+                                <span>✓ Legal Sign-off Recorded</span>
+                                <button
+                                  onClick={() => setActiveCounterPolicy(p)}
+                                  className="text-[10px] underline font-bold text-amber-800 hover:text-amber-950"
+                                >
+                                  Rating Engine
+                                </button>
                               </div>
                             ) : (
-                              <div className="flex flex-wrap gap-2">
-                                <button onClick={() => handleReferReinsurance(p.id, "Swiss Re")} className="py-2 px-4 bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs rounded-lg border border-purple-200 transition-colors">Swiss Re</button>
-                                <button onClick={() => handleReferReinsurance(p.id, "Munich Re")} className="py-2 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg border border-indigo-200 transition-colors">Munich Re</button>
-                                <button onClick={() => handleReferReinsurance(p.id, "Pak Re")} className="py-2 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg border border-slate-200 transition-colors">Pak Re</button>
+                              <button
+                                onClick={() => setActiveCounterPolicy(p)}
+                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-amber-700 font-bold text-xs rounded-lg border border-amber-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
+                              >
+                                Configure &amp; Sign-Off Counter-Offer →
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Gate 2: Facultative Reinsurance Placement */}
+                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
+                          isGate2Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-sky-300 hover:shadow-sm"
+                        }`}>
+                          <div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate2Locked ? "text-slate-500" : "text-slate-800"}`}>
+                                <svg className="w-4 h-4 text-slate-400 group-hover:text-sky-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0h4m-4 0v-4m0 4h4" />
+                                </svg>
+                                Facultative Reinsurance Placement
+                              </span>
+                              {isGate2Locked ? (
+                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
+                              ) : (
+                                <StatusPill done={isGate2Done} pending={p.coverage_amount >= 10000000 ? "Referral Required" : "Within Retention"} label={reinsurer ? `Placed (${reinsurer})` : "Within Limit"} />
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                              {isGate2Locked ? "Requires completion of Counter-Offer Sign-off before proceeding." : "Ceding retention excess (> PKR 10M) to Swiss Re, Munich Re, PRCL, or Hannover Re."}
+                            </p>
+                          </div>
+                          <div className="pt-2.5 border-t border-slate-200/60">
+                            {isGate2Locked ? (
+                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                                <span>🔒 Locked — Complete Sign-off First</span>
+                              </div>
+                            ) : isGate2Done ? (
+                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
+                                <span>✓ Reinsured with {reinsurer || "Swiss Re"}</span>
+                                <button
+                                  onClick={() => openReinsuranceModal(p)}
+                                  className="text-[10px] underline font-bold text-sky-700 hover:text-sky-900"
+                                >
+                                  View Slip
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => openReinsuranceModal(p)}
+                                className="w-full py-2 px-3 bg-white hover:bg-sky-50 text-sky-700 font-bold text-xs rounded-lg border border-sky-200 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
+                              >
+                                Configure &amp; Place Reinsurance →
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Gate 3: Industry Cover & HLV Check */}
+                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
+                          isGate3Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-blue-300 hover:shadow-sm"
+                        }`}>
+                          <div>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate3Locked ? "text-slate-500" : "text-slate-800"}`}>
+                                <svg className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M3 3v18h18" />
+                                  <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+                                </svg>
+                                Industry Cover &amp; HLV Check
+                              </span>
+                              {isGate3Locked ? (
+                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
+                              ) : (
+                                <StatusPill done={isGate3Done} pending="Audited" label="Clear" />
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                              {isGate3Locked ? "Requires completion of Reinsurance Placement before proceeding." : "Aggregate life cover across industry verified against Human Life Value (HLV) cap."}
+                            </p>
+                          </div>
+                          <div className="pt-2.5 border-t border-slate-200/60">
+                            {isGate3Locked ? (
+                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                                <span>🔒 Locked — Complete Reinsurance First</span>
+                              </div>
+                            ) : (
+                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-center gap-1">
+                                <span>✓</span>
+                                <span>Aggregate Cover Within HLV</span>
                               </div>
                             )}
                           </div>
                         </div>
-                      </div>
-                    )}
 
-                    {/* Gate 3: Industry Cover Check */}
-                    {gates.isCounterAccepted && gates.isReinsured && (
-                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
-                        <div className="shrink-0 mt-1">
-                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isHistoryClear ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
-                            {gates.isHistoryClear ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
-                          </div>
-                        </div>
-                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isHistoryClear ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isHistoryClear ? 'text-slate-700' : 'text-purple-900'}`}>
-                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M3 3v18h18" />
-                                <path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
-                              </svg>
-                              Industry Cover Check
-                            </span>
-                            <StatusPill done={true} pending="Audited" label="Clear" />
-                          </div>
-                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                            Aggregate life cover across industry verified against Human Life Value (HLV) cap.
-                          </p>
+                        {/* Gate 4: Courier Dispatch & POD Tracking */}
+                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
+                          isGate4Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-teal-300 hover:shadow-sm"
+                        }`}>
                           <div>
-                            <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
-                              <span>✓</span>
-                              <span>Aggregate Cover Within HLV</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate4Locked ? "text-slate-500" : "text-slate-800"}`}>
+                                <svg className="w-4 h-4 text-slate-400 group-hover:text-teal-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M5 8h14M5 12h14M5 16h10" />
+                                </svg>
+                                Courier Dispatch &amp; POD Tracking
+                              </span>
+                              {isGate4Locked ? (
+                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
+                              ) : (
+                                <StatusPill done={isGate4Done} pending="Pending Dispatch" label="POD Verified" />
+                              )}
                             </div>
+                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                              {isGate4Locked ? "Requires completion of Industry Cover Check before dispatching policy package." : "TCS / Leopard Express proof of delivery establishing statutory timeline commencement."}
+                            </p>
                           </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Gate 4: Courier Dispatch & POD */}
-                    {gates.isCounterAccepted && gates.isReinsured && gates.isHistoryClear && (
-                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
-                        <div className="shrink-0 mt-1">
-                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isDispatched ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
-                            {gates.isDispatched ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
-                          </div>
-                        </div>
-                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isDispatched ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isDispatched ? 'text-slate-700' : 'text-purple-900'}`}>
-                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M5 8h14M5 12h14M5 16h10" />
-                              </svg>
-                              Courier Dispatch & POD
-                            </span>
-                            <StatusPill done={!!courier} pending="Pending Dispatch" label="POD Verified" />
-                          </div>
-                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                            TCS / Leopard Express proof of delivery establishing statutory timeline commencement.
-                          </p>
-                          <div>
-                            {courier ? (
-                              <div className="inline-flex items-center gap-2 text-xs font-bold text-teal-700 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200/80">
-                                <span className="font-mono">{courier.trackingNo}</span>
-                                <span className="text-[10px] text-teal-600 border-l border-teal-300 pl-2">POD Verified</span>
+                          <div className="pt-2.5 border-t border-slate-200/60">
+                            {isGate4Locked ? (
+                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                                <span>🔒 Locked — Complete Cover Check First</span>
+                              </div>
+                            ) : isGate4Done ? (
+                              <div className="w-full py-2 px-3 bg-teal-50 text-teal-700 font-bold text-xs rounded-lg border border-teal-200/80 flex items-center justify-between">
+                                <span className="font-mono text-[10px] font-semibold">{courier.trackingNo}</span>
+                                <span className="text-[10px]">POD Verified</span>
                               </div>
                             ) : (
-                              <button onClick={() => handleDispatchCourier(p.id)} className="w-full sm:w-auto py-2 px-5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]">
+                              <button
+                                onClick={() => handleDispatchCourier(p.id)}
+                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-teal-700 font-bold text-xs rounded-lg border border-teal-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
+                              >
                                 Dispatch via TCS Express →
                               </button>
                             )}
                           </div>
                         </div>
-                      </div>
-                    )}
 
-                    {/* Gate 5: SECP Welcome Call */}
-                    {gates.isCounterAccepted && gates.isReinsured && gates.isHistoryClear && gates.isDispatched && (
-                      <div className="relative flex gap-4 group animate-in fade-in slide-in-from-top-4 duration-500 fill-mode-both">
-                        <div className="shrink-0 mt-1">
-                          <div className={`w-10 h-10 rounded-full border-[3px] flex items-center justify-center bg-white transition-all ${gates.isWelcomeDone ? 'border-emerald-500 text-emerald-500 shadow-sm' : 'border-purple-500 text-purple-600 shadow-[0_0_15px_rgba(168,85,247,0.4)]'}`}>
-                            {gates.isWelcomeDone ? <span className="text-sm font-bold">✓</span> : <span className="w-3 h-3 rounded-full bg-purple-500 animate-pulse"></span>}
-                          </div>
-                        </div>
-                        <div className={`flex-1 bg-white rounded-xl p-4 border transition-all duration-300 ${gates.isWelcomeDone ? 'border-slate-200/60 opacity-80 shadow-2xs' : 'border-purple-300 shadow-md ring-1 ring-purple-100'}`}>
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-2">
-                            <span className={`text-sm font-bold uppercase tracking-wider flex items-center gap-1.5 ${gates.isWelcomeDone ? 'text-slate-700' : 'text-purple-900'}`}>
-                              <svg className="w-4 h-4 opacity-70 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
-                              </svg>
-                              SECP Welcome Call
-                            </span>
-                            <StatusPill done={!!call} pending="Call Pending" label="14-Day Clock Active" />
-                          </div>
-                          <p className="text-xs text-slate-500 leading-relaxed mb-4">
-                            Mandated 14-day Free-Look cancellation window triggered upon call verification.
-                          </p>
+                        {/* Gate 5: SECP Welcome Call & Free-Look */}
+                        <div className={`rounded-xl p-4 border transition-all duration-200 flex flex-col justify-between space-y-3.5 group shadow-2xs ${
+                          isGate5Locked ? "bg-slate-100/60 border-slate-200 opacity-80" : "bg-slate-50/70 hover:bg-white hover:border-emerald-300 hover:shadow-sm"
+                        }`}>
                           <div>
-                            {call ? (
-                              <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80">
-                                <span>✓</span>
-                                <span>Welcome Call Verified</span>
-                                <span className="font-mono text-[10px] text-emerald-600 border-l border-emerald-300 pl-2">{call.freeLookEnd}</span>
+                            <div className="flex items-center justify-between gap-2">
+                              <span className={`text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap ${isGate5Locked ? "text-slate-500" : "text-slate-800"}`}>
+                                <svg className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" />
+                                </svg>
+                                SECP Welcome Call &amp; Free-Look
+                              </span>
+                              {isGate5Locked ? (
+                                <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-600 font-bold text-[10px] flex items-center gap-1">🔒 Locked</span>
+                              ) : (
+                                <StatusPill done={isGate5Done} pending="Call Pending" label="14-Day Clock Active" />
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+                              {isGate5Locked ? "Requires policy delivery via courier before initiating SECP welcome call." : "Mandated 14-day Free-Look cancellation window triggered upon call verification."}
+                            </p>
+                          </div>
+                          <div className="pt-2.5 border-t border-slate-200/60">
+                            {isGate5Locked ? (
+                              <div className="w-full py-2 px-3 bg-slate-100 text-slate-400 font-bold text-xs rounded-lg border border-slate-200/80 flex items-center justify-center gap-1.5 cursor-not-allowed">
+                                <span>🔒 Locked — Await Courier Dispatch</span>
+                              </div>
+                            ) : isGate5Done ? (
+                              <div className="w-full py-2 px-3 bg-emerald-50 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/80 flex items-center justify-between">
+                                <span>✓ Welcome Call Verified</span>
+                                <span className="font-mono text-[10px] font-semibold">{call.freeLookEnd}</span>
                               </div>
                             ) : (
-                              <button onClick={() => handleCompleteWelcomeCall(p.id)} className="w-full sm:w-auto py-2 px-5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg shadow-sm hover:shadow transition-all flex items-center justify-center gap-1.5 active:scale-[0.98]">
+                              <button
+                                onClick={() => handleCompleteWelcomeCall(p.id)}
+                                className="w-full py-2 px-3 bg-white hover:bg-slate-100 text-emerald-700 font-bold text-xs rounded-lg border border-emerald-200/90 shadow-2xs hover:shadow-xs transition-all flex items-center justify-center gap-1.5"
+                              >
                                 Verify Welcome Call →
                               </button>
                             )}
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
             );
@@ -929,7 +1113,12 @@ export default function PostUnderwritingPage() {
           notify(`Customer response recorded as ${decision}`, true);
         };
 
-        const handleSignOff = (roleName: string, levelName: string) => {
+        // Persist the sign-off before writing the audit trail — the trail should
+        // only ever show approvals the backend actually accepted.
+        const handleSignOff = async (roleName: string, levelName: string) => {
+          const recorded = await handleAcceptCounterOffer(p.id);
+          if (!recorded) return; // the error toast from the handler already explains why
+
           const nowStr = new Date().toISOString().replace("T", " ").slice(0, 19);
           updateCounterState(p.id, (prev) => ({
             ...prev,
@@ -945,8 +1134,7 @@ export default function PostUnderwritingPage() {
               },
             ],
           }));
-          setAcceptedCounterOffers((prev) => ({ ...prev, [p.id]: true }));
-          notify(`Counter-offer signed off successfully by ${roleName}!`, true);
+          notify(`Counter-offer signed off successfully by ${roleName}.`, true);
         };
 
         return (
@@ -1243,27 +1431,36 @@ export default function PostUnderwritingPage() {
           status: "Pending Placement",
           cededAmount: Math.max(0, p.coverage_amount - 10000000),
         };
-        const sumAssured = p.coverage_amount || 15000000;
-        const retentionLimit = 10000000;
-        const cededAmount = Math.max(0, sumAssured - retentionLimit);
-        const grossPremium = Math.round(sumAssured * 0.025);
-        const cededPremium = Math.round(cededAmount * 0.02);
+        // Prefer the engine's own cession maths; the illustrative constants are
+        // only a fallback for when tenant-service could not be reached.
+        const cession = activeReinsuranceView?.cession ?? null;
+        const sumAssured = cession?.total_sum_assured ?? p.coverage_amount ?? 15000000;
+        const retentionLimit = cession?.retention_limit ?? 10000000;
+        const cededAmount = cession?.total_ceded_amount ?? Math.max(0, sumAssured - retentionLimit);
+        const cessionPct = cession?.cession_pct ?? (sumAssured > 0 ? (cededAmount / sumAssured) * 100 : 0);
+        const cededPremium = Math.round(cession?.reinsurance_premium ?? cededAmount * 0.02);
         const cedingCommission = Math.round(cededPremium * 0.225); // 22.5%
         const netPayable = cededPremium - cedingCommission;
+        const panel: Reinsurer[] = activeReinsuranceView?.panel ?? [];
+        const panelOptions: PanelOption[] = panel.length ? panel : PANEL_REINSURERS;
+        const selectedReinsurerName =
+          panelOptions.find((r) => r.id === currentPlacement.reinsurerId)?.name ??
+          currentPlacement.reinsurerName;
 
         const handleModalSubmit = async (reinsurerName: string) => {
-          await handleReferReinsurance(p.id, reinsurerName);
+          const placed = await handleReferReinsurance(p.id, reinsurerName);
+          if (!placed) return; // referral rejected — leave the modal open with the error
           setReinsurancePlacements((prev) => ({
             ...prev,
             [p.id]: {
-              reinsurerId: "RE-001",
-              reinsurerName,
+              reinsurerId: placed.id,
+              reinsurerName: placed.name,
               note: currentPlacement.note,
               status: "Placed & Bound",
               cededAmount,
             },
           }));
-          setActiveReinsurancePolicy(null);
+          closeReinsuranceModal();
         };
 
         return (
@@ -1282,7 +1479,7 @@ export default function PostUnderwritingPage() {
                     Company Retention Limit: PKR 10,000,000 · Treaty Quota Share &amp; Facultative Placement
                   </p>
                 </div>
-                <button onClick={() => setActiveReinsurancePolicy(null)} className="text-white/60 hover:text-white text-xl">✕</button>
+                <button onClick={() => closeReinsuranceModal()} className="text-white/60 hover:text-white text-xl">✕</button>
               </div>
 
               <div className="px-6 py-5 overflow-y-auto space-y-5 text-xs">
@@ -1311,9 +1508,7 @@ export default function PostUnderwritingPage() {
                     </div>
                     <div className="bg-slate-800/80 p-2.5 rounded-xl border border-slate-700">
                       <span className="text-[10px] text-slate-400">Cession Share %</span>
-                      <p className="font-mono font-bold text-sky-300 mt-0.5">
-                        {sumAssured > 0 ? ((cededAmount / sumAssured) * 100).toFixed(1) : "0"}%
-                      </p>
+                      <p className="font-mono font-bold text-sky-300 mt-0.5">{cessionPct.toFixed(1)}%</p>
                     </div>
                   </div>
                 </div>
@@ -1344,14 +1539,30 @@ export default function PostUnderwritingPage() {
                   <h3 className="font-bold text-slate-900 text-xs uppercase tracking-wider">
                     Select Reinsurer &amp; Transmit Facultative Slip
                   </h3>
+
+                  {/* Say up front when the slip cannot be transmitted, rather than
+                      letting the underwriter fill it in and hit a 400/409. */}
+                  {activeReinsuranceView && !activeReinsuranceView.referral_required && (
+                    <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
+                      ✓ Fully retained — {fmtPKR(sumAssured)} sits within the automatic capacity of{" "}
+                      {fmtPKR(activeReinsuranceView.cession.automatic_capacity)}. No facultative slip is needed.
+                    </div>
+                  )}
+                  {activeReinsuranceView && activeReinsuranceView.referral_required && !activeReinsuranceView.can_refer && (
+                    <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 text-[11px] font-semibold">
+                      Cession is required, but a case at status {activeReinsuranceView.policy_status} cannot be
+                      referred yet — complete the underwriting view first.
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {PANEL_REINSURERS.map((r) => (
+                    {panelOptions.map((r) => (
                       <div
                         key={r.id}
                         onClick={() =>
                           setReinsurancePlacements((prev) => ({
                             ...prev,
-                            [p.id]: { ...currentPlacement, reinsurerId: r.id, reinsurerName: r.name.split(" ")[0] + " Re" },
+                            [p.id]: { ...currentPlacement, reinsurerId: r.id, reinsurerName: r.name },
                           }))
                         }
                         className={`p-3 rounded-xl border cursor-pointer transition-all ${
@@ -1393,27 +1604,18 @@ export default function PostUnderwritingPage() {
                 {/* Modal Footer Actions */}
                 <div className="pt-2 flex items-center justify-between border-t border-slate-200">
                   <button
-                    onClick={() => setActiveReinsurancePolicy(null)}
+                    onClick={() => closeReinsuranceModal()}
                     className="px-4 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200"
                   >
                     Cancel
                   </button>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleModalSubmit("Swiss Re")}
-                      disabled={actionLoading}
-                      className="px-4 py-2 bg-sky-700 hover:bg-sky-800 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs"
-                    >
-                      Transmit Slip (Swiss Re) →
-                    </button>
-                    <button
-                      onClick={() => handleModalSubmit(currentPlacement.reinsurerName || "Swiss Re")}
-                      disabled={actionLoading}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs"
-                    >
-                      ✓ Sign-off &amp; Bind Terms
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => handleModalSubmit(selectedReinsurerName)}
+                    disabled={actionLoading || activeReinsuranceView?.referral_required === false}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {actionLoading ? "Transmitting…" : `✓ Transmit Slip & Bind (${selectedReinsurerName})`}
+                  </button>
                 </div>
               </div>
             </div>
