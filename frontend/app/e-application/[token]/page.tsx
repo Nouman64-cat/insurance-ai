@@ -183,10 +183,34 @@ export default function EApplicationPage({ params }: { params: { token: string }
           name: d.customer_name, cnic: d.cnic,
           product_name: d.product_name, coverage_amount: d.coverage_amount, term_years: d.term_years,
         });
-        if (d.medical_questionnaire) setMedical(d.medical_questionnaire);
-        if (d.family_history?.entries) setFamilyHistory(d.family_history.entries);
+        if (d.medical_questionnaire) {
+          setMedical({
+            ...emptyMedical(),
+            ...d.medical_questionnaire,
+            conditions: Array.isArray(d.medical_questionnaire.conditions) && d.medical_questionnaire.conditions.length > 0
+              ? d.medical_questionnaire.conditions
+              : emptyConditions(),
+            hospitalizations: Array.isArray(d.medical_questionnaire.hospitalizations)
+              ? d.medical_questionnaire.hospitalizations
+              : [],
+            surgeries: Array.isArray(d.medical_questionnaire.surgeries)
+              ? d.medical_questionnaire.surgeries
+              : [],
+            disclosures: {
+              ...emptyMedical().disclosures,
+              ...(d.medical_questionnaire.disclosures || {}),
+            },
+          });
+        }
+        if (d.family_history?.entries) setFamilyHistory(Array.isArray(d.family_history.entries) ? d.family_history.entries : []);
         if (d.lifestyle_habits) setLifestyle((s) => ({ ...s, ...d.lifestyle_habits }));
-        if (d.existing_insurance) setExistingInsurance((s) => ({ ...s, ...d.existing_insurance }));
+        if (d.existing_insurance) {
+          setExistingInsurance((s) => ({
+            ...s,
+            ...d.existing_insurance,
+            policies: Array.isArray(d.existing_insurance.policies) ? d.existing_insurance.policies : [],
+          }));
+        }
         if (d.declaration) setDeclaration((s) => ({ ...s, ...d.declaration }));
         setLoadState("ready");
       } catch (e: any) {
@@ -360,22 +384,27 @@ function StepConfirmDetails({ applicant }: { applicant: { name: string; cnic: st
 // ── Step 2: Medical questionnaire (spec sections 3A–3D) ─────────────────────
 
 function StepMedical({ medical, setMedical }: { medical: MedicalQuestionnaire; setMedical: (v: MedicalQuestionnaire) => void }) {
+  const currentConditions = medical?.conditions || emptyConditions();
+  const currentHospitalizations = medical?.hospitalizations || [];
+  const currentSurgeries = medical?.surgeries || [];
+  const currentDisclosures = medical?.disclosures || {};
+
   const set = (patch: Partial<MedicalQuestionnaire>) => setMedical({ ...medical, ...patch });
 
   const updateCondition = (key: string, patch: Partial<ConditionEntry>) =>
-    set({ conditions: medical.conditions.map((c) => (c.key === key ? { ...c, ...patch } : c)) });
+    set({ conditions: currentConditions.map((c) => (c.key === key ? { ...c, ...patch } : c)) });
 
   const setDisclosure = (key: string, patch: Partial<YesNoAnswer>) =>
-    set({ disclosures: { ...medical.disclosures, [key]: { ...medical.disclosures[key], ...patch } } });
+    set({ disclosures: { ...currentDisclosures, [key]: { ...(currentDisclosures[key] || { answer: "", details: "" }), ...patch } } });
 
   const addHistoryEntry = (field: "hospitalizations" | "surgeries") =>
-    set({ [field]: [...medical[field], { date: "", reason_or_type: "", hospital: "", duration: "" }] } as any);
+    set({ [field]: [...(medical?.[field] || []), { date: "", reason_or_type: "", hospital: "", duration: "" }] } as any);
   const updateHistoryEntry = (field: "hospitalizations" | "surgeries", i: number, patch: Partial<HistoryEntry>) =>
-    set({ [field]: medical[field].map((e, idx) => (idx === i ? { ...e, ...patch } : e)) } as any);
+    set({ [field]: (medical?.[field] || []).map((e, idx) => (idx === i ? { ...e, ...patch } : e)) } as any);
   const removeHistoryEntry = (field: "hospitalizations" | "surgeries", i: number) =>
-    set({ [field]: medical[field].filter((_, idx) => idx !== i) } as any);
+    set({ [field]: (medical?.[field] || []).filter((_, idx) => idx !== i) } as any);
 
-  const bmi = bmiOf(medical.height_cm, medical.weight_kg);
+  const bmi = bmiOf(medical?.height_cm || "", medical?.weight_kg || "");
 
   return (
     <div className="space-y-5">
@@ -387,31 +416,31 @@ function StepMedical({ medical, setMedical }: { medical: MedicalQuestionnaire; s
       <div>
         <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Basic Health Indicators</p>
         <div className="grid grid-cols-3 gap-2">
-          <TextInput type="number" placeholder="Height (cm)" value={medical.height_cm} onChange={(e) => set({ height_cm: e.target.value })} />
-          <TextInput type="number" placeholder="Weight (kg)" value={medical.weight_kg} onChange={(e) => set({ weight_kg: e.target.value })} />
+          <TextInput type="number" placeholder="Height (cm)" value={medical?.height_cm || ""} onChange={(e) => set({ height_cm: e.target.value })} />
+          <TextInput type="number" placeholder="Weight (kg)" value={medical?.weight_kg || ""} onChange={(e) => set({ weight_kg: e.target.value })} />
           <div className="mt-1 flex items-center text-sm text-slate-500">{bmi ? `BMI: ${bmi}` : "BMI: —"}</div>
         </div>
         <div className="space-y-2 mt-3">
           <label className="flex items-center gap-1.5 text-sm text-slate-700">
-            <input type="checkbox" checked={medical.tobacco_use} onChange={(e) => set({ tobacco_use: e.target.checked })} />
+            <input type="checkbox" checked={!!medical?.tobacco_use} onChange={(e) => set({ tobacco_use: e.target.checked })} />
             I use tobacco/nicotine products
           </label>
-          {medical.tobacco_use && (
-            <TextInput placeholder="Frequency (e.g. 10 cigarettes/day, 5 years)" value={medical.tobacco_frequency} onChange={(e) => set({ tobacco_frequency: e.target.value })} />
+          {medical?.tobacco_use && (
+            <TextInput placeholder="Frequency (e.g. 10 cigarettes/day, 5 years)" value={medical?.tobacco_frequency || ""} onChange={(e) => set({ tobacco_frequency: e.target.value })} />
           )}
           <label className="flex items-center gap-1.5 text-sm text-slate-700">
-            <input type="checkbox" checked={medical.alcohol_use} onChange={(e) => set({ alcohol_use: e.target.checked })} />
+            <input type="checkbox" checked={!!medical?.alcohol_use} onChange={(e) => set({ alcohol_use: e.target.checked })} />
             I consume alcohol
           </label>
-          {medical.alcohol_use && (
-            <TextInput placeholder="Units per week" value={medical.alcohol_units_per_week} onChange={(e) => set({ alcohol_units_per_week: e.target.value })} />
+          {medical?.alcohol_use && (
+            <TextInput placeholder="Units per week" value={medical?.alcohol_units_per_week || ""} onChange={(e) => set({ alcohol_units_per_week: e.target.value })} />
           )}
           <label className="flex items-center gap-1.5 text-sm text-slate-700">
-            <input type="checkbox" checked={medical.drug_use} onChange={(e) => set({ drug_use: e.target.checked })} />
+            <input type="checkbox" checked={!!medical?.drug_use} onChange={(e) => set({ drug_use: e.target.checked })} />
             I have a history of drug/substance use
           </label>
-          {medical.drug_use && (
-            <TextArea rows={2} placeholder="Please give details" value={medical.drug_use_details} onChange={(e) => set({ drug_use_details: e.target.value })} />
+          {medical?.drug_use && (
+            <TextArea rows={2} placeholder="Please give details" value={medical?.drug_use_details || ""} onChange={(e) => set({ drug_use_details: e.target.value })} />
           )}
         </div>
       </div>
@@ -421,24 +450,24 @@ function StepMedical({ medical, setMedical }: { medical: MedicalQuestionnaire; s
         <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Medical Conditions</p>
         <p className="text-[11px] text-slate-500 mb-2">Tick any that apply to you — a few extra details will be asked for each.</p>
         <div className="space-y-3">
-          {medical.conditions.map((c) => (
+          {currentConditions.map((c) => (
             <div key={c.key} className="border border-slate-200 rounded-lg p-2.5">
               <label className="flex items-center gap-1.5 text-sm text-slate-700">
-                <input type="checkbox" checked={c.checked} onChange={(e) => updateCondition(c.key, { checked: e.target.checked })} />
+                <input type="checkbox" checked={!!c.checked} onChange={(e) => updateCondition(c.key, { checked: e.target.checked })} />
                 {c.label}
               </label>
               {c.checked && (
                 <div className="grid grid-cols-2 gap-2 mt-2 pl-5">
-                  <TextInput placeholder="Year of diagnosis" value={c.year_of_diagnosis} onChange={(e) => updateCondition(c.key, { year_of_diagnosis: e.target.value })} />
+                  <TextInput placeholder="Year of diagnosis" value={c.year_of_diagnosis || ""} onChange={(e) => updateCondition(c.key, { year_of_diagnosis: e.target.value })} />
                   <label className="flex items-center gap-1.5 text-sm text-slate-600">
-                    <input type="checkbox" checked={c.under_treatment} onChange={(e) => updateCondition(c.key, { under_treatment: e.target.checked })} />
+                    <input type="checkbox" checked={!!c.under_treatment} onChange={(e) => updateCondition(c.key, { under_treatment: e.target.checked })} />
                     Currently under treatment
                   </label>
-                  <TextInput placeholder="Medications (name, dosage, frequency)" value={c.medications} onChange={(e) => updateCondition(c.key, { medications: e.target.value })} className="col-span-2" />
-                  <TextInput placeholder="Attending physician name" value={c.physician_name} onChange={(e) => updateCondition(c.key, { physician_name: e.target.value })} />
-                  <TextInput placeholder="Clinic/hospital" value={c.physician_clinic} onChange={(e) => updateCondition(c.key, { physician_clinic: e.target.value })} />
-                  <TextInput placeholder="Physician phone" value={c.physician_phone} onChange={(e) => updateCondition(c.key, { physician_phone: e.target.value })} />
-                  <TextInput placeholder="Last consultation date" value={c.last_consultation_date} onChange={(e) => updateCondition(c.key, { last_consultation_date: e.target.value })} />
+                  <TextInput placeholder="Medications (name, dosage, frequency)" value={c.medications || ""} onChange={(e) => updateCondition(c.key, { medications: e.target.value })} className="col-span-2" />
+                  <TextInput placeholder="Attending physician name" value={c.physician_name || ""} onChange={(e) => updateCondition(c.key, { physician_name: e.target.value })} />
+                  <TextInput placeholder="Clinic/hospital" value={c.physician_clinic || ""} onChange={(e) => updateCondition(c.key, { physician_clinic: e.target.value })} />
+                  <TextInput placeholder="Physician phone" value={c.physician_phone || ""} onChange={(e) => updateCondition(c.key, { physician_phone: e.target.value })} />
+                  <TextInput placeholder="Last consultation date" value={c.last_consultation_date || ""} onChange={(e) => updateCondition(c.key, { last_consultation_date: e.target.value })} />
                 </div>
               )}
             </div>
@@ -450,17 +479,17 @@ function StepMedical({ medical, setMedical }: { medical: MedicalQuestionnaire; s
       <div>
         <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Hospitalizations &amp; Surgeries (last 5 years)</p>
         <label className="flex items-center gap-1.5 text-sm text-slate-700">
-          <input type="checkbox" checked={medical.has_hospitalizations} onChange={(e) => set({ has_hospitalizations: e.target.checked })} />
+          <input type="checkbox" checked={!!medical?.has_hospitalizations} onChange={(e) => set({ has_hospitalizations: e.target.checked })} />
           I have been hospitalized in the last 5 years
         </label>
-        {medical.has_hospitalizations && (
+        {medical?.has_hospitalizations && (
           <div className="space-y-2 mt-2">
-            {medical.hospitalizations.map((h, i) => (
+            {currentHospitalizations.map((h, i) => (
               <div key={i} className="grid grid-cols-3 gap-2 items-center">
-                <TextInput placeholder="Date" value={h.date} onChange={(e) => updateHistoryEntry("hospitalizations", i, { date: e.target.value })} />
-                <TextInput placeholder="Reason" value={h.reason_or_type} onChange={(e) => updateHistoryEntry("hospitalizations", i, { reason_or_type: e.target.value })} />
+                <TextInput placeholder="Date" value={h.date || ""} onChange={(e) => updateHistoryEntry("hospitalizations", i, { date: e.target.value })} />
+                <TextInput placeholder="Reason" value={h.reason_or_type || ""} onChange={(e) => updateHistoryEntry("hospitalizations", i, { reason_or_type: e.target.value })} />
                 <div className="flex gap-1">
-                  <TextInput placeholder="Hospital" value={h.hospital} onChange={(e) => updateHistoryEntry("hospitalizations", i, { hospital: e.target.value })} />
+                  <TextInput placeholder="Hospital" value={h.hospital || ""} onChange={(e) => updateHistoryEntry("hospitalizations", i, { hospital: e.target.value })} />
                   <button onClick={() => removeHistoryEntry("hospitalizations", i)} className="text-xs text-red-600 font-semibold flex-shrink-0">✕</button>
                 </div>
               </div>
@@ -469,17 +498,17 @@ function StepMedical({ medical, setMedical }: { medical: MedicalQuestionnaire; s
           </div>
         )}
         <label className="flex items-center gap-1.5 text-sm text-slate-700 mt-3">
-          <input type="checkbox" checked={medical.has_surgeries} onChange={(e) => set({ has_surgeries: e.target.checked })} />
+          <input type="checkbox" checked={!!medical?.has_surgeries} onChange={(e) => set({ has_surgeries: e.target.checked })} />
           I have had surgery/a medical procedure in the last 5 years
         </label>
-        {medical.has_surgeries && (
+        {medical?.has_surgeries && (
           <div className="space-y-2 mt-2">
-            {medical.surgeries.map((s, i) => (
+            {currentSurgeries.map((s, i) => (
               <div key={i} className="grid grid-cols-3 gap-2 items-center">
-                <TextInput placeholder="Date" value={s.date} onChange={(e) => updateHistoryEntry("surgeries", i, { date: e.target.value })} />
-                <TextInput placeholder="Type of surgery" value={s.reason_or_type} onChange={(e) => updateHistoryEntry("surgeries", i, { reason_or_type: e.target.value })} />
+                <TextInput placeholder="Date" value={s.date || ""} onChange={(e) => updateHistoryEntry("surgeries", i, { date: e.target.value })} />
+                <TextInput placeholder="Type of surgery" value={s.reason_or_type || ""} onChange={(e) => updateHistoryEntry("surgeries", i, { reason_or_type: e.target.value })} />
                 <div className="flex gap-1">
-                  <TextInput placeholder="Hospital" value={s.hospital} onChange={(e) => updateHistoryEntry("surgeries", i, { hospital: e.target.value })} />
+                  <TextInput placeholder="Hospital" value={s.hospital || ""} onChange={(e) => updateHistoryEntry("surgeries", i, { hospital: e.target.value })} />
                   <button onClick={() => removeHistoryEntry("surgeries", i)} className="text-xs text-red-600 font-semibold flex-shrink-0">✕</button>
                 </div>
               </div>
@@ -501,18 +530,18 @@ function StepMedical({ medical, setMedical }: { medical: MedicalQuestionnaire; s
                   <input
                     type="radio"
                     name={q.key}
-                    checked={medical.disclosures[q.key]?.answer === opt}
+                    checked={currentDisclosures[q.key]?.answer === opt}
                     onChange={() => setDisclosure(q.key, { answer: opt })}
                   />
                   {opt}
                 </label>
               ))}
             </div>
-            {medical.disclosures[q.key]?.answer === "Yes" && (
+            {currentDisclosures[q.key]?.answer === "Yes" && (
               <TextArea
                 placeholder="Please provide details"
                 rows={2}
-                value={medical.disclosures[q.key]?.details ?? ""}
+                value={currentDisclosures[q.key]?.details ?? ""}
                 onChange={(e) => setDisclosure(q.key, { details: e.target.value })}
               />
             )}

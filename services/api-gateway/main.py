@@ -512,6 +512,42 @@ async def public_book_medical_exam(raw_token: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/book")
 
 
+@app.post(
+    "/public/medical-exam/{raw_token}/complete",
+    tags=["Pre-Underwriting"],
+    summary="[Public] Mark examination as completed",
+)
+async def public_complete_medical_exam(raw_token: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/public/medical-exam/{raw_token}/complete")
+
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/medical-exam/result",
+    tags=["Pre-Underwriting"],
+    summary="Record diagnostics results from a panel clinic",
+)
+async def record_medical_result(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam/result")
+
+
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/medical-exam/waive",
+    tags=["Pre-Underwriting"],
+    summary="Waive the panel medical requirement",
+)
+async def waive_medical_exam(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/medical-exam/waive")
+
+
+@app.get(
+    "/tenants/{tenant_id}/panel-clinics",
+    tags=["Pre-Underwriting"],
+    summary="List active panel diagnostic centres",
+)
+async def list_panel_clinics(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/panel-clinics")
+
+
 # ── Pre-Underwriting — Insurance History ──────────────────────────────────────
 
 @app.post(
