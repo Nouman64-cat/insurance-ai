@@ -1284,6 +1284,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const historyDone = history?.status === "Clear";
   const pepDone = checks.some((ck) => ck.status === "Passed");
 
+  if (!pepDone) missingPreChecks.push("PEP & Sanctions Screening");
+  if (!historyDone) missingPreChecks.push("Insurance History Clearance");
+  if (!medicalDone) missingPreChecks.push("Medical Examination");
+
   const prereqSteps = [
     {
       id: "docs",
@@ -1361,8 +1365,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
       description: medicalDone 
         ? `Medical examination status: ${medical?.status}` 
         : "Non-medical limit grid or panel diagnostic check required.",
-      actionLabel: medBusy ? "Assessing…" : "Assess Medical",
-      onAction: handleAssessMedical,
+      actionLabel: medBusy ? "Assessing…" : (medical?.status === "Scheduled" ? "Record Lab Results" : "Assess Medical"),
+      onAction: medical?.status === "Scheduled" ? () => setShowResultModal(true) : handleAssessMedical,
       busy: medBusy,
     },
   ];

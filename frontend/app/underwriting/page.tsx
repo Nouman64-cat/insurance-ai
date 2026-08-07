@@ -1438,10 +1438,36 @@ function UnderwritingMainContent() {
                 </>
               )}
             </div>
-            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
-              <button onClick={() => router.push(`/case/${medModal.caseId}`)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
-                Open case to book or record results →
-              </button>
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
+              <div className="flex items-center gap-3">
+                <button onClick={() => router.push(`/case/${medModal.caseId}`)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                  Open case →
+                </button>
+                {medModal.data.status !== "NotRequired" && medModal.data.status !== "Completed" && (
+                  <button
+                    onClick={async () => {
+                      if (!medModal) return;
+                      setMedBusyFor(medModal.caseId);
+                      try {
+                        await recordMedicalResult(medModal.caseId, {
+                          results: { standard_panel: "normal", fasting_blood_sugar: "normal", urinalysis: "normal" },
+                          reported_by: "Panel Diagnostic Center",
+                        });
+                        setMedModal(null);
+                        await loadData();
+                      } catch (e: any) {
+                        alert(e?.message ?? "Failed to complete medical examination");
+                      } finally {
+                        setMedBusyFor(null);
+                      }
+                    }}
+                    disabled={medBusyFor === medModal.caseId}
+                    className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-2xs"
+                  >
+                    {medBusyFor === medModal.caseId ? "Completing…" : "✓ Mark Examination Completed"}
+                  </button>
+                )}
+              </div>
               <button onClick={() => setMedModal(null)} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
                 Close
               </button>

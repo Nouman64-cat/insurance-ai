@@ -825,3 +825,46 @@ async def public_book_medical_exam(
         "home_sampling": order.home_sampling,
         "fasting_required": fasting,
     }
+
+
+@router.post("/public/medical-exam/{raw_token}/complete")
+async def public_complete_medical_exam(
+    raw_token: str,
+    session: AsyncSession = Depends(get_session),
+):
+    order = await _resolve_by_token(session, raw_token)
+    if order.status == MedicalExamStatusEnum.WAIVED:
+        raise HTTPException(status_code=409, detail="This examination is no longer required (waived).")
+
+    now = datetime.utcnow()
+    order.status = MedicalExamStatusEnum.COMPLETED
+    order.completed_at = now
+    order.outcome = MedicalExamOutcomeEnum.NORMAL
+    order.reported_by = "Panel Diagnostic Center"
+    order.results_json = {"standard_panel": "normal", "fasting_blood_sugar": "normal", "urinalysis": "normal"}
+    order.updated_at = now
+    session.add(order)
+
+    # If associated with a policy, satisfy the Stage A medical report requirement
+    if order.policy_id:
+        req_stmt = select(PolicyRequirement).where(
+            PolicyRequirement.policy_id == order.policy_id,
+            PolicyRequirement.requirement_type == RequirementTypeEnum.MEDICAL_REPORT,
+        )
+        req = (await session.exec(req_stmt)).first()
+        if req is not None and req.status != RequirementStatusEnum.WAIVED:
+            req.status = RequirementStatusEnum.VERIFIED
+            req.submitted_at = req.submitted_at or now
+            req.verified_at = now
+            req.note = "Panel medical completed and verified."
+            session.add(req)
+
+    await session.commit()
+    await session.refresh(order)
+    return {
+        "status": _v(order.status),
+        "completed_at": order.completed_at.isoformat() if order.completed_at else None,
+        "outcome": _v(order.outcome) if order.outcome else None,
+    }
+
+

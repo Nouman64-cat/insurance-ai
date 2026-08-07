@@ -145,6 +145,23 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
 
   const [selectedDay, setSelectedDay] = useState<string>("");
 
+  const [completing, setCompleting] = useState(false);
+  const [completeErr, setCompleteErr] = useState<string | null>(null);
+
+  const completeExam = async () => {
+    setCompleting(true);
+    setCompleteErr(null);
+    try {
+      await publicApi.post(`/public/medical-exam/${token}/complete`);
+      setView((v) => (v ? { ...v, status: "Completed" } : v));
+      setLoadState("done");
+    } catch (e: any) {
+      setCompleteErr(e?.response?.data?.detail ?? "Failed to mark examination as completed.");
+    } finally {
+      setCompleting(false);
+    }
+  };
+
   const book = async () => {
     if (!clinicId || !slot) return;
     setSubmitting(true);
@@ -238,9 +255,17 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
 
         {/* Already booked */}
         {loadState === "booked" && view.booked_clinic && (
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-700">Appointment confirmed</p>
-            <h2 className="text-base font-bold text-slate-800 mt-1">{view.booked_clinic.name}</h2>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-5 shadow-xs">
+            <div className="flex items-center justify-between flex-wrap gap-2">
+              <p className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-800 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                Appointment confirmed
+              </p>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                Scheduled at Clinic
+              </span>
+            </div>
+            <h2 className="text-base font-bold text-slate-800 mt-2">{view.booked_clinic.name}</h2>
             <p className="text-sm text-slate-600 mt-0.5">{view.booked_clinic.address}</p>
             {view.booked_clinic.phone && (
               <p className="text-xs text-slate-500 mt-0.5">Tel: {view.booked_clinic.phone}</p>
@@ -253,14 +278,42 @@ export default function MedicalExamBookingPage({ params }: { params: { token: st
                 A phlebotomist will visit you at home for sample collection.
               </p>
             )}
-            <button
-              onClick={() => setLoadState("ready")}
-              className="mt-4 text-xs font-semibold text-emerald-800 underline underline-offset-2"
-            >
-              Change my appointment
-            </button>
+
+            {completeErr && (
+              <p className="mt-3 text-xs text-red-600 font-semibold bg-red-50 border border-red-200 rounded-lg p-2.5">
+                {completeErr}
+              </p>
+            )}
+
+            <div className="mt-5 pt-4 border-t border-emerald-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <button
+                onClick={() => setLoadState("ready")}
+                className="text-xs font-semibold text-emerald-800 hover:text-emerald-950 underline underline-offset-2"
+              >
+                Change my appointment
+              </button>
+
+              <button
+                onClick={completeExam}
+                disabled={completing}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {completing ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Updating Status…</span>
+                  </>
+                ) : (
+                  <>
+                    <span>✓</span>
+                    <span>Mark Examination as Completed (Done)</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         )}
+
 
         {/* Tests */}
         <div className="rounded-2xl border border-slate-200 bg-white p-5">

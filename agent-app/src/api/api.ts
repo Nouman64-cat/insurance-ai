@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Point EXPO_PUBLIC_API_URL at the API gateway (port 8010). The fallback is a
 // LAN address, since a physical device cannot reach the host's localhost.
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.212:8010';
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://192.168.1.83:8010';
 
 const api = axios.create({
   baseURL: API_BASE_URL,
