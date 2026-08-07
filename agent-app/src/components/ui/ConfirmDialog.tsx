@@ -47,13 +47,13 @@ export default function ConfirmDialog({
       // Confirmations are centred cards on every screen size, matching what
       // both platforms do natively.
       variant="dialog"
-      // Scrollable so a long message never clips the confirm/cancel row.
-      scrollable
+      // A small dialog usually doesn't need to scroll.
+      scrollable={false}
       // A destructive confirm must be an explicit choice, so a stray tap on the
       // scrim should not dismiss it.
       dismissOnBackdropPress={tone !== 'danger'}
       footer={
-        <>
+        <View style={styles.footerWrap}>
           <Button
             title={cancelLabel}
             onPress={onCancel}
@@ -70,7 +70,7 @@ export default function ConfirmDialog({
             loading={loading}
             style={styles.action}
           />
-        </>
+        </View>
       }
     >
       <View style={styles.body}>
@@ -81,7 +81,7 @@ export default function ConfirmDialog({
             color={t.on}
           />
         </View>
-        <Text variant="title2" align="center">
+        <Text variant="bodyStrong" align="center">
           {title}
         </Text>
         {message ? (
@@ -113,7 +113,13 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     maxWidth: 320,
   },
-  action: {
+  footerWrap: {
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  action: {
+    minWidth: 120,
   },
 });

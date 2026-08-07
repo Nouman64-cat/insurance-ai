@@ -49,21 +49,21 @@ const DEPTHS: {
   icon: keyof typeof Ionicons.glyphMap;
   duration: string;
 }[] = [
-  {
-    depth: 'quick',
-    title: 'Quick lead',
-    description: 'Just a name and a phone number. Capture it now, complete it later.',
-    icon: 'timer-outline',
-    duration: 'Under a minute',
-  },
-  {
-    depth: 'normal',
-    title: 'Full profile',
-    description: 'Identity, income, medical and lifestyle — everything underwriting needs.',
-    icon: 'document-text-outline',
-    duration: '5–10 minutes',
-  },
-];
+    {
+      depth: 'quick',
+      title: 'Quick lead',
+      description: 'Just a name and a phone number. Capture it now, complete it later.',
+      icon: 'timer-outline',
+      duration: 'Under a minute',
+    },
+    {
+      depth: 'normal',
+      title: 'Full profile',
+      description: 'Identity, income, medical and lifestyle — everything underwriting needs.',
+      icon: 'document-text-outline',
+      duration: '5–10 minutes',
+    },
+  ];
 
 /**
  * Two-step chooser: entity type, then how much detail to capture. Splitting the

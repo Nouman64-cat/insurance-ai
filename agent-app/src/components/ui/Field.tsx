@@ -62,8 +62,8 @@ const Field = forwardRef<TextInput, FieldProps>(function Field(
   const borderColor = error
     ? colors.tone.danger.solid
     : focused
-    ? colors.tone.brand.solid
-    : colors.border;
+      ? colors.tone.brand.solid
+      : colors.border;
 
   const trailingIcon = isPassword
     ? ((revealed ? 'eye-off-outline' : 'eye-outline') as keyof typeof Ionicons.glyphMap)
@@ -175,6 +175,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: hitTarget.comfortable,
     borderRadius: radii.md,
+    overflow: 'hidden',
   },
   inputWrapMultiline: {
     alignItems: 'flex-start',
@@ -183,8 +184,10 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    // Android adds its own vertical padding that breaks the centred layout.
-    paddingVertical: Platform.OS === 'android' ? 0 : spacing.md,
+    paddingVertical: Platform.OS === 'ios' ? spacing.xs : 0,
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+    minWidth: 0,
   },
   inputMultiline: {
     textAlignVertical: 'top',

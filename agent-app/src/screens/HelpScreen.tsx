@@ -14,7 +14,7 @@ import {
 } from '../components/ui';
 import Accordion from '../components/Accordion';
 
-const SUPPORT_EMAIL = 'support@rizvi.com';
+const SUPPORT_EMAIL = 'support@rizviz.com';
 const SUPPORT_PHONE = '+92 800 123 4567';
 
 const FAQS: { question: string; answer: string }[] = [
@@ -108,7 +108,7 @@ export default function HelpScreen() {
       ))}
 
       <Text variant="caption" color="subtle" align="center" style={styles.footer}>
-        Rizvi Agent Portal · v1.0.0
+        RIZVIZ Agent Portal · v1.0.0
       </Text>
     </Screen>
   );

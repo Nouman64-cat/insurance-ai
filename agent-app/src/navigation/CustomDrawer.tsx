@@ -57,7 +57,7 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
       >
         <View style={[styles.header, { paddingTop: insets.top + spacing.xl }]}>
           <View style={[styles.logoPlate, { backgroundColor: colors.surfaceSunken }, shadow(0)]}>
-            <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="Rizvi" />
+            <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="RIZVIZ" />
           </View>
 
           <View style={styles.identity}>

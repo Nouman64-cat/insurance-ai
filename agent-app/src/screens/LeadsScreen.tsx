@@ -398,9 +398,9 @@ export default function LeadsScreen() {
 
       <ConfirmDialog
         visible={!!pendingDelete}
-        title={`Delete ${pendingDelete?.name ?? 'this lead'}?`}
-        message="This removes the lead from the shared database, so it disappears from the portal too. This cannot be undone."
+        title="Are you sure you want to delete this lead?"
         confirmLabel="Delete"
+        cancelLabel="Cancel"
         tone="danger"
         icon="trash-outline"
         loading={deleting}
@@ -434,10 +434,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: radii.md,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   searchInput: {
     flex: 1,
-    padding: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+    minWidth: 0,
   },
   viewToggle: {
     width: 96,

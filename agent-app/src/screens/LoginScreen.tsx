@@ -5,7 +5,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Image,
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -16,15 +15,11 @@ import { spacing, radii } from '../theme/tokens';
 import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
-import { Text, Field, Button, Banner } from '../components/ui';
-
-// 220×79 wordmark. Rendered with a fixed height and `resizeMode="contain"` so
-// the aspect ratio holds on every screen density.
-const LOGO = require('../assets/rizvi.png');
-const LOGO_ASPECT = 220 / 79;
+import { Text, Field, Button, Banner, Card } from '../components/ui';
+import ConstellationBackground from '../components/ui/ConstellationBackground';
 
 export default function LoginScreen() {
-  const { colors, isDark } = useTheme();
+  const { colors, isDark, shadow } = useTheme();
   const { isCompact, height } = useResponsive();
   const { signIn } = useSession();
   const { toast } = useNotifications();
@@ -54,8 +49,6 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email.trim(), password);
-      // The navigator swaps to the app stack off `isAuthenticated`, so there is
-      // deliberately no navigation call here — one source of truth for routing.
       toast('Signed in', { tone: 'success', icon: 'checkmark-circle' });
     } catch (err: any) {
       setFormError(err?.message ?? 'We could not sign you in. Please try again.');
@@ -64,11 +57,12 @@ export default function LoginScreen() {
     }
   };
 
-  const logoWidth = isCompact ? 176 : 208;
-
   return (
     <SafeAreaView style={[styles.safe, { backgroundColor: colors.background }]} edges={['top', 'bottom']}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
+
+      {/* Futuristic Constellation Network Background */}
+      <ConstellationBackground />
 
       <KeyboardAvoidingView
         style={styles.flex}
@@ -77,34 +71,24 @@ export default function LoginScreen() {
         <ScrollView
           contentContainerStyle={[
             styles.scroll,
-            // Centres the form on tall screens, but lets it scroll normally once
-            // the keyboard shrinks the viewport.
             { minHeight: height * 0.9 },
           ]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.column, !isCompact ? styles.columnWide : null]}>
+            {/* Perfectly Aligned Brand Header */}
             <View style={styles.brand}>
-              <View
-                style={[
-                  styles.logoPlate,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-              >
-                <Image
-                  source={LOGO}
-                  style={{ width: logoWidth, height: logoWidth / LOGO_ASPECT }}
-                  resizeMode="contain"
-                  accessibilityRole="image"
-                  accessibilityLabel="Rizvi"
-                />
-              </View>
-
-              <Text variant="display" align="center" style={styles.title}>
-                Agent Portal
+              <Text align="center" style={[styles.brandTitle, { color: colors.text }]}>
+                RIZVIZ
               </Text>
-              <Text variant="callout" color="muted" align="center" style={styles.subtitle}>
+              <Text
+                align="center"
+                style={[styles.subtitle, { color: colors.tone.brand.solid }]}
+              >
+                AGENT PORTAL
+              </Text>
+              <Text variant="caption" color="muted" align="center" style={styles.description}>
                 Sign in to manage your leads, proposals and cases.
               </Text>
             </View>
@@ -119,10 +103,11 @@ export default function LoginScreen() {
               />
             ) : null}
 
-            <View style={styles.form}>
+            {/* Clean Form Card */}
+            <Card padding="xl" style={[styles.formCard, shadow(1)]}>
               <Field
                 label="Email address"
-                placeholder="agent@rizvi.com"
+                placeholder="agent@rizviz.com"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoComplete="email"
@@ -169,17 +154,17 @@ export default function LoginScreen() {
                 iconPosition="right"
                 style={styles.submit}
               />
-            </View>
+            </Card>
 
             <View style={styles.footer}>
-              <View style={[styles.secureNote, { backgroundColor: colors.surfaceSunken }]}>
+              <View style={[styles.secureNote, { backgroundColor: colors.surfaceSunken, borderColor: colors.border }]}>
                 <Ionicons name="shield-checkmark-outline" size={15} color={colors.tone.success.solid} />
                 <Text variant="caption" color="muted">
                   Secure, encrypted connection
                 </Text>
               </View>
               <Text variant="micro" color="subtle" align="center">
-                Rizvi Insurance · Agent Portal
+                RIZVIZ Insurance · Agent Portal
               </Text>
             </View>
           </View>
@@ -206,39 +191,47 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   columnWide: {
-    maxWidth: 460,
+    maxWidth: 420,
     alignSelf: 'center',
   },
   brand: {
     alignItems: 'center',
-    marginBottom: spacing.xxxl,
-  },
-  logoPlate: {
-    paddingHorizontal: spacing.xxl,
-    paddingVertical: spacing.xl,
-    borderRadius: radii.xl,
-    borderWidth: 1,
     marginBottom: spacing.xxl,
   },
-  title: {
-    marginBottom: spacing.sm,
+  brandTitle: {
+    fontSize: 34,
+    lineHeight: 40,
+    fontWeight: '900',
+    letterSpacing: 5,
+    textAlign: 'center',
+    marginBottom: 2,
   },
   subtitle: {
-    maxWidth: 300,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
+    letterSpacing: 2.5,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  description: {
+    maxWidth: 290,
+    lineHeight: 20,
   },
   banner: {
     marginBottom: spacing.xl,
   },
-  form: {
-    width: '100%',
+  formCard: {
+    borderRadius: radii.xl,
   },
   submit: {
-    marginTop: spacing.sm,
+    marginTop: spacing.md,
   },
   footer: {
     alignItems: 'center',
     gap: spacing.md,
-    marginTop: spacing.huge,
+    marginTop: spacing.xxxl,
   },
   secureNote: {
     flexDirection: 'row',
@@ -247,5 +240,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
     borderRadius: radii.pill,
+    borderWidth: 1,
   },
 });

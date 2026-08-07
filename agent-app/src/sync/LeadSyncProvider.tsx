@@ -151,6 +151,14 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   /** So a persistent outage raises one notification, not one per attempt. */
   const errorAnnounced = useRef(false);
 
+  const notifyRef = useRef(notify);
+  const userRef = useRef(user);
+
+  useEffect(() => {
+    notifyRef.current = notify;
+    userRef.current = user;
+  }, [notify, user]);
+
   const markLocalChange = useCallback((leadId: string) => {
     selfChanges.current.set(leadId, Date.now() + SELF_CHANGE_TTL_MS);
   }, []);
@@ -171,6 +179,8 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     (incoming: UnifiedLead[]) => {
       const prev = previous.current;
       const next = snapshotOf(incoming);
+      const currentUser = userRef.current;
+      const currentNotify = notifyRef.current;
 
       // The first successful load is the baseline. Announcing it would fire a
       // notification for every existing lead on launch.
@@ -181,11 +191,11 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       for (const lead of incoming) {
         const before = prev.get(lead.id);
-        const mine = !!user && lead.assignedAgentId === user.id;
+        const mine = !!currentUser && lead.assignedAgentId === currentUser.id;
 
         if (!before) {
           if (isSelfChange(lead.id)) continue;
-          notify({
+          currentNotify({
             kind: 'lead.created',
             title: mine ? 'New lead assigned to you' : 'New lead added',
             body: `${lead.name} · ${entityLabel[lead.type] ?? lead.type}${
@@ -204,7 +214,7 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
         if (before.status !== lead.status) {
           const announcement = STAGE_ANNOUNCEMENT[lead.status];
-          notify({
+          currentNotify({
             kind: 'lead.updated',
             title: announcement
               ? `${lead.name} ${announcement.title}`
@@ -224,7 +234,7 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // `profile_status` stays put, so that transition is announced too.
         if ((before.groupPolicyStatus ?? null) !== (lead.groupPolicyStatus ?? null)) {
           const now = lead.groupPolicyStatus;
-          notify({
+          currentNotify({
             kind: 'lead.updated',
             title: `${lead.name} policy is now ${now ?? 'unset'}`,
             body:
@@ -240,7 +250,7 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
 
         if ((before.assignedAgentId ?? null) !== (lead.assignedAgentId ?? null)) {
-          notify({
+          currentNotify({
             kind: 'lead.assigned',
             title: mine ? `${lead.name} was assigned to you` : `${lead.name} was reassigned`,
             body: lead.assignedAgentName ? `Now owned by ${lead.assignedAgentName}.` : 'Owner cleared.',
@@ -256,7 +266,7 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       // out of scope (converted to a policyholder, reassigned away).
       for (const [id, before] of prev) {
         if (next.has(id) || isSelfChange(id)) continue;
-        notify({
+        currentNotify({
           kind: 'lead.deleted',
           title: `${before.name} left your pipeline`,
           body: 'It was deleted, converted, or reassigned to someone else.',
@@ -266,7 +276,7 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
       previous.current = next;
     },
-    [notify, user, isSelfChange]
+    [isSelfChange]
   );
 
   // ── Polling ────────────────────────────────────────────────────────────────
@@ -297,7 +307,7 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         // or it has failed repeatedly, so a single blip stays quiet.
         if (!errorAnnounced.current && (options.manual || consecutiveFailures.current >= 3)) {
           errorAnnounced.current = true;
-          notify({
+          notifyRef.current({
             kind: 'sync.error',
             title: 'Sync paused',
             body: 'We could not reach the server. Retrying automatically.',
@@ -311,72 +321,21 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
       }
     },
-    [isAuthenticated, scope, announceChanges, notify]
+    [isAuthenticated, scope, announceChanges]
   );
 
-  const scheduleNext = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    const failures = consecutiveFailures.current;
-    const delay =
-      failures === 0
-        ? POLL_INTERVAL_MS
-        : Math.min(BACKOFF_BASE_MS * 2 ** (failures - 1), BACKOFF_MAX_MS);
-
-    timer.current = setTimeout(async () => {
-      // Polling in the background burns battery and data for updates nobody can
-      // see; the foreground listener catches up the moment the app returns.
-      if (AppState.currentState === 'active') {
-        await runSync();
-      }
-      if (mounted.current) scheduleNext();
-    }, delay);
+  const runSyncRef = useRef(runSync);
+  useEffect(() => {
+    runSyncRef.current = runSync;
   }, [runSync]);
 
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
-  // Signing out must reset everything, or the next user inherits the previous
-  // one's baseline and gets a notification for every lead on their board.
-  useEffect(() => {
-    if (isAuthenticated) return;
-    if (timer.current) clearTimeout(timer.current);
-    previous.current = null;
-    selfChanges.current.clear();
-    consecutiveFailures.current = 0;
-    errorAnnounced.current = false;
-    setLeads([]);
-    setError(null);
-    setLastSyncedAt(null);
-    setLoading(true);
-  }, [isAuthenticated]);
-
-  // Restart the loop whenever the identity or scope changes.
+  // Initial load when identity or scope changes.
   useEffect(() => {
     if (!isAuthenticated) return;
     previous.current = null;
     setLoading(true);
-    runSync();
-    scheduleNext();
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, [isAuthenticated, scope, user?.id, runSync, scheduleNext]);
-
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const onChange = (state: AppStateStatus) => {
-      // Coming back to the foreground is the moment the user most expects to
-      // see current data, so sync immediately rather than waiting for the tick.
-      if (state === 'active') runSync();
-    };
-    const sub = AppState.addEventListener('change', onChange);
-    return () => sub.remove();
-  }, [isAuthenticated, runSync]);
+    runSyncRef.current();
+  }, [isAuthenticated, scope, user?.id]);
 
   // ── Optimistic local mutations ─────────────────────────────────────────────
 

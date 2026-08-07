@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import {
   NavigationContainer,
@@ -20,6 +20,7 @@ import { useNotifications } from '../notifications/NotificationContext';
 import { LeadSyncProvider } from '../sync/LeadSyncProvider';
 import ToastHost from '../notifications/ToastHost';
 import NotificationPopup from '../notifications/NotificationPopup';
+import AnimatedSplashScreen from '../components/ui/AnimatedSplashScreen';
 
 import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
@@ -193,16 +194,31 @@ function MainDrawer() {
 // ── Root ─────────────────────────────────────────────────────────────────────
 
 function AuthFlow() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
-    <AuthStack.Navigator screenOptions={{ headerShown: false }}>
-      <AuthStack.Screen name="Login" component={LoginScreen} />
-    </AuthStack.Navigator>
+    <View style={{ flex: 1 }}>
+      {showSplash ? (
+        <AnimatedSplashScreen
+          subtitle="Agent Portal"
+          onFinish={() => setShowSplash(false)}
+        />
+      ) : null}
+      <AuthStack.Navigator screenOptions={{ headerShown: false }}>
+        <AuthStack.Screen name="Login" component={LoginScreen} />
+      </AuthStack.Navigator>
+    </View>
   );
 }
 
 function AppFlow() {
+  const [showSplash, setShowSplash] = useState(true);
+
   return (
     <LeadSyncProvider>
+      {showSplash ? (
+        <AnimatedSplashScreen onFinish={() => setShowSplash(false)} />
+      ) : null}
       <RootStack.Navigator
         screenOptions={{
           headerShown: false,

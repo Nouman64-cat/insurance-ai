@@ -159,7 +159,7 @@ export default function SettingsScreen() {
       </Card>
 
       <Text variant="caption" color="subtle" align="center" style={styles.footer}>
-        Rizvi Agent Portal · v1.0.0
+        RIZVIZ Agent Portal · v1.0.0
       </Text>
 
       <ConfirmDialog

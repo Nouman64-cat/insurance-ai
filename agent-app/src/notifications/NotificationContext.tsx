@@ -48,7 +48,7 @@ interface NotificationContextValue {
   /** Fire-and-forget toast with no feed entry — for local action confirmations. */
   toast: (
     title: string,
-    options?: { body?: string; tone?: ToneName; icon?: keyof typeof Ionicons.glyphMap; durationMs?: number }
+    options?: { body?: string; tone?: ToneName; icon?: keyof typeof Ionicons.glyphMap; durationMs?: number; actionLabel?: string; onPress?: () => void }
   ) => void;
 
   dismissToast: (id: string) => void;
@@ -151,6 +151,8 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
         tone,
         icon: options?.icon ?? TONE_ICONS[tone],
         durationMs: options?.durationMs ?? DEFAULT_TOAST_MS,
+        actionLabel: options?.actionLabel,
+        onPress: options?.onPress,
       });
     },
     [nextId, pushToast]
