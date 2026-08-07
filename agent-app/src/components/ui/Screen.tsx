@@ -74,7 +74,7 @@ export default function Screen({
     !isCompact ? styles.capped : null,
     // Measured from the real chrome rather than a fixed constant, so the last
     // row clears the tab bar and any FAB on every device.
-    { paddingBottom: fabClearance ? fabPadding : listPadding },
+    scrollable ? { paddingBottom: fabClearance ? fabPadding : listPadding } : null,
     contentContainerStyle,
   ];
 

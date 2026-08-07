@@ -5,7 +5,7 @@ import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../theme/ThemeContext';
 import { spacing, radii } from '../theme/tokens';
-import { statusTone, statusLabel, entityTone, entityLabel } from '../theme/palette';
+import { statusTone, statusLabel, entityTone, entityLabel, ToneName } from '../theme/palette';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { useLeadSync } from '../sync/LeadSyncProvider';
@@ -46,6 +46,7 @@ export default function LeadDetailScreen() {
   const [journey, setJourney] = useState<Journey | null>(null);
   const [journeyLoading, setJourneyLoading] = useState(true);
   const [journeyError, setJourneyError] = useState<string | null>(null);
+  const [journeyExpanded, setJourneyExpanded] = useState(true);
 
   // Reading from the sync store rather than fetching means the screen updates
   // live when the portal changes this lead while it is open.
@@ -152,14 +153,16 @@ export default function LeadDetailScreen() {
 
         <View style={styles.quickActions}>
           <QuickAction
-            icon="call-outline"
+            icon="call"
             label="Call"
+            tone="brand"
             disabled={!hasPhone}
             onPress={() => dial(lead.contact_info)}
           />
           <QuickAction
-            icon="chatbubble-outline"
+            icon="chatbubble"
             label="Message"
+            tone="accent"
             disabled={!hasPhone}
             onPress={() =>
               Linking.openURL(`sms:${lead.contact_info.replace(/[^\d+]/g, '')}`).catch(() =>
@@ -168,21 +171,36 @@ export default function LeadDetailScreen() {
             }
           />
           <QuickAction
-            icon="mail-outline"
-            label="Email"
-            disabled={!lead.email}
-            onPress={() => lead.email && mail(lead.email)}
+            icon="logo-whatsapp"
+            label="WhatsApp"
+            tone="success"
+            disabled={!hasPhone}
+            onPress={() => {
+              const cleanPhone = lead.contact_info.replace(/[^\d+]/g, '');
+              Linking.openURL(`whatsapp://send?phone=${cleanPhone}`).catch(() =>
+                Linking.openURL(`https://wa.me/${cleanPhone}`).catch(() =>
+                  toast('WhatsApp not installed', { tone: 'warning' })
+                )
+              );
+            }}
           />
         </View>
       </Card>
 
-      <SectionHeader title="Journey" icon="git-commit-outline" />
-      <LeadJourneyView
-        journey={journey}
-        loading={journeyLoading}
-        error={journeyError}
-        onRetry={loadJourney}
+      <SectionHeader
+        title="Journey"
+        icon="git-commit-outline"
+        rightIcon={journeyExpanded ? 'remove-circle-outline' : 'add-circle-outline'}
+        onRightIconPress={() => setJourneyExpanded((prev) => !prev)}
       />
+      {journeyExpanded ? (
+        <LeadJourneyView
+          journey={journey}
+          loading={journeyLoading}
+          error={journeyError}
+          onRetry={loadJourney}
+        />
+      ) : null}
 
       <SectionHeader title="Details" icon="information-circle-outline" />
       <Card padding="md" style={styles.section}>
@@ -193,18 +211,6 @@ export default function LeadDetailScreen() {
           tone="brand"
           onPress={hasPhone ? () => dial(lead.contact_info) : undefined}
         />
-        {lead.email ? (
-          <>
-            <Divider spacingY="none" />
-            <ListRow
-              title="Email"
-              value={lead.email}
-              icon="mail-outline"
-              tone="info"
-              onPress={() => mail(lead.email!)}
-            />
-          </>
-        ) : null}
         {lead.city ? (
           <>
             <Divider spacingY="none" />
@@ -264,34 +270,34 @@ function QuickAction({
   label,
   onPress,
   disabled,
+  tone = 'brand',
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
   onPress: () => void;
   disabled?: boolean;
+  tone?: ToneName;
 }) {
   const { colors } = useTheme();
+  const t = colors.tone[tone] ?? colors.tone.brand;
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      pressedScale={0.95}
+      pressedScale={0.92}
       accessibilityRole="button"
       accessibilityLabel={label}
       accessibilityState={{ disabled: !!disabled }}
       style={[
-        styles.quickAction,
+        styles.quickActionTile,
         {
-          backgroundColor: colors.surfaceSunken,
-          borderColor: colors.border,
+          backgroundColor: t.solid,
           opacity: disabled ? 0.45 : 1,
         },
       ]}
     >
-      <Ionicons name={icon} size={19} color={colors.tone.brand.solid} />
-      <Text variant="captionStrong" color="muted">
-        {label}
-      </Text>
+      <Ionicons name={icon} size={20} color={t.onSolid} />
     </Pressable>
   );
 }
@@ -317,17 +323,16 @@ const styles = StyleSheet.create({
   },
   quickActions: {
     flexDirection: 'row',
-    gap: spacing.sm,
+    alignItems: 'center',
+    gap: spacing.md,
     marginTop: spacing.xl,
   },
-  quickAction: {
-    flex: 1,
+  quickActionTile: {
+    width: 48,
+    height: 48,
+    borderRadius: radii.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: radii.md,
-    borderWidth: 1,
   },
   section: {
     marginBottom: spacing.xl,

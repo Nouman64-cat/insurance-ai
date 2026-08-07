@@ -207,24 +207,30 @@ export default function AddLeadScreen() {
     try {
       const shared = { leadCategory: depth, ...form, ...flags };
 
+      let res;
       if (type === 'INDIVIDUAL') {
-        await createIndividualLead(shared);
+        res = await createIndividualLead(shared);
       } else if (type === 'FAMILY') {
-        await createFamilyLead({ ...shared, name: form.familyName });
+        res = await createFamilyLead({ ...shared, name: form.familyName });
       } else {
-        await createCorporateLead({ ...shared, name: form.companyName });
+        res = await createCorporateLead({ ...shared, name: form.companyName });
       }
 
       // Pull the new row in immediately so the Leads board is already correct
       // when the user lands back on it, rather than after the next poll tick.
       await refresh();
 
+      const newLeadId = res?.data?.id;
+
+      navigation.goBack();
+
       toast('Lead created', {
         body: 'It is now visible in the portal too.',
         tone: 'success',
         icon: 'checkmark-circle',
+        actionLabel: newLeadId ? 'VIEW detail' : undefined,
+        onPress: newLeadId ? () => navigation.navigate('LeadDetail', { leadId: newLeadId }) : undefined,
       });
-      navigation.goBack();
     } catch (err: any) {
       setSubmitError(err?.message ?? 'Could not create the lead. Please try again.');
     } finally {

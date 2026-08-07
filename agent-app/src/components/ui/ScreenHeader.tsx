@@ -3,10 +3,12 @@ import { View, StyleSheet, ViewStyle, StyleProp, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { useTheme } from '../../theme/ThemeContext';
-import { spacing, layout } from '../../theme/tokens';
+import { spacing, layout, radii } from '../../theme/tokens';
 import { useResponsive } from '../../hooks/useResponsive';
 import Text from './Text';
 import IconButton from './IconButton';
+
+import { useLeadSync } from '../../sync/LeadSyncProvider';
 
 export interface HeaderAction {
   icon: keyof typeof Ionicons.glyphMap;
@@ -32,6 +34,8 @@ export interface ScreenHeaderProps {
   children?: React.ReactNode;
   /** Drops the bottom hairline, for headers that sit flush on a scroll view. */
   borderless?: boolean;
+  /** Shows the round shape refresh button for instant sync with web app. Defaults to true. */
+  showSyncButton?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -55,11 +59,13 @@ export default function ScreenHeader({
   actions = [],
   children,
   borderless = false,
+  showSyncButton = true,
   style,
 }: ScreenHeaderProps) {
   const { colors } = useTheme();
   const { gutter } = useResponsive();
   const navigation = useNavigation();
+  const { refresh, syncing } = useLeadSync();
 
   const canGoBack = navigation.canGoBack();
   const resolved = leading === 'auto' ? (canGoBack ? 'back' : 'menu') : leading;
@@ -72,6 +78,15 @@ export default function ScreenHeader({
 
   const leadingLabel =
     resolved === 'menu' ? 'Open menu' : resolved === 'close' ? 'Close' : 'Go back';
+
+  const syncAction: HeaderAction = {
+    icon: 'refresh-outline',
+    onPress: refresh,
+    accessibilityLabel: 'Sync with web app',
+    tone: syncing ? 'brand' : 'neutral',
+  };
+
+  const allActions = showSyncButton ? [syncAction, ...actions] : actions;
 
   return (
     <View
@@ -110,9 +125,9 @@ export default function ScreenHeader({
           ) : null}
         </View>
 
-        {actions.length > 0 ? (
+        {allActions.length > 0 ? (
           <View style={styles.actions}>
-            {actions.map((action) => (
+            {allActions.map((action) => (
               <IconButton
                 key={action.accessibilityLabel}
                 icon={action.icon}
@@ -120,7 +135,9 @@ export default function ScreenHeader({
                 accessibilityLabel={action.accessibilityLabel}
                 badgeCount={action.badgeCount}
                 tone={action.tone ?? 'neutral'}
-                size={22}
+                variant="soft"
+                size={20}
+                style={styles.roundAction}
               />
             ))}
           </View>
@@ -153,8 +170,12 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.xs,
     // Same rationale as `leading`, mirrored to the trailing edge.
-    marginRight: -spacing.md,
+    marginRight: -spacing.sm,
+  },
+  roundAction: {
+    borderRadius: radii.pill,
   },
   slot: {
     marginTop: spacing.md,

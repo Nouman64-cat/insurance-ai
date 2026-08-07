@@ -71,3 +71,5 @@ export type { ScreenHeaderProps, HeaderAction } from './ScreenHeader';
 
 export { default as Fab } from './Fab';
 export type { FabProps } from './Fab';
+
+export { default as AnimatedSplashScreen } from './AnimatedSplashScreen';

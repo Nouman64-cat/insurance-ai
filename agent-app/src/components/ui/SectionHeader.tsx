@@ -15,6 +15,8 @@ export interface SectionHeaderProps {
   onAction?: () => void;
   icon?: keyof typeof Ionicons.glyphMap;
   onIconPress?: () => void;
+  rightIcon?: keyof typeof Ionicons.glyphMap;
+  onRightIconPress?: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -26,6 +28,8 @@ export default function SectionHeader({
   onAction,
   icon,
   onIconPress,
+  rightIcon,
+  onRightIconPress,
   style,
 }: SectionHeaderProps) {
   const { colors } = useTheme();
@@ -54,7 +58,17 @@ export default function SectionHeader({
         ) : null}
       </View>
 
-      {actionLabel && onAction ? (
+      {rightIcon && onRightIconPress ? (
+        <Pressable
+          onPress={onRightIconPress}
+          accessibilityRole="button"
+          accessibilityLabel={title}
+          pressedScale={0.88}
+          style={styles.action}
+        >
+          <Ionicons name={rightIcon} size={22} color={colors.primary} />
+        </Pressable>
+      ) : actionLabel && onAction ? (
         <Pressable
           onPress={onAction}
           accessibilityRole="button"

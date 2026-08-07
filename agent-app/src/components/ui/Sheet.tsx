@@ -127,6 +127,7 @@ export default function Sheet({
           maxHeight,
           opacity: asDialog ? progress : 1,
           transform: [{ translateY }],
+          paddingBottom: footer ? 0 : (asDialog ? spacing.xl : bottomPadding),
         },
       ]}
     >
@@ -148,20 +149,16 @@ export default function Sheet({
 
       {scrollable ? (
         <ScrollView
-          // `flexShrink` is what lets the scroll area give up height to the
-          // footer instead of shoving it past the card's clipped edge.
           style={styles.scrollArea}
-          contentContainerStyle={[styles.content, !footer && { paddingBottom: bottomPadding }]}
+          contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
-          // Content shorter than the card should sit at its natural size rather
-          // than stretching to fill it.
           alwaysBounceVertical={false}
         >
           {children}
         </ScrollView>
       ) : (
-        <View style={[styles.contentStatic, styles.content, !footer && { paddingBottom: bottomPadding }]}>
+        <View style={[styles.contentStatic, styles.content]}>
           {children}
         </View>
       )}
@@ -171,8 +168,7 @@ export default function Sheet({
           style={[
             styles.footer,
             {
-              borderTopColor: colors.borderSubtle,
-              paddingBottom: bottomPadding,
+              paddingBottom: asDialog ? spacing.giant : Math.max(insets.bottom + spacing.lg, spacing.giant),
             },
           ]}
         >
@@ -242,7 +238,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     // Guarantees breathing room on very short screens and in landscape, where
     // a centred card can otherwise reach the top and bottom edges.
-    marginVertical: spacing.xl,
+    marginVertical: spacing.giant,
   },
   grabber: {
     width: 40,
@@ -273,6 +269,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
+    paddingBottom: spacing.lg,
   },
   // The scroll area is the only part allowed to give up height. `flexGrow: 0`
   // keeps a short dialog hugging its content instead of stretching to maxHeight.
@@ -281,15 +278,14 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   contentStatic: {
-    flexShrink: 1,
   },
   footer: {
     flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.md,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
-    borderTopWidth: 1,
-    // Never yields space — this is what stops action buttons being clipped.
     flexShrink: 0,
   },
 });

@@ -340,10 +340,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: radii.md,
     borderWidth: 1,
+    overflow: 'hidden',
   },
   searchInput: {
     flex: 1,
-    padding: 0,
+    paddingVertical: 0,
+    paddingHorizontal: 0,
+    marginHorizontal: 0,
+    minWidth: 0,
   },
   viewToggle: {
     width: 96,

@@ -44,13 +44,13 @@ export default function AboutScreen() {
     <Screen header={<ScreenHeader title="About" leading="menu" />}>
       <Card padding="xl" style={styles.hero}>
         <View style={[styles.logoPlate, { backgroundColor: colors.surfaceSunken }]}>
-          <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="Rizvi" />
+          <Image source={LOGO} style={styles.logo} resizeMode="contain" accessibilityLabel="RIZVIZ" />
         </View>
         <Text variant="title2" align="center" style={styles.title}>
-          Rizvi Agent Portal
+          RIZVIZ Agent Portal
         </Text>
         <Text variant="callout" color="muted" align="center" style={styles.blurb}>
-          The field companion for Rizvi insurance agents — from the first phone call through
+          The field companion for RIZVIZ insurance agents — from the first phone call through
           underwriting to policy issuance, on the same data the web portal uses.
         </Text>
       </Card>
@@ -81,7 +81,7 @@ export default function AboutScreen() {
       </Card>
 
       <Text variant="caption" color="subtle" align="center" style={styles.footer}>
-        © {new Date().getFullYear()} Rizvi Insurance. All rights reserved.
+        © {new Date().getFullYear()} RIZVIZ Insurance. All rights reserved.
       </Text>
     </Screen>
   );

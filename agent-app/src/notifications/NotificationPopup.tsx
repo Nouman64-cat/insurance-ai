@@ -45,10 +45,7 @@ export default function NotificationPopup() {
     <Sheet
       visible
       onClose={close}
-      // A centred card is the right shape for an alert on every screen size.
       variant="dialog"
-      // Scrollable so a long lead name or body never clips; the footer stays
-      // pinned below it either way.
       scrollable
       footer={
         <>
@@ -78,13 +75,6 @@ export default function NotificationPopup() {
           <Ionicons name={preset.icon} size={30} color={tone.on} />
         </View>
 
-        <Badge
-          label={formatRelativeTime(popup.createdAt)}
-          tone={preset.tone}
-          variant="soft"
-          style={styles.time}
-        />
-
         <Text variant="title2" align="center">
           {popup.title}
         </Text>
@@ -112,31 +102,29 @@ const styles = StyleSheet.create({
   body: {
     alignItems: 'center',
     paddingTop: spacing.md,
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing.sm,
   },
   iconWrap: {
-    width: 68,
-    height: 68,
+    width: 64,
+    height: 64,
     borderRadius: radii.xxl,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: spacing.lg,
-  },
-  time: {
     marginBottom: spacing.md,
   },
   message: {
-    marginTop: spacing.sm,
-    maxWidth: 340,
+    marginTop: spacing.xs,
+    maxWidth: 320,
   },
   actor: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.xs,
-    marginTop: spacing.lg,
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
     borderRadius: radii.pill,
   },
   action: {
