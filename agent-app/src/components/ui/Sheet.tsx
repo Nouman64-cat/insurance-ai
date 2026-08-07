@@ -23,23 +23,32 @@ export interface SheetProps {
   title?: string;
   subtitle?: string;
   children?: React.ReactNode;
-  /** Fraction of screen height the sheet may grow to. */
+  /** Fraction of the *usable* height (safe areas excluded) it may grow to. */
   maxHeightRatio?: number;
   /** Wraps children in a ScrollView. Turn off when the child scrolls itself. */
   scrollable?: boolean;
-  /** Pinned to the bottom, outside the scroll area — for confirm/cancel rows. */
+  /** Pinned below the scroll area — for confirm/cancel rows. Never clipped. */
   footer?: React.ReactNode;
   /** Tapping the scrim closes by default; disable for destructive confirms. */
   dismissOnBackdropPress?: boolean;
+  /**
+   * `dialog` centres a compact card — the right shape for confirmations and
+   * alerts, and what both platforms do natively.
+   * `sheet` anchors to the bottom edge — better for long option lists, where a
+   * centred card would tower over the screen.
+   * `auto` picks a sheet on phones and a dialog on tablets.
+   */
+  variant?: 'dialog' | 'sheet' | 'auto';
 }
 
 /**
- * Bottom sheet — the app's primary way of presenting secondary content.
- * Sheets beat full-screen modals on mobile because they keep the originating
- * context visible behind the scrim.
+ * Modal surface behind every popup in the app: confirmations, option pickers
+ * and the new-lead alert.
  *
- * On tablets it centres as a dialog instead, where a full-width sheet would
- * span an uncomfortable distance.
+ * Layout rule that matters: the card is a bounded flex column, so the header
+ * and footer must never shrink while the content region must. Without that the
+ * content keeps its full intrinsic height and pushes the footer beyond the
+ * card's `overflow: hidden` edge — which is what clips action buttons in half.
  */
 export default function Sheet({
   visible,
@@ -51,6 +60,7 @@ export default function Sheet({
   scrollable = true,
   footer,
   dismissOnBackdropPress = true,
+  variant = 'auto',
 }: SheetProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -92,13 +102,21 @@ export default function Sheet({
 
   if (!mounted) return null;
 
-  const maxHeight = height * maxHeightRatio;
-  const asDialog = true;
+  const asDialog = variant === 'auto' ? !isCompact : variant === 'dialog';
+
+  // Measured against the height the user can actually see. Using raw screen
+  // height lets a tall card run under the status bar and the gesture bar.
+  const usableHeight = Math.max(height - insets.top - insets.bottom, 320);
+  const maxHeight = usableHeight * maxHeightRatio;
 
   const translateY = progress.interpolate({
     inputRange: [0, 1],
     outputRange: [asDialog ? 24 : maxHeight, 0],
   });
+
+  // A bottom sheet touches the screen edge, so it owns the home-indicator inset.
+  // A centred dialog floats clear of it and only needs its own padding.
+  const bottomPadding = asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl);
 
   const body = (
     <Animated.View
@@ -130,26 +148,34 @@ export default function Sheet({
 
       {scrollable ? (
         <ScrollView
-          contentContainerStyle={[styles.content, !footer && { paddingBottom: asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl) }]}
+          // `flexShrink` is what lets the scroll area give up height to the
+          // footer instead of shoving it past the card's clipped edge.
+          style={styles.scrollArea}
+          contentContainerStyle={[styles.content, !footer && { paddingBottom: bottomPadding }]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
+          // Content shorter than the card should sit at its natural size rather
+          // than stretching to fill it.
+          alwaysBounceVertical={false}
         >
           {children}
         </ScrollView>
       ) : (
-        <View style={[styles.content, !footer && { paddingBottom: asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl) }]}>
+        <View style={[styles.contentStatic, styles.content, !footer && { paddingBottom: bottomPadding }]}>
           {children}
         </View>
       )}
 
       {footer ? (
-        <View style={[
-          styles.footer, 
-          { 
-            borderTopColor: colors.borderSubtle,
-            paddingBottom: asDialog ? spacing.xl : Math.max(insets.bottom, spacing.xl)
-          }
-        ]}>
+        <View
+          style={[
+            styles.footer,
+            {
+              borderTopColor: colors.borderSubtle,
+              paddingBottom: bottomPadding,
+            },
+          ]}
+        >
           {footer}
         </View>
       ) : null}
@@ -214,6 +240,9 @@ const styles = StyleSheet.create({
     maxWidth: 520,
     borderRadius: radii.xl,
     overflow: 'hidden',
+    // Guarantees breathing room on very short screens and in landscape, where
+    // a centred card can otherwise reach the top and bottom edges.
+    marginVertical: spacing.xl,
   },
   grabber: {
     width: 40,
@@ -232,6 +261,8 @@ const styles = StyleSheet.create({
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
     borderBottomWidth: 1,
+    // Fixed chrome, like the footer — only the content region may shrink.
+    flexShrink: 0,
   },
   headerText: {
     flex: 1,
@@ -243,11 +274,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
   },
+  // The scroll area is the only part allowed to give up height. `flexGrow: 0`
+  // keeps a short dialog hugging its content instead of stretching to maxHeight.
+  scrollArea: {
+    flexGrow: 0,
+    flexShrink: 1,
+  },
+  contentStatic: {
+    flexShrink: 1,
+  },
   footer: {
     flexDirection: 'row',
     gap: spacing.md,
     paddingHorizontal: spacing.xl,
     paddingTop: spacing.lg,
     borderTopWidth: 1,
+    // Never yields space — this is what stops action buttons being clipped.
+    flexShrink: 0,
   },
 });
