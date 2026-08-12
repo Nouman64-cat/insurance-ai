@@ -10,6 +10,9 @@ class ChatStreamRequest(BaseModel):
     message: Optional[str] = None
     role: str = "Agent"
     attachments: Optional[list[dict[str, Any]]] = None
+    # "web" (portal) or "mobile" (agent-app) — the mobile client is Agent-only
+    # and scoped to onboarding through Gate 6, see permission.py.
+    platform: str = "web"
 
 
 class ChatResumeRequest(BaseModel):
@@ -21,3 +24,4 @@ class ExecuteToolRequest(BaseModel):
     name: str
     args: dict[str, Any] = {}
     role: str = "Agent"
+    platform: str = "web"

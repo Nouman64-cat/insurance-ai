@@ -890,6 +890,10 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v40c-enum — add VERIFIED to eapplicationstatusenum",
         "ALTER TYPE eapplicationstatusenum ADD VALUE IF NOT EXISTS 'VERIFIED'",
     ),
+    (
+        "v40d — add invite_token to customer_e_applications",
+        "ALTER TABLE customer_e_applications ADD COLUMN IF NOT EXISTS invite_token VARCHAR(255)",
+    ),
 ]
 
 # ── Runner ────────────────────────────────────────────────────────────────────

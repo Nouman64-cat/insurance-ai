@@ -34,18 +34,23 @@ from tool_executor import ExecCtx, execute_tool
 # Stage metadata: node -> (stage id, UI label). Order matters for the
 # "what comes next" markers.
 STAGES: dict[str, tuple[str, str]] = {
-    "j_intake":   ("lead_intake",           "Stage 1 · Lead Intake"),
-    "j_case":     ("case_creation",         "Stage 2 · Case Creation"),
-    "j_proposal": ("proposal_structuring",  "Stage 3 · Proposal Structuring"),
-    "j_audit":    ("document_audit",        "Stage 4 · Document Audit"),
-    "j_risk":     ("risk_assessment",       "Stage 5 · AI Risk Assessment"),
-    "j_decide":   ("underwriting_decision", "Stage 6 · Underwriting Decision"),
-    "j_close":    ("case_closure",          "Stage 7 · Case Closure"),
+    "j_intake":             ("lead_intake",                 "Stage 1 · Lead Intake"),
+    "j_case":               ("case_creation",               "Stage 2 · Case Creation"),
+    "j_proposal":           ("proposal_structuring",        "Stage 3 · Proposal Structuring"),
+    "j_pre_underwriting":   ("pre_underwriting_clearance",  "Stage 4 · Pre-Underwriting Clearance (6 Gates)"),
+    "j_audit":              ("document_audit",              "Stage 5 · Document Audit"),
+    "j_risk":               ("risk_assessment",             "Stage 6 · AI Risk Assessment"),
+    "j_decide":             ("underwriting_decision",       "Stage 7 · Underwriting Decision"),
+    "j_close":              ("case_closure",                "Stage 8 · Case Closure"),
 }
 
 
 def _ctx(state: ChatState) -> ExecCtx:
-    return ExecCtx(tenant_id=state.get("tenant_id", ""), jwt_token=state.get("jwt_token", ""))
+    return ExecCtx(
+        tenant_id=state.get("tenant_id", ""),
+        jwt_token=state.get("jwt_token", ""),
+        role=state.get("user_role") or "Agent",
+    )
 
 
 def _log(state: ChatState, entry: str) -> list[str]:
@@ -163,10 +168,10 @@ async def j_proposal(state: ChatState) -> dict:
         product = {"product_name": policy.get("product_name"), "coverage_amount": policy.get("coverage_amount"),
                    "term_years": policy.get("term_years")}
         return {
-            "journey_stage": "document_audit",
+            "journey_stage": "pre_underwriting_clearance",
             "journey_product": product,
             "journey_audit": _log(state, f"Existing proposal kept: {policy.get('product_name')}"),
-            **_mark("j_proposal", next_node="j_audit"),
+            **_mark("j_proposal", next_node="j_pre_underwriting"),
         }
 
     proposal_args = {
@@ -185,18 +190,37 @@ async def j_proposal(state: ChatState) -> dict:
         "term_years": args.get("term_years") or 10,
     }
     return {
-        "journey_stage": "document_audit",
+        "journey_stage": "pre_underwriting_clearance",
         "journey_product": product,
         "journey_audit": _log(
             state,
             f"Proposal structured: {product['product_name']}, PKR {product['coverage_amount']:,.0f} × {product['term_years']}y",
         ),
-        **_mark("j_proposal", next_node="j_audit"),
+        **_mark("j_proposal", next_node="j_pre_underwriting"),
+    }
+
+
+async def j_pre_underwriting(state: ChatState) -> dict:
+    """Stage 4 — 6-gate Pre-Underwriting clearance (E-App, ACR, Compliance, IPP, History, Medical)."""
+    ctx = _ctx(state)
+    case_no = state.get("journey_case_number")
+    cnic = state.get("journey_cnic")
+    lookup = {"case_number": case_no} if case_no else {"cnic": cnic}
+
+    res = await execute_tool("run_pre_underwriting_clearance", lookup, ctx)
+    if not res.get("success"):
+        return _fail(state, "j_pre_underwriting", res.get("error") or "Could not complete pre-underwriting clearance.")
+
+    return {
+        "journey_stage": "document_audit",
+        "journey_pre_underwriting": res.get("pre_underwriting_status") or {},
+        "journey_audit": _log(state, f"Pre-Underwriting clearance passed — all 6 gates verified for {case_no or cnic}"),
+        **_mark("j_pre_underwriting", next_node="j_audit"),
     }
 
 
 async def j_audit(state: ChatState) -> dict:
-    """Stage 4 — gap analysis on required documents. Missing docs suspend the
+    """Stage 5 — gap analysis on required documents. Missing docs suspend the
     pipeline (spec: Pending Documents wait state)."""
     ctx = _ctx(state)
     res = await execute_tool("get_document_checklist", {"cnic": state.get("journey_cnic")}, ctx)
@@ -353,6 +377,8 @@ def route_resume(state: ChatState) -> str:
         return "j_decide"  # re-read the case; status may have changed
     if not state.get("journey_case_id"):
         return "j_intake"
+    if not state.get("journey_pre_underwriting"):
+        return "j_pre_underwriting"
     return "j_audit"
 
 
@@ -445,6 +471,7 @@ def register_journey(builder) -> None:
     """Attach all journey nodes and edges to the main StateGraph builder."""
     for node_name, fn in [
         ("j_intake", j_intake), ("j_case", j_case), ("j_proposal", j_proposal),
+        ("j_pre_underwriting", j_pre_underwriting),
         ("j_audit", j_audit), ("j_risk", j_risk), ("j_decide", j_decide),
         ("j_close", j_close), ("j_resume", j_resume), ("j_finish", j_finish),
     ]:
@@ -452,13 +479,14 @@ def register_journey(builder) -> None:
 
     builder.add_conditional_edges("j_intake", route_error("j_case"), {"j_case": "j_case", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_case", route_error("j_proposal"), {"j_proposal": "j_proposal", "j_finish": "j_finish"})
-    builder.add_conditional_edges("j_proposal", route_error("j_audit"), {"j_audit": "j_audit", "j_finish": "j_finish"})
+    builder.add_conditional_edges("j_proposal", route_error("j_pre_underwriting"), {"j_pre_underwriting": "j_pre_underwriting", "j_finish": "j_finish"})
+    builder.add_conditional_edges("j_pre_underwriting", route_error("j_audit"), {"j_audit": "j_audit", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_audit", route_after_audit, {"j_risk": "j_risk", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_risk", route_error("j_decide"), {"j_decide": "j_decide", "j_finish": "j_finish"})
     builder.add_conditional_edges("j_decide", route_after_decide, {"j_close": "j_close", "j_finish": "j_finish"})
     builder.add_edge("j_close", "j_finish")
     builder.add_conditional_edges(
         "j_resume", route_resume,
-        {"j_intake": "j_intake", "j_audit": "j_audit", "j_decide": "j_decide", "j_close": "j_close"},
+        {"j_intake": "j_intake", "j_pre_underwriting": "j_pre_underwriting", "j_audit": "j_audit", "j_decide": "j_decide", "j_close": "j_close"},
     )
     builder.add_edge("j_finish", "agent")

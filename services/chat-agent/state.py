@@ -9,6 +9,7 @@ class ChatState(TypedDict, total=False):
     messages: Annotated[list[AnyMessage], add_messages]
     tenant_id: str
     user_role: str
+    platform: str  # "web" or "mobile" — see permission.py
     jwt_token: str
     last_action: Optional[dict[str, Any]]
 
@@ -26,6 +27,7 @@ class ChatState(TypedDict, total=False):
     journey_case_number: Optional[str]
     journey_product: Optional[dict[str, Any]]
     journey_missing_documents: list[str]
+    journey_pre_underwriting: Optional[dict[str, Any]]
     journey_risk: Optional[dict[str, Any]]
     journey_outcome: Optional[str]  # Approved | Rejected | Under Review | Pending Documents
     requires_human_intervention: bool

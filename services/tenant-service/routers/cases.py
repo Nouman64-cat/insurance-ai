@@ -92,6 +92,16 @@ async def create_case(
         if existing_case:
             return existing_case
 
+    # Falls back to the customer's own assigned agent when the caller doesn't
+    # name one explicitly (e.g. the chatbot's create_case tool never has —
+    # only add_customer resolves an agent) — otherwise the case is born
+    # unassigned and silently drops out of that agent's scoped case list.
+    assigned_agent_id = body.assignedAgentId
+    if assigned_agent_id is None:
+        customer = await session.get(Customer, body.customer_id)
+        if customer:
+            assigned_agent_id = customer.assigned_agent_id
+
     case = Case(
         tenant_id=tenant_id,
         customer_id=body.customer_id,
@@ -102,7 +112,7 @@ async def create_case(
         priorityLevel=body.priorityLevel,
         sourceChannel=body.sourceChannel,
         assignedTeamld=body.assignedTeamld,
-        assignedAgentId=body.assignedAgentId,
+        assignedAgentId=assigned_agent_id,
         createdAt=datetime.utcnow(),
         updatedAt=datetime.utcnow()
     )
@@ -526,11 +536,17 @@ async def get_case_detail(
     acr_status_val = acr.status.value if acr else "NotStarted"
     ipp_status_val = ipp.status.value if ipp else "NotStarted"
     
+    # Derived from compliance_engine.effective_status — the same rule the case
+    # list, the Stage A panel, and /compliance/run apply. This used to use its
+    # own looser inline check (raw .status instead of effective_status), so a
+    # fresh engine PASS with no officer cleared_by read as "Passed" here while
+    # every other view of the same rows still showed "Flagged".
+    cc_effective = [compliance_engine.effective_status(c) for c in comp_checks]
     if not comp_checks:
         comp_status_val = "NotStarted"
-    elif any(c.status == ComplianceStatusEnum.FAILED for c in comp_checks):
+    elif any(s == ComplianceStatusEnum.FAILED for s in cc_effective):
         comp_status_val = "Failed"
-    elif any(c.status == ComplianceStatusEnum.FLAGGED and not c.cleared_by for c in comp_checks):
+    elif any(s == ComplianceStatusEnum.FLAGGED for s in cc_effective):
         comp_status_val = "Flagged"
     else:
         comp_status_val = "Passed"
@@ -550,7 +566,7 @@ async def get_case_detail(
     medical_cleared = med_status_val in ("NotRequired", "Completed", "Waived")
 
     is_pre_underwriting_ready = (
-        e_app_status_val == "Submitted" and
+        e_app_status_val == "Verified" and
         acr_status_val == "Submitted" and
         comp_status_val == "Passed" and
         ipp_status_val == "Realized" and

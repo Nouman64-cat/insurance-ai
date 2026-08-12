@@ -426,6 +426,7 @@ async def list_assessments(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     case_id: Optional[UUID] = Query(None),
+    assigned_user: Optional[UUID] = Query(None, description="Filter to assessments whose case is assigned to this agent"),
     segment: Optional[Literal["individual", "family", "organization"]] = Query(
         None, description="Filter by customer segment: individual | family | organization"
     ),
@@ -438,6 +439,8 @@ async def list_assessments(
     )
     if case_id:
         stmt = stmt.where(RiskAssessment.case_id == case_id)
+    if assigned_user:
+        stmt = stmt.join(Case, Case.caseld == RiskAssessment.case_id).where(Case.assignedAgentId == assigned_user)
     stmt = _apply_segment_filter(stmt, segment)
     stmt = stmt.order_by(RiskAssessment.created_at.desc()).offset(skip).limit(limit)
     assessments = (await session.exec(stmt)).all()

@@ -33,14 +33,16 @@ import AddProposalScreen from '../screens/AddProposalScreen';
 import CasesScreen from '../screens/CasesScreen';
 import AddCaseScreen from '../screens/AddCaseScreen';
 import UnderwritingScreen from '../screens/UnderwritingScreen';
-import PrePolicyIssuanceScreen from '../screens/PrePolicyIssuanceScreen';
-import PostPolicyIssuanceScreen from '../screens/PostPolicyIssuanceScreen';
+import PolicyIssuanceScreen from '../screens/PolicyIssuanceScreen';
+import CommissionScreen from '../screens/CommissionScreen';
+import SECPRateCardScreen from '../screens/SECPRateCardScreen';
 import ChatScreen from '../screens/ChatScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import AboutScreen from '../screens/AboutScreen';
 import HelpScreen from '../screens/HelpScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AgentConfidentialReportScreen from '../screens/AgentConfidentialReportScreen';
+import ReviewEApplicationScreen from '../screens/ReviewEApplicationScreen';
 import CustomDrawer from './CustomDrawer';
 
 // ── Route types ──────────────────────────────────────────────────────────────
@@ -56,10 +58,21 @@ export type RootStackParamList = {
   AddProposal: undefined;
   AddCase: undefined;
   Underwriting: undefined;
-  PrePolicyIssuance: undefined;
-  PostPolicyIssuance: undefined;
+  PolicyIssuance: undefined;
+  Commission: undefined;
+  SECPRateCard: undefined;
   Notifications: undefined;
-  AgentConfidentialReport: { caseId: string; applicantName?: string };
+  AgentConfidentialReport: {
+    caseId: string;
+    applicantName?: string;
+    /** Set when opened from the Copilot chat to fill a paused submit_agent_confidential_report
+     * turn — called once, exactly once, with the outcome so the chat can resume itself. */
+    onResolved?: (result: { success: boolean; message: string; status?: string }) => void;
+  };
+  ReviewEApplication: {
+    caseId: string;
+    applicantName?: string;
+  };
 };
 
 export type AuthStackParamList = {
@@ -78,7 +91,9 @@ export type MainTabParamList = {
   Leads: undefined;
   Proposals: undefined;
   Cases: undefined;
-  Chat: undefined;
+  // Set when another screen (e.g. Pre-Underwriting) wants the composer
+  // pre-filled with a specific command instead of starting from a blank chat.
+  Chat: { prefillMessage?: string } | undefined;
 };
 
 const RootStack = createNativeStackNavigator<RootStackParamList>();
@@ -111,6 +126,10 @@ function MainTabs() {
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
+        // The Chat tab's composer already handles the keyboard itself —
+        // without this the bottom tab bar stays mounted and steals space
+        // from it while typing.
+        tabBarHideOnKeyboard: true,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textSubtle,
         tabBarStyle: {
@@ -241,14 +260,16 @@ function AppFlow() {
         <RootStack.Screen name="AddProposal" component={AddProposalScreen} />
         <RootStack.Screen name="AddCase" component={AddCaseScreen} />
         <RootStack.Screen name="Underwriting" component={UnderwritingScreen} />
-        <RootStack.Screen name="PrePolicyIssuance" component={PrePolicyIssuanceScreen} />
-        <RootStack.Screen name="PostPolicyIssuance" component={PostPolicyIssuanceScreen} />
+        <RootStack.Screen name="PolicyIssuance" component={PolicyIssuanceScreen} />
+        <RootStack.Screen name="Commission" component={CommissionScreen} />
+        <RootStack.Screen name="SECPRateCard" component={SECPRateCardScreen} />
         <RootStack.Screen
           name="Notifications"
           component={NotificationsScreen}
           options={{ animation: 'slide_from_bottom' }}
         />
         <RootStack.Screen name="AgentConfidentialReport" component={AgentConfidentialReportScreen} />
+        <RootStack.Screen name="ReviewEApplication" component={ReviewEApplicationScreen} />
       </RootStack.Navigator>
 
       {/* Rendered as siblings of the navigator so they float above every

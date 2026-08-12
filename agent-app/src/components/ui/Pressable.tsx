@@ -18,6 +18,8 @@ export interface PressableProps extends Omit<RNPressableProps, 'style'> {
   children?: React.ReactNode;
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(RNPressable);
+
 /**
  * Pressable with the spring-in/spring-out response native apps have and RN's
  * `TouchableOpacity` does not. Uses the native driver so the animation stays
@@ -60,7 +62,7 @@ export default function Pressable({
   };
 
   return (
-    <RNPressable
+    <AnimatedPressable
       onPressIn={(e) => {
         if (!disabled) animateTo(pressedScale, pressedOpacity, false);
         onPressIn?.(e);
@@ -72,19 +74,16 @@ export default function Pressable({
       disabled={disabled}
       // Ripple would fight the scale transform on Android, so it is opt-in only.
       android_ripple={android_ripple ?? null}
+      style={[
+        style,
+        { transform: [{ scale }], opacity },
+        // Android clips shadows on transformed views unless elevation is
+        // preserved on the animated layer itself.
+        Platform.OS === 'android' ? { backfaceVisibility: 'hidden' as any } : null,
+      ]}
       {...props}
     >
-      <Animated.View
-        style={[
-          style,
-          { transform: [{ scale }], opacity },
-          // Android clips shadows on transformed views unless elevation is
-          // preserved on the animated layer itself.
-          Platform.OS === 'android' ? { backfaceVisibility: 'hidden' } : null,
-        ]}
-      >
-        {children}
-      </Animated.View>
-    </RNPressable>
+      {children}
+    </AnimatedPressable>
   );
 }

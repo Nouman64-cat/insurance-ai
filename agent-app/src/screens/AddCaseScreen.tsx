@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { spacing } from '../theme/tokens';
 import { useNotifications } from '../notifications/NotificationContext';
 import { createCase } from '../api/cases';
+import { fetchLeads, UnifiedLead } from '../api/leads';
 import {
   Screen,
   ScreenHeader,
@@ -37,6 +38,13 @@ const PRIORITY_TONE = {
   Critical: 'danger',
 } as const;
 
+const formatCnic = (val: string) => {
+  const digits = val.replace(/\D/g, '');
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12, 13)}`;
+};
+
 export default function AddCaseScreen() {
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
@@ -46,14 +54,62 @@ export default function AddCaseScreen() {
   const [caseType, setCaseType] = useState(CASE_TYPES[0].value);
   const [priority, setPriority] = useState('Normal');
 
-  const [errors, setErrors] = useState<{ applicantName?: string }>({});
+  const [errors, setErrors] = useState<{ applicantName?: string; cnic?: string }>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [leads, setLeads] = useState<UnifiedLead[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState<string>('');
+
+  React.useEffect(() => {
+    fetchLeads().then(setLeads).catch(console.error);
+  }, []);
+
+  const leadOptions = React.useMemo(() => {
+    return leads
+      .filter((l) => l.type === 'INDIVIDUAL')
+      .map((l) => ({
+        label: l.name,
+        value: l.id,
+        description: l.primaryIdentifier ? `CNIC: ${l.primaryIdentifier}` : 'No CNIC',
+        icon: 'person-outline' as any,
+      }));
+  }, [leads]);
+
+  const handleLeadSelect = (val: string) => {
+    setSelectedLeadId(val);
+    if (!val) {
+      setApplicantName('');
+      setCnic('');
+      return;
+    }
+    const lead = leads.find((l) => l.id === val);
+    if (lead) {
+      setApplicantName(lead.name);
+      if (lead.primaryIdentifier) {
+        setCnic(formatCnic(lead.primaryIdentifier));
+      } else {
+        setCnic('');
+      }
+      setErrors({});
+    }
+  };
+
   const submit = useCallback(async () => {
+    const next: typeof errors = {};
+    
     if (!applicantName.trim()) {
-      setErrors({ applicantName: 'Applicant name is required.' });
-      toast('Enter the applicant name', { tone: 'warning', icon: 'alert-circle' });
+      next.applicantName = 'Applicant name is required.';
+    }
+
+    const trimmedCnic = cnic.trim();
+    if (trimmedCnic && !/^\d{5}-\d{7}-\d{1}$/.test(trimmedCnic)) {
+      next.cnic = 'CNIC must be in XXXXX-XXXXXXX-X format.';
+    }
+
+    setErrors(next);
+    if (Object.keys(next).length > 0) {
+      toast('Check the highlighted fields', { tone: 'warning', icon: 'alert-circle' });
       return;
     }
 
@@ -65,6 +121,7 @@ export default function AddCaseScreen() {
         customer_cnic: cnic.trim() || undefined,
         case_type: caseType,
         priority,
+        customer_id: selectedLeadId || undefined,
       });
       toast('Case created', { tone: 'success', icon: 'checkmark-circle' });
       // The Cases screen refetches on focus, so going back is enough.
@@ -74,7 +131,7 @@ export default function AddCaseScreen() {
     } finally {
       setSaving(false);
     }
-  }, [applicantName, cnic, caseType, priority, toast, navigation]);
+  }, [applicantName, cnic, caseType, priority, selectedLeadId, toast, navigation]);
 
   return (
     <Screen
@@ -108,6 +165,17 @@ export default function AddCaseScreen() {
       ) : null}
 
       <Card padding="lg" style={styles.card}>
+        <Select
+          label="Existing Lead (Optional)"
+          placeholder="Select to auto-fill..."
+          value={selectedLeadId}
+          onSelect={handleLeadSelect}
+          options={leadOptions}
+          searchable
+          clearable
+          leftIcon="people-outline"
+          helperText="Pick a lead to quickly populate applicant details."
+        />
         <Field
           label="Applicant name"
           required
@@ -125,7 +193,13 @@ export default function AddCaseScreen() {
           label="CNIC"
           placeholder="35201-1234567-1"
           value={cnic}
-          onChangeText={setCnic}
+          onChangeText={(v) => {
+            const formatted = formatCnic(v);
+            setCnic(formatted);
+            if (errors.cnic) setErrors((e) => ({ ...e, cnic: undefined }));
+          }}
+          error={errors.cnic}
+          maxLength={15}
           leftIcon="card-outline"
           keyboardType="numbers-and-punctuation"
           helperText="Optional — links the case to an existing customer record."

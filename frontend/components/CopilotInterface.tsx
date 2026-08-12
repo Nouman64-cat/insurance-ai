@@ -14,6 +14,7 @@ import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { IssuanceModal, SuccessModal, PaymentModal } from "./policy/IssuanceModals";
 import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/policies";
+import { ACRModal } from "./entities/ACRModal";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -98,14 +99,64 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
       { label: "Create another case", actionType: "submit", payload: "Create a case" },
     ];
   }
-  if (text.includes("proposal") && text.includes("created")) {
+  if (text.includes("proposal") && (text.includes("created") || text.includes("ready") || text.includes("structured"))) {
     return [
-      { label: "Run risk assessment", actionType: "submit", payload: "Run risk assessment" },
-      { label: "Upload documents first", actionType: "submit", payload: "What documents are needed?" },
+      { label: "1. Generate E-App Link (Gate 1)", actionType: "submit", payload: "Generate e-application link for this case" },
+      { label: "Check Pre-Underwriting Status", actionType: "submit", payload: "Check pre-underwriting status" },
+      { label: "Clear All Gates", actionType: "submit", payload: "Clear all pre-underwriting gates for this case" },
       { label: "View proposal", actionType: "navigate", payload: "proposal" },
     ];
   }
-  if (text.includes("assessment") && (text.includes("complete") || text.includes("triggered"))) {
+  if (text.includes("link generated") || (text.includes("e-application") && (text.includes("link") || text.includes("pending")))) {
+    return [
+      { label: "Verify E-Application", actionType: "submit", payload: "Verify e-application for this case" },
+      { label: "2. Submit ACR (Gate 2)", actionType: "submit", payload: "Submit agent confidential report for this case" },
+      { label: "Check Status", actionType: "submit", payload: "Check pre-underwriting status" },
+    ];
+  }
+  if (text.includes("gate 1") || (text.includes("e-application") && text.includes("verified"))) {
+    return [
+      { label: "2. Submit ACR (Gate 2)", actionType: "submit", payload: "Submit agent confidential report for this case" },
+      { label: "Check Status", actionType: "submit", payload: "Check pre-underwriting status" },
+      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+  if (text.includes("gate 2") || (text.includes("acr") && text.includes("submitted"))) {
+    return [
+      { label: "3. Compliance Screen (Gate 3)", actionType: "submit", payload: "Run compliance screening for this case" },
+      { label: "Check Status", actionType: "submit", payload: "Check pre-underwriting status" },
+      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+  if (text.includes("gate 3") || (text.includes("compliance") && (text.includes("passed") || text.includes("screening")))) {
+    return [
+      { label: "4. Initial Premium (Gate 4)", actionType: "submit", payload: "Process initial premium payment for this case" },
+      { label: "Check Status", actionType: "submit", payload: "Check pre-underwriting status" },
+      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+  if (text.includes("gate 4") || (text.includes("initial premium") || text.includes("ipp"))) {
+    return [
+      { label: "5. Insurance History (Gate 5)", actionType: "submit", payload: "Run insurance history check for this case" },
+      { label: "Check Status", actionType: "submit", payload: "Check pre-underwriting status" },
+      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+  if (text.includes("gate 5") || text.includes("insurance history")) {
+    return [
+      { label: "6. Medical Exam (Gate 6)", actionType: "submit", payload: "Assess medical examination for this case" },
+      { label: "Check Status", actionType: "submit", payload: "Check pre-underwriting status" },
+      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+  if (text.includes("gate 6") || text.includes("gates cleared") || text.includes("pre-underwriting") || text.includes("gate")) {
+    return [
+      { label: "Run Risk Assessment", actionType: "submit", payload: "Run risk assessment" },
+      { label: "Check Status", actionType: "submit", payload: "Check pre-underwriting status" },
+      { label: "View Case", actionType: "navigate", payload: "underwriting" },
+    ];
+  }
+  if (text.includes("assessment") && (text.includes("complete") || text.includes("triggered") || text.includes("done"))) {
     return [
       { label: "Move to review", actionType: "submit", payload: "Update case status to Under Review" },
       { label: "Upload documents", actionType: "submit", payload: "Upload required documents" },
@@ -119,8 +170,10 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
       { label: "Request documents", actionType: "submit", payload: "Request more documents" },
     ];
   }
-  if (text.includes("approved") || text.includes("rejected")) {
+  if (text.includes("approved") || text.includes("rejected") || text.includes("declined")) {
     return [
+      { label: "Pre-Issuance Verification", actionType: "submit", payload: "Verify pre-issuance requirements for this case" },
+      { label: "Issue Policy", actionType: "submit", payload: "Issue the policy" },
       { label: "Close the case", actionType: "submit", payload: "Close the case" },
       { label: "Start new application", actionType: "submit", payload: "Add a new customer" },
     ];
@@ -174,6 +227,7 @@ export function CopilotInterface() {
   const [issuanceModalPolicy, setIssuanceModalPolicy] = useState<any | null>(null);
   const [successModalResult, setSuccessModalResult] = useState<{ result: IssuanceResult | PaymentConfirmResult, policyName: string, caseNumber: string, isPayment?: boolean } | null>(null);
   const [paymentModalPolicy, setPaymentModalPolicy] = useState<any | null>(null);
+  const [acrModalCase, setAcrModalCase] = useState<{ caseId: string; caseNumber: string } | null>(null);
 
   useEffect(() => {
     if (selectedFile && selectedFile.type.startsWith("image/")) {
@@ -548,6 +602,11 @@ export function CopilotInterface() {
       setIssuanceModalPolicy(pendingInterrupt.toolCall.args.policy);
     } else if (pendingInterrupt.toolCall.name === "confirm_policy_payment") {
       setPaymentModalPolicy(pendingInterrupt.toolCall.args.policy);
+    } else if (pendingInterrupt.toolCall.name === "submit_agent_confidential_report") {
+      setAcrModalCase({
+        caseId: pendingInterrupt.toolCall.args.case_id,
+        caseNumber: pendingInterrupt.toolCall.args.case_number,
+      });
     }
   }, [pendingInterrupt]);
 
@@ -870,6 +929,37 @@ export function CopilotInterface() {
                     { label: "View Active Policy", actionType: "submit", payload: `Show me the active policy status for case ${caseNum}` },
                     { label: "Open Post-Issuance", actionType: "navigate", payload: "policy-management/post-issuance" }
                   ]
+                });
+              }}
+            />
+          )}
+          {acrModalCase && (
+            <ACRModal
+              caseId={acrModalCase.caseId}
+              initial={null}
+              onClose={() => {
+                setAcrModalCase(null);
+                resolveInterrupt({ success: false, message: "Okay, the ACR form was closed without submitting." });
+              }}
+              onDone={() => {
+                const caseNum = acrModalCase.caseNumber;
+                const caseId = acrModalCase.caseId;
+                setAcrModalCase(null);
+                resolveInterrupt({
+                  success: true,
+                  message: `✅ **Gate 2: Agent Confidential Report (ACR) Submitted** for case **${caseNum}**.\n\n👉 Next Gate: **Gate 3: Compliance / PEP Screening**.`,
+                  status: "Submitted",
+                  last_action: {
+                    tool_name: "submit_agent_confidential_report",
+                    entity_type: "case",
+                    entity_id: caseId,
+                    route: `case/${caseId}`,
+                    label: "ACR submitted",
+                  },
+                  quick_actions: [
+                    { label: "3. Compliance Screen (Gate 3)", actionType: "submit", payload: `Run compliance screening for case ${caseNum}` },
+                    { label: "Check Gate Status", actionType: "submit", payload: `Check pre-underwriting status for case ${caseNum}` },
+                  ],
                 });
               }}
             />
@@ -1419,6 +1509,38 @@ export function CopilotInterface() {
       <div className="absolute inset-0 bg-slate-50" />
 
       {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
+
+      {acrModalCase && (
+        <ACRModal
+          caseId={acrModalCase.caseId}
+          initial={null}
+          onClose={() => {
+            setAcrModalCase(null);
+            resolveInterrupt({ success: false, message: "Okay, the ACR form was closed without submitting." });
+          }}
+          onDone={() => {
+            const caseNum = acrModalCase.caseNumber;
+            const caseId = acrModalCase.caseId;
+            setAcrModalCase(null);
+            resolveInterrupt({
+              success: true,
+              message: `✅ **Gate 2: Agent Confidential Report (ACR) Submitted** for case **${caseNum}**.\n\n👉 Next Gate: **Gate 3: Compliance / PEP Screening**.`,
+              status: "Submitted",
+              last_action: {
+                tool_name: "submit_agent_confidential_report",
+                entity_type: "case",
+                entity_id: caseId,
+                route: `case/${caseId}`,
+                label: "ACR submitted",
+              },
+              quick_actions: [
+                { label: "3. Compliance Screen (Gate 3)", actionType: "submit", payload: `Run compliance screening for case ${caseNum}` },
+                { label: "Check Gate Status", actionType: "submit", payload: `Check pre-underwriting status for case ${caseNum}` },
+              ],
+            });
+          }}
+        />
+      )}
 
       {/* ── Phone Frame / Desktop Frame ────────────────────────────────────────────────── */}
       <div className={`relative z-10 flex-1 flex flex-col ${isAutomationMode ? "max-w-4xl mx-auto w-full pt-8 pb-4" : "items-center justify-center p-3 sm:p-5"} min-h-0`}>

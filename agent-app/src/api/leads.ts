@@ -245,6 +245,7 @@ export const createIndividualLead = async (data: any) => {
     return api.post(`/tenants/${tenantId}/customers`, {
       first_name: data.firstName,
       last_name: data.lastName,
+      cnic: data.cnic || null,
       profile_status: 'LEAD',
       assigned_agent_id: data.assignedAgentId || agentId || null,
       details: {

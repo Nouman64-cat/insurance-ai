@@ -33,6 +33,9 @@ export type { SelectProps, SelectOption } from './Select';
 export { default as Sheet } from './Sheet';
 export type { SheetProps } from './Sheet';
 
+export { default as LinkShareSheet } from './LinkShareSheet';
+export type { LinkShareSheetProps } from './LinkShareSheet';
+
 export { default as ConfirmDialog } from './ConfirmDialog';
 export type { ConfirmDialogProps } from './ConfirmDialog';
 

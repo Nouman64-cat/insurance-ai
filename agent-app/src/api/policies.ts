@@ -1,5 +1,6 @@
 import api from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { agentScopeParams } from './agentScope';
 
 export interface PolicyItem {
   id: string;
@@ -21,7 +22,8 @@ export const fetchPolicies = async (): Promise<PolicyItem[]> => {
   if (!tenantId) throw new Error('No tenant ID found');
 
   try {
-    const res = await api.get(`/tenants/${tenantId}/cases`);
+    const scope = await agentScopeParams('assigned_user');
+    const res = await api.get(`/tenants/${tenantId}/cases`, { params: scope });
     const cases = res.data || [];
 
     return cases.map((c: any) => {
@@ -29,7 +31,7 @@ export const fetchPolicies = async (): Promise<PolicyItem[]> => {
       const isActive = status === 'ACTIVE' || status === 'ISSUED';
       return {
         id: c.caseld || c.id,
-        policy_number: c.policy_number || (isActive ? `POL-2026-${c.id?.slice(0, 6)}` : undefined),
+        policy_number: c.policy_number || (isActive ? `PL-2026-${c.id?.slice(0, 6)}` : undefined),
         customer_name: c.applicant_name || c.customer_name || 'Customer',
         customer_cnic: c.customer_cnic || c.cnic,
         product_name: c.product_name || 'Term Life Plus',

@@ -4,6 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import { spacing } from '../theme/tokens';
 import { useNotifications } from '../notifications/NotificationContext';
 import { createProposal } from '../api/proposals';
+import { fetchLeads, UnifiedLead } from '../api/leads';
 import {
   Screen,
   ScreenHeader,
@@ -37,6 +38,13 @@ const describeAmount = (raw: string): string | undefined => {
   return value.toLocaleString();
 };
 
+const formatCnic = (val: string) => {
+  const digits = val.replace(/\D/g, '');
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12, 13)}`;
+};
+
 export default function AddProposalScreen() {
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
@@ -50,6 +58,43 @@ export default function AddProposalScreen() {
   const [errors, setErrors] = useState<{ customerName?: string; coverageAmount?: string }>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const [leads, setLeads] = useState<UnifiedLead[]>([]);
+  const [selectedLeadId, setSelectedLeadId] = useState<string>('');
+
+  React.useEffect(() => {
+    fetchLeads().then(setLeads).catch(console.error);
+  }, []);
+
+  const leadOptions = React.useMemo(() => {
+    return leads
+      .filter((l) => l.type === 'INDIVIDUAL')
+      .map((l) => ({
+        label: l.name,
+        value: l.id,
+        description: l.primaryIdentifier ? `CNIC: ${l.primaryIdentifier}` : 'No CNIC',
+        icon: 'person-outline' as any,
+      }));
+  }, [leads]);
+
+  const handleLeadSelect = (val: string) => {
+    setSelectedLeadId(val);
+    if (!val) {
+      setCustomerName('');
+      setCnic('');
+      return;
+    }
+    const lead = leads.find((l) => l.id === val);
+    if (lead) {
+      setCustomerName(lead.name);
+      if (lead.primaryIdentifier) {
+        setCnic(formatCnic(lead.primaryIdentifier));
+      } else {
+        setCnic('');
+      }
+      setErrors({});
+    }
+  };
 
   const submit = useCallback(async () => {
     const next: typeof errors = {};
@@ -119,6 +164,17 @@ export default function AddProposalScreen() {
       ) : null}
 
       <Card padding="lg" style={styles.card}>
+        <Select
+          label="Existing Lead (Optional)"
+          placeholder="Select to auto-fill..."
+          value={selectedLeadId}
+          onSelect={handleLeadSelect}
+          options={leadOptions}
+          searchable
+          clearable
+          leftIcon="people-outline"
+          helperText="Pick a lead to quickly populate applicant details."
+        />
         <Field
           label="Customer name"
           required
@@ -136,7 +192,8 @@ export default function AddProposalScreen() {
           label="CNIC"
           placeholder="35201-1234567-1"
           value={cnic}
-          onChangeText={setCnic}
+          onChangeText={(v) => setCnic(formatCnic(v))}
+          maxLength={15}
           leftIcon="card-outline"
           keyboardType="numbers-and-punctuation"
           helperText="Optional — helps match the proposal to an existing customer."

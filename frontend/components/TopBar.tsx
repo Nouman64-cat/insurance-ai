@@ -145,6 +145,7 @@ export function TopBar({ title = "Management Intelligence Dashboard", subtitle }
         </button>
         <button
           type="button"
+          onClick={() => window.location.reload()}
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md"
         >
           <RefreshIcon />

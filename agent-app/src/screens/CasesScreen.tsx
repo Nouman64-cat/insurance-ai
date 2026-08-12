@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View, StyleSheet, FlatList, ScrollView, TextInput, RefreshControl, Share } from 'react-native';
+import { View, StyleSheet, FlatList, ScrollView, TextInput, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
@@ -25,6 +25,7 @@ import {
   Banner,
   Divider,
   Pressable,
+  LinkShareSheet,
 } from '../components/ui';
 
 type ViewMode = 'list' | 'board';
@@ -75,6 +76,7 @@ export default function CasesScreen() {
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sendingLinkFor, setSendingLinkFor] = useState<string | null>(null);
+  const [eAppLink, setEAppLink] = useState<{ applicantName: string; url: string } | null>(null);
 
   const load = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!options.silent) setRefreshing(true);
@@ -117,9 +119,7 @@ export default function CasesScreen() {
       try {
         const invite = await inviteEApplication(item.id);
         const link = buildEApplicationLink(invite.link_path);
-        await Share.share({
-          message: `Please complete your life insurance application here: ${link}`,
-        });
+        setEAppLink({ applicantName: item.applicant_name, url: link });
       } catch (err: any) {
         toast('Could not generate the link', {
           body: err?.message ?? 'Please try again.',
@@ -215,6 +215,7 @@ export default function CasesScreen() {
   const gridColumns = viewMode === 'list' && !isCompact ? columns(320) : 1;
 
   return (
+    <>
     <Screen
       scrollable={false}
       padded={false}
@@ -353,7 +354,22 @@ export default function CasesScreen() {
         />
       )}
 
+      <Fab
+        icon="add"
+        onPress={() => navigation.navigate('AddCase')}
+        accessibilityLabel="Create a new case"
+      />
     </Screen>
+
+    <LinkShareSheet
+      visible={!!eAppLink}
+      onClose={() => setEAppLink(null)}
+      title="E-Application link ready"
+      subtitle={eAppLink ? `For ${eAppLink.applicantName}` : undefined}
+      url={eAppLink?.url ?? ''}
+      onCopied={() => toast('Link copied', { tone: 'success', icon: 'copy-outline' })}
+    />
+    </>
   );
 }
 

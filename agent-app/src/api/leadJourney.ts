@@ -1,5 +1,6 @@
 import api from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { agentScopeParams } from './agentScope';
 import { EntityType, ProfileStatus } from './leads';
 
 /**
@@ -176,8 +177,13 @@ export const fetchLeadJourney = async (input: FetchJourneyInput): Promise<LeadJo
     });
     policies = (Array.isArray(res.data) ? res.data : []).map(toJourneyPolicy);
   } else if (input.type === 'FAMILY') {
-    // Family policies are held against member customers, tagged with the group.
-    const res = await api.get(`/tenants/${tenantId}/policies`);
+    // Family policies are held against member customers, tagged with the
+    // group. The backend's own `family_group_id` filter doesn't match this
+    // field (see policies.ts list_policies), so this still filters
+    // client-side — but scoped to the agent's own book first, rather than
+    // pulling every other agent's policies down to the device to do it.
+    const scope = await agentScopeParams('assigned_agent_id');
+    const res = await api.get(`/tenants/${tenantId}/policies`, { params: scope });
     policies = (Array.isArray(res.data) ? res.data : [])
       .filter((p: RawPolicy) => p.family_group_id === input.leadId)
       .map(toJourneyPolicy);

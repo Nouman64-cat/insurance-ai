@@ -112,6 +112,7 @@ class CustomerIn(BaseModel):
     declared_income: Optional[float] = Field(
         default=None, ge=0, description="Annual declared income in PKR.", examples=[1200000]
     )
+    assigned_agent_id: Optional[UUID] = None
 
 
 class PolicyIn(BaseModel):
