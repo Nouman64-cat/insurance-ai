@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -76,8 +76,27 @@ export default function AgentConfidentialReportScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<ACRRoute>();
-  const { caseId, applicantName } = route.params ?? ({} as ACRRoute['params']);
+  const { caseId, applicantName, onResolved } = route.params ?? ({} as ACRRoute['params']);
   const { toast } = useNotifications();
+
+  // Fires onResolved exactly once — whichever comes first, a successful
+  // submit or the user leaving (back gesture, header back, hardware back).
+  const resolvedRef = useRef(false);
+  const resolveOnce = useCallback(
+    (result: { success: boolean; message: string; status?: string }) => {
+      if (resolvedRef.current || !onResolved) return;
+      resolvedRef.current = true;
+      onResolved(result);
+    },
+    [onResolved]
+  );
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', () => {
+      resolveOnce({ success: false, message: 'The Agent Confidential Report form was closed without submitting.' });
+    });
+    return unsubscribe;
+  }, [navigation, resolveOnce]);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -93,9 +112,12 @@ export default function AgentConfidentialReportScreen() {
     occupationVerified: true,
     incomeSourceVerified: true,
     hazardousKnown: false,
+    termsExplained: false,
+    identityVerified: false,
+    signatureObtained: false,
   });
   const [recommendation, setRecommendation] = useState<ACRRecommendation>('Recommend');
-  const [errors, setErrors] = useState<{ estimatedIncome?: string; adverseInfoDetails?: string }>({});
+  const [errors, setErrors] = useState<{ estimatedIncome?: string; adverseInfoDetails?: string; declaration?: string }>({});
 
   const setField = useCallback(<K extends keyof typeof EMPTY>(key: K, value: string) => {
     setText((prev) => ({ ...prev, [key]: value }));
@@ -136,6 +158,9 @@ export default function AgentConfidentialReportScreen() {
           occupationVerified: report.occupation_verified ?? true,
           incomeSourceVerified: report.income_source_verified ?? true,
           hazardousKnown: report.hazardous_activity_known ?? false,
+          termsExplained: report.terms_explained_to_proposer ?? false,
+          identityVerified: report.identity_verified_kyc ?? false,
+          signatureObtained: report.signature_obtained_in_presence ?? false,
         });
         setRecommendation(report.recommendation ?? 'Recommend');
       })
@@ -163,6 +188,9 @@ export default function AgentConfidentialReportScreen() {
     income_consistency_note: text.incomeNote || undefined,
     health_appearance_note: text.healthNote || undefined,
     hazardous_activity_known: flags.hazardousKnown,
+    terms_explained_to_proposer: flags.termsExplained,
+    identity_verified_kyc: flags.identityVerified,
+    signature_obtained_in_presence: flags.signatureObtained,
     recommendation,
     remarks: text.remarks || undefined,
   });
@@ -178,6 +206,18 @@ export default function AgentConfidentialReportScreen() {
     }
     setErrors(next);
     return Object.keys(next).length === 0;
+  };
+
+  // Only gates Submit, not Save draft — a draft can be incomplete, but the
+  // server hard-rejects submission without all three declarations, so this
+  // catches it here rather than after a round trip.
+  const validateForSubmit = (): boolean => {
+    if (!validate()) return false;
+    if (!flags.termsExplained || !flags.identityVerified || !flags.signatureObtained) {
+      setErrors((prev) => ({ ...prev, declaration: 'Confirm all three declarations below before submitting.' }));
+      return false;
+    }
+    return true;
   };
 
   const saveDraft = useCallback(async () => {
@@ -211,6 +251,11 @@ export default function AgentConfidentialReportScreen() {
         tone: 'success',
         icon: 'checkmark-circle',
       });
+      resolveOnce({
+        success: true,
+        message: `✅ **Gate 2: Agent Confidential Report (ACR) Submitted**${applicantName ? ` for case **${applicantName}**` : ''}.\n\n👉 Next Gate: **Gate 3: Compliance / PEP Screening**.`,
+        status: 'Submitted',
+      });
       navigation.goBack();
     } catch (err: any) {
       setSubmitError(err?.message ?? 'Could not submit the report.');
@@ -218,7 +263,7 @@ export default function AgentConfidentialReportScreen() {
       setSaving(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, text, flags, recommendation, toast, navigation]);
+  }, [caseId, text, flags, recommendation, toast, navigation, applicantName, resolveOnce]);
 
   const editable = !submitted && !saving;
 
@@ -258,7 +303,7 @@ export default function AgentConfidentialReportScreen() {
             />
             <Button
               title="Submit"
-              onPress={() => validate() && setConfirmSubmit(true)}
+              onPress={() => validateForSubmit() && setConfirmSubmit(true)}
               loading={saving}
               disabled={!editable}
               icon="lock-closed"
@@ -406,6 +451,35 @@ export default function AgentConfidentialReportScreen() {
         />
       </Accordion>
 
+      <Accordion title="Agent declaration" icon="shield-checkmark-outline" tone="brand" defaultExpanded>
+        <CheckboxCard
+          title="Policy terms explained"
+          subtitle="You explained all policy terms, benefits, and exclusions to the proposer."
+          checked={flags.termsExplained}
+          onPress={() => toggle('termsExplained')}
+          disabled={!editable}
+        />
+        <CheckboxCard
+          title="Identity verified (KYC)"
+          subtitle="You verified the proposer's identity for KYC compliance."
+          checked={flags.identityVerified}
+          onPress={() => toggle('identityVerified')}
+          disabled={!editable}
+        />
+        <CheckboxCard
+          title="Signature obtained in your presence"
+          subtitle="You confirm the proposer's signature was obtained in person."
+          checked={flags.signatureObtained}
+          onPress={() => toggle('signatureObtained')}
+          disabled={!editable}
+        />
+        {errors.declaration ? (
+          <Text variant="caption" color="danger" style={styles.declarationError}>
+            {errors.declaration}
+          </Text>
+        ) : null}
+      </Accordion>
+
       <Card padding="lg" style={styles.recommendation}>
         <Text variant="title3" style={styles.recommendationTitle}>
           Your recommendation
@@ -451,6 +525,9 @@ export default function AgentConfidentialReportScreen() {
 }
 
 const styles = StyleSheet.create({
+  declarationError: {
+    marginTop: spacing.sm,
+  },
   loading: {
     flex: 1,
     alignItems: 'center',

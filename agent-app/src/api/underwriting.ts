@@ -1,5 +1,6 @@
 import api from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { agentScopeParams } from './agentScope';
 
 export interface AssessmentItem {
   id: string;
@@ -16,33 +17,27 @@ export interface AssessmentItem {
   created_at: string;
 }
 
+/**
+ * Real AI risk-assessment runs only — a case with no entry here simply hasn't
+ * gone through the risk engine yet (still in Pre-Underwriting, most likely).
+ * This used to fall back to the cases list and fabricate scores/decisions for
+ * every case that had no assessment, which made the mobile Risk Engine tab
+ * show "results" for cases underwriting had never actually touched. Better to
+ * show nothing than to invent a decision.
+ */
 export const fetchAssessments = async (): Promise<AssessmentItem[]> => {
   const tenantId = await AsyncStorage.getItem('tenant_id');
   if (!tenantId) throw new Error('No tenant ID found');
+  const scope = await agentScopeParams('assigned_user');
 
-  try {
-    const res = await api.get('/assessments');
-    if (Array.isArray(res.data) && res.data.length > 0) {
-      return res.data;
-    }
-  } catch (e) {}
-
-  // Fallback to fetching cases list for underwriting overview
-  const casesRes = await api.get(`/tenants/${tenantId}/cases`);
-  const cases = casesRes.data || [];
-
-  return cases.map((c: any) => ({
-    id: c.caseld || c.id,
-    case_id: c.caseNumber || `CASE-${c.id?.slice(0, 6)}`,
-    customer_name: c.applicant_name || c.customer_name || 'Applicant',
-    customer_cnic: c.customer_cnic,
-    medical_score: c.medical_score ?? 65,
-    financial_score: c.financial_score ?? 72,
-    fraud_probability: c.fraud_probability ?? 0.08,
-    composite_risk_score: c.composite_risk_score ?? 34,
-    ai_decision: c.ai_decision || (c.status === 'APPROVED' ? 'AUTO_APPROVE' : 'HUMAN_REVIEW'),
-    reasons: c.reasons || ['Medical risk within normal limits', 'Financial coverage ratio verified'],
-    status: c.status || 'Under Review',
-    created_at: c.created_at || new Date().toISOString(),
-  }));
+  // /assessments lives on the api-gateway, not tenant-service — it reads the
+  // tenant from the X-Tenant-Id header (services/api-gateway/dependencies.py
+  // get_tenant_id), not a /tenants/{id}/... path segment. Without this header
+  // the request 422s ("field required"), which is exactly what surfaced once
+  // the old fallback here stopped silently swallowing the error.
+  const res = await api.get('/assessments', {
+    params: scope,
+    headers: { 'X-Tenant-Id': tenantId },
+  });
+  return Array.isArray(res.data) ? res.data : [];
 };

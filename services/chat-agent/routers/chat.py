@@ -186,6 +186,7 @@ async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: st
         "messages": [HumanMessage(content=message_content)],
         "tenant_id": x_tenant_id,
         "user_role": body.role,
+        "platform": body.platform,
         "jwt_token": jwt_token,
         "last_action": None,
     }
@@ -214,10 +215,10 @@ async def chat_execute_tool(body: ExecuteToolRequest, x_tenant_id: str = Header(
     (Deepgram's own model decides when to call a function, with no pause), but
     the role-based hard block still applies here — it must not become a way to
     bypass RBAC just because it skips the graph."""
-    if not is_role_allowed(body.name, body.role):
+    if not is_role_allowed(body.name, body.role, body.platform):
         return {"success": False, "error": "Currently, you have no access to do this, ask your manager."}
     jwt_token = authorization.replace("Bearer ", "") if authorization else ""
-    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token)
+    ctx = ExecCtx(tenant_id=x_tenant_id, jwt_token=jwt_token, role=body.role)
     return await execute_tool(body.name, body.args, ctx)
 
 

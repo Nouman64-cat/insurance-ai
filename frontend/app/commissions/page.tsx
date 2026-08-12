@@ -17,7 +17,7 @@ import {
 } from "../services/commissions";
 
 export default function CommissionsPage() {
-  const [activeTab, setActiveTab] = useState<"ledger" | "calculator" | "rules" | "tracing">("ledger");
+  const [activeTab, setActiveTab] = useState<"tracing" | "finances" | "general" | "calculator">("tracing");
   const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [stats, setStats] = useState<CommissionSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,8 +100,8 @@ export default function CommissionsPage() {
         leadId: `LEAD-${Math.floor(8000 + Math.random() * 1000)}`,
         agentId: "AGT-001",
         agentName: calcAgent,
-        policyId: `POL-${Math.floor(10000 + Math.random() * 90000)}`,
-        policyNumber: `POL-ADAM-${Math.floor(10000 + Math.random() * 90000)}`,
+        policyId: `PL-${Math.floor(10000 + Math.random() * 90000)}`,
+        policyNumber: `PL-ADAM-${Math.floor(10000 + Math.random() * 90000)}`,
         customerName: calcCustomer,
         segment: calcSegment,
         productName: "Adamjee Life Custom Protection Plan",
@@ -150,8 +150,8 @@ export default function CommissionsPage() {
         <div
           className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 ${
             notification.type === "success"
-              ? "bg-emerald-900 text-emerald-100 border-emerald-700"
-              : "bg-rose-900 text-rose-100 border-rose-700"
+              ? "bg-blue-900 text-blue-100 border-blue-700"
+              : "bg-slate-900 text-slate-100 border-slate-700"
           }`}
         >
           <span>{notification.type === "success" ? "✓" : "✕"}</span>
@@ -159,29 +159,20 @@ export default function CommissionsPage() {
         </div>
       )}
 
-      {/* Header & Regulatory Compliance Banner */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-black tracking-tight">Agent Commission &amp; Remuneration Hub</h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 border border-purple-400/40 text-purple-200 font-mono text-[10px] font-bold">
-              SECP Insurance Rules 2017
-            </span>
-          </div>
-          <p className="text-xs text-purple-200/90 mt-1 max-w-3xl">
-            Statutory commission processing engine adhering to SECP Rule 24, Rule 58 (Premium Realization Gating), Rule 62 (Free-Look Clawbacks), Form LG, and Adamjee Life 2024 Reporting Standards.
-          </p>
+          <h1 className="text-2xl font-black tracking-tight text-slate-900">Commission</h1>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href="/underwriting"
-            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-bold transition-all"
+            className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold transition-all"
           >
             ← Back to Underwriting
           </Link>
           <button
             onClick={() => setActiveTab("calculator")}
-            className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-bold shadow-lg transition-all flex items-center gap-1.5"
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-sm transition-all flex items-center gap-1.5"
           >
             <span>+</span>
             <span>Calculate Commission</span>
@@ -194,38 +185,38 @@ export default function CommissionsPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1">
             <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
-              <span>Gross Commission Pool</span>
-              <span className="text-purple-600 font-mono">SECP Form LG</span>
+              <span>Total Gross</span>
+              <span className="text-blue-600 font-mono">SECP Form LG</span>
             </div>
             <p className="text-xl font-extrabold text-slate-900 font-mono">{fmtPKR(stats.totalGrossCommission)}</p>
-            <p className="text-[10px] text-slate-400">Total recognized variable acquisition cost</p>
+            <p className="text-[10px] text-slate-400">Total gross commission</p>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-purple-200 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-purple-900 text-[11px] font-semibold">
-              <span>Accrued Payable Ledger</span>
-              <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 rounded text-[9px] font-bold">Form LA</span>
+          <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-1">
+            <div className="flex items-center justify-between text-blue-900 text-[11px] font-semibold">
+              <span>Total Accrued</span>
+              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[9px] font-bold">Form LA</span>
             </div>
-            <p className="text-xl font-extrabold text-purple-700 font-mono">{fmtPKR(stats.totalAccruedLiability)}</p>
-            <p className="text-[10px] text-slate-400">Balance sheet agent payable liability</p>
+            <p className="text-xl font-extrabold text-blue-700 font-mono">{fmtPKR(stats.totalAccruedLiability)}</p>
+            <p className="text-[10px] text-slate-400">Total accrued commission</p>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-emerald-200 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-emerald-800 text-[11px] font-semibold">
-              <span>Disbursed Net Payout</span>
-              <span className="text-emerald-600 font-bold text-[10px]">✓ Bank Settled</span>
+          <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-1">
+            <div className="flex items-center justify-between text-blue-800 text-[11px] font-semibold">
+              <span>Total Paid</span>
+              <span className="text-blue-600 font-bold text-[10px]">✓ Bank Settled</span>
             </div>
-            <p className="text-xl font-extrabold text-emerald-700 font-mono">{fmtPKR(stats.totalDisbursed)}</p>
-            <p className="text-[10px] text-slate-400">Net of 10% SECP Withholding Tax (WHT)</p>
+            <p className="text-xl font-extrabold text-blue-700 font-mono">{fmtPKR(stats.totalDisbursed)}</p>
+            <p className="text-[10px] text-slate-400">Total paid after tax</p>
           </div>
 
-          <div className="bg-white p-4 rounded-2xl border border-rose-200 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-rose-800 text-[11px] font-semibold">
-              <span>Clawbacks &amp; Reversals</span>
-              <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded text-[9px] font-bold">Rule 62</span>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1">
+            <div className="flex items-center justify-between text-slate-800 text-[11px] font-semibold">
+              <span>Clawbacks</span>
+              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[9px] font-bold">Rule 62</span>
             </div>
-            <p className="text-xl font-extrabold text-rose-700 font-mono">{fmtPKR(stats.totalClawbacks)}</p>
-            <p className="text-[10px] text-slate-400">Lapse &amp; 14-day Free-Look cancellations</p>
+            <p className="text-xl font-extrabold text-slate-700 font-mono">{fmtPKR(stats.totalClawbacks)}</p>
+            <p className="text-[10px] text-slate-400">Reversed commissions</p>
           </div>
         </div>
       )}
@@ -233,49 +224,49 @@ export default function CommissionsPage() {
       {/* Navigation Tabs */}
       <div className="border-b border-slate-200 flex gap-2">
         <button
-          onClick={() => setActiveTab("ledger")}
+          onClick={() => setActiveTab("tracing")}
           className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
-            activeTab === "ledger"
-              ? "border-purple-600 text-purple-700"
+            activeTab === "tracing"
+              ? "border-blue-600 text-blue-700"
               : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >
-          Commission Ledger &amp; Payout Gate ({ledger.length})
+          Traceability
+        </button>
+        <button
+          onClick={() => setActiveTab("finances")}
+          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
+            activeTab === "finances"
+              ? "border-blue-600 text-blue-700"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Ledger: Finances
+        </button>
+        <button
+          onClick={() => setActiveTab("general")}
+          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
+            activeTab === "general"
+              ? "border-blue-600 text-blue-700"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          Ledger: General Info
         </button>
         <button
           onClick={() => setActiveTab("calculator")}
           className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
             activeTab === "calculator"
-              ? "border-purple-600 text-purple-700"
+              ? "border-blue-600 text-blue-700"
               : "border-transparent text-slate-500 hover:text-slate-800"
           }`}
         >
-          Interactive Rating &amp; Accrual Modeler
-        </button>
-        <button
-          onClick={() => setActiveTab("rules")}
-          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
-            activeTab === "rules"
-              ? "border-purple-600 text-purple-700"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          SECP Statutory Rate Card Matrix
-        </button>
-        <button
-          onClick={() => setActiveTab("tracing")}
-          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
-            activeTab === "tracing"
-              ? "border-purple-600 text-purple-700"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
-        >
-          Lead-to-Agent Traceability Lifecycle
+          Calculator
         </button>
       </div>
 
-      {/* ── TAB 1: COMMISSION LEDGER & PAYOUT GATE ────────────────────────────── */}
-      {activeTab === "ledger" && (
+      {/* ── TAB 2 & 3: COMMISSION LEDGER ────────────────────────────── */}
+      {(activeTab === "finances" || activeTab === "general") && (
         <div className="space-y-4">
           {/* Search & Filter Control Bar */}
           <div className="bg-white p-4 rounded-xl border border-slate-200 flex flex-wrap gap-3 items-center justify-between">
@@ -285,7 +276,7 @@ export default function CommissionsPage() {
                 placeholder="Search Agent, Customer, Policy #, or Lead ID..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-hidden focus:border-purple-500"
+                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 focus:outline-hidden focus:border-blue-500"
               />
             </div>
             <div className="flex gap-2 text-xs">
@@ -319,42 +310,46 @@ export default function CommissionsPage() {
                 <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                   <tr>
                     <th className="p-3">Ref ID &amp; Lead ID</th>
-                    <th className="p-3">Agent Name &amp; Code</th>
-                    <th className="p-3">Policy &amp; Customer</th>
+                    {activeTab === "general" && <th className="p-3">Agent Name &amp; Code</th>}
+                    {activeTab === "general" && <th className="p-3">Policy &amp; Customer</th>}
                     <th className="p-3">Premium Type &amp; Rate</th>
                     <th className="p-3">Collected Premium</th>
-                    <th className="p-3">Gross / WHT (10%)</th>
-                    <th className="p-3">Net Commission</th>
-                    <th className="p-3">Status &amp; Gating (Rule 58)</th>
-                    <th className="p-3 text-right">Actions</th>
+                    {activeTab === "finances" && <th className="p-3">WHT (10%)</th>}
+                    {activeTab === "finances" && <th className="p-3">Net Commission</th>}
+                    {activeTab === "finances" && <th className="p-3">Status</th>}
+                    {activeTab === "finances" && <th className="p-3 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-800">
                   {filteredLedger.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="p-3">
-                        <p className="font-mono font-bold text-purple-900">{item.id}</p>
+                        <p className="font-mono font-bold text-blue-900">{item.id}</p>
                         <span className="text-[10px] text-slate-400 font-mono">Trace: {item.leadId}</span>
                       </td>
-                      <td className="p-3">
-                        <p className="font-bold text-slate-900">{item.agentName}</p>
-                        <p className="text-[10px] font-mono text-slate-400">{item.agentCode}</p>
-                      </td>
-                      <td className="p-3">
-                        <p className="font-semibold text-slate-800">{item.customerName}</p>
-                        <p className="text-[10px] font-mono text-purple-700">{item.policyNumber}</p>
-                        <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-slate-100 font-bold text-slate-500">
-                          {item.segment}
-                        </span>
-                      </td>
+                      {activeTab === "general" && (
+                        <td className="p-3">
+                          <p className="font-bold text-slate-900">{item.agentName}</p>
+                          <p className="text-[10px] font-mono text-slate-400">{item.agentCode}</p>
+                        </td>
+                      )}
+                      {activeTab === "general" && (
+                        <td className="p-3">
+                          <p className="font-semibold text-slate-800">{item.customerName}</p>
+                          <p className="text-[10px] font-mono text-blue-700">{item.policyNumber}</p>
+                          <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-slate-100 font-bold text-slate-500">
+                            {item.segment}
+                          </span>
+                        </td>
+                      )}
                       <td className="p-3">
                         <span
                           className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${
                             item.premiumType === "FIRST_YEAR"
-                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              ? "bg-blue-50 text-blue-700 border-blue-200"
                               : item.premiumType === "RENEWAL"
                               ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-amber-50 text-amber-800 border-amber-200"
+                              : "bg-slate-50 text-slate-800 border-slate-200"
                           }`}
                         >
                           {item.premiumType.replace("_", " ")} (Yr {item.policyYear})
@@ -364,51 +359,55 @@ export default function CommissionsPage() {
                       <td className="p-3 font-mono font-bold text-slate-800">
                         {fmtPKR(item.collectedPremium)}
                       </td>
-                      <td className="p-3 font-mono text-[11px]">
-                        <p className="font-bold text-slate-900">{fmtPKR(item.grossCommission)}</p>
-                        <p className="text-slate-400 text-[10px]">- WHT: {fmtPKR(item.whtTax)}</p>
-                      </td>
-                      <td className="p-3 font-mono font-extrabold text-emerald-700 text-sm">
-                        {fmtPKR(item.netCommission)}
-                      </td>
-                      <td className="p-3">
-                        <div className="space-y-1">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-block ${
-                              item.status === "DISBURSED"
-                                ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                                : item.status === "PAYABLE"
-                                ? "bg-purple-100 text-purple-800 border-purple-300"
-                                : item.status === "CLAWED_BACK"
-                                ? "bg-rose-100 text-rose-800 border-rose-300"
-                                : "bg-slate-100 text-slate-700 border-slate-300"
-                            }`}
-                          >
-                            {item.status}
-                          </span>
-                          <p className="text-[10px] text-slate-500 leading-tight max-w-[200px]">
-                            {item.gatingReason}
-                          </p>
-                        </div>
-                      </td>
-                      <td className="p-3 text-right space-x-1">
-                        {item.status === "PAYABLE" && (
-                          <button
-                            onClick={() => handleDisburse(item.id)}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg shadow-2xs transition-colors"
-                          >
-                            Disburse →
-                          </button>
-                        )}
-                        {item.status !== "CLAWED_BACK" && (
-                          <button
-                            onClick={() => setActiveClawbackEntry(item)}
-                            className="px-2 py-1 bg-white hover:bg-rose-50 border border-slate-200 text-rose-700 font-bold text-[10px] rounded-lg transition-colors"
-                          >
-                            Rule 62 Clawback
-                          </button>
-                        )}
-                      </td>
+                      {activeTab === "finances" && (
+                        <>
+                          <td className="p-3 font-mono text-[11px]">
+                            <p className="font-bold text-slate-900">{fmtPKR(item.grossCommission)}</p>
+                            <p className="text-slate-400 text-[10px]">- WHT: {fmtPKR(item.whtTax)}</p>
+                          </td>
+                          <td className="p-3 font-mono font-extrabold text-blue-700 text-sm">
+                            {fmtPKR(item.netCommission)}
+                          </td>
+                          <td className="p-3">
+                            <div className="space-y-1">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-block ${
+                                  item.status === "DISBURSED"
+                                    ? "bg-blue-100 text-blue-800 border-blue-300"
+                                    : item.status === "PAYABLE"
+                                    ? "bg-blue-100 text-blue-800 border-blue-300"
+                                    : item.status === "CLAWED_BACK"
+                                    ? "bg-slate-100 text-slate-800 border-slate-300"
+                                    : "bg-slate-100 text-slate-700 border-slate-300"
+                                }`}
+                              >
+                                {item.status}
+                              </span>
+                              <p className="text-[10px] text-slate-500 leading-tight max-w-[200px]">
+                                {item.gatingReason}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="p-3 text-right space-x-1">
+                            {item.status === "PAYABLE" && (
+                              <button
+                                onClick={() => handleDisburse(item.id)}
+                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-2xs transition-colors"
+                              >
+                                Disburse →
+                              </button>
+                            )}
+                            {item.status !== "CLAWED_BACK" && (
+                              <button
+                                onClick={() => setActiveClawbackEntry(item)}
+                                className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-bold text-[10px] rounded-lg transition-colors"
+                              >
+                                Rule 62 Clawback
+                              </button>
+                            )}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -418,7 +417,7 @@ export default function CommissionsPage() {
         </div>
       )}
 
-      {/* ── TAB 2: INTERACTIVE RATING & ACCRUAL MODELER ───────────────────────── */}
+      {/* ── TAB 3: INTERACTIVE RATING & ACCRUAL MODELER ───────────────────────── */}
       {activeTab === "calculator" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 space-y-4 shadow-xs">
@@ -500,7 +499,7 @@ export default function CommissionsPage() {
             <div className="pt-4 border-t border-slate-100 flex justify-end">
               <button
                 onClick={handleCalculateAndAccrue}
-                className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl shadow-md transition-all"
+                className="px-5 py-2.5 bg-blue-700 hover:bg-blue-800 text-white font-bold text-xs rounded-xl shadow-md transition-all"
               >
                 Accrue Commission to Ledger →
               </button>
@@ -511,10 +510,10 @@ export default function CommissionsPage() {
           <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-xl space-y-4 border border-slate-800 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                <h3 className="font-bold text-xs text-purple-200 uppercase tracking-wider">
+                <h3 className="font-bold text-xs text-blue-200 uppercase tracking-wider">
                   Commission Computation Result
                 </h3>
-                <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-mono text-[10px] font-bold">
+                <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 font-mono text-[10px] font-bold">
                   Rule 24 Matched
                 </span>
               </div>
@@ -522,7 +521,7 @@ export default function CommissionsPage() {
               <div className="space-y-2 text-xs">
                 <div className="flex justify-between">
                   <span className="text-slate-400">Applicable Rate:</span>
-                  <span className="font-mono font-bold text-purple-300">{currentRule.ratePct}%</span>
+                  <span className="font-mono font-bold text-blue-300">{currentRule.ratePct}%</span>
                 </div>
 
                 <div className="flex justify-between">
@@ -530,70 +529,35 @@ export default function CommissionsPage() {
                   <span className="font-mono font-bold text-white">{fmtPKR(calcGross)}</span>
                 </div>
 
-                <div className="flex justify-between text-rose-300">
+                <div className="flex justify-between text-slate-300">
                   <span>SECP WHT Deduction (10%):</span>
                   <span className="font-mono font-bold">- {fmtPKR(calcWht)}</span>
                 </div>
 
                 <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
                   <span className="font-bold text-slate-300">Net Payable Commission:</span>
-                  <span className="font-mono font-black text-emerald-400 text-lg">{fmtPKR(calcNet)}</span>
+                  <span className="font-mono font-black text-blue-400 text-lg">{fmtPKR(calcNet)}</span>
                 </div>
               </div>
             </div>
 
             <div className="bg-slate-800/80 p-3 rounded-xl border border-slate-700/60 text-[10px] text-slate-400 space-y-1">
-              <p className="font-bold text-slate-300">Gating Compliance Note (SECP Rule 58):</p>
-              <p>Commission becomes payable upon underwriting completion &amp; cash payment confirmation in treasury.</p>
+              <p className="font-bold text-slate-300">Note:</p>
+              <p>Commission is paid after payment is received.</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── TAB 3: SECP STATUTORY RATE CARD MATRIX ────────────────────────────── */}
-      {activeTab === "rules" && (
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-4 shadow-xs">
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-              Statutory Commission Matrix (SECP Rules 2017 &amp; Adamjee Life Standards)
-            </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Standardized regulatory reporting structure for intermediary remuneration split by segment, premium category, and policy duration.
-            </p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-            {SECP_DEFAULT_RULES.map((rule) => (
-              <div key={rule.id} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-                <div className="flex justify-between items-start">
-                  <span className="px-2 py-0.5 rounded bg-purple-100 text-purple-800 font-bold text-[10px] uppercase">
-                    {rule.segment}
-                  </span>
-                  <span className="font-mono text-lg font-black text-purple-900">{rule.ratePct}%</span>
-                </div>
-                <h3 className="font-bold text-slate-800 text-xs">{rule.description}</h3>
-                <p className="text-[10px] text-slate-500 font-mono">
-                  {rule.premiumType.replace("_", " ")} · Year {rule.policyYear}
-                </p>
-                <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-[9px] text-slate-400">
-                  <span>Reference:</span>
-                  <span className="font-bold text-purple-700">{rule.secpRef}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ── TAB 4: LEAD-TO-AGENT TRACEABILITY LIFECYCLE ───────────────────────── */}
+      {/* ── TAB 1: LEAD-TO-AGENT TRACEABILITY LIFECYCLE ───────────────────────── */}
       {activeTab === "tracing" && (
         <div className="bg-white p-6 rounded-2xl border border-slate-200 space-y-6 shadow-xs">
           <div>
             <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-              End-to-End Lead-to-Agent Commission Traceability Lifecycle
+              Traceability
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Auditability matrix mapping every prospect lead to agent code, policy binding, cash realization, and commission payable ledger.
+              Trace policy flow from lead to commission.
             </p>
           </div>
 
@@ -602,38 +566,42 @@ export default function CommissionsPage() {
               <div key={item.id} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
                 <div className="flex flex-wrap justify-between items-center gap-2 border-b border-slate-200 pb-2">
                   <div className="flex items-center gap-2">
-                    <span className="font-mono font-bold text-xs text-purple-900">{item.leadId}</span>
-                    <span className="text-slate-400">➔</span>
+                    <span className="font-mono font-bold text-xs text-blue-900">{item.leadId}</span>
+                    <span className="text-slate-500 text-sm font-black">➔</span>
                     <span className="font-bold text-xs text-slate-800">{item.agentName} ({item.agentCode})</span>
-                    <span className="text-slate-400">➔</span>
-                    <span className="font-mono font-bold text-xs text-purple-700">{item.policyNumber}</span>
+                    <span className="text-slate-500 text-sm font-black">➔</span>
+                    <span className="font-mono font-bold text-xs text-blue-700">{item.policyNumber}</span>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono font-bold text-xs">
+                  <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono font-bold text-xs">
                     Payout: {fmtPKR(item.netCommission)}
                   </span>
                 </div>
 
                 {/* 5-Step Stepper Trace */}
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-[10px]">
-                  <div className="bg-white p-2 rounded-lg border border-slate-200">
-                    <p className="font-bold text-slate-400 uppercase">1. Lead Assigned</p>
-                    <p className="font-mono font-semibold text-slate-800">{item.leadId}</p>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] whitespace-nowrap">
+                  <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                    <span className="font-bold text-slate-400 uppercase mr-1.5">Lead:</span>
+                    <span className="font-mono font-semibold text-slate-800">{item.leadId}</span>
                   </div>
-                  <div className="bg-white p-2 rounded-lg border border-slate-200">
-                    <p className="font-bold text-slate-400 uppercase">2. Proposal Bound</p>
-                    <p className="font-semibold text-slate-800">{item.customerName}</p>
+                  <span className="text-slate-500 text-base font-black mx-1">→</span>
+                  <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                    <span className="font-bold text-slate-400 uppercase mr-1.5">Proposal:</span>
+                    <span className="font-semibold text-slate-800">{item.customerName}</span>
                   </div>
-                  <div className="bg-white p-2 rounded-lg border border-slate-200">
-                    <p className="font-bold text-slate-400 uppercase">3. Policy Issued</p>
-                    <p className="font-mono font-semibold text-purple-700">{item.policyNumber}</p>
+                  <span className="text-slate-500 text-base font-black mx-1">→</span>
+                  <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                    <span className="font-bold text-slate-400 uppercase mr-1.5">Policy:</span>
+                    <span className="font-mono font-semibold text-blue-700">{item.policyNumber}</span>
                   </div>
-                  <div className="bg-white p-2 rounded-lg border border-slate-200">
-                    <p className="font-bold text-slate-400 uppercase">4. Cash Realized</p>
-                    <p className="font-mono font-semibold text-emerald-700">{fmtPKR(item.collectedPremium)}</p>
+                  <span className="text-slate-500 text-base font-black mx-1">→</span>
+                  <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                    <span className="font-bold text-slate-400 uppercase mr-1.5">Cash:</span>
+                    <span className="font-mono font-semibold text-blue-700">{fmtPKR(item.collectedPremium)}</span>
                   </div>
-                  <div className="bg-white p-2 rounded-lg border border-slate-200">
-                    <p className="font-bold text-slate-400 uppercase">5. Commission Ledger</p>
-                    <p className="font-mono font-extrabold text-purple-900">{item.id}</p>
+                  <span className="text-slate-500 text-base font-black mx-1">→</span>
+                  <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                    <span className="font-bold text-slate-400 uppercase mr-1.5">Ledger:</span>
+                    <span className="font-mono font-extrabold text-blue-900">{item.id}</span>
                   </div>
                 </div>
               </div>
@@ -646,18 +614,18 @@ export default function CommissionsPage() {
       {activeClawbackEntry && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs px-4 animate-in fade-in duration-200">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden">
-            <div className="bg-rose-900 px-6 py-4 flex items-center justify-between text-white">
+            <div className="bg-slate-900 px-6 py-4 flex items-center justify-between text-white">
               <div>
-                <h3 className="font-bold text-sm">SECP Rule 62 Commission Clawback &amp; Reversal</h3>
-                <p className="text-xs text-rose-200 font-mono mt-0.5">Policy: {activeClawbackEntry.policyNumber}</p>
+                <h3 className="font-bold text-sm">Clawback Commission</h3>
+                <p className="text-xs text-slate-200 font-mono mt-0.5">Policy: {activeClawbackEntry.policyNumber}</p>
               </div>
               <button onClick={() => setActiveClawbackEntry(null)} className="text-white/60 hover:text-white text-lg">✕</button>
             </div>
 
             <div className="p-6 space-y-4 text-xs">
-              <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl text-rose-900 space-y-1">
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl text-slate-900 space-y-1">
                 <p className="font-bold">Reversal Amount: {fmtPKR(activeClawbackEntry.netCommission)}</p>
-                <p className="text-[11px]">Executing this clawback will reverse the agent payable ledger and generate an automatic debit note against future commission disbursements.</p>
+                <p className="text-[11px]">This will reverse the commission.</p>
               </div>
 
               <div>
@@ -684,7 +652,7 @@ export default function CommissionsPage() {
               </button>
               <button
                 onClick={handleExecuteClawback}
-                className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-xl text-xs shadow-md"
+                className="px-4 py-2 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-xl text-xs shadow-md"
               >
                 Execute Clawback &amp; Reversal
               </button>

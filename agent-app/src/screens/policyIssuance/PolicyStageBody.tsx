@@ -1,25 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../theme/ThemeContext';
-import { spacing, radii } from '../theme/tokens';
-import { ToneName } from '../theme/palette';
-import { useResponsive } from '../hooks/useResponsive';
-import { useNotifications } from '../notifications/NotificationContext';
-import { fetchPolicies, PolicyItem } from '../api/policies';
-import {
-  Screen,
-  ScreenHeader,
-  Text,
-  Card,
-  Badge,
-  Banner,
-  Avatar,
-  EmptyState,
-  SkeletonList,
-  Divider,
-  Pressable,
-} from '../components/ui';
+import { useTheme } from '../../theme/ThemeContext';
+import { spacing, radii } from '../../theme/tokens';
+import { ToneName } from '../../theme/palette';
+import { useResponsive } from '../../hooks/useResponsive';
+import { useNotifications } from '../../notifications/NotificationContext';
+import { fetchPolicies, PolicyItem } from '../../api/policies';
+import { Text, Card, Badge, Banner, Avatar, EmptyState, SkeletonList, Divider, Pressable } from '../../components/ui';
 
 const STATUS_TONE: Record<string, ToneName> = {
   ACTIVE: 'success',
@@ -38,31 +26,28 @@ export interface RestrictedAction {
   icon: keyof typeof Ionicons.glyphMap;
 }
 
-export interface PolicyStageScreenProps {
+export interface PolicyStageBodyProps {
   stage: 'PRE_ISSUANCE' | 'POST_ISSUANCE';
-  title: string;
-  subtitle: string;
-  /** Explains what an agent may not do at this stage. */
   restrictionNote: string;
   actions: RestrictedAction[];
   emptyTitle: string;
   emptyDescription: string;
+  onSubtitle?: (s: string) => void;
 }
 
 /**
- * Shared implementation behind the pre- and post-issuance screens. The two
- * differ only in which policies they show, which fields they surface, and which
- * actions are gated — so they share one component rather than one copy each.
+ * Shared implementation behind the Pre- and Post-Issuance tabs of the Policy
+ * Issuance screen. The two differ only in which policies they show, which
+ * fields they surface, and which actions are gated — so they share one body.
  */
-export default function PolicyStageScreen({
+export default function PolicyStageBody({
   stage,
-  title,
-  subtitle,
   restrictionNote,
   actions,
   emptyTitle,
   emptyDescription,
-}: PolicyStageScreenProps) {
+  onSubtitle,
+}: PolicyStageBodyProps) {
   const { colors } = useTheme();
   const { gutter, isCompact, columns } = useResponsive();
   const { toast } = useNotifications();
@@ -93,6 +78,10 @@ export default function PolicyStageScreen({
     load({ silent: true });
   }, [load]);
 
+  useEffect(() => {
+    onSubtitle?.(loading ? 'Loading…' : `${policies.length} ${policies.length === 1 ? 'policy' : 'policies'}`);
+  }, [loading, policies.length, onSubtitle]);
+
   const explainRestriction = (action: RestrictedAction) =>
     toast('Manager authorisation required', {
       body: `${action.gerund} is restricted to managers and underwriters.`,
@@ -104,17 +93,7 @@ export default function PolicyStageScreen({
   const gridColumns = isCompact ? 1 : columns(340);
 
   return (
-    <Screen
-      scrollable={false}
-      padded={false}
-      header={
-        <ScreenHeader
-          title={title}
-          subtitle={loading ? 'Loading…' : `${policies.length} ${policies.length === 1 ? 'policy' : 'policies'} · ${subtitle}`}
-          leading="back"
-        />
-      }
-    >
+    <>
       <View style={{ paddingHorizontal: gutter }}>
         <Banner
           tone="warning"
@@ -229,7 +208,7 @@ export default function PolicyStageScreen({
           }}
         />
       )}
-    </Screen>
+    </>
   );
 }
 

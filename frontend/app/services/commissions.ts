@@ -63,128 +63,17 @@ export const SECP_DEFAULT_RULES: CommissionRule[] = [
   { id: "R7", segment: "family", premiumType: "FIRST_YEAR", policyYear: 1, ratePct: 30.0, description: "Family Takaful First Year Acquisition Commission", secpRef: "SECP Takaful Rules 2012" },
 ];
 
-// Mock initial SECP ledger for demonstration & testing
-let mockLedger: CommissionLedgerEntry[] = [
-  {
-    id: "COM-2026-001",
-    leadId: "LEAD-9081",
-    agentId: "AGENT-001",
-    agentName: "Tariq Mansoor",
-    agentCode: "AGT-7821",
-    policyId: "POL-10921",
-    policyNumber: "POL-ADAM-98210",
-    customerName: "Kamran Niazi",
-    segment: "individual",
-    productName: "Adamjee Life Wealth Builder",
-    premiumType: "FIRST_YEAR",
-    policyYear: 1,
-    collectedPremium: 250000,
-    ratePct: 35.0,
-    grossCommission: 87500,
-    whtTax: 8750,
-    netCommission: 78750,
-    status: "PAYABLE",
-    gatingReason: "Payable (Policy Issued & Cash Realized - SECP Rule 58)",
-    accruedAt: "2026-08-01 10:30:00",
-  },
-  {
-    id: "COM-2026-002",
-    leadId: "LEAD-9082",
-    agentId: "AGENT-002",
-    agentName: "Zubair Ahmed",
-    agentCode: "AGT-4412",
-    policyId: "POL-10922",
-    policyNumber: "POL-ADAM-98211",
-    customerName: "Ayesha Zuberi",
-    segment: "individual",
-    productName: "Adamjee Future Secure",
-    premiumType: "FIRST_YEAR",
-    policyYear: 1,
-    collectedPremium: 450000,
-    ratePct: 35.0,
-    grossCommission: 157500,
-    whtTax: 15750,
-    netCommission: 141750,
-    status: "DISBURSED",
-    gatingReason: "Disbursed to Bank Account (Ref: HBL-98231)",
-    accruedAt: "2026-07-28 14:15:00",
-    disbursedAt: "2026-08-02 09:00:00",
-  },
-  {
-    id: "COM-2026-003",
-    leadId: "LEAD-9083",
-    agentId: "AGENT-001",
-    agentName: "Tariq Mansoor",
-    agentCode: "AGT-7821",
-    policyId: "POL-10923",
-    policyNumber: "POL-ADAM-98212",
-    customerName: "Atlas Honda Corporate Group",
-    segment: "group",
-    productName: "Adamjee Group Health & Life",
-    premiumType: "FIRST_YEAR",
-    policyYear: 1,
-    collectedPremium: 1500000,
-    ratePct: 15.0,
-    grossCommission: 225000,
-    whtTax: 22500,
-    netCommission: 202500,
-    status: "ACCRUED",
-    gatingReason: "Gated: Pending Cash Realization Confirmation (SECP Rule 58)",
-    accruedAt: "2026-08-04 16:45:00",
-  },
-  {
-    id: "COM-2026-004",
-    leadId: "LEAD-9084",
-    agentId: "AGENT-003",
-    agentName: "Fatima Khan",
-    agentCode: "AGT-9012",
-    policyId: "POL-10924",
-    policyNumber: "POL-ADAM-98213",
-    customerName: "Syed Bilal Shah",
-    segment: "individual",
-    productName: "Adamjee Platinum Saver",
-    premiumType: "SINGLE_PREMIUM",
-    policyYear: 1,
-    collectedPremium: 2000000,
-    ratePct: 2.5,
-    grossCommission: 50000,
-    whtTax: 5000,
-    netCommission: 45000,
-    status: "PAYABLE",
-    gatingReason: "Payable (Single Premium Upfront Realized - Form LG)",
-    accruedAt: "2026-08-03 11:20:00",
-  },
-  {
-    id: "COM-2026-005",
-    leadId: "LEAD-9085",
-    agentId: "AGENT-002",
-    agentName: "Zubair Ahmed",
-    agentCode: "AGT-4412",
-    policyId: "POL-10925",
-    policyNumber: "POL-ADAM-98214",
-    customerName: "Dr. Hamza Malik",
-    segment: "individual",
-    productName: "Adamjee Marriage Assurance",
-    premiumType: "RENEWAL",
-    policyYear: 2,
-    collectedPremium: 300000,
-    ratePct: 7.5,
-    grossCommission: 2250,
-    whtTax: 225,
-    netCommission: 2025,
-    status: "CLAWED_BACK",
-    clawbackAmount: 2025,
-    isClawback: true,
-    clawbackReason: "Reversal: Policy Cancelled under SECP 14-Day Free-Look Period (Rule 62)",
-    gatingReason: "Clawed Back / Reversed (SECP Rule 62)",
-    accruedAt: "2026-08-02 09:30:00",
-  },
-];
+// In-memory cache for generated commission entries (since there's no true commission backend table yet)
+let ledgerCache: CommissionLedgerEntry[] | null = null;
 
 import { listPolicies } from "./policies";
 import { getUserDirectory, listAgents } from "./agents";
 
 export async function listCommissionLedger(): Promise<CommissionLedgerEntry[]> {
+  if (ledgerCache !== null) {
+    return ledgerCache;
+  }
+  
   try {
     const tid = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
     const [realPolicies, agentUsers] = await Promise.all([
@@ -195,9 +84,7 @@ export async function listCommissionLedger(): Promise<CommissionLedgerEntry[]> {
     const availableAgents = agentUsers.length > 0
       ? agentUsers.map((a, i) => ({ name: a.full_name || a.email, code: `AGT-${7820 + i}`, id: a.id }))
       : [
-          { name: "Tariq Mansoor", code: "AGT-7821", id: "AGENT-001" },
-          { name: "Zubair Ahmed", code: "AGT-4412", id: "AGENT-002" },
-          { name: "Fatima Khan", code: "AGT-9012", id: "AGENT-003" },
+          { name: "Unassigned Agent", code: "AGT-UNASSIGNED", id: "AGENT-000" }
         ];
 
     if (realPolicies && realPolicies.length > 0) {
@@ -219,7 +106,7 @@ export async function listCommissionLedger(): Promise<CommissionLedgerEntry[]> {
           agentName: assignedAgent.name,
           agentCode: assignedAgent.code,
           policyId: p.id,
-          policyNumber: p.policy_number || `POL-ADAM-${98210 + idx}`,
+          policyNumber: p.policy_number || `PL-ADAM-${98210 + idx}`,
           customerName: p.customer_name || "Valued Policyholder",
           segment: (p.segment as PolicySegment) || "individual",
           productName: p.product_name || "Adamjee Life Protection Plan",
@@ -240,15 +127,15 @@ export async function listCommissionLedger(): Promise<CommissionLedgerEntry[]> {
         };
       });
 
-      // Combine real backend policy entries with mock entries if needed
-      const existingIds = new Set(realLedgerEntries.map((e) => e.policyId));
-      const extraDemoEntries = mockLedger.filter((e) => !existingIds.has(e.policyId));
-      return [...realLedgerEntries, ...extraDemoEntries];
+      ledgerCache = realLedgerEntries;
+      return ledgerCache;
     }
   } catch (err) {
-    console.warn("Could not fetch backend policies for commissions, returning initial SECP ledger", err);
+    console.warn("Could not fetch backend policies for commissions", err);
   }
-  return [...mockLedger];
+  
+  ledgerCache = [];
+  return ledgerCache;
 }
 
 export async function getCommissionStats(): Promise<CommissionSummaryStats> {
@@ -291,7 +178,7 @@ export async function getCommissionStats(): Promise<CommissionSummaryStats> {
 }
 
 export async function disburseCommission(ledgerId: string): Promise<CommissionLedgerEntry> {
-  const entry = mockLedger.find((l) => l.id === ledgerId);
+  const entry = (ledgerCache || []).find((l) => l.id === ledgerId);
   if (!entry) throw new Error("Commission entry not found");
   entry.status = "DISBURSED";
   entry.disbursedAt = new Date().toISOString().replace("T", " ").slice(0, 19);
@@ -300,7 +187,7 @@ export async function disburseCommission(ledgerId: string): Promise<CommissionLe
 }
 
 export async function triggerClawback(ledgerId: string, reason: string): Promise<CommissionLedgerEntry> {
-  const entry = mockLedger.find((l) => l.id === ledgerId);
+  const entry = (ledgerCache || []).find((l) => l.id === ledgerId);
   if (!entry) throw new Error("Commission entry not found");
   entry.status = "CLAWED_BACK";
   entry.isClawback = true;
@@ -364,6 +251,7 @@ export async function calculateCommissionForPolicy(params: {
     accruedAt: new Date().toISOString().replace("T", " ").slice(0, 19),
   };
 
-  mockLedger.unshift(newEntry);
+  if (!ledgerCache) ledgerCache = [];
+  ledgerCache.unshift(newEntry);
   return newEntry;
 }

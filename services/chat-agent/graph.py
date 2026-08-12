@@ -30,6 +30,7 @@ from journey import register_journey
 from pages import catalogue
 from permission import (
     CLIENT_EXECUTED_TOOLS,
+    MOBILE_PORTAL_ONLY_TOOLS,
     get_tools_for_role,
     is_destructive,
     is_role_allowed,
@@ -52,10 +53,9 @@ actions with tools. Never pretend to act — always call the tool.
 
 ## AUTONOMOUS UNDERWRITING JOURNEY (preferred for end-to-end requests)
 
-**start_underwriting_journey** runs the ENTIRE 7-stage pipeline autonomously: \
-Intake → Case → Proposal → Document Audit → AI Risk Assessment → Decision → Closure. \
-It auto-approves/declines on the risk bands and suspends only for missing documents \
-or human review. Use it whenever the user wants an application processed end-to-end \
+**start_underwriting_journey** runs the ENTIRE 8-stage pipeline autonomously: \
+Intake → Case → Proposal → Pre-Underwriting Clearance (6 Gates) → Document Audit → AI Risk Assessment → Decision → Closure. \
+It automatically verifies the 6 pre-underwriting gates (E-Application, Agent Confidential Report, Compliance/PEP, Initial Premium Payment, Insurance History Check, Medical Examination), auto-approves/declines on the risk bands, and suspends only for missing documents or human review. Use it whenever the user wants an application processed end-to-end \
 ("underwrite Fatima", "process this application", "run the whole flow", "with demo data"). \
 Call it IMMEDIATELY with just the name or CNIC — it resolves existing customers itself \
 and applies product defaults; never pre-ask for DOB/income/product before calling. \
@@ -68,13 +68,23 @@ update_case_status first for the decision, then continue.
 1. **add_customer / add_organization / add_family_group** → Register the applicant. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, you MUST ask them first whether the customer is an **Individual**, a **Corporate (Organization)**, or a **Family** group. Then, use the appropriate tool: `add_customer` for individuals, `add_organization` for corporate, and `add_family_group` for families.
 2. create_case → open the underwriting case
 3. create_proposal → NEVER ask the user to type product details manually. If you don't know the product_name, just call the tool with the applicant's name/CNIC and the system will automatically fetch the catalog and present the user with plan buttons to click.
-4. get_document_checklist / upload_document → collect required docs
-5. run_risk_assessment → AI medical/financial/fraud scoring
-6. approve_case → approve the case after risk assessment (moves to Policy Issuance queue)
-7. get_pre_issuance_status / run_pre_issuance_verification → check or auto-complete the 4-step pre-issuance verification (requirements, compliance, beneficiaries, revised terms)
-8. issue_policy → draft the contract, generate policy number, compute premium (moves to PendingPayment)
-9. confirm_policy_payment → confirm first premium, activate coverage (moves to Active)
-10. get_active_policy_status → verify the policy is Active and in the post-issuance section
+4. **Pre-Underwriting Gates (Strictly Sequential 6 Gates):**
+   - The portal enforces 6 distinct, sequential pre-underwriting clearance gates before risk assessment can be run. In interactive workflows, you MUST guide the user step-by-step through each gate in order and NEVER suggest or run bulk clearance in one command:
+     - **Gate 1: Customer E-Application** → `verify_e_application`. **CRITICAL:** The E-Application is filled by the customer themselves. Calling this tool generates the public tokenized link (e.g. `http://localhost:3000/e-application/<token>`). You MUST provide this link in chat so the user can share it with the customer. Once submitted by the customer, call `verify_e_application` with `action="verify"` to approve it.
+     - **Gate 2: Agent Confidential Report (ACR)** → `submit_agent_confidential_report` (Agent KYC & risk recommendation). *Prerequisite: Gate 1 Verified.*
+     - **Gate 3: PEP / Sanctions Screening** → `run_compliance_screening` (AML/PEP screening). *Prerequisite: Gate 2 Submitted.*
+     - **Gate 4: Initial Premium Payment (IPP)** → `process_initial_premium_payment` (Section 30 statutory payment). *Prerequisite: Gate 3 Cleared.*
+     - **Gate 5: SECP Insurance History** → `run_insurance_history_check` (Cross-insurer multi-policy & HLV check). *Prerequisite: Gate 4 Realized.*
+     - **Gate 6: Medical Examination (NML)** → `assess_medical_examination` (Non-medical limit grid & clinic check). *Prerequisite: Gate 5 Clear.*
+   - `get_pre_underwriting_status` → View the 6-gate progress table at any time.
+   - *Note: Risk assessment (`run_risk_assessment`) strictly requires all 6 pre-underwriting gates to be satisfied first.*
+5. get_document_checklist / upload_document → collect required docs
+6. run_risk_assessment → AI medical/financial/fraud scoring (enforces pre-underwriting readiness)
+7. approve_case → approve the case after risk assessment (moves to Policy Issuance queue)
+8. get_pre_issuance_status / run_pre_issuance_verification → check or auto-complete the 4-step pre-issuance verification (requirements, compliance, beneficiaries, revised terms)
+9. issue_policy → draft the contract, generate policy number, compute premium (moves to PendingPayment)
+10. confirm_policy_payment → confirm first premium, activate coverage (moves to Active)
+11. get_active_policy_status → verify the policy is Active and in the post-issuance section
 
 ## SHOWING & FINDING THINGS
 
@@ -116,6 +126,19 @@ AGENT_ROLE_RESTRICTION_TEMPLATE = (
     "If the user asks you to perform underwriting or policy issuance actions, respond directly: 'Currently, you have no access to do this, ask your manager.'"
 )
 
+AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE = (
+    "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user is an Agent on the "
+    "mobile field app. Your authorized scope covers onboarding a case end-to-end through pre-underwriting: "
+    "lead/customer intake, proposals, and all 6 pre-underwriting gates (E-Application, Agent's Confidential "
+    "Report, Compliance/PEP screening, Initial Premium Payment, Insurance History, and Medical Examination "
+    "booking).\n"
+    "- You MUST NOT run AI Risk Assessment, or anything after it — case approval/rejection, pre-issuance "
+    "verification, policy drafting/issuance, or payment confirmation.\n"
+    "If the user asks for one of those, respond warmly and directly: this app covers onboarding through the "
+    "Medical Examination step; once that's booked, AI Risk Assessment and everything after happens on the web "
+    "portal."
+)
+
 ROLE_RESTRICTION_TEMPLATE = (
     "\n\nCRITICAL SECURITY INSTRUCTION: The current user's role is '{role}'. They are NOT an "
     "Admin. Tools outside their authorized scope are blocked at the platform level — if the user asks "
@@ -123,17 +146,19 @@ ROLE_RESTRICTION_TEMPLATE = (
 )
 
 
-def _build_prompt(role: str) -> str:
+def _build_prompt(role: str, platform: str = "web") -> str:
     prompt = SYSTEM_PROMPT.format(pages=catalogue())
-    if role == "Agent":
+    if role == "Agent" and platform == "mobile":
+        prompt += AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE
+    elif role == "Agent":
         prompt += AGENT_ROLE_RESTRICTION_TEMPLATE
     elif role not in ("SuperAdmin", "Admin"):
         prompt += ROLE_RESTRICTION_TEMPLATE.format(role=role)
     return prompt
 
 
-def _llm(role: str = "Admin") -> ChatGoogleGenerativeAI:
-    tools = get_tools_for_role(role)
+def _llm(role: str = "Admin", platform: str = "web") -> ChatGoogleGenerativeAI:
+    tools = get_tools_for_role(role, platform)
     return ChatGoogleGenerativeAI(
         model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         temperature=0.1,
@@ -146,11 +171,12 @@ def _llm(role: str = "Admin") -> ChatGoogleGenerativeAI:
 
 async def agent_node(state: ChatState) -> dict:
     user_role = state.get("user_role") or "Admin"
-    messages = [SystemMessage(content=_build_prompt(user_role)), *state["messages"]]
+    platform = state.get("platform") or "web"
+    messages = [SystemMessage(content=_build_prompt(user_role, platform)), *state["messages"]]
     # Braces: Gemini intermittently 429s/503s under load — one failed call must
     # not kill a live conversation turn, so retry with short exponential
     # backoff on top of the SDK's internal retries before giving up.
-    llm = _llm(user_role)
+    llm = _llm(user_role, platform)
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
@@ -158,6 +184,15 @@ async def agent_node(state: ChatState) -> dict:
             return {"messages": [response]}
         except Exception as exc:  # noqa: BLE001 — SDK raises provider-specific types
             last_exc = exc
+            # Quota/billing exhaustion (RESOURCE_EXHAUSTED / "prepayment
+            # credits are depleted") isn't transient — retrying just burns
+            # 3 more calls against the same exhausted key for nothing. Fail
+            # fast with the real cause instead of a misleading "try again".
+            if "RESOURCE_EXHAUSTED" in str(exc) or "prepayment credits" in str(exc):
+                raise RuntimeError(
+                    "The AI model is out of quota (prepayment credits depleted on the Gemini API key). "
+                    "This needs billing topped up at https://ai.studio/projects — resending won't help."
+                ) from exc
             if attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
     raise RuntimeError(
@@ -190,13 +225,22 @@ async def permission_gate(state: ChatState) -> Command:
     # convention rather than letting the model batch several mutations at once.
     tool_call = last.tool_calls[0]
     name, args, call_id = tool_call["name"], tool_call["args"], tool_call["id"]
-    ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"])
+    platform = state.get("platform") or "web"
+    ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "Agent")
 
     def back_to_agent(update: dict) -> Command:
         return Command(goto="agent", update=update)
 
-    if not is_role_allowed(name, state["user_role"]):
-        msg = "Currently, you have no access to do this, ask your manager."
+    if not is_role_allowed(name, state["user_role"], platform):
+        if platform == "mobile" and name in MOBILE_PORTAL_ONLY_TOOLS:
+            msg = (
+                "This app covers onboarding through Gate 6 (Medical Examination). "
+                "Once the medical exam is booked, AI Risk Assessment and everything after it "
+                "— review, approval, and policy issuance — happens on the web portal. "
+                "Please continue there for this step."
+            )
+        else:
+            msg = "Currently, you have no access to do this, ask your manager."
         result = {"success": False, "error": msg}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 

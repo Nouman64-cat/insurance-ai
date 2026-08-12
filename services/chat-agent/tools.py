@@ -220,11 +220,18 @@ class AddCustomerArgs(BaseModel):
     is_smoker: Optional[bool] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
+    agent_name: Optional[str] = Field(
+        default=None,
+        description="Name or email of the Agent who owns this lead. Only needed when the caller "
+        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask.",
+    )
 
 
 @tool(args_schema=AddCustomerArgs)
 def add_customer(**kwargs) -> str:
-    """Register a new customer/applicant. First step of the insurance journey."""
+    """Register a new customer/applicant. First step of the insurance journey. If the caller is an
+    Agent, the lead is auto-assigned to them. Otherwise the tool will ask who the agent is — don't
+    pre-ask for agent_name yourself, let the tool's response drive that."""
     return "{}"
 
 
@@ -615,6 +622,11 @@ class QuickStartArgs(BaseModel):
         default=None,
         description="Optional specific name to use for the demo customer, instead of a random one."
     )
+    agent_name: Optional[str] = Field(
+        default=None,
+        description="Name or email of the Agent who owns this lead. Only needed when the caller "
+        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask.",
+    )
 
 
 @tool(args_schema=QuickStartArgs)
@@ -624,6 +636,103 @@ def quick_start_workflow(**kwargs) -> str:
     "demo", "test data", "sample", "generic data", "just make something up",
     or "show me how this works". With full_journey=true it also creates the
     case and proposal and kicks off the assessment."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Pre-Underwriting clearance (the 6 gates before risk assessment)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@tool(args_schema=CaseLookupArgs)
+def get_pre_underwriting_status(**kwargs) -> str:
+    """Fetch the status of the 6 pre-underwriting clearance gates for a case:
+    1. E-Application (customer medical/lifestyle form)
+    2. Agent's Confidential Report (ACR - moral hazard & KYC)
+    3. Compliance Screening (PEP, Sanctions, AML, SECP)
+    4. Initial Premium Payment (IPP - Section 30 "no premium, no risk")
+    5. SECP Insurance History (HLV & cumulative exposure)
+    6. Medical Examination (Non-Medical Limit NML grid & panel clinics)
+    Use when the user asks "check pre-underwriting status", "are gates cleared?",
+    "what's pending before risk assessment?"."""
+    return "{}"
+
+
+class VerifyEApplicationArgs(BaseModel):
+    case_number: Optional[str] = None
+    applicant_name: Optional[str] = None
+    cnic: Optional[str] = None
+    action: Optional[Literal["invite", "verify", "auto_submit"]] = Field(
+        default="invite",
+        description="Action to take: 'invite' generates the customer form link for the customer to fill (default). 'verify' marks a submitted form as verified. 'auto_submit' fills & submits demo e-application for automated tests."
+    )
+
+
+@tool(args_schema=VerifyEApplicationArgs)
+def verify_e_application(**kwargs) -> str:
+    """Gate 1: Customer E-Application. Generates the tokenized public form link (http://localhost:3000/e-application/<token>) for the customer to fill and sign their medical questionnaire & declarations, or verifies a submitted application."""
+    return "{}"
+
+
+class SubmitACRArgs(BaseModel):
+    case_number: Optional[str] = None
+    applicant_name: Optional[str] = None
+    cnic: Optional[str] = None
+    recommendation: Optional[Literal["Recommend", "RecommendWithCaution", "DoNotRecommend", "STANDARD_RISK"]] = "Recommend"
+    remarks: Optional[str] = "Applicant verified in person. Moral hazard and financial standing satisfactory."
+
+
+@tool(args_schema=SubmitACRArgs)
+def submit_agent_confidential_report(**kwargs) -> str:
+    """Gate 2: File the Agent's Confidential Report (ACR). Call this immediately when asked — do NOT ask the user for recommendation/remarks first, the tool itself decides what happens: it opens the real ACR form in the UI for the case's Agent to fill and sign, or tells the caller to ask their Agent to do it if they aren't one."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def run_compliance_screening(**kwargs) -> str:
+    """Gate 3: Run automated PEP, Sanctions, AML, and SECP compliance screening for the pre-underwriting case. If it comes back Flagged, do not treat that as an error — offer to proceed anyway."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def override_compliance_screening(**kwargs) -> str:
+    """Gate 3 override: clears a Flagged compliance screening result and proceeds, after the user explicitly confirms (e.g. clicks 'Proceed Anyway'). Only call this when the user has confirmed they want to proceed despite the flag."""
+    return "{}"
+
+
+class ProcessIPPArgs(BaseModel):
+    case_number: Optional[str] = None
+    applicant_name: Optional[str] = None
+    cnic: Optional[str] = None
+    payment_method: Optional[str] = Field(default="JazzCash", description="Payment method: JazzCash, Easypaisa, Card, BankTransfer.")
+
+
+@tool(args_schema=ProcessIPPArgs)
+def process_initial_premium_payment(**kwargs) -> str:
+    """Gate 4: Initiate and realize the Section 30 Initial Premium Payment (IPP) priced off the pre-underwriting quote. payment_method already defaults to JazzCash — call this immediately when asked, do NOT ask the user to choose a method first unless they want to change it."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def run_insurance_history_check(**kwargs) -> str:
+    """Gate 5: Run the SECP shared industry insurance history screen, checking cumulative sum assured against HLV and policy churning."""
+    return "{}"
+
+
+class AssessMedicalExamArgs(BaseModel):
+    case_number: Optional[str] = None
+    applicant_name: Optional[str] = None
+    cnic: Optional[str] = None
+
+
+@tool(args_schema=AssessMedicalExamArgs)
+def assess_medical_examination(**kwargs) -> str:
+    """Gate 6: Assess the applicant against the Non-Medical Limit (NML) grid. If diagnostics are mandated, generates the customer's tokenized panel-clinic booking link (same as Gate 1's E-Application link) — the gate clears once the customer books and completes the exam, not immediately."""
+    return "{}"
+
+
+@tool(args_schema=CaseLookupArgs)
+def run_pre_underwriting_clearance(**kwargs) -> str:
+    """Run all 6 pre-underwriting clearance gates in sequence (E-Application, ACR, Compliance, IPP, Insurance History, Medical Exam) so the case is 100% ready for AI Risk Assessment. Use when the user says "clear all gates", "run pre-underwriting", "complete pre-underwriting checks"."""
     return "{}"
 
 
@@ -664,6 +773,16 @@ ALL_TOOLS = [
     create_proposal,
     upload_document,
     run_risk_assessment,
+    # pre-underwriting (the 6 gates)
+    get_pre_underwriting_status,
+    verify_e_application,
+    submit_agent_confidential_report,
+    run_compliance_screening,
+    override_compliance_screening,
+    process_initial_premium_payment,
+    run_insurance_history_check,
+    assess_medical_examination,
+    run_pre_underwriting_clearance,
     # policy lifecycle (steps 5–7)
     approve_case,
     get_pre_issuance_status,

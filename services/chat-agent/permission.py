@@ -24,6 +24,15 @@ MUTATING_TOOLS = {
     "upload_document",
     "run_risk_assessment",
     "quick_start_workflow",
+    # Pre-underwriting (the 6 gates)
+    "verify_e_application",
+    "submit_agent_confidential_report",
+    "run_compliance_screening",
+    "override_compliance_screening",
+    "process_initial_premium_payment",
+    "run_insurance_history_check",
+    "assess_medical_examination",
+    "run_pre_underwriting_clearance",
     # Policy lifecycle (steps 5–7)
     "approve_case",
     "run_pre_issuance_verification",
@@ -56,6 +65,8 @@ SAFE_TOOLS = {
     "get_dashboard_stats",
     "get_workflow_recommendation",
     "continue_underwriting_journey",
+    # Pre-underwriting (read-only)
+    "get_pre_underwriting_status",
     # Policy lifecycle (read-only)
     "get_pre_issuance_status",
     "get_active_policy_status",
@@ -133,6 +144,16 @@ STEP_LABELS: dict[str, str] = {
     "quick_start_workflow": "Generating demo data",
     "start_underwriting_journey": "Launching autonomous underwriting journey",
     "continue_underwriting_journey": "Resuming underwriting journey",
+    # Pre-underwriting (the 6 gates)
+    "get_pre_underwriting_status": "Checking pre-underwriting gates",
+    "verify_e_application": "Processing E-Application",
+    "submit_agent_confidential_report": "Submitting Agent Confidential Report",
+    "run_compliance_screening": "Running compliance screening",
+    "override_compliance_screening": "Applying compliance override",
+    "process_initial_premium_payment": "Processing initial premium payment",
+    "run_insurance_history_check": "Running insurance history check",
+    "assess_medical_examination": "Assessing medical examination requirements",
+    "run_pre_underwriting_clearance": "Clearing all pre-underwriting gates",
     # Policy lifecycle (steps 5–7)
     "approve_case": "Approving case",
     "get_pre_issuance_status": "Checking pre-issuance readiness",
@@ -173,6 +194,10 @@ AGENT_ALLOWED_TOOLS = {
     "upload_document",
     "get_document_checklist",
     "list_artifacts",
+    # Pre-Underwriting Field Steps (Agent Field Roles)
+    "get_pre_underwriting_status",
+    "verify_e_application",
+    "submit_agent_confidential_report",
     # Discovery & Navigation
     "navigate_to_page",
     "show_record",
@@ -181,11 +206,48 @@ AGENT_ALLOWED_TOOLS = {
     "get_workflow_recommendation",
 }
 
+# The agent-app mobile client is Agent-only and covers onboarding through
+# Gate 6 (Medical Examination booking) — everything from AI Risk Assessment
+# onward (risk engine, OCR/document-audit decisioning, approval, pre-issuance,
+# policy issuance, payment) stays web-portal-only. Deliberately excludes
+# run_pre_underwriting_clearance / the autonomous-journey tools: those
+# fabricate/auto-fill gates instead of collecting the field agent's real ACR
+# and the customer's real e-app/medical-exam submissions, which would defeat
+# the point of a field agent driving this from their own device.
+AGENT_MOBILE_ALLOWED_TOOLS = AGENT_ALLOWED_TOOLS | {
+    "run_compliance_screening",
+    "override_compliance_screening",
+    "process_initial_premium_payment",
+    "run_insurance_history_check",
+    "assess_medical_examination",
+}
 
-def is_role_allowed(tool_name: str, role: str) -> bool:
+# Tools blocked on mobile even though they'd be allowed for this role on web —
+# used only to give the mobile client a friendlier "wrong app for this step"
+# message instead of the generic RBAC denial.
+MOBILE_PORTAL_ONLY_TOOLS = {
+    "run_risk_assessment",
+    "get_risk_assessment",
+    "approve_case",
+    "update_case_status",
+    "run_pre_issuance_verification",
+    "get_pre_issuance_status",
+    "issue_policy",
+    "confirm_policy_payment",
+    "get_active_policy_status",
+    "run_pre_underwriting_clearance",
+    "start_underwriting_journey",
+    "continue_underwriting_journey",
+    "bulk_underwriting_journey",
+}
+
+
+def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     if role in ("SuperAdmin", "Admin"):
         return True
     if role == "Agent":
+        if platform == "mobile":
+            return tool_name in AGENT_MOBILE_ALLOWED_TOOLS
         return tool_name in AGENT_ALLOWED_TOOLS
     if role == "Underwriter":
         return tool_name not in {"add_user", "delete_user", "list_users", "delete_customer"}
@@ -196,10 +258,10 @@ def is_role_allowed(tool_name: str, role: str) -> bool:
     return True
 
 
-def get_tools_for_role(role: str) -> list:
+def get_tools_for_role(role: str, platform: str = "web") -> list:
     """Return only the tool definitions authorized for the given user role (Multitenant Tools)."""
     from tools import ALL_TOOLS
-    return [t for t in ALL_TOOLS if is_role_allowed(t.name, role)]
+    return [t for t in ALL_TOOLS if is_role_allowed(t.name, role, platform)]
 
 
 def requires_confirmation(tool_name: str) -> bool:

@@ -51,7 +51,7 @@ const SessionContext = createContext<SessionContextValue>({
   signOut: async () => {},
 });
 
-const normaliseRole = (raw: string | null | undefined): UserRole => {
+export const normaliseRole = (raw: string | null | undefined): UserRole => {
   switch ((raw ?? '').trim().toLowerCase()) {
     case 'admin':
       return 'Admin';

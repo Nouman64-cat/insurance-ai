@@ -10,12 +10,41 @@ import {
   ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import { useNavigation, useRoute, RouteProp, CompositeNavigationProp } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../theme/ThemeContext';
 import { spacing, radii, typography, hitTarget } from '../theme/tokens';
 import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
-import { sendChatMessage, ChatMessage } from '../api/chat';
+import { useNotifications } from '../notifications/NotificationContext';
+import { sendChatMessage, resumeChatThread, ChatMessage, ChatInterrupt, QuickAction } from '../api/chat';
 import { Screen, ScreenHeader, Text, Pressable, ConfirmDialog } from '../components/ui';
+import { RootStackParamList, MainTabParamList } from '../navigation/AppNavigator';
+
+type ChatNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Chat'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
+
+// Splits message text on URLs so each link can be rendered as its own
+// tappable-to-copy span instead of being stuck inside unselectable body text.
+// (Deliberately a non-global regex for the per-part .test() below — a global
+// regex's `lastIndex` state would make alternating calls flip-flop wrongly.)
+const URL_PATTERN = /https?:\/\/[^\s]+/;
+const splitTextAndLinks = (text: string): Array<{ text: string; isLink: boolean }> => {
+  const parts = text.split(new RegExp(`(${URL_PATTERN.source})`, 'g'));
+  return parts.filter(Boolean).map((part) => ({ text: part, isLink: URL_PATTERN.test(part) }));
+};
+
+// This app doesn't have a native form for tools that need one (e.g. the
+// Agent Confidential Report) — decline gracefully instead of hanging on a
+// client_execute interrupt the mobile UI can't render.
+const CLIENT_EXECUTE_FALLBACK = {
+  success: false,
+  message: "Filling this out isn't available in the mobile app yet — please complete this step from the web portal.",
+};
 
 const newThreadId = () => Math.random().toString(36).slice(2, 9);
 
@@ -36,12 +65,37 @@ export default function ChatScreen() {
   const { colors, shadow } = useTheme();
   const { isCompact } = useResponsive();
   const { user } = useSession();
+  const { toast } = useNotifications();
+  const navigation = useNavigation<ChatNavigationProp>();
+  const route = useRoute<RouteProp<MainTabParamList, 'Chat'>>();
+
+  const copyLink = useCallback(
+    async (url: string) => {
+      await Clipboard.setStringAsync(url);
+      toast('Link copied', { tone: 'success', icon: 'copy-outline' });
+    },
+    [toast]
+  );
 
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [threadId, setThreadId] = useState(newThreadId);
   const [confirmClear, setConfirmClear] = useState(false);
+  // A paused turn awaiting a yes/no, a typed clarification, etc. While this is
+  // set, the next send() answers the interrupt (via /chat/resume) instead of
+  // starting a fresh turn.
+  const [pendingInterrupt, setPendingInterrupt] = useState<ChatInterrupt | null>(null);
+
+  // Another screen (e.g. Pre-Underwriting) can hand off a ready-to-send
+  // command — load it into the composer once, then clear the param so
+  // re-focusing this tab later doesn't refill it again.
+  useEffect(() => {
+    if (route.params?.prefillMessage) {
+      setInput(route.params.prefillMessage);
+      navigation.setParams({ prefillMessage: undefined });
+    }
+  }, [route.params?.prefillMessage, navigation]);
 
   const listRef = useRef<FlatList<ChatMessage>>(null);
   // Guards the auto-scroll from firing after the screen unmounts mid-stream.
@@ -58,6 +112,99 @@ export default function ChatScreen() {
     requestAnimationFrame(() => listRef.current?.scrollToEnd({ animated: true }));
   }, []);
 
+  // Drives one leg of a turn — either a fresh /chat/stream message or a
+  // /chat/resume answer to a paused interrupt — updating the same message
+  // bubble as events arrive. Recurses once, automatically, when the backend
+  // pauses on a client_execute interrupt this app can't render a form for.
+  const runStream = useCallback(
+    async (mode: 'send' | 'resume', payload: any, replyId: string): Promise<void> => {
+      let accumulated = '';
+      let actions: QuickAction[] | undefined;
+      let interrupt: ChatInterrupt | null = null;
+      let streamError: string | null = null;
+
+      const callbacks = {
+        onToken: (token: string) => {
+          accumulated += token;
+          if (!mounted.current) return;
+          setMessages((prev) => prev.map((m) => (m.id === replyId ? { ...m, text: accumulated } : m)));
+        },
+        onQuickActions: (received: QuickAction[]) => {
+          actions = received;
+        },
+        onInterrupt: (received: ChatInterrupt) => {
+          interrupt = received;
+        },
+        onError: (message: string) => {
+          streamError = message;
+        },
+      };
+
+      if (mode === 'send') {
+        await sendChatMessage(payload.message, threadId, callbacks);
+      } else {
+        await resumeChatThread(payload.resumeValue, threadId, callbacks);
+      }
+
+      if (streamError) {
+        if (!mounted.current) return;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === replyId ? { ...m, text: streamError!, isStreaming: false, isError: true } : m))
+        );
+        return;
+      }
+
+      if (interrupt) {
+        const paused = interrupt as ChatInterrupt;
+        if (paused.kind === 'client_execute') {
+          if (paused.tool_call?.name === 'submit_agent_confidential_report') {
+            const args = paused.tool_call.args || {};
+            if (!mounted.current) return;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === replyId
+                  ? { ...m, text: 'Opening the Agent Confidential Report form…', isStreaming: false }
+                  : m
+              )
+            );
+            navigation.navigate('AgentConfidentialReport', {
+              caseId: args.case_id,
+              applicantName: args.case_number,
+              onResolved: (result) => {
+                runStream('resume', { resumeValue: result }, replyId);
+              },
+            });
+            return;
+          }
+          await runStream('resume', { resumeValue: CLIENT_EXECUTE_FALLBACK }, replyId);
+          return;
+        }
+
+        setPendingInterrupt(paused);
+        const chips: QuickAction[] =
+          paused.kind === 'confirm'
+            ? (paused.options || ['Yes', 'Cancel']).map((label) => ({ label, actionType: 'confirm', payload: label }))
+            : (paused.options || []).map((label) => ({ label, actionType: 'submit', payload: label }));
+
+        if (!mounted.current) return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === replyId
+              ? { ...m, text: accumulated || paused.question || '', isStreaming: false, quickActions: chips }
+              : m
+          )
+        );
+        return;
+      }
+
+      if (!mounted.current) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === replyId ? { ...m, text: accumulated || 'Done.', isStreaming: false, quickActions: actions } : m))
+      );
+    },
+    [threadId]
+  );
+
   const send = useCallback(
     async (textToSend?: string) => {
       const query = (textToSend ?? input).trim();
@@ -73,38 +220,18 @@ export default function ChatScreen() {
       setSending(true);
       scrollToEnd();
 
+      const resuming = pendingInterrupt;
+      setPendingInterrupt(null);
+
       try {
-        let accumulated = '';
-        let actions: any[] | undefined;
-
-        await sendChatMessage(
-          query,
-          threadId,
-          (token) => {
-            accumulated += token;
-            if (!mounted.current) return;
-            setMessages((prev) =>
-              prev.map((m) => (m.id === replyId ? { ...m, text: accumulated } : m))
-            );
-          },
-          (received) => {
-            actions = received;
-          }
-        );
-
-        if (!mounted.current) return;
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === replyId
-              ? {
-                  ...m,
-                  text: accumulated || 'Done.',
-                  isStreaming: false,
-                  quickActions: actions,
-                }
-              : m
-          )
-        );
+        if (resuming?.kind === 'confirm') {
+          const lower = query.toLowerCase();
+          await runStream('resume', { resumeValue: lower === 'yes' || lower === 'y' }, replyId);
+        } else if (resuming?.kind === 'clarify') {
+          await runStream('resume', { resumeValue: query }, replyId);
+        } else {
+          await runStream('send', { message: query }, replyId);
+        }
       } catch (err: any) {
         if (!mounted.current) return;
         setMessages((prev) =>
@@ -126,12 +253,13 @@ export default function ChatScreen() {
         }
       }
     },
-    [input, sending, threadId, scrollToEnd]
+    [input, sending, threadId, pendingInterrupt, runStream, scrollToEnd]
   );
 
   const startNewThread = useCallback(() => {
     setThreadId(newThreadId());
     setMessages([WELCOME]);
+    setPendingInterrupt(null);
     setConfirmClear(false);
   }, []);
 
@@ -184,7 +312,25 @@ export default function ChatScreen() {
                     : undefined
                 }
               >
-                {item.text}
+                {splitTextAndLinks(item.text).map((part, index) =>
+                  part.isLink ? (
+                    <Text
+                      key={index}
+                      variant="body"
+                      onPress={() => copyLink(part.text)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Copy link ${part.text}`}
+                      style={[
+                        styles.link,
+                        { color: isUser ? colors.tone.brand.onSolid : colors.tone.accent.on },
+                      ]}
+                    >
+                      {part.text}
+                    </Text>
+                  ) : (
+                    <React.Fragment key={index}>{part.text}</React.Fragment>
+                  )
+                )}
               </Text>
             ) : item.isStreaming ? (
               <View style={styles.thinking}>
@@ -256,7 +402,7 @@ export default function ChatScreen() {
     >
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         // Clears the bottom tab bar, which the keyboard otherwise overlaps.
         keyboardVerticalOffset={Platform.OS === 'ios' ? 88 : 0}
       >
@@ -342,6 +488,10 @@ export default function ChatScreen() {
 const styles = StyleSheet.create({
   flex: {
     flex: 1,
+  },
+  link: {
+    textDecorationLine: 'underline',
+    fontWeight: '600',
   },
   list: {
     padding: spacing.lg,

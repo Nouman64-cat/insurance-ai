@@ -106,6 +106,14 @@ const isValidDate = (value: string) => {
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 /** Pakistani mobile numbers, tolerating spaces, dashes and a +92 prefix. */
 const isValidPhone = (value: string) => /^\+?[\d\s-]{10,15}$/.test(value.trim());
+const isValidCnic = (value: string) => /^\d{5}-\d{7}-\d{1}$/.test(value.trim());
+/** Auto-inserts the CNIC's dashes as the agent types digits. */
+const formatCnic = (val: string) => {
+  const digits = val.replace(/\D/g, '');
+  if (digits.length <= 5) return digits;
+  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12, 13)}`;
+};
 
 export default function AddLeadScreen() {
   const route = useRoute<AddLeadRoute>();
@@ -162,6 +170,8 @@ export default function AddLeadScreen() {
     if (type === 'INDIVIDUAL') {
       if (!form.firstName.trim()) next.firstName = 'First name is required.';
       if (form.phone && !isValidPhone(form.phone)) next.phone = 'Enter a valid phone number.';
+      if (!form.cnic.trim()) next.cnic = 'CNIC is required.';
+      else if (!isValidCnic(form.cnic)) next.cnic = 'Use the format XXXXX-XXXXXXX-X.';
       if (isFull) {
         if (!form.lastName.trim()) next.lastName = 'Last name is required.';
         if (!form.dob.trim()) next.dob = 'Date of birth is required.';
@@ -366,6 +376,18 @@ export default function AddLeadScreen() {
             onChangeText={(v) => set('phone', v)}
             error={errors.phone}
           />
+          <Field
+            label="CNIC number"
+            required
+            placeholder="35201-1234567-8"
+            keyboardType="numbers-and-punctuation"
+            leftIcon="card-outline"
+            value={form.cnic}
+            onChangeText={(v) => set('cnic', formatCnic(v))}
+            error={errors.cnic}
+            maxLength={15}
+            helperText="Required — identifies this lead uniquely and prevents duplicate profiles."
+          />
         </Card>
       ) : null}
 
@@ -473,12 +495,15 @@ export default function AddLeadScreen() {
           <Accordion title="CNIC & documents" icon="card-outline" tone="accent">
             <Field
               label="CNIC number"
+              required
               placeholder="35201-1234567-8"
               keyboardType="numbers-and-punctuation"
               leftIcon="card-outline"
               value={form.cnic}
-              onChangeText={(v) => set('cnic', v)}
-              helperText="Optional at lead stage — required before underwriting."
+              onChangeText={(v) => set('cnic', formatCnic(v))}
+              error={errors.cnic}
+              maxLength={15}
+              helperText="Required — identifies this lead uniquely and prevents duplicate profiles."
             />
             <Field
               label="CNIC issue date"

@@ -45,22 +45,29 @@ export async function listUnderwriters(tenantId: string): Promise<Agent[]> {
  * "who owns this lead" needs this lookup.
  *
  * Cached per tenant because the Leads board resolves names on every refresh,
- * and the directory changes far less often than the leads do.
+ * and the directory changes far less often than the leads do — but bounded to
+ * a short TTL rather than cached forever: a newly added/activated agent
+ * otherwise never appears (shows "Unassigned" for their own leads) until the
+ * tab is hard-reloaded, since the Leads board's own 15s poll kept reusing the
+ * same stale snapshot indefinitely.
  */
-let directoryCache: { tenantId: string; byId: Map<string, string> } | null = null;
+const DIRECTORY_TTL_MS = 60_000;
+let directoryCache: { tenantId: string; byId: Map<string, string>; fetchedAt: number } | null = null;
 
 export async function getUserDirectory(tenantId: string): Promise<Map<string, string>> {
-  if (directoryCache?.tenantId === tenantId) return directoryCache.byId;
+  if (directoryCache?.tenantId === tenantId && Date.now() - directoryCache.fetchedAt < DIRECTORY_TTL_MS) {
+    return directoryCache.byId;
+  }
   try {
     const res = await api.get<UserRow[]>(`/tenants/${tenantId}/users/directory`);
     const byId = new Map<string, string>(
       (res.data || []).map((u) => [String(u.id), u.full_name || u.email || "Unknown"]),
     );
-    directoryCache = { tenantId, byId };
+    directoryCache = { tenantId, byId, fetchedAt: Date.now() };
     return byId;
   } catch {
     // Names are a nicety — the board must still render without them.
-    return new Map();
+    return directoryCache?.byId ?? new Map();
   }
 }
 

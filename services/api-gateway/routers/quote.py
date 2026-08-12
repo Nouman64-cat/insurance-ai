@@ -154,6 +154,7 @@ async def list_quotes(
     coverage_min: Optional[float] = Query(None),
     coverage_max: Optional[float] = Query(None),
     assigned_underwriter_id: Optional[UUID] = Query(None),
+    assigned_agent_id: Optional[UUID] = Query(None),
     acquisition_source_id: Optional[UUID] = Query(None),
     channel: Optional[AcquisitionSourceType] = Query(None),
     effective_date_from: Optional[date] = Query(None),
@@ -202,6 +203,8 @@ async def list_quotes(
         stmt = stmt.where(Policy.coverage_amount <= coverage_max)
     if assigned_underwriter_id:
         stmt = stmt.where(Policy.assigned_underwriter_id == assigned_underwriter_id)
+    if assigned_agent_id:
+        stmt = stmt.where(Customer.assigned_agent_id == assigned_agent_id)
     if acquisition_source_id:
         stmt = stmt.where(Customer.acquisition_source_id == acquisition_source_id)
     if channel:
@@ -477,6 +480,7 @@ async def get_quote(
             is_smoker=customer_in.is_smoker,
             height_cm=customer_in.height_cm,
             weight_kg=customer_in.weight_kg,
+            assigned_agent_id=customer_in.assigned_agent_id,
         )
         session.add(customer)
         await session.flush()

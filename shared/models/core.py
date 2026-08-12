@@ -1377,7 +1377,8 @@ class CustomerEApplication(SQLModel, table=True):
 
     status: EApplicationStatusEnum = Field(default=EApplicationStatusEnum.NOT_SENT, max_length=50)
 
-    # Never store the raw token — only its sha256 hex digest, checked on lookup.
+    # Token storage: both raw token (to preserve active link across duplicate invites) and sha256 hash
+    invite_token: Optional[str] = Field(default=None, max_length=255, nullable=True)
     invite_token_hash: Optional[str] = Field(default=None, index=True, max_length=64, nullable=True)
     invite_expires_at: Optional[datetime] = Field(default=None, nullable=True)
     sent_at: Optional[datetime] = Field(default=None, nullable=True)

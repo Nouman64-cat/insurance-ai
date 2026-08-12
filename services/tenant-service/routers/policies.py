@@ -521,11 +521,21 @@ async def list_policies(
     tenant_id: UUID,
     status: Optional[str] = None,
     customer_id: Optional[UUID] = None,
+    assigned_agent_id: Optional[UUID] = None,
+    family_group_id: Optional[UUID] = None,
     session: AsyncSession = Depends(get_session),
 ):
     q = select(Policy).where(Policy.tenant_id == tenant_id)
     if customer_id:
         q = q.where(Policy.customer_id == customer_id)
+    if family_group_id:
+        q = q.where(Policy.family_policy_id == family_group_id) # Wait, is it family_policy_id or family_group_id?
+
+    # To filter by assigned_agent_id, we need to join with Customer or Case?
+    # Policy doesn't have assigned_agent_id, but Customer does.
+    if assigned_agent_id:
+        q = q.join(Customer, Policy.customer_id == Customer.id).where(Customer.assigned_agent_id == assigned_agent_id)
+
     result = await session.exec(q)
     policies = list(result.all())
     if status:

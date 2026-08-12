@@ -8,7 +8,7 @@ import { ToneName } from '../theme/palette';
 import { useResponsive } from '../hooks/useResponsive';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useNotifications } from '../notifications/NotificationContext';
-import { fetchProposals, ProposalItem } from '../api/proposals';
+import { fetchProposals, submitProposalToUnderwriting, ProposalItem } from '../api/proposals';
 import { formatRelativeTime } from '../notifications/types';
 import {
   Screen,
@@ -71,6 +71,7 @@ export default function ProposalsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<ViewMode>('list');
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
 
   const load = useCallback(
     async (options: { silent?: boolean } = {}) => {
@@ -116,6 +117,27 @@ export default function ProposalsScreen() {
     () => proposals.reduce((sum, p) => sum + (Number(p.coverage_amount) || 0), 0),
     [proposals]
   );
+
+  const handleSubmitToUnderwriting = useCallback(async (item: ProposalItem) => {
+    setSubmittingId(item.id);
+    try {
+      await submitProposalToUnderwriting(item);
+      toast('Success', {
+        body: 'Proposal sent to Underwriting successfully.',
+        tone: 'success',
+        icon: 'checkmark-circle',
+      });
+      load({ silent: true });
+    } catch (err: any) {
+      toast('Error', {
+        body: err?.message || 'Failed to submit proposal',
+        tone: 'danger',
+        icon: 'alert-circle',
+      });
+    } finally {
+      setSubmittingId(null);
+    }
+  }, [load, toast]);
 
   const renderCard = (item: ProposalItem, compact = false) => {
     const meta = metaFor(item.status);
@@ -172,6 +194,30 @@ export default function ProposalsScreen() {
             </Text>
           </View>
         </View>
+
+        {item.status === 'QUOTED' && (
+          <View style={styles.actions}>
+            <Pressable
+              onPress={() => handleSubmitToUnderwriting(item)}
+              disabled={submittingId === item.id}
+              pressedScale={0.97}
+              style={[
+                styles.action,
+                { backgroundColor: colors.tone.brand.soft, borderColor: colors.tone.brand.softBorder },
+                submittingId === item.id ? styles.actionBusy : null,
+              ]}
+            >
+              <Ionicons
+                name={submittingId === item.id ? 'hourglass-outline' : 'paper-plane-outline'}
+                size={15}
+                color={colors.tone.brand.on}
+              />
+              <Text variant="captionStrong" style={{ color: colors.tone.brand.on }} numberOfLines={1}>
+                {submittingId === item.id ? 'Submitting…' : 'Submit to Underwriting'}
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </Card>
     );
   };
@@ -321,6 +367,11 @@ export default function ProposalsScreen() {
         />
       )}
 
+      <Fab
+        icon="add"
+        onPress={() => navigation.navigate('AddProposal')}
+        accessibilityLabel="Create a new proposal"
+      />
     </Screen>
   );
 }
@@ -425,5 +476,24 @@ const styles = StyleSheet.create({
     borderRadius: radii.lg,
     borderWidth: 1,
     borderStyle: 'dashed',
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  action: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.xs,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radii.md,
+    borderWidth: 1,
+  },
+  actionBusy: {
+    opacity: 0.7,
   },
 });

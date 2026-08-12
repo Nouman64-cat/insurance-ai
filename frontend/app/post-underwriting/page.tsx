@@ -248,6 +248,125 @@ function pickReinsurer(panel: Reinsurer[], label: string): Reinsurer | null {
   );
 }
 
+function GateStepItem({ step, isLast, isExpanded, onToggle }: { step: any; isLast: boolean; isExpanded: boolean; onToggle: () => void }) {
+
+  return (
+    <div className={`relative flex gap-4 transition-all duration-300 group ${isExpanded ? "pb-6" : "pb-2"} last:pb-1`}>
+      {/* Continuous Vertical Progress Line Track */}
+      {!isLast && (
+        <div
+          className={`absolute top-8 left-[17px] -ml-px w-0.5 h-[calc(100%-20px)] transition-colors duration-300 ${
+            step.isDone
+              ? "bg-emerald-500"
+              : step.isNextActive
+              ? "bg-gradient-to-b from-blue-500 to-slate-200"
+              : "bg-slate-200"
+          }`}
+        />
+      )}
+
+      {/* Progress Node Circle */}
+      <div 
+        className="relative z-10 shrink-0 cursor-pointer transition-transform active:scale-95"
+        onClick={onToggle}
+      >
+        {step.isDone ? (
+          <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-emerald-600/20 ring-4 ring-emerald-50">
+            ✓
+          </div>
+        ) : step.isNextActive ? (
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-600/25 ring-4 ring-blue-100 animate-pulse">
+            {step.num}
+          </div>
+        ) : (
+          <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold">
+            {step.isLocked ? "🔒" : step.num}
+          </div>
+        )}
+      </div>
+
+      {/* Step Content Container Row */}
+      <div
+        className={`flex-1 rounded-xl border transition-all duration-300 overflow-hidden ${
+          step.isDone
+            ? "bg-emerald-50/30 border-emerald-200/80 hover:border-emerald-300"
+            : step.isNextActive
+            ? "bg-white border-blue-300/90 shadow-xs ring-1 ring-blue-200/50"
+            : "bg-slate-50/50 border-slate-200/70 opacity-75 hover:opacity-100"
+        }`}
+      >
+        <div 
+          className={`cursor-pointer flex flex-col justify-center transition-all duration-300 ${isExpanded ? "p-3.5" : "px-3.5 py-2"}`}
+          onClick={onToggle}
+        >
+          <div className="flex items-center justify-between gap-2 select-none pr-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4
+                className={`font-bold tracking-tight transition-colors ${
+                  isExpanded ? "text-xs" : "text-[11px]"
+                } ${
+                  step.isDone
+                    ? "text-emerald-950"
+                    : step.isNextActive
+                    ? "text-blue-950"
+                    : "text-slate-600"
+                }`}
+              >
+                Gate {step.num}: {step.title}
+              </h4>
+              
+              <span className={`text-[10px] text-slate-400 font-mono transition-all duration-300 hidden sm:inline-block ${isExpanded ? "opacity-100 max-w-full ml-1" : "opacity-0 max-w-0 overflow-hidden m-0"}`}>
+                • {step.law}
+              </span>
+              
+              <div className="scale-95 sm:scale-100 ml-1">
+                {step.badge}
+              </div>
+            </div>
+            
+            <div 
+              className={`shrink-0 p-1 rounded-full hover:bg-black/5 transition-colors ${
+                isExpanded ? "text-slate-500" : "text-slate-400"
+              }`}
+            >
+              <svg
+                className={`w-4 h-4 transition-transform duration-300 ${
+                  isExpanded ? "rotate-180" : ""
+                }`}
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          
+          <div 
+            className={`grid transition-[grid-template-rows,opacity,margin] duration-300 ease-in-out ${
+              isExpanded ? "grid-rows-[1fr] opacity-100 mt-3" : "grid-rows-[0fr] opacity-0 mt-0"
+            }`}
+          >
+            <div className="overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {step.desc}
+                </p>
+                <div 
+                  className="shrink-0"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {step.action}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function PostUnderwritingPage() {
   const { notify } = useNotify();
 
@@ -274,6 +393,9 @@ export default function PostUnderwritingPage() {
 
   // Live cession + panel for whichever policy the Gate 2 modal is showing.
   const [activeReinsuranceView, setActiveReinsuranceView] = useState<ReinsuranceView | null>(null);
+  
+  const [expandedGates, setExpandedGates] = useState<Record<string, number>>({});
+  const [showAllGates, setShowAllGates] = useState<Record<string, boolean>>({});
 
   // ── Persisted workflow state ───────────────────────────────────────────────
   // Gates 3–5 and the pricing engine have no server-side record, so localStorage
@@ -882,6 +1004,7 @@ export default function PostUnderwritingPage() {
                   </div>
 
                   {(() => {
+                    const coState = getOrCreateCounterState(p);
                     const isGate1Done = gates.isCounterAccepted;
                     const isGate2Done = gates.isReinsured;
                     const isGate3Done = gates.isHistoryClear;
@@ -892,20 +1015,39 @@ export default function PostUnderwritingPage() {
                     const isGate3Locked = !isGate1Done || !isGate2Done;
                     const isGate4Locked = !isGate1Done || !isGate2Done || !isGate3Done;
                     const isGate5Locked = !isGate1Done || !isGate2Done || !isGate3Done || !isGate4Done;
+                    
+                    const totalLoading = Math.round((coState.deltaDuration + coState.deltaExposure + coState.deltaCoverage + coState.deltaRate) * 100);
+                    
+                    const descContent = totalLoading > 0 ? (
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-slate-700 font-semibold text-[11px]">
+                          Risk Driver: {coState.reasonCode || "Escalation"}
+                        </span>
+                        <span>Proposer legal consent for loading & exclusion terms prior to contract perfection.</span>
+                      </div>
+                    ) : (
+                      "Proposer legal consent for terms prior to contract perfection."
+                    );
+
+                    const pendingBadgeLabel = (p.status || "").toUpperCase() === "COUNTEROFFER" 
+                      ? "Pending Sign-off" 
+                      : totalLoading > 0 
+                      ? `+${totalLoading}% Loading` 
+                      : "No Loadings";
 
                     const gateSteps = [
                       {
                         num: 1,
                         title: "Counter-Offer Sign-off",
                         law: "Pakistani Contract Act 1872",
-                        desc: "Proposer legal consent for loading & exclusion terms prior to contract perfection.",
+                        desc: descContent,
                         isDone: isGate1Done,
                         isLocked: false,
                         isNextActive: !isGate1Done,
                         badge: (
                           <StatusPill
                             done={isGate1Done}
-                            pending={(p.status || "").toUpperCase() === "COUNTEROFFER" ? "Pending Sign-off" : "No Loadings"}
+                            pending={pendingBadgeLabel}
                             label="Accepted"
                           />
                         ),
@@ -1069,83 +1211,85 @@ export default function PostUnderwritingPage() {
 
                     return (
                       <div className="relative pl-2">
-                        {gateSteps.map((step, idx) => {
-                          const isLast = idx === gateSteps.length - 1;
-
+                        {(() => {
+                          const isShowingAll = showAllGates[p.id] || false;
+                          const defaultActive = gateSteps.find(s => s.isNextActive)?.num || gateSteps[gateSteps.length - 1].num;
+                          const activeNum = expandedGates[p.id] !== undefined ? expandedGates[p.id] : defaultActive;
+                          const visibleSteps = isShowingAll ? gateSteps : [gateSteps.find(s => s.num === defaultActive) || gateSteps[0]];
+                          
                           return (
-                            <div key={step.num} className="relative flex gap-4 pb-6 last:pb-1 group">
-                              {/* Continuous Vertical Progress Line Track */}
-                              {!isLast && (
-                                <div
-                                  className={`absolute top-8 left-[17px] -ml-px w-0.5 h-[calc(100%-20px)] transition-colors duration-300 ${
-                                    step.isDone
-                                      ? "bg-emerald-500"
-                                      : step.isNextActive
-                                      ? "bg-gradient-to-b from-blue-500 to-slate-200"
-                                      : "bg-slate-200"
-                                  }`}
-                                />
-                              )}
-
-                              {/* Progress Node Circle */}
-                              <div className="relative z-10 shrink-0">
-                                {step.isDone ? (
-                                  <div className="w-9 h-9 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-emerald-600/20 ring-4 ring-emerald-50">
-                                    ✓
+                            <>
+                              {!isShowingAll && defaultActive > 1 && (
+                                <div 
+                                  className="relative flex gap-4 transition-all duration-300 pb-2 cursor-pointer group"
+                                  onClick={() => setShowAllGates(prev => ({ ...prev, [p.id]: true }))}
+                                >
+                                  <div className="absolute top-8 left-[17px] -ml-px w-0.5 h-[calc(100%-20px)] bg-emerald-500" />
+                                  <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-emerald-50 group-hover:text-emerald-600 group-hover:border-emerald-200 transition-colors shadow-sm">
+                                    <span className="tracking-[0.1em] -ml-0.5">•••</span>
                                   </div>
-                                ) : step.isNextActive ? (
-                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center text-xs font-bold shadow-md shadow-blue-600/25 ring-4 ring-blue-100 animate-pulse">
-                                    {step.num}
-                                  </div>
-                                ) : (
-                                  <div className="w-9 h-9 rounded-full bg-slate-100 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold">
-                                    {step.isLocked ? "🔒" : step.num}
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Step Content Container Row */}
-                              <div
-                                className={`flex-1 rounded-xl p-3.5 border transition-all duration-200 ${
-                                  step.isDone
-                                    ? "bg-emerald-50/30 border-emerald-200/80 hover:border-emerald-300"
-                                    : step.isNextActive
-                                    ? "bg-white border-blue-300/90 shadow-xs ring-1 ring-blue-200/50"
-                                    : "bg-slate-50/50 border-slate-200/70 opacity-75"
-                                }`}
-                              >
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                                  <div>
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <h4
-                                        className={`text-xs font-bold tracking-tight ${
-                                          step.isDone
-                                            ? "text-emerald-950"
-                                            : step.isNextActive
-                                            ? "text-blue-950"
-                                            : "text-slate-600"
-                                        }`}
-                                      >
-                                        Gate {step.num}: {step.title}
-                                      </h4>
-                                      <span className="text-[10px] text-slate-400 font-mono">
-                                        • {step.law}
-                                      </span>
-                                      {step.badge}
-                                    </div>
-                                    <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
-                                      {step.desc}
-                                    </p>
-                                  </div>
-
-                                  <div className="shrink-0 pt-1 sm:pt-0">
-                                    {step.action}
+                                  <div className="flex-1 flex flex-col justify-center">
+                                    <span className="text-[11px] font-semibold text-slate-400 group-hover:text-emerald-600 transition-colors">
+                                      Show {defaultActive - 1} previous stage{defaultActive - 1 > 1 ? "s" : ""}
+                                    </span>
                                   </div>
                                 </div>
-                              </div>
-                            </div>
+                              )}
+
+                              {visibleSteps.map((step, idx) => {
+                                const isLast = isShowingAll ? false : defaultActive === gateSteps.length;
+                                return (
+                                  <GateStepItem 
+                                    key={step.num} 
+                                    step={step} 
+                                    isLast={isLast} 
+                                    isExpanded={activeNum === step.num}
+                                    onToggle={() => {
+                                      setExpandedGates(prev => ({
+                                        ...prev,
+                                        [p.id]: prev[p.id] === step.num ? -1 : step.num
+                                      }));
+                                    }}
+                                  />
+                                );
+                              })}
+
+                              {!isShowingAll && defaultActive < gateSteps.length && (
+                                <div 
+                                  className="relative flex gap-4 transition-all duration-300 pb-2 pt-1 cursor-pointer group"
+                                  onClick={() => setShowAllGates(prev => ({ ...prev, [p.id]: true }))}
+                                >
+                                  <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-400 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-slate-100 group-hover:text-slate-600 group-hover:border-slate-300 transition-colors shadow-sm">
+                                    <span className="tracking-[0.1em] -ml-0.5">•••</span>
+                                  </div>
+                                  <div className="flex-1 flex flex-col justify-center">
+                                    <span className="text-[11px] font-semibold text-slate-400 group-hover:text-slate-600 transition-colors">
+                                      Show {gateSteps.length - defaultActive} remaining stage{gateSteps.length - defaultActive > 1 ? "s" : ""}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {isShowingAll && (
+                                <div 
+                                  className="relative flex gap-4 transition-all duration-300 pb-2 pt-1 cursor-pointer group"
+                                  onClick={() => setShowAllGates(prev => ({ ...prev, [p.id]: false }))}
+                                >
+                                  <div className="relative z-10 shrink-0 w-9 h-9 rounded-full bg-slate-50 text-slate-500 border border-slate-200 flex items-center justify-center text-xs font-bold group-hover:bg-slate-200 group-hover:text-slate-700 group-hover:border-slate-300 transition-colors shadow-sm">
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                                    </svg>
+                                  </div>
+                                  <div className="flex-1 flex flex-col justify-center">
+                                    <span className="text-[11px] font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
+                                      Collapse timeline (view active only)
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </>
                           );
-                        })}
+                        })()}
                       </div>
                     );
                   })()}

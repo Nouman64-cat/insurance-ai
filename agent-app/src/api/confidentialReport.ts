@@ -19,6 +19,12 @@ export interface ConfidentialReportForm {
   health_appearance_note?: string;
   hazardous_activity_known?: boolean;
 
+  // Agent Declaration — the submit endpoint rejects the report unless all
+  // three are true (services/tenant-service/routers/agent_confidential_report.py).
+  terms_explained_to_proposer?: boolean;
+  identity_verified_kyc?: boolean;
+  signature_obtained_in_presence?: boolean;
+
   recommendation?: ACRRecommendation;
   remarks?: string;
 }
