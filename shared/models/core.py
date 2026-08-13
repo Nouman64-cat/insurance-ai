@@ -2441,3 +2441,100 @@ class ReinsuranceReferral(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Business Rule Engine Models
+# ─────────────────────────────────────────────────────────────────────────────
+
+class RuleDomainEnum(str, Enum):
+    ELIGIBILITY = "ELIGIBILITY"               # Product Parameters & Eligibility
+    PRICING = "PRICING"                       # Premium Rating & Loadings
+    UNDERWRITING_GATES = "UNDERWRITING_GATES" # Pre-Underwriting Gates (1-6)
+    COMPLIANCE_AML = "COMPLIANCE_AML"         # Compliance, PEP, Sanctions & SECP
+    MEDICAL_NML = "MEDICAL_NML"               # Non-Medical Limits & Exam Grid
+    INSURANCE_HISTORY = "INSURANCE_HISTORY"   # Replacement & Over-Insurance
+    COMMISSION_SECP = "COMMISSION_SECP"       # Commission & Statutory Rates
+    RBAC_AUTHORIZATION = "RBAC_AUTHORIZATION" # Tool Access & Role Authorization
+    AI_DECISION_BANDS = "AI_DECISION_BANDS"   # AI Composite Bands & Status Mapping
+
+
+class RuleVersionStatusEnum(str, Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    RETIRED = "RETIRED"
+
+
+class RuleSet(SQLModel, table=True):
+    """
+    A named group of rules governing a specific functional area.
+    Can be tenant-specific or global (tenant_id is None).
+    """
+    __tablename__ = "rule_sets"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: Optional[UUID] = Field(default=None, foreign_key="tenants.id", index=True, nullable=True)
+    code: str = Field(unique=True, index=True, max_length=100)
+    name: str = Field(max_length=255)
+    domain: RuleDomainEnum = Field(max_length=50, index=True)
+    description: str = Field(default="", max_length=1000)
+    is_active: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class RuleVersion(SQLModel, table=True):
+    """
+    Effective-dated version container for a RuleSet.
+    Allows draft-authoring and audit reproducibility.
+    """
+    __tablename__ = "rule_versions"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    rule_set_id: UUID = Field(foreign_key="rule_sets.id", index=True, nullable=False)
+    version_no: int = Field(default=1, nullable=False)
+    status: RuleVersionStatusEnum = Field(default=RuleVersionStatusEnum.DRAFT, max_length=50, nullable=False)
+    effective_from: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    effective_to: Optional[datetime] = Field(default=None, nullable=True)
+    authored_by: str = Field(default="System", max_length=255)
+    approved_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
+    notes: Optional[str] = Field(default=None, max_length=1000, nullable=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class BusinessRule(SQLModel, table=True):
+    """
+    Single decision rule within a RuleVersion.
+    Conditions are evaluated in priority order (lower number = higher priority).
+    """
+    __tablename__ = "business_rules"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    rule_version_id: UUID = Field(foreign_key="rule_versions.id", index=True, nullable=False)
+    name: str = Field(max_length=255)
+    priority: int = Field(default=10, nullable=False)
+    condition_operator: str = Field(default="ALL", max_length=10)
+    conditions: dict = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    action_outcome: str = Field(max_length=100)
+    outcome_payload: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    is_enabled: bool = Field(default=True, nullable=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class RuleEvaluationLog(SQLModel, table=True):
+    """
+    Audit log recorded every time a rule set is evaluated against a context payload.
+    """
+    __tablename__ = "rule_evaluation_logs"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: Optional[UUID] = Field(default=None, index=True, nullable=True)
+    rule_set_code: str = Field(index=True, max_length=100)
+    rule_version_no: int = Field(default=1)
+    case_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    actor: Optional[str] = Field(default=None, max_length=255)
+    input_context: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    outcome: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    reasons: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    evaluated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+

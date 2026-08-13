@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { useHighlightTarget } from "@/lib/useHighlightTarget";
+import { useNotify } from "@/components/NotificationContext";
 
 interface User {
   id: string;
@@ -22,6 +23,8 @@ interface User {
   employee_id?: string;
   designation?: string;
   date_of_joining?: string;
+  cnic?: string;
+  location?: string;
 }
 
 interface Role {
@@ -38,12 +41,12 @@ interface Branch {
 }
 
 export default function UserManagementPage() {
+  const { notify } = useNotify();
   const [users, setUsers] = useState<User[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(true);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [currentUserEmail, setCurrentUserEmail] = useState("");
   const [myBranch, setMyBranch] = useState<Branch | null>(null);
 
@@ -141,7 +144,6 @@ export default function UserManagementPage() {
     setCnic("");
     setLocation("");
     setError("");
-    setSuccess("");
     setShowCreateModal(true);
   };
 
@@ -160,14 +162,12 @@ export default function UserManagementPage() {
     setEditCnic(user.cnic ?? "");
     setEditLocation(user.location ?? "");
     setError("");
-    setSuccess("");
     setShowEditModal(true);
   };
 
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setSuccess("");
     setFormLoading(true);
     const tenantId = localStorage.getItem("tenant_id");
 
@@ -180,7 +180,7 @@ export default function UserManagementPage() {
         location: location || null,
       });
 
-      setSuccess(`User created successfully! Login credentials were emailed to ${email}.`);
+      notify(`User created successfully! Login credentials were emailed to ${email}.`, true);
       setShowCreateModal(false);
       fetchUsersAndRoles();
     } catch (err: any) {
@@ -193,7 +193,6 @@ export default function UserManagementPage() {
   const handleEditUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setSuccess("");
     setFormLoading(true);
     const tenantId = localStorage.getItem("tenant_id");
 
@@ -220,7 +219,7 @@ export default function UserManagementPage() {
 
       await api.patch(`/tenants/${tenantId}/users/${selectedUser.id}`, updateData);
 
-      setSuccess("User updated successfully!");
+      notify("User updated successfully!", true);
       setShowEditModal(false);
       fetchUsersAndRoles();
     } catch (err: any) {
@@ -236,12 +235,11 @@ export default function UserManagementPage() {
     }
 
     setError("");
-    setSuccess("");
     const tenantId = localStorage.getItem("tenant_id");
 
     try {
       await api.delete(`/tenants/${tenantId}/users/${user.id}`);
-      setSuccess("User deleted successfully!");
+      notify("User deleted successfully!", true);
       fetchUsersAndRoles();
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to delete user.");
@@ -299,11 +297,6 @@ export default function UserManagementPage() {
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-600 font-medium">
           {error}
-        </div>
-      )}
-      {success && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">
-          {success}
         </div>
       )}
 

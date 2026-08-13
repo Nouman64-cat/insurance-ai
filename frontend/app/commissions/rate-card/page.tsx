@@ -6,27 +6,26 @@ import { SECP_DEFAULT_RULES, CommissionRule } from "../../services/commissions";
 
 export default function RateCardPage() {
   const getEventTags = (rule: CommissionRule) => {
-    // Mapping events based on insurance domain logic and user request (LG, PC, PLI, PRC)
     if (rule.premiumType === "FIRST_YEAR") {
       if (rule.segment === "group") {
         return [
-          { code: "LG", label: "LEAD GENERATION", color: "bg-indigo-50 text-indigo-700 border-indigo-200" },
-          { code: "PLI", label: "POLICY ISSUANCE", color: "bg-purple-50 text-purple-700 border-purple-200" }
+          { code: "LG", label: "LEAD GENERATION" },
+          { code: "PLI", label: "POLICY ISSUANCE" }
         ];
       }
       return [
-        { code: "PLI", label: "POLICY ISSUANCE", color: "bg-purple-50 text-purple-700 border-purple-200" },
-        { code: "PC", label: "PREMIUM COLLECTION", color: "bg-emerald-50 text-emerald-700 border-emerald-200" }
+        { code: "PLI", label: "POLICY ISSUANCE" },
+        { code: "PC", label: "PREMIUM COLLECTION" }
       ];
     }
     if (rule.premiumType === "RENEWAL") {
       return [
-        { code: "PRC", label: "PREMIUM RECURRED COLLECTION", color: "bg-blue-50 text-blue-700 border-blue-200" }
+        { code: "PRC", label: "PREMIUM RECURRED COLLECTION" }
       ];
     }
     if (rule.premiumType === "SINGLE_PREMIUM") {
       return [
-        { code: "PC", label: "PREMIUM COLLECTION", color: "bg-emerald-50 text-emerald-700 border-emerald-200" }
+        { code: "PC", label: "PREMIUM COLLECTION" }
       ];
     }
     return [];
@@ -34,44 +33,44 @@ export default function RateCardPage() {
 
   const getTypeInfo = (premiumType: string) => {
     if (premiumType === "FIRST_YEAR" || premiumType === "SINGLE_PREMIUM") {
-      return { label: "One-Time", className: "bg-slate-100 text-slate-700 border-slate-200" };
+      return { label: "One-Time", className: "bg-slate-100 text-slate-700 border-slate-200 font-medium" };
     }
-    return { label: "Recurring", className: "bg-amber-50 text-amber-700 border-amber-200" };
+    return { label: "Recurring", className: "bg-blue-50 text-blue-700 border-blue-200 font-medium" };
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 p-6 md:p-8 space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 max-w-7xl mx-auto">
+    <div className="min-h-screen bg-slate-50 text-slate-800 p-6 md:p-8 space-y-6 font-sans">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 max-w-7xl mx-auto">
         <div>
-          <h1 className="text-3xl font-black tracking-tight text-slate-900">Commission Types</h1>
-          <p className="text-sm text-slate-500 mt-1 font-medium">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">Commission Types</h1>
+          <p className="text-xs text-slate-500 mt-0.5">
             Statutory commission matrix and payable events
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            href="/commissions"
-            className="px-4 py-2.5 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-            </svg>
-            Back to Commissions
-          </Link>
-        </div>
+        <Link
+          href="/commissions"
+          className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-semibold transition shadow-xs flex items-center gap-2"
+        >
+          <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          Back to Commissions
+        </Link>
       </div>
 
+      {/* Main Table */}
       <div className="max-w-7xl mx-auto">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
+            <table className="w-full text-left text-xs text-slate-700 whitespace-nowrap">
               <thead>
-                <tr className="bg-slate-50/80 border-b border-slate-200">
-                  <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-wider w-16 text-center">Sr. No</th>
-                  <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-wider">Commission Name & Ref</th>
-                  <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-wider">Event(s)</th>
-                  <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-wider w-32 text-center">Type</th>
-                  <th className="py-4 px-6 text-xs font-black text-slate-500 uppercase tracking-wider w-24 text-right">Rate</th>
+                <tr className="bg-slate-50 text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200 font-semibold">
+                  <th className="py-3.5 px-5 w-16 text-center">Sr. No</th>
+                  <th className="py-3.5 px-5">Commission Name & Ref</th>
+                  <th className="py-3.5 px-5">Event(s)</th>
+                  <th className="py-3.5 px-5 text-center w-32">Type</th>
+                  <th className="py-3.5 px-5 text-right w-28">Rate</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -80,50 +79,50 @@ export default function RateCardPage() {
                   const events = getEventTags(rule);
                   
                   return (
-                    <tr key={rule.id} className="hover:bg-slate-50/60 transition-colors group">
-                      <td className="py-5 px-6 text-sm font-bold text-slate-400 text-center group-hover:text-slate-600 transition-colors">
+                    <tr key={rule.id} className="hover:bg-slate-50/70 transition-colors">
+                      <td className="py-4 px-5 text-slate-400 font-mono text-[11px] text-center font-semibold">
                         {String(index + 1).padStart(2, '0')}
                       </td>
-                      <td className="py-5 px-6">
-                        <div className="flex flex-col gap-1.5">
+                      <td className="py-4 px-5">
+                        <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-900 text-sm">
+                            <span className="font-semibold text-slate-900 text-xs">
                               {rule.description}
                             </span>
-                            <span className="px-2 py-0.5 rounded-md bg-blue-50 border border-blue-100 text-blue-700 font-bold text-[10px] uppercase tracking-wide">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 uppercase">
                               {rule.segment}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500">
-                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <div className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400">
+                            <svg className="w-3.5 h-3.5 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                             </svg>
                             {rule.secpRef}
                           </div>
                         </div>
                       </td>
-                      <td className="py-5 px-6">
-                        <div className="flex flex-wrap gap-2">
+                      <td className="py-4 px-5">
+                        <div className="flex flex-wrap gap-1.5">
                           {events.map((evt) => (
                             <div
                               key={evt.code}
-                              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-[10px] font-bold tracking-wide ${evt.color}`}
+                              className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-50 text-slate-700 border border-slate-200 text-[10px] font-semibold"
                               title={evt.label}
                             >
-                              <span>{evt.code}</span>
-                              <span className="opacity-40">|</span>
-                              <span className="opacity-80">{evt.label}</span>
+                              <span className="text-blue-700 font-mono">{evt.code}</span>
+                              <span className="text-slate-300">|</span>
+                              <span className="text-slate-600 font-medium">{evt.label}</span>
                             </div>
                           ))}
                         </div>
                       </td>
-                      <td className="py-5 px-6 text-center">
-                        <span className={`inline-flex px-2.5 py-1 rounded-lg border text-xs font-bold ${typeInfo.className}`}>
+                      <td className="py-4 px-5 text-center">
+                        <span className={`inline-flex px-2.5 py-0.5 rounded text-[11px] border ${typeInfo.className}`}>
                           {typeInfo.label}
                         </span>
                       </td>
-                      <td className="py-5 px-6 text-right">
-                        <span className="font-mono text-lg font-black text-slate-900 bg-slate-100 px-2.5 py-1 rounded-lg">
+                      <td className="py-4 px-5 text-right">
+                        <span className="font-mono text-sm font-bold text-slate-900 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded">
                           {rule.ratePct}%
                         </span>
                       </td>

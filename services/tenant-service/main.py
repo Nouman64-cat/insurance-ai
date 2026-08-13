@@ -69,6 +69,7 @@ from routers.insurance_history import router as insurance_history_router
 from routers.medical_exam import router as medical_exam_router
 from routers.reinsurance import router as reinsurance_router
 from routers.demo import router as demo_router
+from routers.rules import router as rules_router
 # STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
 # from routers.renewal_scheduler import start_renewal_scheduler
 from shared.models.core import Role
@@ -191,6 +192,7 @@ app.include_router(medical_exam_router)
 # Post-underwriting — facultative reinsurance referral (before final approval).
 app.include_router(reinsurance_router)
 app.include_router(demo_router)
+app.include_router(rules_router)
 
 
 @app.get("/health", tags=["Ops"])

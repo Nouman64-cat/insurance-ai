@@ -292,7 +292,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
             {/* ── Footer ────────────────────────────────────────────────────── */}
             {!isAutomationMode && (
-              <footer className="border-t border-slate-200 bg-white py-2.5 px-6">
+              <footer className="border-t border-slate-200 bg-white py-2.5 px-6 shrink-0">
                 <p className="text-center text-[10px] text-slate-400">
                   insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; {tenantName}
                 </p>

@@ -72,7 +72,7 @@ export function TopBar({ title = "Management Intelligence Dashboard", subtitle }
       <div className="flex items-center gap-3 min-w-0">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold text-slate-900 tracking-tight truncate leading-none">
+            <h1 className="text-base font-bold text-slate-900 tracking-tight truncate leading-snug py-0.5">
               {title}
             </h1>
             <span className="hidden sm:inline-flex items-center text-[9px] font-bold uppercase tracking-[0.12em] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full whitespace-nowrap">
