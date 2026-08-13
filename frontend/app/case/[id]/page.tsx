@@ -709,17 +709,19 @@ export default function CasePage({ params }: { params: { id: string } }) {
   };
 
   const fetchCompliance = useCallback(async () => {
-    if (!tenantId || !detail?.policy_id) return;
+    const policyId = detail?.policy?.id || detail?.case?.policy_id;
+    if (!tenantId || !policyId) return;
     try {
-      setChecks(await getCompliance(detail.policy_id));
+      setChecks(await getCompliance(policyId));
     } catch { /* non-fatal */ }
-  }, [tenantId, detail?.policy_id]);
+  }, [tenantId, detail?.policy?.id, detail?.case?.policy_id]);
 
   const handleRunCompliance = async () => {
-    if (!detail?.policy_id) return;
+    const policyId = detail?.policy?.id || detail?.case?.policy_id;
+    if (!policyId) return;
     setCompBusy(true);
     try {
-      await runCompliance(detail.policy_id);
+      await runCompliance(policyId);
       await fetchCompliance();
     } catch { /* */ }
     finally { setCompBusy(false); }
@@ -729,6 +731,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
     setCompBusy(true);
     try {
       await clearCompliance(id, "Cleared after review", "officer");
+      await fetchCompliance();
+    } catch { /* */ }
+    finally { setCompBusy(false); }
+  };
+
+  /** Clears every non-Passed check in one go — the checklist only ever
+   * offered "Run PEP Check", which re-screens via screen_and_store and wipes
+   * out any prior clearance (fresh rows, cleared_by reset to null), so a
+   * check that had just been cleared would silently flip back to Pending the
+   * next time anyone hit that button. This is the actual "approve" action. */
+  const handleClearAllCompliance = async () => {
+    const toClear = checks.filter((ck) => ck.status !== "Passed");
+    if (toClear.length === 0) return;
+    setCompBusy(true);
+    try {
+      await Promise.all(toClear.map((ck) => clearCompliance(ck.id, "Cleared after review", "officer")));
       await fetchCompliance();
     } catch { /* */ }
     finally { setCompBusy(false); }
@@ -852,10 +870,11 @@ export default function CasePage({ params }: { params: { id: string } }) {
   }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical]);
 
   useEffect(() => {
-    if (detail?.policy_id) {
+    const policyId = detail?.policy?.id || detail?.case?.policy_id;
+    if (policyId) {
       fetchCompliance();
     }
-  }, [detail?.policy_id, fetchCompliance]);
+  }, [detail?.policy?.id, detail?.case?.policy_id, fetchCompliance]);
 
   // Poll every 3s while any artifact is still being OCR'd, so status/ocr_result
   // update without a manual refresh — same pattern as the /cases explorer.
@@ -1282,7 +1301,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const medicalDone = medical?.status === "Completed" || medical?.status === "NotRequired" || medical?.status === "Waived";
   const historyDone = history?.status === "Clear";
-  const pepDone = checks.some((ck) => ck.status === "Passed");
+  const pepDone = checks.length > 0 && checks.every((ck) => ck.status === "Passed");
 
   if (!pepDone) missingPreChecks.push("PEP & Sanctions Screening");
   if (!historyDone) missingPreChecks.push("Insurance History Clearance");
@@ -1326,12 +1345,27 @@ export default function CasePage({ params }: { params: { id: string } }) {
       id: "pep",
       title: "PEP & Sanctions Screening",
       done: pepDone,
-      statusLabel: pepDone ? "Passed" : "Pending",
-      description: pepDone 
-        ? "Compliance check cleared against SECP & OpenSanctions database." 
+      statusLabel: pepDone ? "Passed" : checks.length > 0 ? "Flagged" : "Pending",
+      description: pepDone
+        ? "Compliance check cleared against SECP & OpenSanctions database."
+        : checks.length > 0
+        ? "Screened and flagged for manual sign-off — clear it below once reviewed."
         : "PEP & AML screening required.",
-      actionLabel: compBusy ? "Screening…" : "Run PEP Check",
-      onAction: handleRunCompliance,
+      // Re-screening (screen_and_store) replaces every check row, wiping any
+      // existing clearance — so once a check exists, the action here is to
+      // clear it, not to run it again. Running again is still possible from
+      // the Underwriting queue's "Re-Screen" action if a genuinely fresh
+      // screen is needed.
+      actionLabel: compBusy
+        ? checks.length > 0
+          ? "Clearing…"
+          : "Screening…"
+        : checks.length > 0
+        ? pepDone
+          ? "Cleared"
+          : "Clear Flagged Check"
+        : "Run PEP Check",
+      onAction: checks.length > 0 ? (pepDone ? undefined : handleClearAllCompliance) : handleRunCompliance,
       busy: compBusy,
     },
     {
