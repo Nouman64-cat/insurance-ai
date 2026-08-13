@@ -66,6 +66,10 @@ export const SECP_DEFAULT_RULES: CommissionRule[] = [
 // In-memory cache for generated commission entries (since there's no true commission backend table yet)
 let ledgerCache: CommissionLedgerEntry[] | null = null;
 
+export function resetLedgerCache() {
+  ledgerCache = null;
+}
+
 import { listPolicies } from "./policies";
 import { getUserDirectory, listAgents } from "./agents";
 
@@ -121,8 +125,8 @@ export async function listCommissionLedger(): Promise<CommissionLedgerEntry[]> {
           gatingReason: isRealized
             ? "Disbursed to Agent Bank Account (SECP Rule 58 Confirmed)"
             : isIssued
-            ? "Payable (Policy Issued & Cash Realized - SECP Rule 58)"
-            : "Gated: Pending Cash Realization Confirmation (SECP Rule 58)",
+            ? "Payable (Policy Issued & Premium Collected - SECP Rule 58)"
+            : "Gated: Pending Premium Collection (SECP Rule 58)",
           accruedAt: p.created_at || new Date().toISOString().replace("T", " ").slice(0, 19),
         };
       });
@@ -221,11 +225,11 @@ export async function calculateCommissionForPolicy(params: {
   const net = gross - wht;
 
   let status: CommissionStatus = "ACCRUED";
-  let gatingReason = "Gated: Pending Cash Realization Confirmation (SECP Rule 58)";
+  let gatingReason = "Gated: Pending Premium Collection (SECP Rule 58)";
 
   if (params.isRealized && params.isIssued) {
     status = "PAYABLE";
-    gatingReason = "Payable (Policy Issued & Cash Realized - SECP Rule 58)";
+    gatingReason = "Payable (Policy Issued & Premium Collected - SECP Rule 58)";
   }
 
   const newEntry: CommissionLedgerEntry = {

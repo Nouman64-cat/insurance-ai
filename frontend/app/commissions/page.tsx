@@ -9,6 +9,7 @@ import {
   SECP_DEFAULT_RULES,
   listCommissionLedger,
   getCommissionStats,
+  resetLedgerCache,
   disburseCommission,
   triggerClawback,
   calculateCommissionForPolicy,
@@ -45,6 +46,7 @@ export default function CommissionsPage() {
   const loadData = async () => {
     setLoading(true);
     try {
+      resetLedgerCache();
       const [lData, sData] = await Promise.all([listCommissionLedger(), getCommissionStats()]);
       setLedger(lData);
       setStats(sData);
@@ -112,7 +114,7 @@ export default function CommissionsPage() {
         isIssued: true,
       });
       notify("New Commission Entry calculated and accrued to Ledger!");
-      setActiveTab("ledger");
+      setActiveTab("finances");
       loadData();
     } catch (err) {
       notify("Failed to calculate commission.", false);
@@ -148,11 +150,10 @@ export default function CommissionsPage() {
       {/* Toast Notification */}
       {notification && (
         <div
-          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 ${
-            notification.type === "success"
+          className={`fixed top-5 right-5 z-50 px-4 py-3 rounded-xl shadow-xl border text-xs font-bold flex items-center gap-2 animate-in slide-in-from-top-2 ${notification.type === "success"
               ? "bg-blue-900 text-blue-100 border-blue-700"
               : "bg-slate-900 text-slate-100 border-slate-700"
-          }`}
+            }`}
         >
           <span>{notification.type === "success" ? "✓" : "✕"}</span>
           <span>{notification.msg}</span>
@@ -184,36 +185,32 @@ export default function CommissionsPage() {
       {stats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-slate-500 text-[11px] font-semibold">
+            <div className="text-slate-500 text-[11px] font-semibold">
               <span>Total Gross</span>
-              <span className="text-blue-600 font-mono">SECP Form LG</span>
             </div>
             <p className="text-xl font-extrabold text-slate-900 font-mono">{fmtPKR(stats.totalGrossCommission)}</p>
             <p className="text-[10px] text-slate-400">Total gross commission</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-blue-900 text-[11px] font-semibold">
+            <div className="text-blue-900 text-[11px] font-semibold">
               <span>Total Accrued</span>
-              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-[9px] font-bold">Form LA</span>
             </div>
             <p className="text-xl font-extrabold text-blue-700 font-mono">{fmtPKR(stats.totalAccruedLiability)}</p>
             <p className="text-[10px] text-slate-400">Total accrued commission</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-blue-200 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-blue-800 text-[11px] font-semibold">
+            <div className="text-blue-800 text-[11px] font-semibold">
               <span>Total Paid</span>
-              <span className="text-blue-600 font-bold text-[10px]">✓ Bank Settled</span>
             </div>
             <p className="text-xl font-extrabold text-blue-700 font-mono">{fmtPKR(stats.totalDisbursed)}</p>
             <p className="text-[10px] text-slate-400">Total paid after tax</p>
           </div>
 
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-1">
-            <div className="flex items-center justify-between text-slate-800 text-[11px] font-semibold">
+            <div className="text-slate-800 text-[11px] font-semibold">
               <span>Clawbacks</span>
-              <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[9px] font-bold">Rule 62</span>
             </div>
             <p className="text-xl font-extrabold text-slate-700 font-mono">{fmtPKR(stats.totalClawbacks)}</p>
             <p className="text-[10px] text-slate-400">Reversed commissions</p>
@@ -225,41 +222,37 @@ export default function CommissionsPage() {
       <div className="border-b border-slate-200 flex gap-2">
         <button
           onClick={() => setActiveTab("tracing")}
-          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
-            activeTab === "tracing"
+          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${activeTab === "tracing"
               ? "border-blue-600 text-blue-700"
               : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
+            }`}
         >
           Traceability
         </button>
         <button
           onClick={() => setActiveTab("finances")}
-          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
-            activeTab === "finances"
+          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${activeTab === "finances"
               ? "border-blue-600 text-blue-700"
               : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
+            }`}
         >
           Ledger: Finances
         </button>
         <button
           onClick={() => setActiveTab("general")}
-          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
-            activeTab === "general"
+          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${activeTab === "general"
               ? "border-blue-600 text-blue-700"
               : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
+            }`}
         >
           Ledger: General Info
         </button>
         <button
           onClick={() => setActiveTab("calculator")}
-          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${
-            activeTab === "calculator"
+          className={`pb-3 px-4 font-bold text-xs border-b-2 transition-all ${activeTab === "calculator"
               ? "border-blue-600 text-blue-700"
               : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
+            }`}
         >
           Calculator
         </button>
@@ -309,32 +302,33 @@ export default function CommissionsPage() {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                   <tr>
-                    <th className="p-3">Ref ID &amp; Lead ID</th>
-                    {activeTab === "general" && <th className="p-3">Agent Name &amp; Code</th>}
-                    {activeTab === "general" && <th className="p-3">Policy &amp; Customer</th>}
-                    <th className="p-3">Premium Type &amp; Rate</th>
-                    <th className="p-3">Collected Premium</th>
-                    {activeTab === "finances" && <th className="p-3">WHT (10%)</th>}
-                    {activeTab === "finances" && <th className="p-3">Net Commission</th>}
-                    {activeTab === "finances" && <th className="p-3">Status</th>}
+                    <th className="p-3 text-left">Ref ID &amp; Lead ID</th>
+                    {activeTab === "general" && <th className="p-3 text-left">Business Partner</th>}
+                    {activeTab === "general" && <th className="p-3 text-left">Customer</th>}
+                    <th className="p-3 text-left">Premium Type &amp; Rate</th>
+                    <th className="p-3 text-right">Collected Premium</th>
+                    {activeTab === "finances" && <th className="p-3 text-right">Gross Commission</th>}
+                    {activeTab === "finances" && <th className="p-3 text-right">WHT (10%)</th>}
+                    {activeTab === "finances" && <th className="p-3 text-right">Net Commission</th>}
+                    {activeTab === "finances" && <th className="p-3 text-center">Status</th>}
                     {activeTab === "finances" && <th className="p-3 text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-800">
                   {filteredLedger.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-3">
+                      <td className="p-3 text-left">
                         <p className="font-mono font-bold text-blue-900">{item.id}</p>
                         <span className="text-[10px] text-slate-400 font-mono">Trace: {item.leadId}</span>
                       </td>
                       {activeTab === "general" && (
-                        <td className="p-3">
+                        <td className="p-3 text-left">
                           <p className="font-bold text-slate-900">{item.agentName}</p>
                           <p className="text-[10px] font-mono text-slate-400">{item.agentCode}</p>
                         </td>
                       )}
                       {activeTab === "general" && (
-                        <td className="p-3">
+                        <td className="p-3 text-left">
                           <p className="font-semibold text-slate-800">{item.customerName}</p>
                           <p className="text-[10px] font-mono text-blue-700">{item.policyNumber}</p>
                           <span className="text-[9px] uppercase px-1.5 py-0.2 rounded bg-slate-100 font-bold text-slate-500">
@@ -342,51 +336,54 @@ export default function CommissionsPage() {
                           </span>
                         </td>
                       )}
-                      <td className="p-3">
+                      <td className="p-3 text-left">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${
-                            item.premiumType === "FIRST_YEAR"
+                          className={`px-2 py-0.5 rounded text-[10px] font-extrabold border ${item.premiumType === "FIRST_YEAR"
                               ? "bg-blue-50 text-blue-700 border-blue-200"
                               : item.premiumType === "RENEWAL"
-                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-slate-50 text-slate-800 border-slate-200"
-                          }`}
+                                ? "bg-blue-50 text-blue-700 border-blue-200"
+                                : "bg-slate-50 text-slate-800 border-slate-200"
+                            }`}
                         >
                           {item.premiumType.replace("_", " ")} (Yr {item.policyYear})
                         </span>
                         <p className="text-[10px] font-bold text-slate-600 mt-1">Rate: {item.ratePct}%</p>
                       </td>
-                      <td className="p-3 font-mono font-bold text-slate-800">
+                      <td className="p-3 text-right font-mono font-bold text-slate-800">
                         {fmtPKR(item.collectedPremium)}
                       </td>
                       {activeTab === "finances" && (
                         <>
-                          <td className="p-3 font-mono text-[11px]">
-                            <p className="font-bold text-slate-900">{fmtPKR(item.grossCommission)}</p>
-                            <p className="text-slate-400 text-[10px]">- WHT: {fmtPKR(item.whtTax)}</p>
+                          <td className="p-3 text-right font-mono font-bold text-slate-900 text-xs">
+                            {fmtPKR(item.grossCommission)}
                           </td>
-                          <td className="p-3 font-mono font-extrabold text-blue-700 text-sm">
+                          <td className="p-3 text-right font-mono text-slate-500 text-xs">
+                            - {fmtPKR(item.whtTax)}
+                          </td>
+                          <td className="p-3 text-right font-mono font-extrabold text-blue-700 text-sm">
                             {fmtPKR(item.netCommission)}
                           </td>
-                          <td className="p-3">
-                            <div className="space-y-1">
-                              <span
-                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold border inline-block ${
-                                  item.status === "DISBURSED"
-                                    ? "bg-blue-100 text-blue-800 border-blue-300"
-                                    : item.status === "PAYABLE"
+                          <td className="p-3 text-center">
+                            <span
+                              title={
+                                item.gatingReason
+                                  ? item.gatingReason
+                                      .replace(/Cash Realization Confirmation|Cash Realization/gi, "Premium Collection")
+                                      .replace(/Cash Realized/gi, "Premium Collected")
+                                  : ""
+                              }
+                              className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold border inline-block cursor-help ${
+                                item.status === "DISBURSED"
+                                  ? "bg-blue-100 text-blue-800 border-blue-300"
+                                  : item.status === "PAYABLE"
                                     ? "bg-blue-100 text-blue-800 border-blue-300"
                                     : item.status === "CLAWED_BACK"
-                                    ? "bg-slate-100 text-slate-800 border-slate-300"
-                                    : "bg-slate-100 text-slate-700 border-slate-300"
-                                }`}
-                              >
-                                {item.status}
-                              </span>
-                              <p className="text-[10px] text-slate-500 leading-tight max-w-[200px]">
-                                {item.gatingReason}
-                              </p>
-                            </div>
+                                      ? "bg-slate-100 text-slate-800 border-slate-300"
+                                      : "bg-slate-100 text-slate-700 border-slate-300"
+                              }`}
+                            >
+                              {item.status}
+                            </span>
                           </td>
                           <td className="p-3 text-right space-x-1">
                             {item.status === "PAYABLE" && (
@@ -577,7 +574,7 @@ export default function CommissionsPage() {
                   </span>
                 </div>
 
-                {/* 5-Step Stepper Trace */}
+                {/* 6-Step Stepper Trace */}
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[10px] whitespace-nowrap">
                   <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
                     <span className="font-bold text-slate-400 uppercase mr-1.5">Lead:</span>
@@ -587,6 +584,11 @@ export default function CommissionsPage() {
                   <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
                     <span className="font-bold text-slate-400 uppercase mr-1.5">Proposal:</span>
                     <span className="font-semibold text-slate-800">{item.customerName}</span>
+                  </div>
+                  <span className="text-slate-500 text-base font-black mx-1">→</span>
+                  <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
+                    <span className="font-bold text-slate-400 uppercase mr-1.5">Underwriting:</span>
+                    <span className="font-semibold text-blue-700">Approved (NML Passed)</span>
                   </div>
                   <span className="text-slate-500 text-base font-black mx-1">→</span>
                   <div className="bg-white px-2.5 py-1.5 rounded border border-slate-200">
