@@ -12,6 +12,7 @@ export interface PolicyItem {
   premium_amount?: number;
   status: string; // PENDING_PAYMENT, APPROVED, ACTIVE, ISSUED, LAPSED
   stage: 'PRE_ISSUANCE' | 'POST_ISSUANCE';
+  segment?: string; // individual | family | organization — see routers/cases.py:customer_segment
   created_at: string;
   effective_date?: string;
   expiry_date?: string;
@@ -39,6 +40,7 @@ export const fetchPolicies = async (): Promise<PolicyItem[]> => {
         premium_amount: c.premium_amount || 45000,
         status: c.status || (isActive ? 'ACTIVE' : 'APPROVED'),
         stage: isActive ? 'POST_ISSUANCE' : 'PRE_ISSUANCE',
+        segment: c.customer_segment,
         created_at: c.created_at || new Date().toISOString(),
         effective_date: c.effective_date || '2026-08-01',
         expiry_date: c.expiry_date || '2046-08-01',

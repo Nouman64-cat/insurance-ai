@@ -1,3 +1,5 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import api from './api';
 import { fetchPolicies } from './policies';
 
 export type PremiumType = 'FIRST_YEAR' | 'RENEWAL' | 'SINGLE_PREMIUM';
@@ -26,6 +28,57 @@ export const SECP_DEFAULT_RULES: CommissionRule[] = [
   { id: 'R7', segment: 'family', premiumType: 'FIRST_YEAR', policyYear: 1, ratePct: 30.0, description: 'Family Takaful First Year Acquisition Commission', secpRef: 'SECP Takaful Rules 2012' },
 ];
 
+// Backend segment values (routers/cases.py, policies.py) are individual |
+// family | organization; the SECP rate card's rule conditions speak in
+// Individual | Group | Family. "organization" is this platform's group/
+// employer-sponsored segment, so it maps to "Group" here.
+function segmentToCategory(segment: string | undefined): 'Individual' | 'Group' | 'Family' {
+  if (segment === 'organization') return 'Group';
+  if (segment === 'family') return 'Family';
+  return 'Individual';
+}
+
+/**
+ * Calls the tenant-service rule engine (commission.secp_rate_card) instead of
+ * a hardcoded rate. Falls back to the local SECP_DEFAULT_RULES table (still
+ * the correct statutory default) if the rule engine is unreachable, so a
+ * network hiccup degrades to the known-correct static table rather than
+ * failing the ledger screen outright.
+ */
+async function evaluateCommissionRule(params: {
+  segment: string | undefined;
+  policyYear: number;
+  premiumType: PremiumType;
+}): Promise<{ ratePct: number; reason: string }> {
+  const category = segmentToCategory(params.segment);
+  const fallback = SECP_DEFAULT_RULES.find(
+    (r) => r.segment === (category === 'Group' ? 'group' : category === 'Family' ? 'family' : 'individual')
+      && r.premiumType === params.premiumType
+      && r.policyYear === Math.min(params.policyYear, 3)
+  ) || SECP_DEFAULT_RULES[0];
+
+  try {
+    const tenantId = await AsyncStorage.getItem('tenant_id');
+    if (!tenantId) throw new Error('No tenant ID found');
+    const res = await api.post(`/tenants/${tenantId}/rules/evaluate`, {
+      rule_set_code: 'commission.secp_rate_card',
+      context: {
+        category,
+        policy_year: params.policyYear,
+        premium_type: params.premiumType,
+      },
+      actor: 'Agent App',
+    });
+    const payload = res.data?.outcome_payload;
+    if (res.data?.status === 'SUCCESS' && typeof payload?.commission_pct === 'number') {
+      return { ratePct: payload.commission_pct, reason: payload.reason || fallback.description };
+    }
+  } catch (e) {
+    // Rule engine unreachable — fall through to the static SECP default below.
+  }
+  return { ratePct: fallback.ratePct, reason: fallback.description };
+}
+
 export interface CommissionEntry {
   id: string;
   policyId: string;
@@ -51,12 +104,19 @@ export interface CommissionEntry {
 export const fetchMyCommissionLedger = async (): Promise<CommissionEntry[]> => {
   const policies = await fetchPolicies();
 
-  return policies.map((p): CommissionEntry => {
+  return Promise.all(policies.map(async (p): Promise<CommissionEntry> => {
     const collectedPremium = p.premium_amount || Math.round(p.coverage_amount * 0.025) || 250000;
     const status = (p.status || '').toUpperCase();
     const isRealized = status === 'ACTIVE' || status === 'ISSUED';
     const isIssued = isRealized || status === 'PENDING_PAYMENT' || status === 'APPROVED';
-    const ratePct = SECP_DEFAULT_RULES[0].ratePct; // individual, first-year — the common case for new business
+    // Policy-year tracking isn't surfaced on the case list yet, so this
+    // ledger only covers new business (year 1) — same limitation the
+    // pre-rule-engine version had, but the rate now varies with segment.
+    const { ratePct } = await evaluateCommissionRule({
+      segment: p.segment,
+      policyYear: 1,
+      premiumType: 'FIRST_YEAR',
+    });
     const grossCommission = Math.round((collectedPremium * ratePct) / 100);
     const whtTax = Math.round(grossCommission * 0.1);
     const netCommission = grossCommission - whtTax;
@@ -79,5 +139,5 @@ export const fetchMyCommissionLedger = async (): Promise<CommissionEntry[]> => {
         ? 'Payable — issued & cash realized (SECP Rule 58)'
         : 'Gated — pending cash realization confirmation (SECP Rule 58)',
     };
-  });
+  }));
 };

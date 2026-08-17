@@ -70,6 +70,7 @@ const DOMAINS = [
   { key: "COMMISSION_SECP", label: "SECP Statutory Commission Rates" },
   { key: "RBAC_AUTHORIZATION", label: "Role Authorization Rules" },
   { key: "AI_DECISION_BANDS", label: "AI Underwriting Risk Bands" },
+  { key: "REINSURANCE", label: "Reinsurance & Retention" },
 ];
 
 // Plain English field translations for non-technical users
@@ -183,12 +184,14 @@ export default function RuleEnginePage() {
   const [ruleSets, setRuleSets] = useState<RuleSet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("list");
 
   // Selected Rule Set detail view
   const [selectedRuleSetId, setSelectedRuleSetId] = useState<string | null>(null);
   const [ruleSetDetail, setRuleSetDetail] = useState<RuleSetDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
+  const [selectedRule, setSelectedRule] = useState<any | null>(null);
 
   // New Rule Set Modal
   const [showCreateSetModal, setShowCreateSetModal] = useState(false);
@@ -199,7 +202,16 @@ export default function RuleEnginePage() {
 
   // New Rule Modal
   const [showAddRuleModal, setShowAddRuleModal] = useState(false);
+  const [isEditingRule, setIsEditingRule] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  
   const [ruleName, setRuleName] = useState("");
+  const [ruleCode, setRuleCode] = useState("");
+  const [ruleDescription, setRuleDescription] = useState("");
+  const [ruleCategory, setRuleCategory] = useState("");
+  const [ruleSubcategory, setRuleSubcategory] = useState("");
+  const [ruleEligibility, setRuleEligibility] = useState("");
+  
   const [rulePriority, setRulePriority] = useState<number>(10);
   const [ruleOperator, setRuleOperator] = useState<"ALL" | "ANY">("ALL");
   const [ruleAction, setRuleAction] = useState("REQUIRE_MEDICAL_EXAM");
@@ -360,6 +372,11 @@ export default function RuleEnginePage() {
 
     const newRulePayload = {
       name: ruleName,
+      code: ruleCode,
+      description: ruleDescription,
+      category: ruleCategory,
+      subcategory: ruleSubcategory,
+      eligibility_criteria: ruleEligibility,
       priority: Number(rulePriority),
       condition_operator: ruleOperator,
       conditions: condField ? [{ field: condField, operator: condOp, value: parsedVal }] : [],
@@ -369,18 +386,52 @@ export default function RuleEnginePage() {
     };
 
     try {
-      await api.post(`/tenants/${tenantId}/rules/versions/${selectedVersionId}/rules`, newRulePayload);
-      notify("Rule added to version successfully!", true);
+      if (isEditingRule && editingRuleId) {
+        await api.put(`/tenants/${tenantId}/rules/versions/${selectedVersionId}/rules/${editingRuleId}`, newRulePayload);
+        notify("Rule updated successfully!", true);
+      } else {
+        await api.post(`/tenants/${tenantId}/rules/versions/${selectedVersionId}/rules`, newRulePayload);
+        notify("Rule added to version successfully!", true);
+      }
+      
       setShowAddRuleModal(false);
+      setIsEditingRule(false);
+      setEditingRuleId(null);
       setRuleName("");
+      setRuleCode("");
+      setRuleDescription("");
+      setRuleCategory("");
+      setRuleSubcategory("");
+      setRuleEligibility("");
       setRuleAction("REQUIRE_MEDICAL_EXAM");
       setRuleReason("");
       setCondField("age");
       setCondValue("50");
       if (selectedRuleSetId) fetchRuleSetDetail(selectedRuleSetId);
     } catch (err: any) {
-      notify(err.message || "Failed to add rule.", false);
+      notify(err.message || "Failed to save rule.", false);
     }
+  };
+
+  const openEditRuleModal = (rule: any) => {
+    setIsEditingRule(true);
+    setEditingRuleId(rule.id);
+    setRuleName(rule.name);
+    setRuleCode(rule.code || "");
+    setRuleDescription(rule.description || "");
+    setRuleCategory(rule.category || "");
+    setRuleSubcategory(rule.subcategory || "");
+    setRuleEligibility(rule.eligibility_criteria || "");
+    setRulePriority(rule.priority);
+    setRuleOperator(rule.condition_operator);
+    setRuleAction(rule.action_outcome);
+    setRuleReason(rule.outcome_payload?.reason || "");
+    if (rule.conditions && rule.conditions.length > 0) {
+      setCondField(rule.conditions[0].field);
+      setCondOp(rule.conditions[0].operator);
+      setCondValue(rule.conditions[0].value != null ? String(rule.conditions[0].value) : "");
+    }
+    setShowAddRuleModal(true);
   };
 
   const handleDeleteRule = async (ruleId: string) => {
@@ -475,11 +526,10 @@ export default function RuleEnginePage() {
       <div className="flex border-b border-slate-200 gap-6 text-xs font-medium">
         <button
           onClick={() => setActiveTab("catalog")}
-          className={`pb-3 flex items-center gap-2 transition border-b-2 ${
-            activeTab === "catalog"
-              ? "border-blue-600 text-blue-600 font-semibold"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
+          className={`pb-3 flex items-center gap-2 transition border-b-2 ${activeTab === "catalog"
+            ? "border-blue-600 text-blue-600 font-semibold"
+            : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
@@ -487,13 +537,13 @@ export default function RuleEnginePage() {
           Rule Catalog & Decision Guidelines
         </button>
 
+        {/* 
         <button
           onClick={() => setActiveTab("simulator")}
-          className={`pb-3 flex items-center gap-2 transition border-b-2 ${
-            activeTab === "simulator"
-              ? "border-blue-600 text-blue-600 font-semibold"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
+          className={`pb-3 flex items-center gap-2 transition border-b-2 ${activeTab === "simulator"
+            ? "border-blue-600 text-blue-600 font-semibold"
+            : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -501,23 +551,25 @@ export default function RuleEnginePage() {
           </svg>
           Test & Simulate Rules
         </button>
+        */}
 
+        {/*
         <button
           onClick={() => {
             setActiveTab("logs");
             fetchAuditLogs();
           }}
-          className={`pb-3 flex items-center gap-2 transition border-b-2 ${
-            activeTab === "logs"
-              ? "border-blue-600 text-blue-600 font-semibold"
-              : "border-transparent text-slate-500 hover:text-slate-800"
-          }`}
+          className={`pb-3 flex items-center gap-2 transition border-b-2 ${activeTab === "logs"
+            ? "border-blue-600 text-blue-600 font-semibold"
+            : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           SECP Regulatory Audit Trail
         </button>
+        */}
       </div>
 
       {/* TABS CONTENT */}
@@ -527,259 +579,422 @@ export default function RuleEnginePage() {
         <div className="space-y-5">
           {/* Domain Filter Pills (Standard Blue Portal Theme) */}
           <div className="flex flex-wrap gap-2">
-            {DOMAINS.map((d) => (
-              <button
-                key={d.key}
-                onClick={() => handleDomainSelect(d.key)}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-medium border transition ${
-                  selectedDomain === d.key
-                    ? "bg-blue-600 text-white border-blue-600 shadow-sm font-semibold"
-                    : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900"
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
+            {DOMAINS.map((d) => {
+              const isAll = d.key === "ALL";
+              const isActive = selectedDomain === d.key;
+              
+              let btnClass = "";
+              if (isAll) {
+                btnClass = isActive 
+                  ? "bg-slate-800 text-white border-slate-800 shadow-sm font-semibold" 
+                  : "bg-slate-200 text-slate-800 border-slate-300 hover:bg-slate-300 hover:text-slate-900 font-semibold shadow-sm";
+              } else {
+                btnClass = isActive
+                  ? "bg-blue-600 text-white border-blue-600 shadow-sm font-semibold"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:text-slate-900";
+              }
+
+              return (
+                <button
+                  key={d.key}
+                  onClick={() => handleDomainSelect(d.key)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-medium border transition ${btnClass}`}
+                >
+                  {isAll && (
+                    <svg className="w-3.5 h-3.5 inline-block mr-1.5 -mt-0.5 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" />
+                    </svg>
+                  )}
+                  {d.label}
+                </button>
+              );
+            })}
           </div>
 
           {/* Catalog Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* Left List of Rule Sets */}
-            <div className={`${selectedRuleSetId ? "lg:col-span-4" : "lg:col-span-12"} space-y-3`}>
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-xs uppercase tracking-wider text-slate-500 font-bold">
-                  Rule Categories ({ruleSets.length})
-                </h2>
+          <div>
+            <div className="flex items-center justify-between px-1 mb-4">
+              <h2 className="text-xs uppercase tracking-wider text-slate-500 font-bold">
+                Rule Categories ({ruleSets.length})
+              </h2>
+              {/* View Mode Toggle */}
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl shadow-inner border border-slate-200">
+                <button
+                  onClick={() => setViewMode("grid")}
+                  title="Grid View"
+                  className={`p-2 rounded-lg transition-all ${viewMode === "grid"
+                    ? "bg-white text-blue-600 shadow-sm border border-slate-200"
+                    : "text-slate-400 hover:text-slate-600 hover:bg-slate-200"
+                    }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setViewMode("list")}
+                  title="List View"
+                  className={`p-2 rounded-lg transition-all ${viewMode === "list"
+                    ? "bg-white text-blue-600 shadow-sm border border-slate-200"
+                    : "text-slate-400 hover:text-slate-600 hover:bg-slate-200"
+                    }`}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+                    <line x1="8" y1="6" x2="21" y2="6"></line>
+                    <line x1="8" y1="12" x2="21" y2="12"></line>
+                    <line x1="8" y1="18" x2="21" y2="18"></line>
+                    <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                    <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                    <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                  </svg>
+                </button>
               </div>
-
-              {loading ? (
-                <div className="p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-400 text-xs animate-pulse">
-                  Loading rule catalog...
-                </div>
-              ) : ruleSets.length === 0 ? (
-                <div className="p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-500 text-xs">
-                  No rule sets found in this category.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
-                  {ruleSets.map((rs) => {
-                    const isSelected = selectedRuleSetId === rs.id;
-                    const domainObj = DOMAINS.find((d) => d.key === rs.domain);
-                    return (
-                      <div
-                        key={rs.id}
-                        onClick={() => {
-                          if (isSelected) {
-                            setSelectedRuleSetId(null);
-                            setRuleSetDetail(null);
-                          } else {
-                            setSelectedRuleSetId(rs.id);
-                            fetchRuleSetDetail(rs.id);
-                          }
-                        }}
-                        className={`p-4 rounded-xl border transition cursor-pointer shadow-sm ${
-                          isSelected
-                            ? "bg-blue-50/80 border-blue-500 ring-1 ring-blue-500"
-                            : "bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/60"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div>
-                            <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                              {domainObj?.label || rs.domain}
-                            </span>
-                            <h3 className="text-sm font-semibold text-slate-900 mt-1.5">{rs.name}</h3>
-                          </div>
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
-                            v{rs.active_version_no || 1} {rs.active_version_status}
-                          </span>
-                        </div>
-
-                        <p className="text-xs text-slate-500 mt-2 line-clamp-2">{rs.description}</p>
-
-                        <div className="flex items-center justify-between mt-3 text-[11px] text-slate-400 pt-2.5 border-t border-slate-100">
-                          <span className="font-medium text-slate-600">{rs.rule_count} Business Rules</span>
-                          <span>Updated {new Date(rs.updated_at).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
             </div>
 
-            {/* Right Detail Pane */}
+            {loading ? (
+              <div className="p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-400 text-sm animate-pulse font-medium">
+                Loading rule catalog...
+              </div>
+            ) : ruleSets.length === 0 ? (
+              <div className="p-8 text-center bg-white border border-slate-200 rounded-xl text-slate-500 text-sm font-medium">
+                No rule sets found in this category.
+              </div>
+            ) : viewMode === "grid" ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {ruleSets.map((rs) => {
+                  const domainObj = DOMAINS.find((d) => d.key === rs.domain);
+                  return (
+                    <div
+                      key={rs.id}
+                      onClick={() => {
+                        setSelectedRuleSetId(rs.id);
+                        fetchRuleSetDetail(rs.id);
+                      }}
+                      className="p-5 rounded-2xl border transition cursor-pointer shadow-sm bg-white border-slate-200 hover:border-blue-300 hover:shadow-md hover:ring-1 hover:ring-blue-300 flex flex-col h-full group"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200 group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-200 transition-colors">
+                          {domainObj?.label || rs.domain}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                          v{rs.active_version_no || 1} {rs.active_version_status}
+                        </span>
+                      </div>
+                      
+                      <h3 className="text-base font-bold text-slate-900 mb-2">{rs.name}</h3>
+                      <p className="text-sm text-slate-500 line-clamp-3 mb-5 flex-1">{rs.description}</p>
+
+                      <div className="flex items-center justify-between text-xs text-slate-400 pt-4 border-t border-slate-100 mt-auto">
+                        <span className="font-semibold text-slate-700">{rs.rule_count} Business Rules</span>
+                        <span>Updated {new Date(rs.updated_at).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden w-full">
+                <div className="overflow-x-auto w-full">
+                  <table className="w-full text-left text-sm whitespace-nowrap">
+                    <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                      <tr>
+                        <th className="px-6 py-4">Category Name</th>
+                        <th className="px-6 py-4">Domain</th>
+                        <th className="px-6 py-4">Status</th>
+                        <th className="px-6 py-4">Rules</th>
+                        <th className="px-6 py-4 text-right">Last Updated</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {ruleSets.map((rs) => {
+                        const domainObj = DOMAINS.find((d) => d.key === rs.domain);
+                        return (
+                          <tr
+                            key={rs.id}
+                            onClick={() => {
+                              setSelectedRuleSetId(rs.id);
+                              fetchRuleSetDetail(rs.id);
+                            }}
+                            className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                          >
+                            <td className="px-6 py-4">
+                              <div className="font-bold text-slate-900 text-base">{rs.name}</div>
+                              <div className="text-[11px] text-slate-500 line-clamp-1 mt-1 max-w-md whitespace-normal">{rs.description}</div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="inline-block px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200">
+                                {domainObj?.label || rs.domain}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                v{rs.active_version_no || 1} {rs.active_version_status}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 font-semibold text-slate-700">
+                              {rs.rule_count} Rules
+                            </td>
+                            <td className="px-6 py-4 text-slate-500 text-right">
+                              {new Date(rs.updated_at).toLocaleDateString()}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+
+            {/* Rule Set Detail Modal */}
             {selectedRuleSetId && (
-              <div className="lg:col-span-8 bg-white border border-slate-200 rounded-xl p-5 space-y-5 shadow-sm">
-                {loadingDetail || !ruleSetDetail ? (
-                  <div className="p-12 text-center text-slate-400 text-xs animate-pulse">
-                    Loading decision rules...
-                  </div>
-                ) : (
-                  <>
-                    {/* Detail Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h2 className="text-lg font-bold text-slate-900">{ruleSetDetail.name}</h2>
+              <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 sm:p-6 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="bg-white w-full max-w-6xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 animate-in zoom-in-95 duration-300">
+                  
+                  {loadingDetail || !ruleSetDetail ? (
+                    <div className="p-12 flex-1 flex items-center justify-center text-center text-slate-400 text-sm animate-pulse font-medium">
+                      Loading decision rules...
+                    </div>
+                  ) : (
+                    <>
+                      {/* Modal Header */}
+                      <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <h2 className="text-xl font-bold text-slate-900">{ruleSetDetail.name}</h2>
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                              v{ruleSetDetail.active_version_no || 1} {ruleSetDetail.active_version_status}
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-500 mt-1">{ruleSetDetail.description}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={handleCreateVersion}
+                            className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 shadow-sm transition"
+                          >
+                            + New Draft Version
+                          </button>
+                          {/* 
+                          <button
+                            onClick={() => {
+                              setSelectedRuleSetId(null);
+                              setRuleSetDetail(null);
+                              setSimRuleCode(ruleSetDetail.code);
+                              setActiveTab("simulator");
+                            }}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+                          >
+                            Test in Simulator
+                          </button>
+                          */}
                           <button
                             onClick={() => {
                               setSelectedRuleSetId(null);
                               setRuleSetDetail(null);
                             }}
-                            className="text-slate-400 hover:text-slate-600 text-xs font-semibold ml-2"
+                            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors ml-2"
                           >
-                            ✕ Close
+                            <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                           </button>
                         </div>
-                        <p className="text-xs text-slate-500 mt-1">{ruleSetDetail.description}</p>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={handleCreateVersion}
-                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 transition"
-                        >
-                          + New Draft Version
-                        </button>
-                        <button
-                          onClick={() => {
-                            setSimRuleCode(ruleSetDetail.code);
-                            setActiveTab("simulator");
-                          }}
-                          className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold rounded-lg border border-blue-200 transition"
-                        >
-                          Test in Simulator
-                        </button>
-                      </div>
-                    </div>
+                      <div className="flex-1 overflow-y-auto p-6 bg-slate-50 space-y-6">
+                        {/* Versions Sub-Bar */}
+                        <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
+                          <div className="flex items-center gap-2 overflow-x-auto">
+                            <span className="text-xs text-slate-500 font-bold uppercase tracking-wider mr-2">Version History:</span>
+                            {ruleSetDetail.versions.map((ver) => (
+                              <button
+                                key={ver.id}
+                                onClick={() => setSelectedVersionId(ver.id)}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold border transition shadow-sm ${selectedVersionId === ver.id
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                  }`}
+                              >
+                                v{ver.version_no} ({ver.status})
+                              </button>
+                            ))}
+                          </div>
 
-                    {/* Versions Sub-Bar */}
-                    <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                      <div className="flex items-center gap-2 overflow-x-auto">
-                        <span className="text-xs text-slate-500 font-medium mr-1">Version History:</span>
-                        {ruleSetDetail.versions.map((ver) => (
-                          <button
-                            key={ver.id}
-                            onClick={() => setSelectedVersionId(ver.id)}
-                            className={`px-3 py-1 rounded-lg text-xs font-medium border transition ${
-                              selectedVersionId === ver.id
-                                ? "bg-blue-600 text-white border-blue-600 shadow-xs font-semibold"
-                                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
-                            }`}
-                          >
-                            v{ver.version_no} ({ver.status})
-                          </button>
-                        ))}
-                      </div>
-
-                      {currentVersionObj && currentVersionObj.status === "DRAFT" && (
-                        <button
-                          onClick={() => handleDeployVersion(currentVersionObj.id)}
-                          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-xs transition"
-                        >
-                          Deploy v{currentVersionObj.version_no} to Active
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Decision Table */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <h3 className="text-xs uppercase tracking-wider text-slate-500 font-bold">
-                          Active Decision Rules ({currentVersionObj?.rules.length || 0})
-                        </h3>
-                        {currentVersionObj && (
-                          <button
-                            onClick={() => setShowAddRuleModal(true)}
-                            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition"
-                          >
-                            + Add Rule
-                          </button>
-                        )}
-                      </div>
-
-                      {!currentVersionObj || currentVersionObj.rules.length === 0 ? (
-                        <div className="p-8 text-center border border-slate-200 rounded-lg text-slate-400 text-xs">
-                          No decision rules defined in this version. Click "+ Add Rule" to add guidelines.
+                          {currentVersionObj && currentVersionObj.status === "DRAFT" && (
+                            <button
+                              onClick={() => handleDeployVersion(currentVersionObj.id)}
+                              className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+                            >
+                              Deploy v{currentVersionObj.version_no} to Active
+                            </button>
+                          )}
                         </div>
-                      ) : (
-                        <div className="overflow-x-auto border border-slate-200 rounded-lg">
-                          <table className="w-full text-left text-xs text-slate-700">
-                            <thead className="bg-slate-50 text-slate-600 font-semibold text-[10px] uppercase tracking-wider border-b border-slate-200">
-                              <tr>
-                                <th className="px-3.5 py-2.5">Priority</th>
-                                <th className="px-3.5 py-2.5">Rule Name</th>
-                                <th className="px-3.5 py-2.5">When Conditions Match</th>
-                                <th className="px-3.5 py-2.5">Action Outcome</th>
-                                <th className="px-3.5 py-2.5">Explanation / Note</th>
-                                <th className="px-3.5 py-2.5 text-right">Action</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
-                              {currentVersionObj.rules.map((rule) => {
-                                const outcomeConfig = ACTION_OUTCOMES[rule.action_outcome] || {
-                                  label: rule.action_outcome,
-                                  badge: "bg-blue-50 text-blue-700 border-blue-200 font-semibold",
-                                };
 
-                                return (
-                                  <tr key={rule.id} className="hover:bg-slate-50/70 transition">
-                                    <td className="px-3.5 py-3 font-mono text-blue-600 font-semibold">#{rule.priority}</td>
-                                    <td className="px-3.5 py-3 font-semibold text-slate-900 max-w-[160px]">
-                                      {rule.name}
-                                    </td>
-                                    <td className="px-3.5 py-3 max-w-[280px]">
-                                      {rule.conditions.length === 0 ? (
-                                        <span className="text-slate-400 italic">Always applies unconditionally</span>
-                                      ) : (
-                                        <div className="space-y-1.5">
-                                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
-                                            If {rule.condition_operator === "ALL" ? "ALL" : "ANY"} of the following apply:
-                                          </span>
-                                          {rule.conditions.map((c, idx) => {
-                                            const { fieldLabel, opLabel, valLabel } = formatConditionSentence(c);
-                                            return (
-                                              <div key={idx} className="bg-slate-50 border border-slate-200 rounded px-2 py-1 text-[11px] text-slate-700">
-                                                <span className="font-semibold text-slate-900">{fieldLabel}</span>{" "}
-                                                <span className="text-slate-500">{opLabel}</span>{" "}
-                                                <span className="font-semibold text-blue-700">{valLabel}</span>
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      )}
-                                    </td>
-                                    <td className="px-3.5 py-3">
-                                      <span className={`inline-block px-2.5 py-1 rounded text-[11px] border ${outcomeConfig.badge}`}>
-                                        {outcomeConfig.label}
-                                      </span>
-                                    </td>
-                                    <td className="px-3.5 py-3 text-slate-500 text-[11px] max-w-[200px]">
-                                      <p className="line-clamp-2">{rule.outcome_payload?.reason || "—"}</p>
-                                    </td>
-                                    <td className="px-3.5 py-3 text-right">
-                                      <button
-                                        onClick={() => handleDeleteRule(rule.id)}
-                                        className="text-slate-400 hover:text-red-600 p-1 text-xs transition"
-                                        title="Delete Rule"
-                                      >
-                                        ✕
-                                      </button>
-                                    </td>
+                        {/* Decision Table */}
+                        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-5">
+                          <div className="flex items-center justify-between">
+                            <h3 className="text-sm uppercase tracking-wider text-slate-900 font-bold">
+                              Active Decision Rules ({currentVersionObj?.rules.length || 0})
+                            </h3>
+                            {currentVersionObj && currentVersionObj.status === "DRAFT" && (
+                              <button
+                                onClick={() => {
+                                  setIsEditingRule(false);
+                                  setEditingRuleId(null);
+                                  setRuleName("");
+                                  setRuleCode("");
+                                  setRuleDescription("");
+                                  setRuleCategory("");
+                                  setRuleSubcategory("");
+                                  setRuleEligibility("");
+                                  setRulePriority(10);
+                                  setShowAddRuleModal(true);
+                                }}
+                                className="px-4 py-2 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-bold rounded-lg transition shadow-sm"
+                              >
+                                + Add Rule
+                              </button>
+                            )}
+                          </div>
+
+                          {!currentVersionObj || currentVersionObj.rules.length === 0 ? (
+                            <div className="p-10 text-center border border-slate-200 rounded-xl bg-slate-50 text-slate-500 text-sm font-medium">
+                              No decision rules defined in this version. Click "+ Add Rule" to add guidelines.
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto w-full border border-slate-200 rounded-xl">
+                              <table className="w-full text-left text-sm whitespace-nowrap">
+                                <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-100">
+                                  <tr>
+                                    <th className="px-4 py-4 w-32">Rule Code</th>
+                                    <th className="px-4 py-4 w-56">Rule Name</th>
+                                    <th className="px-4 py-4">Category</th>
+                                    <th className="px-4 py-4">Eligibility & Conditions</th>
+                                    <th className="px-4 py-4">Outcome</th>
+                                    <th className="px-4 py-4 text-right">Actions</th>
                                   </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {currentVersionObj.rules.map((rule) => {
+                                    const outcomeConfig = ACTION_OUTCOMES[rule.action_outcome] || {
+                                      label: rule.action_outcome,
+                                      badge: "bg-blue-50 text-blue-700 border-blue-200 font-semibold",
+                                    };
+
+                                    return (
+                                      <tr
+                                        key={rule.id}
+                                        onClick={() => setSelectedRule(rule)}
+                                        className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                                      >
+                                        <td className="px-4 py-4">
+                                          <div className="flex flex-col gap-1.5">
+                                            {rule.code ? (
+                                              <span className="font-mono text-[11px] text-slate-700 bg-slate-100 border border-slate-200 w-fit px-2 py-0.5 rounded font-semibold">{rule.code}</span>
+                                            ) : (
+                                              <span className="text-slate-400 text-[10px] italic">No Code</span>
+                                            )}
+                                            <span className="text-blue-700 font-bold text-[10px] uppercase tracking-wider">
+                                              Priority: #{rule.priority}
+                                            </span>
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                          <div className="flex flex-col gap-1 max-w-[250px] whitespace-normal">
+                                            <span className="font-bold text-slate-900 leading-tight">{rule.name}</span>
+                                            {rule.description && (
+                                              <details className="group mt-1" onClick={(e) => e.stopPropagation()}>
+                                                <summary className="text-[10px] text-blue-600 hover:text-blue-800 cursor-pointer font-semibold select-none flex items-center gap-1 w-fit outline-none transition-colors">
+                                                  View Description
+                                                  <svg className="w-3 h-3 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                                  </svg>
+                                                </summary>
+                                                <div className="text-[11px] text-slate-600 mt-1.5 leading-relaxed bg-slate-50 p-2.5 rounded-lg border border-slate-200 shadow-inner">
+                                                  {rule.description}
+                                                </div>
+                                              </details>
+                                            )}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-4">
+                                          <div className="flex flex-col">
+                                            {rule.category ? (
+                                              <span className="font-semibold text-slate-800 text-xs">{rule.category}</span>
+                                            ) : (
+                                              <span className="text-slate-400 text-[11px] italic">Uncategorized</span>
+                                            )}
+                                            {rule.subcategory && <span className="text-[10px] text-slate-500">{rule.subcategory}</span>}
+                                          </div>
+                                        </td>
+                                        <td className="px-4 py-4 text-slate-600 font-medium text-xs whitespace-normal max-w-[250px]">
+                                          {rule.eligibility_criteria && (
+                                            <div className="mb-1 text-[11px] text-slate-500">
+                                              <span className="font-semibold text-slate-700">Applies to:</span> {rule.eligibility_criteria}
+                                            </div>
+                                          )}
+                                          {rule.conditions.length === 0 ? (
+                                            <span className="italic text-slate-400">Always applies unconditionally</span>
+                                          ) : (
+                                            <span>
+                                              If {rule.condition_operator === "ALL" ? "all" : "any"} of {rule.conditions.length} condition{rule.conditions.length !== 1 ? 's' : ''} match...
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-4">
+                                          <span className={`inline-block px-2.5 py-1 rounded-md text-[10px] border font-bold uppercase tracking-wider ${outcomeConfig.badge}`}>
+                                            {outcomeConfig.label}
+                                          </span>
+                                        </td>
+                                        <td className="px-4 py-4 text-right">
+                                          {currentVersionObj.status === "DRAFT" ? (
+                                            <div className="flex items-center justify-end gap-1">
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  openEditRuleModal(rule);
+                                                }}
+                                                className="text-slate-400 hover:text-blue-600 p-1.5 rounded-lg hover:bg-blue-50 transition flex items-center justify-center bg-slate-50 border border-slate-200"
+                                                title="Edit Rule"
+                                              >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                                </svg>
+                                              </button>
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleDeleteRule(rule.id);
+                                                }}
+                                                className="text-slate-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition flex items-center justify-center bg-slate-50 border border-slate-200"
+                                                title="Delete Rule"
+                                              >
+                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                              </button>
+                                            </div>
+                                          ) : (
+                                            <span className="text-xs text-slate-400 italic">Locked (Active)</span>
+                                          )}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                  </>
-                )}
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             )}
-          </div>
         </div>
       )}
 
@@ -1020,7 +1235,7 @@ export default function RuleEnginePage() {
             <div className="p-8 text-center text-slate-400 animate-pulse text-xs">Fetching audit logs...</div>
           ) : logs.length === 0 ? (
             <div className="p-8 text-center text-slate-400 border border-slate-200 rounded-lg text-xs">
-              No audit logs recorded yet. Run a rule test in the simulator to generate audit entries.
+              No audit logs recorded yet. As applications are processed by the rules engine, their decision trails will appear here.
             </div>
           ) : (
             <div className="overflow-x-auto border border-slate-200 rounded-lg">
@@ -1137,12 +1352,13 @@ export default function RuleEnginePage() {
       {/* MODAL: ADD RULE */}
       {showAddRuleModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl max-w-lg w-full p-5 space-y-4 shadow-xl text-slate-800">
-            <h3 className="text-base font-bold text-slate-900">Add Decision Guideline to Version</h3>
+          <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full p-6 space-y-5 shadow-xl text-slate-800 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-bold text-slate-900">{isEditingRule ? "Edit Decision Guideline" : "Add Decision Guideline to Version"}</h3>
 
-            <form onSubmit={handleAddRule} className="space-y-3.5 text-xs">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="col-span-2">
+            <form onSubmit={handleAddRule} className="space-y-4 text-xs">
+              
+              <div className="grid grid-cols-4 gap-3">
+                <div className="col-span-3">
                   <label className="block text-slate-700 font-semibold mb-1">Rule Name</label>
                   <input
                     type="text"
@@ -1153,8 +1369,8 @@ export default function RuleEnginePage() {
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-slate-700 font-semibold mb-1">Priority Order</label>
+                <div className="col-span-1">
+                  <label className="block text-slate-700 font-semibold mb-1">Priority</label>
                   <input
                     type="number"
                     min={1}
@@ -1164,6 +1380,63 @@ export default function RuleEnginePage() {
                     required
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Rule Code (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. BMI-SMK-001"
+                    value={ruleCode}
+                    onChange={(e) => setRuleCode(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Eligibility Criteria</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Age > 18"
+                    value={ruleEligibility}
+                    onChange={(e) => setRuleEligibility(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Category</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Medical Underwriting"
+                    value={ruleCategory}
+                    onChange={(e) => setRuleCategory(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-slate-700 font-semibold mb-1">Subcategory</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Non-Medical Limits"
+                    value={ruleSubcategory}
+                    onChange={(e) => setRuleSubcategory(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-semibold mb-1">Description</label>
+                <textarea
+                  placeholder="Detailed explanation of this rule..."
+                  value={ruleDescription}
+                  onChange={(e) => setRuleDescription(e.target.value)}
+                  rows={2}
+                  className="w-full bg-white border border-slate-200 rounded-lg p-3 text-slate-900 focus:outline-none focus:border-blue-500"
+                />
               </div>
 
               {/* Condition Spec (Friendly Non-Technical Selector) */}
@@ -1261,10 +1534,93 @@ export default function RuleEnginePage() {
                   type="submit"
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg shadow-sm"
                 >
-                  Add Decision Guideline
+                  {isEditingRule ? "Save Changes" : "Add Decision Guideline"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {selectedRule && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-blue-600 font-semibold text-xs bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
+                  #{selectedRule.priority}
+                </span>
+                <h3 className="font-bold text-slate-900 text-base">{selectedRule.name}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedRule(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-200 rounded-lg transition"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-6 flex-1 text-sm">
+              <div>
+                <h4 className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-3">When Conditions Match</h4>
+                {selectedRule.conditions.length === 0 ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-slate-500 italic text-sm">
+                    Always applies unconditionally
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                      If {selectedRule.condition_operator === "ALL" ? "ALL" : "ANY"} of the following apply:
+                    </div>
+                    {selectedRule.conditions.map((c: any, idx: number) => {
+                      const { fieldLabel, opLabel, valLabel } = formatConditionSentence(c);
+                      return (
+                        <div key={idx} className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700 flex items-center flex-wrap gap-1.5">
+                          <span className="font-semibold text-slate-900">{fieldLabel}</span>
+                          <span className="text-slate-500">{opLabel}</span>
+                          <span className="font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded">{valLabel}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h4 className="text-xs uppercase tracking-wider text-slate-500 font-bold mb-3">Action Outcome</h4>
+                {(() => {
+                  const outcomeConfig = ACTION_OUTCOMES[selectedRule.action_outcome] || {
+                    label: selectedRule.action_outcome,
+                    badge: "bg-blue-50 text-blue-700 border-blue-200 font-semibold",
+                  };
+                  return (
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col gap-2">
+                      <div>
+                        <span className={`inline-block px-2.5 py-1 rounded text-xs border ${outcomeConfig.badge}`}>
+                          {outcomeConfig.label}
+                        </span>
+                      </div>
+                      {selectedRule.outcome_payload?.reason && (
+                        <p className="text-slate-600 text-sm mt-1">
+                          <span className="font-medium">Note:</span> {selectedRule.outcome_payload.reason}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-100 bg-slate-50 flex justify-end gap-2">
+              <button
+                onClick={() => setSelectedRule(null)}
+                className="px-4 py-2 bg-white hover:bg-slate-100 text-slate-700 font-medium rounded-lg border border-slate-200 shadow-sm transition"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

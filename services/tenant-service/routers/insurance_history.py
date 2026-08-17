@@ -163,6 +163,11 @@ async def run_insurance_history(
 
     now = datetime.utcnow()
     check = await _load_check(session, case_id)
+    was_cleared = check is not None and check.cleared_by is not None
+    prior_score = check.score if check is not None else None
+    prior_finding_codes = (
+        {f.get("code") for f in (check.findings_json or [])} if check is not None else set()
+    )
     if check is None:
         check = InsuranceHistoryCheck(
             tenant_id=tenant_id, case_id=case_id, customer_id=customer.id
@@ -186,11 +191,29 @@ async def run_insurance_history(
     check.findings_json = result["findings"]
     check.checked_at = now
     check.updated_at = now
-    # A fresh screen invalidates any earlier manual clearance — the underwriter
-    # cleared the *previous* set of findings, not these.
-    check.cleared_by = None
-    check.cleared_at = None
-    check.clearance_note = None
+
+    # Refresh, don't reset: a re-run that surfaces nothing new — same or lower
+    # score, no finding codes the underwriter hadn't already seen — is not a
+    # risk-affecting change, so the earlier clearance still covers it. Only a
+    # materially worse re-screen (score increased, or a finding appeared that
+    # wasn't part of what was cleared) requires a fresh look, mirroring how
+    # Adamjee's own underwriting treats a risk-affecting change: fresh
+    # underwriting via an updated questionnaire, not a blanket reset.
+    new_finding_codes = {f.get("code") for f in (result["findings"] or [])}
+    materially_worse = (
+        prior_score is not None and result["score"] > prior_score
+    ) or bool(new_finding_codes - prior_finding_codes - {"CLEAR"})
+    if was_cleared:
+        if materially_worse:
+            check.cleared_by = None
+            check.cleared_at = None
+            check.clearance_note = None
+        else:
+            # Nothing worse surfaced — the earlier clearance still covers the
+            # fresh findings, so re-apply it the same way clear_insurance_history()
+            # does rather than letting the engine's raw re-screen verdict (which
+            # can still read FLAGGED on unchanged/lesser findings) override it.
+            check.status = InsuranceHistoryStatusEnum.CLEAR
 
     session.add(check)
     await session.commit()

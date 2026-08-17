@@ -223,29 +223,57 @@ async def screen_and_store(session, tenant_id, customer: Customer, policy: Polic
     runs (from either entry point) converge on the same three rows rather than
     accumulating. The engine's own verdict is stored verbatim — presentation
     rules belong in effective_status(), not in the stored data.
+
+    Refresh, don't reset: deleting-and-recreating means a fresh officer
+    clearance would otherwise be lost on every re-run, even when nothing
+    riskier turned up. A prior clearance is carried forward per check_type
+    unless the new score is higher than what was cleared — a materially
+    worse re-screen still requires a fresh look, mirroring the same
+    principle applied to the insurance-history re-screen
+    (routers/insurance_history.py:run_insurance_history).
     """
     from sqlmodel import select
     from datetime import datetime
 
     from shared.models.core import ComplianceCheck
 
+    prior_by_type: dict = {}
     for old in (await session.exec(
         select(ComplianceCheck).where(ComplianceCheck.policy_id == policy.id)
     )).all():
+        if old.cleared_by is not None:
+            prior_by_type[old.check_type] = old
         await session.delete(old)
 
     now = datetime.utcnow()
     created = []
     for result in await screen(customer, policy):
+        check_type = ComplianceCheckTypeEnum(result["check_type"])
+        status = ComplianceStatusEnum(result["status"])
+        score = result.get("score")
+
+        prior = prior_by_type.get(check_type)
+        cleared_by = cleared_at = clearance_note = None
+        if prior is not None:
+            materially_worse = prior.score is not None and score is not None and score > prior.score
+            if not materially_worse:
+                status = ComplianceStatusEnum.PASSED
+                cleared_by = prior.cleared_by
+                cleared_at = prior.cleared_at
+                clearance_note = prior.clearance_note
+
         chk = ComplianceCheck(
             tenant_id=tenant_id,
             policy_id=policy.id,
             customer_id=customer.id,
-            check_type=ComplianceCheckTypeEnum(result["check_type"]),
-            status=ComplianceStatusEnum(result["status"]),
-            score=result.get("score"),
+            check_type=check_type,
+            status=status,
+            score=score,
             details_json=result.get("details"),
             screened_at=now,
+            cleared_by=cleared_by,
+            cleared_at=cleared_at,
+            clearance_note=clearance_note,
         )
         session.add(chk)
         created.append(chk)

@@ -2457,6 +2457,7 @@ class RuleDomainEnum(str, Enum):
     COMMISSION_SECP = "COMMISSION_SECP"       # Commission & Statutory Rates
     RBAC_AUTHORIZATION = "RBAC_AUTHORIZATION" # Tool Access & Role Authorization
     AI_DECISION_BANDS = "AI_DECISION_BANDS"   # AI Composite Bands & Status Mapping
+    REINSURANCE = "REINSURANCE"               # Self-Retention, Treaty Capacity & Facultative Referral
 
 
 class RuleVersionStatusEnum(str, Enum):
@@ -2512,6 +2513,11 @@ class BusinessRule(SQLModel, table=True):
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     rule_version_id: UUID = Field(foreign_key="rule_versions.id", index=True, nullable=False)
     name: str = Field(max_length=255)
+    code: Optional[str] = Field(default=None, max_length=100)
+    description: Optional[str] = Field(default=None, max_length=1000)
+    category: Optional[str] = Field(default=None, max_length=255)
+    subcategory: Optional[str] = Field(default=None, max_length=255)
+    eligibility_criteria: Optional[str] = Field(default=None, max_length=1000)
     priority: int = Field(default=10, nullable=False)
     condition_operator: str = Field(default="ALL", max_length=10)
     conditions: dict = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
