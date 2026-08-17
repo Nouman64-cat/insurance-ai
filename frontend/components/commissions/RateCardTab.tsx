@@ -1,0 +1,290 @@
+"use client";
+
+import React, { useState } from "react";
+import {
+  BASIS_LABELS,
+  CHANNEL_LABELS,
+  COMMISSION_CONFIG,
+  COMMISSION_RATE_CARD,
+  CommissionRule,
+  DistributionChannel,
+  PAYEE_TYPE_LABELS,
+  PolicySegment,
+  PremiumType,
+  updateCommissionConfig,
+} from "../../app/services/commissions";
+import { Card, Field, PayeeTypeBadge, fmtPct, inputClass } from "./shared";
+
+/** The event that makes a row payable — what the ledger is waiting on. */
+function payableEvents(rule: CommissionRule): { code: string; label: string }[] {
+  if (rule.basis === "PRODUCER_COMMISSION") return [{ code: "DSP", label: "DOWNLINE COMMISSION POSTED" }];
+  if (rule.basis === "PARTNER_COMMISSION") return [{ code: "PTP", label: "PARTNER FEE POSTED" }];
+  if (rule.premiumType === "RENEWAL") return [{ code: "PRC", label: "RENEWAL PREMIUM COLLECTED" }];
+  if (rule.premiumType === "SINGLE_PREMIUM") return [{ code: "PC", label: "PREMIUM COLLECTION" }];
+  if (rule.segment === "group") {
+    return [
+      { code: "LG", label: "LEAD GENERATION" },
+      { code: "PLI", label: "POLICY ISSUANCE" },
+    ];
+  }
+  return [
+    { code: "PLI", label: "POLICY ISSUANCE" },
+    { code: "PC", label: "PREMIUM COLLECTION" },
+  ];
+}
+
+function typeInfo(premiumType: PremiumType) {
+  if (premiumType === "FIRST_YEAR" || premiumType === "SINGLE_PREMIUM") {
+    return { label: "One-Time", className: "bg-slate-100 text-slate-700 border-slate-200" };
+  }
+  return { label: "Recurring", className: "bg-blue-50 text-blue-700 border-blue-200" };
+}
+
+const SEGMENTS: PolicySegment[] = ["individual", "group", "family"];
+const PREMIUM_TYPES: PremiumType[] = ["FIRST_YEAR", "RENEWAL", "SINGLE_PREMIUM"];
+
+/**
+ * The commission schedule for every channel and every payee type, plus the
+ * engine settings the ledger is computed against.
+ */
+export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boolean) => void }) {
+  const [channelFilter, setChannelFilter] = useState<DistributionChannel | "all">("all");
+  const [showConfig, setShowConfig] = useState(false);
+
+  const rows = COMMISSION_RATE_CARD.filter((r) => channelFilter === "all" || r.channel === channelFilter);
+  const grouped = (Object.keys(CHANNEL_LABELS) as DistributionChannel[])
+    .map((channel) => ({ channel, rules: rows.filter((r) => r.channel === channel) }))
+    .filter((g) => g.rules.length > 0);
+
+  let counter = 101;
+
+  return (
+    <div className="space-y-4">
+      <Card
+        title="Commission Rate Card"
+        subtitle="Every payee type that can earn on a premium, the rate they earn, and what that rate is applied to"
+        actions={
+          <>
+            <select
+              value={channelFilter}
+              onChange={(e) => setChannelFilter(e.target.value as DistributionChannel | "all")}
+              className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700"
+            >
+              <option value="all">All channels</option>
+              {(Object.keys(CHANNEL_LABELS) as DistributionChannel[]).map((c) => (
+                <option key={c} value={c}>
+                  {CHANNEL_LABELS[c]}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => setShowConfig(!showConfig)}
+              className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold"
+            >
+              {showConfig ? "Hide" : "Engine"} Settings
+            </button>
+          </>
+        }
+      >
+        {showConfig && <EngineSettings notify={notify} />}
+
+        <div className="px-5 py-3 bg-amber-50/60 border-b border-amber-100 text-[11px] text-amber-900">
+          <span className="font-bold">Compliance note:</span> rows marked <span className="font-bold">STATUTORY</span> carry
+          inherited SECP rule/form citations that have not been checked line-by-line against the published Insurance Rules
+          2017 — have compliance sign them off before treating them as caps. Rows marked{" "}
+          <span className="font-bold">CONTRACTUAL</span> are the insurer&apos;s own negotiated terms.
+        </div>
+
+        {grouped.map((group) => (
+          <div key={group.channel} className="border-b border-slate-100 last:border-b-0">
+            <div className="px-5 py-3 bg-slate-50/70 flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">{CHANNEL_LABELS[group.channel]}</h3>
+              <span className="text-[10px] font-mono text-slate-400">{group.rules.length} rows</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead>
+                  <tr className="bg-white text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200 font-semibold">
+                    <th className="py-3 px-5">Commission ID</th>
+                    <th className="py-3 px-5">Name</th>
+                    <th className="py-3 px-5">Description</th>
+                    <th className="py-3 px-5">Payee</th>
+                    <th className="py-3 px-5">Applied To</th>
+                    <th className="py-3 px-5">Payable Event</th>
+                    <th className="py-3 px-5 text-center">Type</th>
+                    <th className="py-3 px-5 text-center">Reference</th>
+                    <th className="py-3 px-5">In Force</th>
+                    <th className="py-3 px-5 text-right">Rate</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {group.rules.flatMap((rule) => {
+                    const events = payableEvents(rule);
+                    const info = typeInfo(rule.premiumType);
+                    return events.map((event) => {
+                      const commissionId = `COM-${counter++}`;
+                      return (
+                        <tr key={`${rule.id}-${event.code}`} className="hover:bg-slate-50/70">
+                          <td className="py-3.5 px-5">
+                            <span className="font-mono font-bold text-xs text-blue-900">{commissionId}</span>
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <span className="font-bold text-slate-900 text-xs">{rule.name || rule.description}</span>
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs text-slate-700 font-medium">{rule.description}</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 uppercase">
+                                {rule.segment}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {rule.premiumType.replace("_", " ")} · Year {rule.policyYear}
+                              {rule.premiumType === "RENEWAL" && rule.policyYear >= 3 ? "+" : ""}
+                            </p>
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <PayeeTypeBadge type={rule.payeeType} />
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <span className="text-[10px] font-semibold text-slate-700">{BASIS_LABELS[rule.basis]}</span>
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <div className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-50 text-slate-700 border border-slate-200 text-[10px] font-semibold">
+                              <span className="text-blue-700 font-mono font-bold">{event.code}</span>
+                              <span className="text-slate-300">|</span>
+                              <span className="text-slate-600 font-medium">{event.label}</span>
+                            </div>
+                          </td>
+                          <td className="py-3.5 px-5 text-center">
+                            <span className={`inline-flex px-2.5 py-0.5 rounded text-[11px] border font-medium ${info.className}`}>
+                              {info.label}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-5 text-center">
+                            <span
+                              title={rule.secpRef}
+                              className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border cursor-help ${
+                                rule.refStatus === "STATUTORY"
+                                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                                  : "bg-slate-50 text-slate-600 border-slate-200"
+                              }`}
+                            >
+                              {rule.refStatus}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-5">
+                            <p className="text-[10px] font-mono text-slate-500">
+                              {rule.effectiveFrom} → {rule.effectiveTo ?? "open"}
+                            </p>
+                            <span
+                              className={`text-[10px] font-bold ${rule.active ? "text-emerald-600" : "text-slate-400"}`}
+                            >
+                              {rule.active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-5 text-right">
+                            <span className="font-mono text-sm font-bold text-slate-900 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded">
+                              {fmtPct(rule.ratePct)}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </Card>
+
+      <Card
+        title="Total Payout Ceiling"
+        subtitle="Checked against the sum of every payee's commission on a policy — a breach holds the whole stack"
+      >
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
+              <tr>
+                <th className="p-3">Segment</th>
+                {PREMIUM_TYPES.map((pt) => (
+                  <th key={pt} className="p-3 text-right">
+                    {pt.replace("_", " ")}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {SEGMENTS.map((segment) => (
+                <tr key={segment}>
+                  <td className="p-3 font-bold text-slate-800 capitalize">{segment}</td>
+                  {PREMIUM_TYPES.map((pt) => (
+                    <td key={pt} className="p-3 text-right font-semibold tabular-nums text-slate-900">
+                      {fmtPct(COMMISSION_CONFIG.payoutCeilingPct[segment][pt])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+/** The engine settings that decide gating and deductions. */
+function EngineSettings({ notify }: { notify: (msg: string, ok?: boolean) => void }) {
+  const [draft, setDraft] = useState({
+    freeLookDays: COMMISSION_CONFIG.freeLookDays,
+    minPayoutThreshold: COMMISSION_CONFIG.minPayoutThreshold,
+    salesTaxOnServicesPct: COMMISSION_CONFIG.salesTaxOnServicesPct,
+    whtLifeAgentLowBandFiler: COMMISSION_CONFIG.whtLifeAgentLowBandFiler,
+    whtLifeAgentLowBandNonFiler: COMMISSION_CONFIG.whtLifeAgentLowBandNonFiler,
+    whtStandardFiler: COMMISSION_CONFIG.whtStandardFiler,
+    whtStandardNonFiler: COMMISSION_CONFIG.whtStandardNonFiler,
+    lifeAgentLowBandAnnualLimit: COMMISSION_CONFIG.lifeAgentLowBandAnnualLimit,
+  });
+
+  const apply = () => {
+    updateCommissionConfig(draft);
+    notify("Engine settings applied — the ledger has been recomputed.");
+  };
+
+  const numField = (label: string, key: keyof typeof draft, hint?: string) => (
+    <Field label={label}>
+      <input
+        type="number"
+        value={draft[key]}
+        onChange={(e) => setDraft({ ...draft, [key]: Number(e.target.value) })}
+        className={`${inputClass} font-mono`}
+      />
+      {hint && <p className="text-[10px] text-slate-400 mt-1">{hint}</p>}
+    </Field>
+  );
+
+  return (
+    <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        {numField("Free-look days", "freeLookDays", "Commission is not releasable until the cooling-off window closes")}
+        {numField("Minimum payout (PKR)", "minPayoutThreshold", "Smaller nets are carried forward")}
+        {numField("Sales tax on services %", "salesTaxOnServicesPct", "Withheld from corporate payees only")}
+        {numField("Life-agent band limit (PKR)", "lifeAgentLowBandAnnualLimit", "Annual commission below this uses the lower WHT band")}
+        {numField("WHT — life agent, filer %", "whtLifeAgentLowBandFiler")}
+        {numField("WHT — life agent, non-filer %", "whtLifeAgentLowBandNonFiler")}
+        {numField("WHT — standard, filer %", "whtStandardFiler")}
+        {numField("WHT — standard, non-filer %", "whtStandardNonFiler")}
+      </div>
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[10px] text-slate-500">
+          Withholding bands follow s.233 of the Income Tax Ordinance 2001 (brokerage &amp; commission): life agents under
+          the annual limit are withheld at the lower rate, everyone else at the standard rate, doubled for non-filers.
+        </p>
+        <button onClick={apply} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shrink-0">
+          Apply &amp; Recompute
+        </button>
+      </div>
+    </div>
+  );
+}
