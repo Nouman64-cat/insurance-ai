@@ -35,7 +35,7 @@ export default function CustomDrawer(props: DrawerContentComponentProps) {
     { route: 'Underwriting', label: 'Underwriting', icon: 'shield-checkmark-outline', onRootStack: true },
     { route: 'PolicyIssuance', label: 'Policy Issuance', icon: 'ribbon-outline', onRootStack: true },
     { route: 'Commission', label: 'Commission', icon: 'cash-outline', onRootStack: true },
-    { route: 'SECPRateCard', label: 'SECP Rate Card', icon: 'document-text-outline', onRootStack: true },
+    { route: 'SECPRateCard', label: 'SECP Commission Types', icon: 'document-text-outline', onRootStack: true },
     { route: 'Settings', label: 'Settings', icon: 'settings-outline' },
     { route: 'About', label: 'About', icon: 'information-circle-outline' },
     { route: 'Help', label: 'Help & Support', icon: 'help-buoy-outline' },

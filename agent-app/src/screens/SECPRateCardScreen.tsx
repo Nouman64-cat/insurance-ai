@@ -28,7 +28,7 @@ export default function SECPRateCardScreen() {
     <Screen
       scrollable={false}
       padded={false}
-      header={<ScreenHeader title="SECP Rate Card" subtitle="Statutory commission matrix" leading="back" />}
+      header={<ScreenHeader title="SECP Commission Types" subtitle="Statutory commission matrix" leading="back" />}
     >
       <ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: gutter }]} showsVerticalScrollIndicator={false}>
         <Banner
