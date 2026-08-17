@@ -894,7 +894,32 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v40d — add invite_token to customer_e_applications",
         "ALTER TABLE customer_e_applications ADD COLUMN IF NOT EXISTS invite_token VARCHAR(255)",
     ),
+    (
+        "v41a — add code to business_rules",
+        "ALTER TABLE business_rules ADD COLUMN IF NOT EXISTS code VARCHAR(100)",
+    ),
+    (
+        "v41b — add description to business_rules",
+        "ALTER TABLE business_rules ADD COLUMN IF NOT EXISTS description VARCHAR(1000)",
+    ),
+    (
+        "v41c — add category to business_rules",
+        "ALTER TABLE business_rules ADD COLUMN IF NOT EXISTS category VARCHAR(255)",
+    ),
+    (
+        "v41d — add subcategory to business_rules",
+        "ALTER TABLE business_rules ADD COLUMN IF NOT EXISTS subcategory VARCHAR(255)",
+    ),
+    (
+        "v41e — add eligibility_criteria to business_rules",
+        "ALTER TABLE business_rules ADD COLUMN IF NOT EXISTS eligibility_criteria VARCHAR(1000)",
+    ),
+    (
+        "v42 — add REINSURANCE to ruledomainenum",
+        "ALTER TYPE ruledomainenum ADD VALUE IF NOT EXISTS 'REINSURANCE'",
+    ),
 ]
+
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 

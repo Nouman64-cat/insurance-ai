@@ -73,6 +73,65 @@ export function resetLedgerCache() {
 import { listPolicies } from "./policies";
 import { getUserDirectory, listAgents } from "./agents";
 
+// Backend segment values (routers/cases.py, policies.py) are individual |
+// family | organization; the SECP rate card's rule conditions speak in
+// Individual | Group | Family. "organization" is this platform's group/
+// employer-sponsored segment, so it maps to "Group" here — this is the one
+// translation point that has to agree with rules.py's COM-GRP-* conditions.
+function segmentToCategory(segment: string | undefined): "Individual" | "Group" | "Family" {
+  if (segment === "organization" || segment === "group") return "Group";
+  if (segment === "family") return "Family";
+  return "Individual";
+}
+
+function segmentToRuleSegment(category: "Individual" | "Group" | "Family"): PolicySegment {
+  return category === "Group" ? "group" : category === "Family" ? "family" : "individual";
+}
+
+/**
+ * Calls the tenant-service rule engine (commission.secp_rate_card) instead of
+ * re-deriving the rate locally. Falls back to the local SECP_DEFAULT_RULES
+ * table — still the correct statutory default — if the rule engine is
+ * unreachable, so a network hiccup degrades to a known-correct static table
+ * instead of failing the ledger/calculator outright.
+ */
+export async function evaluateCommissionRule(params: {
+  segment: string | undefined;
+  policyYear: number;
+  premiumType: PremiumType;
+}): Promise<{ ratePct: number; reason: string }> {
+  const category = segmentToCategory(params.segment);
+  const ruleSegment = segmentToRuleSegment(category);
+  const fallback =
+    SECP_DEFAULT_RULES.find(
+      (r) =>
+        r.segment === ruleSegment &&
+        r.premiumType === params.premiumType &&
+        r.policyYear === Math.min(params.policyYear, 3)
+    ) || { ratePct: params.premiumType === "FIRST_YEAR" ? 35.0 : params.premiumType === "SINGLE_PREMIUM" ? 2.5 : 5.0, description: "Fallback default" };
+
+  try {
+    const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+    if (!tenantId) throw new Error("No tenant ID found");
+    const res = await api.post(`/tenants/${tenantId}/rules/evaluate`, {
+      rule_set_code: "commission.secp_rate_card",
+      context: {
+        category,
+        policy_year: params.policyYear,
+        premium_type: params.premiumType,
+      },
+      actor: "Portal",
+    });
+    const payload = res.data?.outcome_payload;
+    if (res.data?.status === "SUCCESS" && typeof payload?.commission_pct === "number") {
+      return { ratePct: payload.commission_pct, reason: payload.reason || fallback.description };
+    }
+  } catch (err) {
+    // Rule engine unreachable — fall through to the static SECP default below.
+  }
+  return { ratePct: fallback.ratePct, reason: fallback.description };
+}
+
 export async function listCommissionLedger(): Promise<CommissionLedgerEntry[]> {
   if (ledgerCache !== null) {
     return ledgerCache;
@@ -92,44 +151,51 @@ export async function listCommissionLedger(): Promise<CommissionLedgerEntry[]> {
         ];
 
     if (realPolicies && realPolicies.length > 0) {
-      const realLedgerEntries: CommissionLedgerEntry[] = realPolicies.map((p, idx) => {
-        const estPremium = Math.round(p.coverage_amount * 0.025) || 250000;
-        const isIssued = p.status === "Active" || p.status === "PendingPayment";
-        const isRealized = p.status === "Active";
-        const ratePct = p.segment === "group" ? 15.0 : 35.0;
-        const gross = Math.round((estPremium * ratePct) / 100);
-        const wht = Math.round(gross * 0.10);
-        const net = gross - wht;
+      const realLedgerEntries: CommissionLedgerEntry[] = await Promise.all(
+        realPolicies.map(async (p, idx) => {
+          const estPremium = Math.round(p.coverage_amount * 0.025) || 250000;
+          const isIssued = p.status === "Active" || p.status === "PendingPayment";
+          const isRealized = p.status === "Active";
+          const category = segmentToCategory(p.segment);
+          const { ratePct } = await evaluateCommissionRule({
+            segment: p.segment,
+            policyYear: 1,
+            premiumType: "FIRST_YEAR",
+          });
+          const gross = Math.round((estPremium * ratePct) / 100);
+          const wht = Math.round(gross * 0.10);
+          const net = gross - wht;
 
-        const assignedAgent = availableAgents[idx % availableAgents.length];
+          const assignedAgent = availableAgents[idx % availableAgents.length];
 
-        return {
-          id: `COM-2026-00${idx + 1}`,
-          leadId: `LEAD-${9080 + idx + 1}`,
-          agentId: assignedAgent.id,
-          agentName: assignedAgent.name,
-          agentCode: assignedAgent.code,
-          policyId: p.id,
-          policyNumber: p.policy_number || `PL-ADAM-${98210 + idx}`,
-          customerName: p.customer_name || "Valued Policyholder",
-          segment: (p.segment as PolicySegment) || "individual",
-          productName: p.product_name || "Adamjee Life Protection Plan",
-          premiumType: "FIRST_YEAR",
-          policyYear: 1,
-          collectedPremium: estPremium,
-          ratePct: ratePct,
-          grossCommission: gross,
-          whtTax: wht,
-          netCommission: net,
-          status: isRealized ? "DISBURSED" : isIssued ? "PAYABLE" : "ACCRUED",
-          gatingReason: isRealized
-            ? "Disbursed to Agent Bank Account (SECP Rule 58 Confirmed)"
-            : isIssued
-            ? "Payable (Policy Issued & Premium Collected - SECP Rule 58)"
-            : "Gated: Pending Premium Collection (SECP Rule 58)",
-          accruedAt: p.created_at || new Date().toISOString().replace("T", " ").slice(0, 19),
-        };
-      });
+          return {
+            id: `COM-2026-00${idx + 1}`,
+            leadId: `LEAD-${9080 + idx + 1}`,
+            agentId: assignedAgent.id,
+            agentName: assignedAgent.name,
+            agentCode: assignedAgent.code,
+            policyId: p.id,
+            policyNumber: p.policy_number || `PL-ADAM-${98210 + idx}`,
+            customerName: p.customer_name || "Valued Policyholder",
+            segment: segmentToRuleSegment(category),
+            productName: p.product_name || "Adamjee Life Protection Plan",
+            premiumType: "FIRST_YEAR" as PremiumType,
+            policyYear: 1,
+            collectedPremium: estPremium,
+            ratePct: ratePct,
+            grossCommission: gross,
+            whtTax: wht,
+            netCommission: net,
+            status: isRealized ? "DISBURSED" : isIssued ? "PAYABLE" : "ACCRUED" as CommissionStatus,
+            gatingReason: isRealized
+              ? "Disbursed to Agent Bank Account (SECP Rule 58 Confirmed)"
+              : isIssued
+              ? "Payable (Policy Issued & Premium Collected - SECP Rule 58)"
+              : "Gated: Pending Premium Collection (SECP Rule 58)",
+            accruedAt: p.created_at || new Date().toISOString().replace("T", " ").slice(0, 19),
+          };
+        })
+      );
 
       ledgerCache = realLedgerEntries;
       return ledgerCache;
@@ -216,11 +282,13 @@ export async function calculateCommissionForPolicy(params: {
   isRealized: boolean;
   isIssued: boolean;
 }): Promise<CommissionLedgerEntry> {
-  const rule = SECP_DEFAULT_RULES.find(
-    (r) => r.segment === params.segment && r.premiumType === params.premiumType && r.policyYear === Math.min(params.policyYear, 3)
-  ) || { ratePct: params.premiumType === "FIRST_YEAR" ? 35.0 : params.premiumType === "SINGLE_PREMIUM" ? 2.5 : 5.0 };
+  const { ratePct } = await evaluateCommissionRule({
+    segment: params.segment,
+    policyYear: params.policyYear,
+    premiumType: params.premiumType,
+  });
 
-  const gross = Math.round((params.collectedPremium * rule.ratePct) / 100);
+  const gross = Math.round((params.collectedPremium * ratePct) / 100);
   const wht = Math.round(gross * 0.10); // 10% withholding tax
   const net = gross - wht;
 
@@ -246,7 +314,7 @@ export async function calculateCommissionForPolicy(params: {
     premiumType: params.premiumType,
     policyYear: params.policyYear,
     collectedPremium: params.collectedPremium,
-    ratePct: rule.ratePct,
+    ratePct,
     grossCommission: gross,
     whtTax: wht,
     netCommission: net,
