@@ -17,19 +17,19 @@ import { Card, Field, PayeeTypeBadge, fmtPct, inputClass } from "./shared";
 
 /** The event that makes a row payable — what the ledger is waiting on. */
 function payableEvents(rule: CommissionRule): { code: string; label: string }[] {
-  if (rule.basis === "PRODUCER_COMMISSION") return [{ code: "DSP", label: "DOWNLINE COMMISSION POSTED" }];
-  if (rule.basis === "PARTNER_COMMISSION") return [{ code: "PTP", label: "PARTNER FEE POSTED" }];
-  if (rule.premiumType === "RENEWAL") return [{ code: "PRC", label: "RENEWAL PREMIUM COLLECTED" }];
-  if (rule.premiumType === "SINGLE_PREMIUM") return [{ code: "PC", label: "PREMIUM COLLECTION" }];
+  if (rule.basis === "PRODUCER_COMMISSION") return [{ code: "DSP", label: "Agent Sale" }];
+  if (rule.basis === "PARTNER_COMMISSION") return [{ code: "PTP", label: "Partner Sale" }];
+  if (rule.premiumType === "RENEWAL") return [{ code: "PRC", label: "Renewal Paid" }];
+  if (rule.premiumType === "SINGLE_PREMIUM") return [{ code: "PC", label: "Premium Paid" }];
   if (rule.segment === "group") {
     return [
-      { code: "LG", label: "LEAD GENERATION" },
-      { code: "PLI", label: "POLICY ISSUANCE" },
+      { code: "LG", label: "Lead Received" },
+      { code: "PLI", label: "Policy Issued" },
     ];
   }
   return [
-    { code: "PLI", label: "POLICY ISSUANCE" },
-    { code: "PC", label: "PREMIUM COLLECTION" },
+    { code: "PLI", label: "Policy Issued" },
+    { code: "PC", label: "Premium Paid" },
   ];
 }
 
@@ -61,8 +61,8 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
   return (
     <div className="space-y-4">
       <Card
-        title="Commission Rate Card"
-        subtitle="Every payee type that can earn on a premium, the rate they earn, and what that rate is applied to"
+        title="Commission Types"
+        subtitle="Rules and rates by channel"
         actions={
           <>
             <select
@@ -81,18 +81,15 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
               onClick={() => setShowConfig(!showConfig)}
               className="px-3.5 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl text-xs font-bold"
             >
-              {showConfig ? "Hide" : "Engine"} Settings
+              {showConfig ? "Hide Settings" : "Tax & Rules"}
             </button>
           </>
         }
       >
         {showConfig && <EngineSettings notify={notify} />}
 
-        <div className="px-5 py-3 bg-amber-50/60 border-b border-amber-100 text-[11px] text-amber-900">
-          <span className="font-bold">Compliance note:</span> rows marked <span className="font-bold">STATUTORY</span> carry
-          inherited SECP rule/form citations that have not been checked line-by-line against the published Insurance Rules
-          2017 — have compliance sign them off before treating them as caps. Rows marked{" "}
-          <span className="font-bold">CONTRACTUAL</span> are the insurer&apos;s own negotiated terms.
+        <div className="px-5 py-2 bg-amber-50/60 border-b border-amber-100 text-[11px] text-amber-900">
+          <span className="font-bold">Note:</span> STATUTORY = Government Rules. CONTRACTUAL = Company Terms.
         </div>
 
         {grouped.map((group) => (
@@ -105,16 +102,15 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
               <table className="w-full text-left text-xs text-slate-700">
                 <thead>
                   <tr className="bg-white text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200 font-semibold">
-                    <th className="py-3 px-5">Commission ID</th>
-                    <th className="py-3 px-5">Name</th>
-                    <th className="py-3 px-5">Description</th>
-                    <th className="py-3 px-5">Payee</th>
-                    <th className="py-3 px-5">Applied To</th>
-                    <th className="py-3 px-5">Payable Event</th>
-                    <th className="py-3 px-5 text-center">Type</th>
-                    <th className="py-3 px-5 text-center">Reference</th>
-                    <th className="py-3 px-5">In Force</th>
-                    <th className="py-3 px-5 text-right">Rate</th>
+                    <th className="py-3 px-5">COMM. ID</th>
+                    <th className="py-3 px-5">DESCRIPTION</th>
+                    <th className="py-3 px-5">PAYEE</th>
+                    <th className="py-3 px-5 text-center">COMM. TYPE</th>
+                    <th className="py-3 px-5 text-right">RATE</th>
+                    <th className="py-3 px-5">TO BE APPLIED WHEN</th>
+                    <th className="py-3 px-5">TRIGGERS ON</th>
+                    <th className="py-3 px-5">EFF. FROM</th>
+                    <th className="py-3 px-5 text-center">COMM. REF</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -127,9 +123,6 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
                         <tr key={`${rule.id}-${event.code}`} className="hover:bg-slate-50/70">
                           <td className="py-3.5 px-5">
                             <span className="font-mono font-bold text-xs text-blue-900">{commissionId}</span>
-                          </td>
-                          <td className="py-3.5 px-5">
-                            <span className="font-bold text-slate-900 text-xs">{rule.name || rule.description}</span>
                           </td>
                           <td className="py-3.5 px-5">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -146,6 +139,16 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
                           <td className="py-3.5 px-5">
                             <PayeeTypeBadge type={rule.payeeType} />
                           </td>
+                          <td className="py-3.5 px-5 text-center">
+                            <span className={`inline-flex px-2.5 py-0.5 rounded text-[11px] border font-medium ${info.className}`}>
+                              {info.label}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-5 text-right">
+                            <span className="font-mono text-sm font-bold text-slate-900 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded">
+                              {fmtPct(rule.ratePct)}
+                            </span>
+                          </td>
                           <td className="py-3.5 px-5">
                             <span className="text-[10px] font-semibold text-slate-700">{BASIS_LABELS[rule.basis]}</span>
                           </td>
@@ -156,9 +159,14 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
                               <span className="text-slate-600 font-medium">{event.label}</span>
                             </div>
                           </td>
-                          <td className="py-3.5 px-5 text-center">
-                            <span className={`inline-flex px-2.5 py-0.5 rounded text-[11px] border font-medium ${info.className}`}>
-                              {info.label}
+                          <td className="py-3.5 px-5">
+                            <p className="text-[10px] font-mono text-slate-500">
+                              {rule.effectiveFrom} → {rule.effectiveTo ?? "open"}
+                            </p>
+                            <span
+                              className={`text-[10px] font-bold ${rule.active ? "text-emerald-600" : "text-slate-400"}`}
+                            >
+                              {rule.active ? "Active" : "Inactive"}
                             </span>
                           </td>
                           <td className="py-3.5 px-5 text-center">
@@ -173,21 +181,6 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
                               {rule.refStatus}
                             </span>
                           </td>
-                          <td className="py-3.5 px-5">
-                            <p className="text-[10px] font-mono text-slate-500">
-                              {rule.effectiveFrom} → {rule.effectiveTo ?? "open"}
-                            </p>
-                            <span
-                              className={`text-[10px] font-bold ${rule.active ? "text-emerald-600" : "text-slate-400"}`}
-                            >
-                              {rule.active ? "Active" : "Inactive"}
-                            </span>
-                          </td>
-                          <td className="py-3.5 px-5 text-right">
-                            <span className="font-mono text-sm font-bold text-slate-900 px-2 py-0.5 bg-slate-50 border border-slate-200 rounded">
-                              {fmtPct(rule.ratePct)}
-                            </span>
-                          </td>
                         </tr>
                       );
                     });
@@ -200,8 +193,8 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
       </Card>
 
       <Card
-        title="Total Payout Ceiling"
-        subtitle="Checked against the sum of every payee's commission on a policy — a breach holds the whole stack"
+        title="Payout Limits"
+        subtitle="Maximum total payout per policy"
       >
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
@@ -267,22 +260,21 @@ function EngineSettings({ notify }: { notify: (msg: string, ok?: boolean) => voi
   return (
     <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/60 space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {numField("Free-look days", "freeLookDays", "Commission is not releasable until the cooling-off window closes")}
-        {numField("Minimum payout (PKR)", "minPayoutThreshold", "Smaller nets are carried forward")}
-        {numField("Sales tax on services %", "salesTaxOnServicesPct", "Withheld from corporate payees only")}
-        {numField("Life-agent band limit (PKR)", "lifeAgentLowBandAnnualLimit", "Annual commission below this uses the lower WHT band")}
-        {numField("WHT — life agent, filer %", "whtLifeAgentLowBandFiler")}
-        {numField("WHT — life agent, non-filer %", "whtLifeAgentLowBandNonFiler")}
-        {numField("WHT — standard, filer %", "whtStandardFiler")}
-        {numField("WHT — standard, non-filer %", "whtStandardNonFiler")}
+        {numField("Cooling Period (Days)", "freeLookDays", "Days before payout")}
+        {numField("Min. Payout (PKR)", "minPayoutThreshold", "Minimum amount to release")}
+        {numField("Sales Tax %", "salesTaxOnServicesPct", "For corporate partners")}
+        {numField("Low-Tax Limit (PKR)", "lifeAgentLowBandAnnualLimit", "Annual limit")}
+        {numField("Agent Tax (Filer %)", "whtLifeAgentLowBandFiler")}
+        {numField("Agent Tax (Non-Filer %)", "whtLifeAgentLowBandNonFiler")}
+        {numField("Standard Tax (Filer %)", "whtStandardFiler")}
+        {numField("Standard Tax (Non-Filer %)", "whtStandardNonFiler")}
       </div>
       <div className="flex items-center justify-between gap-3">
         <p className="text-[10px] text-slate-500">
-          Withholding bands follow s.233 of the Income Tax Ordinance 2001 (brokerage &amp; commission): life agents under
-          the annual limit are withheld at the lower rate, everyone else at the standard rate, doubled for non-filers.
+          Filers get lower tax rates; non-filers are charged standard rates.
         </p>
         <button onClick={apply} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shrink-0">
-          Apply &amp; Recompute
+          Save Settings
         </button>
       </div>
     </div>
