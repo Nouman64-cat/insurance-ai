@@ -12,6 +12,7 @@ Can also be run standalone:
 """
 
 import asyncio
+import json
 import logging
 import os
 
@@ -918,6 +919,157 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v42 — add REINSURANCE to ruledomainenum",
         "ALTER TYPE ruledomainenum ADD VALUE IF NOT EXISTS 'REINSURANCE'",
     ),
+    # ── Rule engine v2.1 — 6-tier hierarchy, typed impacts, grouped criteria ──
+    # New columns are added nullable here; _migrate_rule_engine_v2() backfills
+    # them from the old flat schema (domain/code/conditions/outcome_payload/
+    # etc, still present at this point); POST_DATA_MIGRATIONS then enforces
+    # NOT NULL and drops the old columns. See run_migrations() for ordering.
+    (
+        "v43a — rule_sets: add hierarchy + scope columns (nullable, backfilled)",
+        "ALTER TABLE rule_sets "
+        "ADD COLUMN IF NOT EXISTS scope_type scopetypeenum, "
+        "ADD COLUMN IF NOT EXISTS subcategory_id UUID REFERENCES rule_subcategories(id), "
+        "ADD COLUMN IF NOT EXISTS eligibility_id UUID REFERENCES eligibility_profiles(id), "
+        "ADD COLUMN IF NOT EXISTS rule_code VARCHAR(100)",
+    ),
+    (
+        "v43b — rule_versions: add version_number (nullable, backfilled)",
+        "ALTER TABLE rule_versions ADD COLUMN IF NOT EXISTS version_number VARCHAR(20)",
+    ),
+    (
+        "v43c — add ARCHIVED to ruleversionstatusenum (replaces RETIRED going forward)",
+        "ALTER TYPE ruleversionstatusenum ADD VALUE IF NOT EXISTS 'ARCHIVED'",
+    ),
+    (
+        "v43d — business_rules: add v2.1 columns (nullable, backfilled)",
+        "ALTER TABLE business_rules "
+        "ADD COLUMN IF NOT EXISTS version_id UUID REFERENCES rule_versions(id), "
+        "ADD COLUMN IF NOT EXISTS rule_code VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS is_active BOOLEAN, "
+        "ADD COLUMN IF NOT EXISTS affected_from TIMESTAMP WITH TIME ZONE, "
+        "ADD COLUMN IF NOT EXISTS affected_to TIMESTAMP WITH TIME ZONE, "
+        "ADD COLUMN IF NOT EXISTS impact_type impacttypeenum, "
+        "ADD COLUMN IF NOT EXISTS impact_data JSON",
+    ),
+    (
+        "v43e — rule_evaluation_logs: add v2.1 columns (nullable, backfilled)",
+        "ALTER TABLE rule_evaluation_logs "
+        "ADD COLUMN IF NOT EXISTS proposal_id VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS customer_cnic VARCHAR(20), "
+        "ADD COLUMN IF NOT EXISTS category_code VARCHAR(50), "
+        "ADD COLUMN IF NOT EXISTS subcategory_code VARCHAR(50), "
+        "ADD COLUMN IF NOT EXISTS channel_code VARCHAR(50), "
+        "ADD COLUMN IF NOT EXISTS version_number VARCHAR(20), "
+        "ADD COLUMN IF NOT EXISTS input_context_snapshot JSON, "
+        "ADD COLUMN IF NOT EXISTS tsar_accumulated DOUBLE PRECISION, "
+        "ADD COLUMN IF NOT EXISTS matched_rule_codes JSON, "
+        "ADD COLUMN IF NOT EXISTS final_impacts JSON, "
+        "ADD COLUMN IF NOT EXISTS execution_duration_ms DOUBLE PRECISION",
+    ),
+]
+
+
+# ── Post-data-migration list ───────────────────────────────────────────────────
+# Runs after _migrate_rule_engine_v2() has backfilled the columns added above.
+# Enforces NOT NULL / uniqueness and drops the old columns it read from.
+POST_DATA_MIGRATIONS: list[tuple[str, str]] = [
+    (
+        "v44a — rule_sets: enforce NOT NULL on scope_type/subcategory_id/rule_code",
+        "ALTER TABLE rule_sets "
+        "ALTER COLUMN scope_type SET NOT NULL, "
+        "ALTER COLUMN subcategory_id SET NOT NULL, "
+        "ALTER COLUMN rule_code SET NOT NULL",
+    ),
+    (
+        "v44b — rule_sets: drop legacy domain/code columns",
+        "ALTER TABLE rule_sets DROP COLUMN IF EXISTS domain, DROP COLUMN IF EXISTS code",
+    ),
+    (
+        "v44c — rule_sets: unique index on rule_code",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ix_rule_sets_rule_code ON rule_sets (rule_code)",
+    ),
+    (
+        "v44d — rule_sets: index on scope_type",
+        "CREATE INDEX IF NOT EXISTS ix_rule_sets_scope_type ON rule_sets (scope_type)",
+    ),
+    (
+        "v44e — rule_sets: index on subcategory_id",
+        "CREATE INDEX IF NOT EXISTS ix_rule_sets_subcategory_id ON rule_sets (subcategory_id)",
+    ),
+    (
+        "v44f — rule_versions: enforce NOT NULL on version_number, drop version_no",
+        "ALTER TABLE rule_versions "
+        "ALTER COLUMN version_number SET NOT NULL, "
+        "DROP COLUMN IF EXISTS version_no",
+    ),
+    (
+        "v44g — business_rules: enforce NOT NULL on v2.1 columns",
+        "ALTER TABLE business_rules "
+        "ALTER COLUMN version_id SET NOT NULL, "
+        "ALTER COLUMN rule_code SET NOT NULL, "
+        "ALTER COLUMN is_active SET NOT NULL, "
+        "ALTER COLUMN affected_from SET NOT NULL, "
+        "ALTER COLUMN impact_type SET NOT NULL, "
+        "ALTER COLUMN impact_data SET NOT NULL",
+    ),
+    (
+        "v44h — business_rules: drop legacy columns",
+        "ALTER TABLE business_rules "
+        "DROP COLUMN IF EXISTS rule_version_id, "
+        "DROP COLUMN IF EXISTS description, "
+        "DROP COLUMN IF EXISTS category, "
+        "DROP COLUMN IF EXISTS subcategory, "
+        "DROP COLUMN IF EXISTS eligibility_criteria, "
+        "DROP COLUMN IF EXISTS condition_operator, "
+        "DROP COLUMN IF EXISTS conditions, "
+        "DROP COLUMN IF EXISTS outcome_payload, "
+        "DROP COLUMN IF EXISTS code, "
+        "DROP COLUMN IF EXISTS is_enabled",
+    ),
+    (
+        "v44i — business_rules: index on rule_code",
+        "CREATE INDEX IF NOT EXISTS ix_business_rules_rule_code ON business_rules (rule_code)",
+    ),
+    (
+        "v44j — business_rules: index on impact_type",
+        "CREATE INDEX IF NOT EXISTS ix_business_rules_impact_type ON business_rules (impact_type)",
+    ),
+    (
+        "v44k — business_rules: composite index on active/affected window",
+        "CREATE INDEX IF NOT EXISTS ix_business_rules_active_window "
+        "ON business_rules (is_active, affected_from, affected_to)",
+    ),
+    (
+        "v44l — rule_versions: composite index on status/effective window",
+        "CREATE INDEX IF NOT EXISTS ix_rule_versions_status_window "
+        "ON rule_versions (status, effective_from, effective_to)",
+    ),
+    (
+        "v44m — rule_evaluation_logs: enforce NOT NULL on backfilled v2.1 columns",
+        "ALTER TABLE rule_evaluation_logs "
+        "ALTER COLUMN version_number SET NOT NULL, "
+        "ALTER COLUMN input_context_snapshot SET NOT NULL, "
+        "ALTER COLUMN tsar_accumulated SET NOT NULL, "
+        "ALTER COLUMN matched_rule_codes SET NOT NULL, "
+        "ALTER COLUMN final_impacts SET NOT NULL, "
+        "ALTER COLUMN execution_duration_ms SET NOT NULL",
+    ),
+    (
+        "v44n — rule_evaluation_logs: drop legacy columns",
+        "ALTER TABLE rule_evaluation_logs "
+        "DROP COLUMN IF EXISTS case_id, "
+        "DROP COLUMN IF EXISTS rule_version_no, "
+        "DROP COLUMN IF EXISTS input_context, "
+        "DROP COLUMN IF EXISTS outcome",
+    ),
+    (
+        "v44o — rule_evaluation_logs: index on proposal_id",
+        "CREATE INDEX IF NOT EXISTS ix_rule_evaluation_logs_proposal_id ON rule_evaluation_logs (proposal_id)",
+    ),
+    (
+        "v44p — rule_evaluation_logs: index on customer_cnic",
+        "CREATE INDEX IF NOT EXISTS ix_rule_evaluation_logs_customer_cnic ON rule_evaluation_logs (customer_cnic)",
+    ),
 ]
 
 
@@ -974,6 +1126,332 @@ async def _seed_user_types(conn) -> None:
                      "VALUES (:id, :name, :desc, true, :created_at)"),
                 {"id": str(uuid4()), "name": name, "desc": desc, "created_at": datetime.utcnow()}
             )
+
+
+def _as_obj(val, default):
+    """Raw-SQL JSON columns come back from asyncpg as strings, not
+    dict/list — normalize either shape."""
+    if val is None:
+        return default
+    if isinstance(val, (dict, list)):
+        return val
+    if isinstance(val, str):
+        try:
+            return json.loads(val)
+        except Exception:
+            return default
+    return default
+
+
+def _to_float(value):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _eq_kwargs(value):
+    if isinstance(value, bool):
+        return {"value_string": "true" if value else "false"}
+    if isinstance(value, (int, float)):
+        return {"value_numeric": float(value)}
+    return {"value_string": str(value)}
+
+
+def _map_condition_operator(op, value):
+    """Maps an old {field, operator, value} condition (rule_evaluator.py's
+    original fixed operator set) to the new ComparisonOperatorEnum value plus
+    the RuleCriteria value_* kwargs to populate."""
+    op = str(op or "eq").lower().strip()
+
+    if op in ("gt", ">"):
+        return "gt", {"value_numeric": _to_float(value)}
+    if op in ("gte", ">="):
+        return "gte", {"value_numeric": _to_float(value)}
+    if op in ("lt", "<"):
+        return "lt", {"value_numeric": _to_float(value)}
+    if op in ("lte", "<="):
+        return "lte", {"value_numeric": _to_float(value)}
+    if op in ("ne", "!=", "not_equals"):
+        return "neq", _eq_kwargs(value)
+    if op in ("in", "is_one_of", "not_in", "is_not_one_of"):
+        # `not_in`/`is_not_one_of` had zero real usages in the seeded data —
+        # mapped to in_set rather than adding an unused NOT_IN operator.
+        items = value if isinstance(value, list) else [value]
+        return "in_set", {"value_list": items}
+    if op in ("contains", "has"):
+        return "contains", {"value_string": str(value)}
+    if op in ("between", "range"):
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            return "between", {"value_range_min": _to_float(value[0]), "value_range_max": _to_float(value[1])}
+        return "between", {"value_range_min": None, "value_range_max": None}
+    if op in ("boolean", "is"):
+        truthy = value if isinstance(value, bool) else str(value).lower() in ("true", "1", "yes")
+        return "eq", {"value_string": "true" if truthy else "false"}
+    # eq / == / equals / unrecognized -> eq (safe default)
+    return "eq", _eq_kwargs(value)
+
+
+_IMPACT_TYPE_VALUES = {
+    "AUTO_APPROVE", "REQUIRE_MEDICAL", "APPLY_LOADING", "EXCLUSION_CLAUSE",
+    "FINANCIAL_JUSTIFICATION", "REFER_TO_UNDERWRITER", "REINSURANCE_FACULTATIVE", "DECLINE",
+}
+
+
+def _map_outcome_to_impact(action_outcome, outcome_payload):
+    """Best-effort mapping from the old free-text action_outcome/outcome_payload
+    pair to the new typed (impact_type, ActuarialImpactDetail dict). Exact
+    ImpactTypeEnum matches pass through unchanged; anything else is classified
+    by keyword, defaulting to AUTO_APPROVE for procedural pass/gate outcomes
+    (six_gates / eligibility rules aren't actuarial — see plan conflict #5)."""
+    outcome_payload = outcome_payload or {}
+    label = str(action_outcome or "").upper()
+
+    if label in _IMPACT_TYPE_VALUES:
+        impact_type = label
+    elif "DECLIN" in label or "REJECT" in label:
+        impact_type = "DECLINE"
+    elif "MEDICAL" in label:
+        impact_type = "REQUIRE_MEDICAL"
+    elif "REFER" in label:
+        impact_type = "REFER_TO_UNDERWRITER"
+    elif "EXCLU" in label:
+        impact_type = "EXCLUSION_CLAUSE"
+    elif "JUSTIF" in label:
+        impact_type = "FINANCIAL_JUSTIFICATION"
+    elif "FACULTATIVE" in label or "REINSUR" in label:
+        impact_type = "REINSURANCE_FACULTATIVE"
+    elif "LOAD" in label or "COMMISSION" in label or "RATE" in label or "TAX" in label:
+        impact_type = "APPLY_LOADING"
+    else:
+        impact_type = "AUTO_APPROVE"
+
+    impact_data = {
+        "extra_mortality_pct": float(outcome_payload.get("extra_mortality_pct") or outcome_payload.get("loading_pct") or 0),
+        "flat_extra_per_thousand": float(outcome_payload.get("flat_extra_per_thousand") or 0),
+        "medical_profile_codes": outcome_payload.get("medical_profile_codes") or outcome_payload.get("tests") or [],
+        "hlv_max_multiple": outcome_payload.get("hlv_max_multiple") or outcome_payload.get("hlv_multiple") or outcome_payload.get("multiple"),
+        "reinsurance_retention_limit": (
+            outcome_payload.get("reinsurance_retention_limit") or outcome_payload.get("retention_limit")
+        ),
+        "underwriter_authority_level": outcome_payload.get("underwriter_authority_level"),
+        "exclusion_riders": outcome_payload.get("exclusion_riders") or [],
+        "is_terminal": bool(outcome_payload.get("terminal")),
+        "commission_pct": outcome_payload.get("commission_pct") or outcome_payload.get("rate_pct"),
+        "withholding_tax_pct": outcome_payload.get("withholding_tax_pct") or outcome_payload.get("wht_pct"),
+    }
+    return impact_type, impact_data
+
+
+# Old rule_set code -> (category_code, subcategory_code, subcategory_name, scope_type, channel_code)
+_RULE_SET_MAP: dict[str, tuple] = {
+    "medical.nml_grid": ("MEDICAL_NML", "NON_MEDICAL_LIMITS", "Non-Medical Limits", "CHANNEL_PRODUCT", "AGENCY_DIRECT"),
+    "pricing.base_loading": ("PRICING", "BMI_SMOKING", "BMI & Smoking Loadings", "GLOBAL", None),
+    "pricing.occupational_loading": ("PRICING", "OCCUPATIONAL_HAZARD", "Occupational Hazard Loadings", "GLOBAL", None),
+    "eligibility.proposal_gates": ("ELIGIBILITY", "POLICY_LIMITS", "Policy Limits", "CHANNEL_PRODUCT", "AGENCY_DIRECT"),
+    "underwriting.six_gates": ("UNDERWRITING_GATES", "PRE_UW_GATES", "Pre-Underwriting Gates", "GLOBAL", None),
+    "compliance.secp_aml": ("COMPLIANCE_AML", "SANCTIONS_PEP_AML", "Sanctions, PEP & AML", "GLOBAL", None),
+    "history.hlv_ceiling": ("INSURANCE_HISTORY", "HLV_CEILING", "Human Life Value Ceiling", "GLOBAL", None),
+    "history.score_bands": ("INSURANCE_HISTORY", "SCORE_BANDS", "Insurance History Score Bands", "GLOBAL", None),
+    "commission.secp_rate_card": ("COMMISSION_SECP", "STATUTORY_RATES", "SECP Statutory Rates", "GLOBAL", None),
+    "rbac.action_role_matrix": ("RBAC_AUTHORIZATION", "ACTION_ROLE_MATRIX", "Action / Role Matrix", "GLOBAL", None),
+    "ai.composite_decision_bands": ("AI_DECISION_BANDS", "STANDARD_BANDS", "Standard Decision Bands", "GLOBAL", None),
+    "reinsurance.retention_grid": ("REINSURANCE", "SELF_RETENTION", "Self-Retention Grid", "GLOBAL", None),
+    "reinsurance.referral_decision": ("REINSURANCE", "FACULTATIVE_REFERRAL", "Facultative Referral", "GLOBAL", None),
+}
+
+# category_code -> display name (Category rows, 1:1 with the old RuleDomainEnum values)
+_CATEGORY_SEED: list[tuple] = [
+    ("ELIGIBILITY", "Eligibility & Policy Limits"),
+    ("PRICING", "Pricing & Risk Loadings"),
+    ("UNDERWRITING_GATES", "Pre-Underwriting Clearance Gates"),
+    ("COMPLIANCE_AML", "AML & Sanctions Compliance"),
+    ("MEDICAL_NML", "Medical Examination Limits"),
+    ("INSURANCE_HISTORY", "Insurance & Financial History"),
+    ("COMMISSION_SECP", "SECP Statutory Commission Rates"),
+    ("RBAC_AUTHORIZATION", "Role Authorization Rules"),
+    ("AI_DECISION_BANDS", "AI Underwriting Risk Bands"),
+    ("REINSURANCE", "Reinsurance & Retention"),
+]
+
+# channel_code -> (min_entry_age, max_entry_age, max_maturity_age, min_sum_assured)
+# Real seeded partner banks (services/tenant-service/seeds/insurance_plans_seed.py) —
+# there is no "Faysal Bank" in this repo's data, so it is not seeded here.
+_ELIGIBILITY_SEED: dict[str, tuple] = {
+    "AGENCY_DIRECT": (18, 65, 75, 500000.0),
+    "BANCASSURANCE_MCB": (18, 60, 70, 500000.0),
+    "BANCASSURANCE_ALFALAH": (18, 60, 70, 500000.0),
+    "BANCASSURANCE_KHUSHHALI": (18, 59, 65, 100000.0),
+    "BANCASSURANCE_MOBILINK": (18, 59, 65, 100000.0),
+    "WINDOW_TAKAFUL": (18, 65, 75, 500000.0),
+}
+
+
+async def _migrate_rule_engine_v2(conn) -> None:
+    """v43/v44 — populates the rule-engine v2.1 hierarchy (Category ->
+    SubCategory -> EligibilityProfile) and backfills RuleSet/RuleVersion/
+    ActualRule/RuleEvaluationLog v2.1 columns from the old flat schema,
+    exploding each old rule's `conditions` list into RuleCriteria rows.
+
+    MUST run after the v43* ADD COLUMN migrations (new columns must exist)
+    and before POST_DATA_MIGRATIONS (old columns — domain/code/conditions/
+    outcome_payload/case_id/input_context/outcome/etc — must still exist to
+    read from). Idempotent: guarded on whether rule_sets.domain still exists;
+    once POST_DATA_MIGRATIONS drops it this function is a no-op.
+    """
+    from uuid import uuid4
+
+    has_domain = (await conn.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name='rule_sets' AND column_name='domain'"
+    ))).first()
+    if not has_domain:
+        log.info("rule engine v2 data migration: already applied, skipping")
+        return
+
+    # ── 1. Categories ──────────────────────────────────────────────────────
+    category_ids: dict[str, str] = {}
+    for code, name in _CATEGORY_SEED:
+        row = (await conn.execute(text("SELECT id FROM rule_categories WHERE code=:c"), {"c": code})).first()
+        if row:
+            category_ids[code] = str(row[0])
+        else:
+            cid = str(uuid4())
+            await conn.execute(text(
+                "INSERT INTO rule_categories (id, code, name, description) VALUES (:id, :c, :n, '')"
+            ), {"id": cid, "c": code, "n": name})
+            category_ids[code] = cid
+
+    subcategory_ids: dict[tuple, str] = {}
+
+    async def _get_or_create_subcategory(category_code: str, sub_code: str, sub_name: str) -> str:
+        key = (category_code, sub_code)
+        if key in subcategory_ids:
+            return subcategory_ids[key]
+        row = (await conn.execute(text(
+            "SELECT id FROM rule_subcategories WHERE category_id=:cid AND code=:code"
+        ), {"cid": category_ids[category_code], "code": sub_code})).first()
+        if row:
+            sid = str(row[0])
+        else:
+            sid = str(uuid4())
+            await conn.execute(text(
+                "INSERT INTO rule_subcategories (id, category_id, code, name) VALUES (:id, :cid, :code, :name)"
+            ), {"id": sid, "cid": category_ids[category_code], "code": sub_code, "name": sub_name})
+        subcategory_ids[key] = sid
+        return sid
+
+    eligibility_ids: dict[tuple, str] = {}
+
+    async def _get_or_create_eligibility(subcategory_id: str, channel_code: str) -> str:
+        key = (subcategory_id, channel_code)
+        if key in eligibility_ids:
+            return eligibility_ids[key]
+        row = (await conn.execute(text(
+            "SELECT id FROM eligibility_profiles WHERE subcategory_id=:sid AND channel_code=:cc"
+        ), {"sid": subcategory_id, "cc": channel_code})).first()
+        if row:
+            eid = str(row[0])
+        else:
+            band = _ELIGIBILITY_SEED.get(channel_code, _ELIGIBILITY_SEED["AGENCY_DIRECT"])
+            eid = str(uuid4())
+            await conn.execute(text(
+                "INSERT INTO eligibility_profiles "
+                "(id, subcategory_id, channel_code, min_entry_age, max_entry_age, max_maturity_age, min_sum_assured) "
+                "VALUES (:id, :sid, :cc, :mina, :maxa, :maxm, :minsa)"
+            ), {"id": eid, "sid": subcategory_id, "cc": channel_code,
+                "mina": band[0], "maxa": band[1], "maxm": band[2], "minsa": band[3]})
+        eligibility_ids[key] = eid
+        return eid
+
+    # ── 2. Walk every existing rule_set -> version -> rule -> condition ──────
+    rule_sets = (await conn.execute(text("SELECT id, code FROM rule_sets"))).all()
+
+    total_rules = 0
+    total_criteria = 0
+
+    for rs_id, rs_code in rule_sets:
+        rs_id = str(rs_id)
+        mapping = _RULE_SET_MAP.get(rs_code, ("ELIGIBILITY", "UNSPECIFIED", "Unspecified", "GLOBAL", None))
+        category_code, sub_code, sub_name, scope_type, channel_code = mapping
+        subcategory_id = await _get_or_create_subcategory(category_code, sub_code, sub_name)
+        eligibility_id = None
+        if scope_type == "CHANNEL_PRODUCT" and channel_code:
+            eligibility_id = await _get_or_create_eligibility(subcategory_id, channel_code)
+
+        await conn.execute(text(
+            "UPDATE rule_sets SET subcategory_id=:sid, scope_type=:st, eligibility_id=:eid, rule_code=:rc "
+            "WHERE id=:id"
+        ), {"sid": subcategory_id, "st": scope_type, "eid": eligibility_id, "rc": rs_code, "id": rs_id})
+
+        versions = (await conn.execute(text(
+            "SELECT id, version_no, status FROM rule_versions WHERE rule_set_id=:id"
+        ), {"id": rs_id})).all()
+
+        for v_id, version_no, status in versions:
+            v_id = str(v_id)
+            new_status = "ARCHIVED" if str(status) == "RETIRED" else str(status)
+            await conn.execute(text(
+                "UPDATE rule_versions SET version_number=:vn, status=:st WHERE id=:id"
+            ), {"vn": f"{version_no}.0.0", "st": new_status, "id": v_id})
+
+            rules = (await conn.execute(text(
+                "SELECT id, code, condition_operator, conditions, action_outcome, outcome_payload, is_enabled "
+                "FROM business_rules WHERE rule_version_id=:vid"
+            ), {"vid": v_id})).all()
+
+            for (r_id, r_code, cond_op, conditions, action_outcome, outcome_payload, is_enabled) in rules:
+                r_id = str(r_id)
+                rule_code = r_code or f"RULE-{r_id[:8]}"
+                impact_type, impact_data = _map_outcome_to_impact(
+                    action_outcome, _as_obj(outcome_payload, {})
+                )
+
+                await conn.execute(text(
+                    "UPDATE business_rules SET version_id=:vid, rule_code=:rc, is_active=:ia, "
+                    "affected_from=COALESCE(created_at, now()), impact_type=:it, impact_data=:idata "
+                    "WHERE id=:id"
+                ), {"vid": v_id, "rc": rule_code, "ia": bool(is_enabled), "it": impact_type,
+                    "idata": json.dumps(impact_data), "id": r_id})
+                total_rules += 1
+
+                conditions = _as_obj(conditions, [])
+                is_any = str(cond_op or "ALL").upper() == "ANY"
+                for idx, cond in enumerate(conditions):
+                    group_id = (idx + 1) if is_any else 1
+                    field = cond.get("field")
+                    new_op, kwargs = _map_condition_operator(cond.get("operator", "eq"), cond.get("value"))
+                    value_list = kwargs.get("value_list")
+                    await conn.execute(text(
+                        "INSERT INTO rule_criteria "
+                        "(id, rule_id, group_id, field_name, operator, value_numeric, value_string, "
+                        "value_range_min, value_range_max, value_list, target_field_name, target_multiplier) "
+                        "VALUES (:id, :rid, :gid, :field, :op, :vn, :vs, :vrmin, :vrmax, :vlist, NULL, 1.0)"
+                    ), {
+                        "id": str(uuid4()), "rid": r_id, "gid": group_id, "field": field, "op": new_op,
+                        "vn": kwargs.get("value_numeric"), "vs": kwargs.get("value_string"),
+                        "vrmin": kwargs.get("value_range_min"), "vrmax": kwargs.get("value_range_max"),
+                        "vlist": json.dumps(value_list) if value_list is not None else None,
+                    })
+                    total_criteria += 1
+
+    # ── 3. Backfill rule_evaluation_logs (rename/default, no per-row fan-out) ─
+    await conn.execute(text("""
+        UPDATE rule_evaluation_logs SET
+            proposal_id = case_id,
+            version_number = COALESCE(rule_version_no::text, '1') || '.0.0',
+            input_context_snapshot = COALESCE(input_context, '{}'::json),
+            tsar_accumulated = 0,
+            matched_rule_codes = '[]'::json,
+            final_impacts = COALESCE(outcome, '{}'::json),
+            execution_duration_ms = 0
+        WHERE version_number IS NULL
+    """))
+
+    log.info(
+        "rule engine v2 migration: %d rule sets, %d rules, %d criteria migrated",
+        len(rule_sets), total_rules, total_criteria,
+    )
 
 
 async def _rename_applicant_to_customer(conn) -> None:
@@ -1062,6 +1540,19 @@ async def run_migrations() -> None:
 
     # 2. Apply column / index changes to existing tables in individual transactions.
     for label, sql in MIGRATIONS:
+        async with _engine.begin() as conn:
+            await conn.execute(text(sql))
+            log.info("applied: %s", label)
+
+    # 2b. Rule engine v2.1 data migration — must run after the v43* ADD COLUMN
+    #     entries above (new columns must exist) and before POST_DATA_MIGRATIONS
+    #     below (old columns it reads from must still exist).
+    async with _engine.begin() as conn:
+        await _migrate_rule_engine_v2(conn)
+
+    # 2c. Enforce NOT NULL / uniqueness and drop the old rule-engine columns
+    #     now that _migrate_rule_engine_v2 has backfilled everything.
+    for label, sql in POST_DATA_MIGRATIONS:
         async with _engine.begin() as conn:
             await conn.execute(text(sql))
             log.info("applied: %s", label)
