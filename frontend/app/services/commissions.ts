@@ -68,7 +68,7 @@ export type CommissionEntryKind = "COMMISSION" | "OVERRIDE" | "PARTNER_FEE" | "R
 export type TaxFilerStatus = "FILER" | "NON_FILER";
 
 export const PAYEE_TYPE_LABELS: Record<PayeeType, string> = {
-  AGENT: "Agent / Producer",
+  AGENT: "Agent",
   SALES_MANAGER: "Sales Manager",
   BRANCH_MANAGER: "Branch Manager",
   AGENCY: "Corporate Agent",
@@ -76,11 +76,11 @@ export const PAYEE_TYPE_LABELS: Record<PayeeType, string> = {
   BANK_PARTNER: "Bank Partner",
   BANK_SALES_OFFICER: "Bank Sales Officer",
   REFERRAL_PARTNER: "Referral Partner",
-  HOUSE: "House / Retained",
+  HOUSE: "Direct Business / House",
 };
 
 export const CHANNEL_LABELS: Record<DistributionChannel, string> = {
-  DIRECT_AGENCY: "Direct Agency Force",
+  DIRECT_AGENCY: "Direct Agency",
   BANCASSURANCE: "Bancassurance",
   BROKER: "Broker",
   CORPORATE_AGENT: "Corporate Agent",
@@ -89,9 +89,9 @@ export const CHANNEL_LABELS: Record<DistributionChannel, string> = {
 };
 
 export const BASIS_LABELS: Record<CommissionBasis, string> = {
-  PREMIUM: "Collected premium",
-  PRODUCER_COMMISSION: "Producer commission",
-  PARTNER_COMMISSION: "Partner commission",
+  PREMIUM: "Collected Premium",
+  PRODUCER_COMMISSION: "Agent's Commission",
+  PARTNER_COMMISSION: "Partner's Commission",
 };
 
 /** Payee types that may not be paid without a valid licence on file. */
@@ -1074,6 +1074,9 @@ export interface CommissionSummaryStats {
   firstYearCommissionTotal: number;
   renewalCommissionTotal: number;
   singlePremiumCommissionTotal: number;
+  firstYearPremiumTotal: number;
+  renewalPremiumTotal: number;
+  singlePremiumTotal: number;
   overrideTotal: number;
   bonusTotal: number;
   activePayeesCount: number;
@@ -1540,32 +1543,32 @@ export interface IncentiveScheme {
 
 export const INCENTIVE_SCHEMES: IncentiveScheme[] = [
   {
-    id: "INC-1", code: "PERS-13M", name: "13th-Month Persistency Bonus", kind: "PERSISTENCY_BONUS",
+    id: "INC-1", code: "BONUS-RET-13M", name: "1-Year Policy Retention Bonus", kind: "PERSISTENCY_BONUS",
     payeeTypes: ["AGENT", "SALES_MANAGER", "BANK_SALES_OFFICER"],
-    description: "Rewards producers whose first-year book stays on the books through month 13.",
-    metric: "13th-month persistency", thresholdLabel: "≥ 85%", threshold: 85,
-    rewardPct: 5, rewardAmount: null, measuredAt: "Month 13 after issue", active: true,
+    description: "Extra bonus earned when 85%+ of your sold policies stay active for 1 full year.",
+    metric: "1-Year Policy Retention", thresholdLabel: "≥ 85% Active", threshold: 85,
+    rewardPct: 5, rewardAmount: null, measuredAt: "After 13 Months", active: true,
   },
   {
-    id: "INC-2", code: "PERS-25M", name: "25th-Month Persistency Bonus", kind: "PERSISTENCY_BONUS",
+    id: "INC-2", code: "BONUS-RET-25M", name: "2-Year Policy Retention Bonus", kind: "PERSISTENCY_BONUS",
     payeeTypes: ["AGENT", "SALES_MANAGER"],
-    description: "Second-tier persistency reward measured in the 25th month.",
-    metric: "25th-month persistency", thresholdLabel: "≥ 75%", threshold: 75,
-    rewardPct: 3, rewardAmount: null, measuredAt: "Month 25 after issue", active: true,
+    description: "Bonus reward when 75%+ of sold policies stay active into their second year.",
+    metric: "2-Year Policy Retention", thresholdLabel: "≥ 75% Active", threshold: 75,
+    rewardPct: 3, rewardAmount: null, measuredAt: "After 25 Months", active: true,
   },
   {
-    id: "INC-3", code: "PROD-QTR", name: "Quarterly Production Bonus", kind: "PRODUCTION_BONUS",
+    id: "INC-3", code: "BONUS-QTR-SALES", name: "Quarterly Sales Goal Bonus", kind: "PRODUCTION_BONUS",
     payeeTypes: ["AGENT", "AGENCY", "BANK_SALES_OFFICER"],
-    description: "Paid on first-year premium written in the quarter above the qualifying bar.",
-    metric: "Quarterly FYP written", thresholdLabel: "≥ PKR 5,000,000", threshold: 5_000_000,
-    rewardPct: 2, rewardAmount: null, measuredAt: "Quarter close", active: true,
+    description: "Cash bonus earned when total new sales written in a 3-month period reach PKR 5 Million.",
+    metric: "Quarterly Sales Target", thresholdLabel: "≥ PKR 5,000,000", threshold: 5_000_000,
+    rewardPct: 2, rewardAmount: null, measuredAt: "End of Quarter", active: true,
   },
   {
-    id: "INC-4", code: "CLUB-ANN", name: "Annual Achievers Club", kind: "CLUB_QUALIFICATION",
+    id: "INC-4", code: "BONUS-ANN-TOP", name: "Annual Top Sales Performer Award", kind: "CLUB_QUALIFICATION",
     payeeTypes: ["AGENT", "SALES_MANAGER", "BANK_SALES_OFFICER"],
-    description: "Recognition award and flat cash bonus for annual FYP qualifiers.",
-    metric: "Annual FYP written", thresholdLabel: "≥ PKR 20,000,000", threshold: 20_000_000,
-    rewardPct: null, rewardAmount: 250_000, measuredAt: "Year close", active: true,
+    description: "Flat PKR 250,000 cash prize for agents writing PKR 20 Million or more in annual sales.",
+    metric: "Annual Sales Target", thresholdLabel: "≥ PKR 20,000,000", threshold: 20_000_000,
+    rewardPct: null, rewardAmount: 250_000, measuredAt: "End of Year", active: true,
   },
 ];
 
@@ -1916,6 +1919,9 @@ export async function getCommissionStats(): Promise<CommissionSummaryStats> {
     firstYearCommissionTotal: live.filter((l) => l.premiumType === "FIRST_YEAR").reduce((s, l) => s + l.netCommission, 0),
     renewalCommissionTotal: live.filter((l) => l.premiumType === "RENEWAL").reduce((s, l) => s + l.netCommission, 0),
     singlePremiumCommissionTotal: live.filter((l) => l.premiumType === "SINGLE_PREMIUM").reduce((s, l) => s + l.netCommission, 0),
+    firstYearPremiumTotal: groupLedgerByPolicy(live).filter((p) => p.premiumType === "FIRST_YEAR").reduce((s, p) => s + p.collectedPremium, 0),
+    renewalPremiumTotal: groupLedgerByPolicy(live).filter((p) => p.premiumType === "RENEWAL").reduce((s, p) => s + p.collectedPremium, 0),
+    singlePremiumTotal: groupLedgerByPolicy(live).filter((p) => p.premiumType === "SINGLE_PREMIUM").reduce((s, p) => s + p.collectedPremium, 0),
     overrideTotal: live.filter((l) => l.entryKind === "OVERRIDE").reduce((s, l) => s + l.netCommission, 0),
     bonusTotal: live.filter((l) => l.entryKind === "BONUS").reduce((s, l) => s + l.netCommission, 0),
     activePayeesCount: new Set(live.map((l) => l.payeeId)).size,

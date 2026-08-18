@@ -14,7 +14,7 @@ interface RingGaugeProps {
 }
 
 export function RingGauge({
-  value, max = 100, size = 88, strokeW = 9,
+  value, max = 100, size = 80, strokeW = 8,
   strokeHex, label, sublabel, valueLabel,
 }: RingGaugeProps) {
   const r     = (size - strokeW * 2) / 2;
@@ -22,7 +22,7 @@ export function RingGauge({
   const filled = Math.min(Math.max(value / max, 0), 1) * circ;
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <div className="flex flex-col items-center gap-1 shrink-0">
       <div className="relative" style={{ width: size, height: size }}>
         <svg width={size} height={size} style={{ transform: "rotate(-90deg)", display: "block" }}>
           <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={strokeW} />
@@ -32,12 +32,12 @@ export function RingGauge({
             strokeDasharray={`${filled} ${circ}`}
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-lg font-extrabold text-slate-900 leading-none">{valueLabel ?? value}</span>
-          {sublabel && <span className="text-[9px] text-slate-400 font-semibold uppercase tracking-wide mt-0.5">{sublabel}</span>}
+        <div className="absolute inset-0 flex flex-col items-center justify-center p-1 pointer-events-none select-none text-center">
+          <span className="text-sm font-extrabold text-slate-900 leading-none">{valueLabel ?? value}</span>
+          {sublabel && <span className="text-[8px] text-slate-400 font-bold uppercase tracking-wider leading-none mt-1 truncate max-w-[88%]">{sublabel}</span>}
         </div>
       </div>
-      {label && <p className="text-[10px] font-semibold text-slate-500 text-center uppercase tracking-wide">{label}</p>}
+      {label && <p className="text-[10px] font-bold text-slate-500 text-center uppercase tracking-wide truncate max-w-[96px]">{label}</p>}
     </div>
   );
 }
@@ -55,8 +55,8 @@ export function Bar({ label, pct, color, badge }: BarProps) {
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between">
-        <span className="text-xs text-slate-600">{label}</span>
-        <span className="text-xs font-bold text-slate-800">{badge ?? `${pct}%`}</span>
+        <span className="text-xs text-slate-600 truncate">{label}</span>
+        <span className="text-xs font-bold text-slate-800 shrink-0 ml-2">{badge ?? `${pct}%`}</span>
       </div>
       <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
@@ -76,10 +76,10 @@ interface StatProps {
 
 export function Stat({ label, value, sub, valueClass = "text-slate-900" }: StatProps) {
   return (
-    <div>
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{label}</p>
-      <p className={`text-xl font-extrabold leading-tight mt-0.5 ${valueClass}`}>{value}</p>
-      {sub && <p className="text-[10px] text-slate-400 mt-0.5">{sub}</p>}
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400 truncate">{label}</p>
+      <p className={`text-sm font-extrabold leading-snug mt-0.5 truncate ${valueClass}`}>{value}</p>
+      {sub && <p className="text-[10px] text-slate-400 mt-0.5 truncate">{sub}</p>}
     </div>
   );
 }
