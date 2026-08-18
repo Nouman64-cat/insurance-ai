@@ -101,8 +101,8 @@ export default function PayeesTab({
       </div>
 
       <Card
-        title="Payee Registry"
-        subtitle="Producers, managers, corporate channels and introducers — with the licence and tax profile each payout is checked against"
+        title="Payees & Hierarchy"
+        subtitle="List of all agents, managers, banks, and partners entitled to receive commissions"
         actions={
           <>
             <div className="flex rounded-xl border border-slate-200 overflow-hidden">
@@ -110,13 +110,13 @@ export default function PayeesTab({
                 onClick={() => setView("table")}
                 className={`px-3 py-1.5 text-[11px] font-bold ${view === "table" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
-                Registry
+                Table View
               </button>
               <button
                 onClick={() => setView("hierarchy")}
                 className={`px-3 py-1.5 text-[11px] font-bold ${view === "hierarchy" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
-                Hierarchy
+                Tree View
               </button>
             </div>
             <button
@@ -132,7 +132,7 @@ export default function PayeesTab({
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, code, branch or licence…"
+            placeholder="Search name, code, branch, or licence…"
             className="flex-1 min-w-[240px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
           />
           <select
@@ -140,7 +140,7 @@ export default function PayeesTab({
             onChange={(e) => setChannelFilter(e.target.value as DistributionChannel | "all")}
             className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700"
           >
-            <option value="all">All channels</option>
+            <option value="all">All Channels</option>
             {CHANNELS.map((c) => (
               <option key={c} value={c}>
                 {CHANNEL_LABELS[c]}
@@ -152,7 +152,7 @@ export default function PayeesTab({
             onChange={(e) => setTypeFilter(e.target.value as PayeeType | "all")}
             className="bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-700"
           >
-            <option value="all">All payee types</option>
+            <option value="all">All Roles</option>
             {PAYEE_TYPES.map((t) => (
               <option key={t} value={t}>
                 {PAYEE_TYPE_LABELS[t]}
@@ -170,20 +170,15 @@ export default function PayeesTab({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3">Payee</th>
-                  <th className="p-3">Type &amp; Channel</th>
-                  <th className="p-3">Reports To</th>
-                  <th className="p-3">Licence</th>
-                  <th className="p-3">Tax Profile</th>
-                  <th className="p-3">Payment Details</th>
-                  <th className="p-3 text-right">YTD Commission</th>
-                  <th className="p-3 text-right">Recovery Due</th>
-                  <th className="p-3 text-center">Status</th>
+                  <th className="p-3">PAYEE</th>
+                  <th className="p-3">TYPE</th>
+                  <th className="p-3">SOURCE</th>
+                  <th className="p-3">PAYEE LIC. REF.</th>
+                  <th className="p-3 text-center">PAYEE STATUS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800">
                 {filtered.map((p) => {
-                  const upline = p.parentPayeeId ? byId.get(p.parentPayeeId) : null;
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/80">
                       <td className="p-3">
@@ -191,51 +186,14 @@ export default function PayeesTab({
                         <p className="text-[10px] font-mono text-slate-400">{p.code}</p>
                         <p className="text-[10px] text-slate-400">{p.branch}</p>
                       </td>
-                      <td className="p-3 space-y-1">
+                      <td className="p-3">
                         <PayeeTypeBadge type={p.type} />
-                        <div>
-                          <ChannelBadge channel={p.channel} />
-                        </div>
                       </td>
                       <td className="p-3">
-                        {upline ? (
-                          <div className="leading-tight">
-                            <p className="font-semibold text-slate-800">{upline.name}</p>
-                            <p className="text-[10px] text-slate-400">{PAYEE_TYPE_LABELS[upline.type]}</p>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">Top of hierarchy</span>
-                        )}
+                        <ChannelBadge channel={p.channel} />
                       </td>
                       <td className="p-3">
                         <LicenceCell licenceNo={p.licenceNo} expiry={p.licenceExpiry} />
-                      </td>
-                      <td className="p-3">
-                        <p className="text-[10px] font-bold text-slate-700">
-                          {p.isCorporate ? "Corporate" : "Individual"} · {p.taxFilerStatus === "FILER" ? "Filer" : "Non-filer"}
-                        </p>
-                        <p className="text-[10px] text-slate-500">
-                          WHT {resolveWhtPct(p)}%{p.isCorporate ? " + sales tax on services" : ""}
-                        </p>
-                        {p.taxId && <p className="text-[10px] font-mono text-slate-400">{p.taxId}</p>}
-                      </td>
-                      <td className="p-3">
-                        {p.bankAccount ? (
-                          <div className="leading-tight">
-                            <p className="text-[10px] font-semibold text-slate-700">{p.bankName}</p>
-                            <p className="text-[10px] font-mono text-slate-400">{p.bankAccount}</p>
-                          </div>
-                        ) : (
-                          <span className="text-[10px] text-slate-400">No account on file</span>
-                        )}
-                      </td>
-                      <td className="p-3 text-right font-semibold tabular-nums text-slate-800">{fmtPKR(p.ytdCommission)}</td>
-                      <td className="p-3 text-right font-mono font-bold">
-                        {p.recoveryBalance > 0 ? (
-                          <span className="text-rose-600">{fmtPKR(p.recoveryBalance)}</span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
                       </td>
                       <td className="p-3 text-center">
                         <button
@@ -275,47 +233,157 @@ export default function PayeesTab({
   );
 }
 
-/** The override chain, drawn as the tree the engine actually walks. */
+/** The override chain, drawn as an executive hierarchy tree. */
 function HierarchyView({ payees, allPayees }: { payees: CommissionPayee[]; allPayees: CommissionPayee[] }) {
   const visible = new Set(payees.map((p) => p.id));
   const roots = allPayees.filter((p) => !p.parentPayeeId);
 
-  const renderNode = (payee: CommissionPayee, depth: number): React.ReactNode => {
-    const children = allPayees.filter((p) => p.parentPayeeId === payee.id);
-    const subtree = children.map((c) => renderNode(c, depth + 1));
-    const selfVisible = visible.has(payee.id);
-    if (!selfVisible && subtree.every((n) => n === null)) return null;
-
-    return (
-      <div key={payee.id} className={depth > 0 ? "ml-5 border-l border-slate-200 pl-4" : ""}>
-        <div
-          className={`flex flex-wrap items-center gap-2 py-2 ${selfVisible ? "" : "opacity-40"}`}
-        >
-          <span className="font-bold text-xs text-slate-900">{payee.name}</span>
-          <span className="font-mono text-[10px] text-slate-400">{payee.code}</span>
-          <PayeeTypeBadge type={payee.type} />
-          <ChannelBadge channel={payee.channel} />
-          {payee.recoveryBalance > 0 && (
-            <span className="text-[10px] font-bold text-rose-600">recovery {fmtPKR(payee.recoveryBalance)}</span>
-          )}
-          {payee.status !== "ACTIVE" && (
-            <span className="text-[10px] font-bold text-amber-700">{payee.status}</span>
-          )}
+  const getPayeeIcon = (type: PayeeType) => {
+    if (type === "BRANCH_MANAGER" || type === "SALES_MANAGER") {
+      return (
+        <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center shrink-0">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
         </div>
-        {subtree}
+      );
+    }
+    if (type === "BANK_PARTNER" || type === "AGENCY" || type === "BROKER") {
+      return (
+        <div className="w-8 h-8 rounded-lg bg-purple-50 border border-purple-200 text-purple-700 flex items-center justify-center shrink-0">
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+        </div>
+      );
+    }
+    return (
+      <div className="w-8 h-8 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shrink-0">
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
+        </svg>
       </div>
     );
   };
 
-  const tree = roots.map((r) => renderNode(r, 0)).filter(Boolean);
+  const renderNode = (payee: CommissionPayee, depth: number): React.ReactNode => {
+    const children = allPayees.filter((p) => p.parentPayeeId === payee.id);
+    const subtree = children.map((c) => renderNode(c, depth + 1)).filter(Boolean);
+    const selfVisible = visible.has(payee.id);
+    if (!selfVisible && subtree.length === 0) return null;
+
+    return (
+      <div key={payee.id} className="relative">
+        {/* L-shaped connecting line for child nodes */}
+        {depth > 0 && (
+          <div className="absolute -left-6 top-5 w-4 h-4 border-l-2 border-b-2 border-blue-300 rounded-bl-lg pointer-events-none" />
+        )}
+
+        <div
+          className={`flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border bg-white shadow-2xs hover:shadow-xs transition-all ${
+            selfVisible ? "border-slate-200 hover:border-blue-300" : "border-slate-100 opacity-40"
+          }`}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            {getPayeeIcon(payee.type)}
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-xs text-slate-900">{payee.name}</span>
+                <span className="font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
+                  {payee.code}
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">· {payee.branch}</span>
+              </div>
+              <div className="flex items-center gap-2 mt-1">
+                <PayeeTypeBadge type={payee.type} />
+                <ChannelBadge channel={payee.channel} />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            {children.length > 0 && (
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                {children.length} {children.length === 1 ? "Direct Report" : "Direct Reports"}
+              </span>
+            )}
+            {payee.recoveryBalance > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
+                Recovery: {fmtPKR(payee.recoveryBalance)}
+              </span>
+            )}
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
+                payee.status === "ACTIVE"
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                  : "bg-amber-50 text-amber-800 border-amber-200"
+              }`}
+            >
+              {payee.status}
+            </span>
+          </div>
+        </div>
+
+        {subtree.length > 0 && (
+          <div className="pl-8 ml-3 border-l-2 border-blue-200 mt-2 space-y-2.5 relative">
+            {subtree}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
-    <div className="p-5">
-      {tree.length === 0 ? <EmptyState message="No payees match these filters." /> : tree}
-      <p className="mt-4 text-[10px] text-slate-400">
-        Overrides are computed by walking up this tree from the writing producer — each manager earns a percentage of
-        their downline&apos;s commission, not of the premium.
-      </p>
+    <div className="p-5 space-y-5">
+      <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs text-slate-600">
+        <div className="flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-blue-600"></span>
+          <span className="font-bold text-slate-800">Team &amp; Channel Tree</span>
+          <span className="text-slate-400">|</span>
+          <span>Commission overrides flow upward to direct managers</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono font-semibold text-slate-700">
+            {allPayees.length} Total Payees
+          </span>
+          <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono font-semibold text-slate-700">
+            {roots.length} Channel Groups
+          </span>
+        </div>
+      </div>
+
+      {roots.length === 0 ? (
+        <EmptyState message="No payees match these filters." />
+      ) : (
+        <div className="space-y-6">
+          {roots.map((root) => {
+            const nodeContent = renderNode(root, 0);
+            if (!nodeContent) return null;
+            return (
+              <div
+                key={root.id}
+                className="p-4 bg-slate-50/60 border border-slate-200 rounded-2xl space-y-3 shadow-2xs hover:border-slate-300 transition-all"
+              >
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                    <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">
+                      {CHANNEL_LABELS[root.channel]} Team
+                    </h4>
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      · Main Head: <span className="font-semibold text-slate-700">{root.name}</span>
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    Channel Head
+                  </span>
+                </div>
+                {nodeContent}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -381,9 +449,9 @@ function AddPayeeModal({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden">
         <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between text-slate-900">
           <div>
-            <h3 className="font-bold text-sm text-slate-900">Add Commission Payee</h3>
+            <h3 className="font-bold text-sm text-slate-900">Add New Payee</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Banks, brokers, corporate agents, managers and referral partners are maintained here
+              Register a new agent, manager, bank, or partner.
             </p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-lg font-bold">
@@ -392,13 +460,13 @@ function AddPayeeModal({
         </div>
 
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Field label="Payee Name">
+          <Field label="Name">
             <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Payee Code">
+          <Field label="Code">
             <input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Payee Type">
+          <Field label="Role / Category">
             <select
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value as PayeeType })}
@@ -411,7 +479,7 @@ function AddPayeeModal({
               ))}
             </select>
           </Field>
-          <Field label="Distribution Channel">
+          <Field label="Source Channel">
             <select
               value={form.channel}
               onChange={(e) => setForm({ ...form, channel: e.target.value as DistributionChannel })}
@@ -424,13 +492,13 @@ function AddPayeeModal({
               ))}
             </select>
           </Field>
-          <Field label="Reports To (override chain)">
+          <Field label="Reports To (Manager)">
             <select
               value={form.parentPayeeId}
               onChange={(e) => setForm({ ...form, parentPayeeId: e.target.value })}
               className={selectClass}
             >
-              <option value="">— Top of hierarchy —</option>
+              <option value="">— None (Top Manager) —</option>
               {payees.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name} ({PAYEE_TYPE_LABELS[p.type]})
@@ -438,7 +506,7 @@ function AddPayeeModal({
               ))}
             </select>
           </Field>
-          <Field label="Branch / Region">
+          <Field label="Branch">
             <input value={form.branch} onChange={(e) => setForm({ ...form, branch: e.target.value })} className={inputClass} />
           </Field>
           <Field label="Licence Number">
@@ -449,7 +517,7 @@ function AddPayeeModal({
               className={inputClass}
             />
           </Field>
-          <Field label="Licence Expiry">
+          <Field label="Licence Expiry Date">
             <input
               type="date"
               value={form.licenceExpiry}
@@ -457,14 +525,14 @@ function AddPayeeModal({
               className={inputClass}
             />
           </Field>
-          <Field label="Entity Type">
+          <Field label="Tax Category">
             <select
               value={form.isCorporate ? "corporate" : "individual"}
               onChange={(e) => setForm({ ...form, isCorporate: e.target.value === "corporate" })}
               className={selectClass}
             >
-              <option value="individual">Individual (may qualify for the life-agent WHT band)</option>
-              <option value="corporate">Corporate (standard WHT + sales tax on services)</option>
+              <option value="individual">Individual Agent</option>
+              <option value="corporate">Company / Bank</option>
             </select>
           </Field>
           <Field label="Tax Filer Status">
@@ -473,17 +541,17 @@ function AddPayeeModal({
               onChange={(e) => setForm({ ...form, taxFilerStatus: e.target.value as TaxFilerStatus })}
               className={selectClass}
             >
-              <option value="FILER">Filer (on the Active Taxpayers List)</option>
-              <option value="NON_FILER">Non-filer (withheld at double rate)</option>
+              <option value="FILER">Tax Filer (Lower Tax Rate)</option>
+              <option value="NON_FILER">Non-Filer (Standard Tax Rate)</option>
             </select>
           </Field>
-          <Field label="CNIC / NTN">
+          <Field label="Tax ID / CNIC">
             <input value={form.taxId} onChange={(e) => setForm({ ...form, taxId: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Bank">
+          <Field label="Bank Name">
             <input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} className={inputClass} />
           </Field>
-          <Field label="Account / IBAN">
+          <Field label="Account Number / IBAN">
             <input
               value={form.bankAccount}
               onChange={(e) => setForm({ ...form, bankAccount: e.target.value })}

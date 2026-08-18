@@ -120,12 +120,12 @@ const STATUS_STYLES: Record<CommissionStatus, string> = {
 };
 
 const STATUS_LABELS: Record<CommissionStatus, string> = {
-  ACCRUED: "Accrued",
-  PAYABLE: "Due",
-  IN_RUN: "In run",
-  PARTIALLY_RELEASED: "Part-paid",
+  ACCRUED: "Calculated",
+  PAYABLE: "Ready to Pay",
+  IN_RUN: "Processing",
+  PARTIALLY_RELEASED: "Partially Paid",
   DISBURSED: "Paid",
-  HELD: "Held",
+  HELD: "On Hold",
   CLAWED_BACK: "Reversed",
 };
 
@@ -174,12 +174,12 @@ export function ChannelBadge({ channel }: { channel: DistributionChannel }) {
 }
 
 const ENTRY_KIND_LABELS: Record<CommissionEntryKind, string> = {
-  COMMISSION: "Commission",
-  OVERRIDE: "Override",
-  PARTNER_FEE: "Partner fee",
-  REFERRAL_FEE: "Referral fee",
-  BONUS: "Bonus",
-  CLAWBACK: "Clawback",
+  COMMISSION: "Direct Commission",
+  OVERRIDE: "Manager Override",
+  PARTNER_FEE: "Partner Fee",
+  REFERRAL_FEE: "Referral Fee",
+  BONUS: "Performance Bonus",
+  CLAWBACK: "Commission Reversal",
 };
 
 /** Entry kind is a label, not an alarm — only a reversal earns a warning colour. */
@@ -273,30 +273,64 @@ export function GatingList({
 }) {
   if (checks.length === 0) return <p className="text-[10px] text-slate-400">No gating checks recorded.</p>;
   return (
-    <ul className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-      {checks.map((c) => (
-        <li key={c.code} className="flex items-start gap-1.5 text-[10px]">
-          <span
-            className={`mt-0.5 w-3.5 h-3.5 shrink-0 rounded-full flex items-center justify-center text-[8px] font-semibold ${
-              c.passed ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+      {checks.map((c) => {
+        const isPending =
+          !c.passed &&
+          (c.detail.toLowerCase().includes("awaiting") ||
+            c.detail.toLowerCase().includes("not yet") ||
+            c.detail.toLowerCase().includes("starts at"));
+
+        return (
+          <div
+            key={c.code}
+            className={`p-2.5 rounded-xl border text-xs flex items-start gap-2.5 transition-all ${
+              c.passed
+                ? "bg-emerald-50/40 border-emerald-200/80 text-emerald-950"
+                : isPending
+                ? "bg-slate-50/80 border-slate-200 text-slate-700"
+                : "bg-rose-50/50 border-rose-200/80 text-rose-950"
             }`}
           >
-            {c.passed ? "✓" : "✕"}
-          </span>
-          <span>
-            <span className="font-bold text-slate-700">{c.label}</span>
-            <span className="text-slate-500"> — {c.detail}</span>
-          </span>
-        </li>
-      ))}
-    </ul>
+            <span
+              className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-0.5 ${
+                c.passed
+                  ? "bg-emerald-600 text-white shadow-2xs"
+                  : isPending
+                  ? "bg-slate-200 text-slate-600 border border-slate-300"
+                  : "bg-rose-600 text-white shadow-2xs"
+              }`}
+            >
+              {c.passed ? "✓" : isPending ? "⏳" : "✕"}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-1">
+                <p className="font-extrabold text-slate-900 text-xs">{c.label}</p>
+                <span
+                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                    c.passed
+                      ? "bg-emerald-100 text-emerald-800"
+                      : isPending
+                      ? "bg-slate-200/70 text-slate-600"
+                      : "bg-rose-100 text-rose-800"
+                  }`}
+                >
+                  {c.passed ? "Met" : isPending ? "Pending" : "Blocked"}
+                </span>
+              </div>
+              <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">{c.detail}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
 // ── Release stages ──────────────────────────────────────────────────────────
 
 const STAGE_STATUS_STYLES: Record<StageStatus, { pill: string; dot: string; label: string }> = {
-  PENDING: { pill: "bg-slate-50 text-slate-600 border-slate-200", dot: "bg-slate-300", label: "Not yet due" },
+  PENDING: { pill: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-300", label: "Not yet due" },
   BLOCKED: { pill: "bg-amber-50 text-amber-800 border-amber-200", dot: "bg-amber-400", label: "Blocked" },
   DUE: { pill: "bg-blue-50 text-blue-700 border-blue-200", dot: "bg-blue-500", label: "Due now" },
   IN_RUN: { pill: "bg-indigo-50 text-indigo-700 border-indigo-200", dot: "bg-indigo-500", label: "In payout run" },
@@ -314,8 +348,7 @@ export function StageStatusPill({ status }: { status: StageStatus }) {
 }
 
 /**
- * A commission's release schedule drawn as a track: each tranche's share of the
- * entry, what it is waiting on, and how much of it is money already out.
+ * A commission's release schedule drawn as executive milestone tranche cards.
  */
 export function StageTimeline({
   stages,
@@ -328,47 +361,150 @@ export function StageTimeline({
 }) {
   if (stages.length === 0) return <p className="text-[10px] text-slate-400">No release schedule on this entry.</p>;
 
+  const totalAmount = stages.reduce((acc, s) => acc + (s.netAmount || 0), 0);
+
+  if (compact) {
+    return (
+      <div className="space-y-1.5 min-w-[240px] max-w-[320px]">
+        {/* Progress track */}
+        <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-slate-100 border border-slate-200/60">
+          {stages.map((s) => (
+            <div
+              key={s.code}
+              title={`${s.label} (${s.sharePct}%) — ${fmtPKR(s.netAmount)} · ${STAGE_STATUS_STYLES[s.status]?.label || s.status}`}
+              className={`h-full border-r border-white/60 last:border-0 transition-all ${STAGE_STATUS_STYLES[s.status]?.dot || "bg-slate-300"}`}
+              style={{ width: `${s.sharePct}%` }}
+            />
+          ))}
+        </div>
+
+        {/* Tranche pill steps */}
+        <div className="flex flex-wrap gap-1">
+          {stages.map((s, idx) => {
+            const isReleased = s.status === "RELEASED";
+            const isDue = s.status === "DUE";
+            return (
+              <span
+                key={s.code}
+                title={`${s.label}: ${s.reason}`}
+                className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded border font-medium ${
+                  isReleased
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : isDue
+                    ? "bg-blue-50 text-blue-700 border-blue-200 font-bold"
+                    : "bg-slate-50 text-slate-600 border-slate-200"
+                }`}
+              >
+                <span className="font-mono text-[9px] opacity-75">T{idx + 1} ({s.sharePct}%)</span>
+                <span>{fmtPKR(s.netAmount)}</span>
+              </span>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-2">
-      {/* Proportional bar: the whole commission, coloured by where each slice is. */}
-      <div className="flex h-2 w-full rounded-full overflow-hidden bg-slate-100">
-        {stages.map((s) => (
-          <div
-            key={s.code}
-            title={`${s.label} — ${s.sharePct}% · ${STAGE_STATUS_STYLES[s.status].label}`}
-            className={STAGE_STATUS_STYLES[s.status].dot}
-            style={{ width: `${s.sharePct}%` }}
-          />
-        ))}
+    <div className="space-y-3">
+      {/* Schedule Summary Bar & Progress Track */}
+      <div className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80 space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="font-extrabold text-slate-800 uppercase tracking-wider text-[10px]">
+            Tranche Milestone Pipeline
+          </span>
+          <span className="font-mono text-[11px] text-slate-600">
+            Total Net Payout: <span className="text-blue-700 font-extrabold text-xs">{fmtPKR(totalAmount)}</span> ({stages.length} Tranches)
+          </span>
+        </div>
+        <div className="flex h-2 w-full rounded-full overflow-hidden bg-slate-200/80 p-0.5">
+          {stages.map((s) => (
+            <div
+              key={s.code}
+              title={`${s.label} — ${s.sharePct}% · ${STAGE_STATUS_STYLES[s.status].label}`}
+              className={`h-full rounded-full transition-all ${STAGE_STATUS_STYLES[s.status].dot}`}
+              style={{ width: `${s.sharePct}%` }}
+            />
+          ))}
+        </div>
       </div>
 
-      <ol className={`grid gap-1.5 ${compact ? "grid-cols-1" : "grid-cols-1 md:grid-cols-2"}`}>
-        {stages.map((s) => (
-          <li key={s.code} className="flex items-start gap-2 text-[10px]">
-            <span className={`mt-1 w-2 h-2 shrink-0 rounded-full ${STAGE_STATUS_STYLES[s.status].dot}`} />
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <span className="font-bold text-slate-800">{s.label}</span>
-                <span className="font-mono text-slate-400">{s.sharePct}%</span>
-                <span className="font-mono font-bold text-slate-700">{fmtPKR(s.netAmount)}</span>
-                <StageStatusPill status={s.status} />
-                {onRelease && s.status === "DUE" && (
-                  <button
-                    onClick={() => onRelease(s.code)}
-                    className="px-1.5 py-0.5 rounded bg-blue-600 hover:bg-blue-500 text-white font-bold text-[9px]"
+      {/* Grid of Connected Stepper Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 relative">
+        {stages.map((s, idx) => {
+          const isDue = s.status === "DUE";
+          const isReleased = s.status === "RELEASED";
+          const isBlocked = s.status === "BLOCKED";
+
+          return (
+            <div
+              key={s.code}
+              className={`p-3.5 rounded-xl border flex flex-col justify-between space-y-3 transition-all relative ${
+                isDue
+                  ? "bg-blue-50/70 border-blue-400 ring-2 ring-blue-500/20 shadow-xs"
+                  : isReleased
+                  ? "bg-emerald-50/50 border-emerald-300"
+                  : isBlocked
+                  ? "bg-amber-50/60 border-amber-300"
+                  : "bg-white border-slate-200/90 shadow-2xs hover:border-slate-300"
+              }`}
+            >
+              {/* Header: Step Number + Share % + Status */}
+              <div className="flex items-center justify-between gap-1 border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                      isDue
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : isReleased
+                        ? "bg-emerald-600 text-white shadow-2xs"
+                        : "bg-slate-200 text-slate-700"
+                    }`}
                   >
-                    Release
-                  </button>
+                    0{idx + 1}
+                  </span>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                    Tranche ({s.sharePct}%)
+                  </span>
+                </div>
+                <StageStatusPill status={s.status} />
+              </div>
+
+              {/* Body: Milestone Title + Amount + Reason */}
+              <div className="space-y-1">
+                <p className="font-extrabold text-slate-900 text-xs">{s.label}</p>
+                <p
+                  className={`font-mono text-base font-black tracking-tight ${
+                    isDue
+                      ? "text-blue-700"
+                      : isReleased
+                      ? "text-emerald-700"
+                      : "text-slate-900"
+                  }`}
+                >
+                  {fmtPKR(s.netAmount)}
+                </p>
+                <p className="text-[10px] text-slate-500 font-medium leading-tight">{s.reason}</p>
+                {s.releasedAt && (
+                  <p className="text-[9px] text-emerald-600 font-bold mt-1 bg-emerald-100/60 px-1.5 py-0.5 rounded inline-block">
+                    ✓ Paid {s.releasedAt}
+                  </p>
                 )}
               </div>
-              <p className="text-slate-500 truncate" title={s.reason}>
-                {s.reason}
-                {s.releasedAt ? ` · paid ${s.releasedAt}` : ""}
-              </p>
+
+              {/* Action Button if DUE */}
+              {onRelease && isDue && (
+                <button
+                  onClick={() => onRelease(s.code)}
+                  className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs rounded-lg transition-colors shadow-2xs flex items-center justify-center gap-1 mt-1"
+                >
+                  Release Tranche →
+                </button>
+              )}
             </div>
-          </li>
-        ))}
-      </ol>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -387,10 +523,10 @@ export function DueBreakdown({
 }) {
   return (
     <div className="leading-tight text-right">
-      {dueNet > 0 && <p className="font-semibold tabular-nums text-blue-700">{fmtPKR(dueNet)} due</p>}
-      {inRunNet > 0 && <p className="font-mono text-[10px] text-indigo-600">{fmtPKR(inRunNet)} in run</p>}
+      {dueNet > 0 && <p className="font-semibold tabular-nums text-blue-700">{fmtPKR(dueNet)} ready</p>}
+      {inRunNet > 0 && <p className="font-mono text-[10px] text-indigo-600">{fmtPKR(inRunNet)} processing</p>}
       {releasedNet > 0 && <p className="font-mono text-[10px] text-emerald-600">{fmtPKR(releasedNet)} paid</p>}
-      {pendingNet > 0 && <p className="font-mono text-[10px] text-slate-400">{fmtPKR(pendingNet)} later</p>}
+      {pendingNet > 0 && <p className="font-mono text-[10px] text-slate-400">{fmtPKR(pendingNet)} upcoming</p>}
       {dueNet === 0 && inRunNet === 0 && releasedNet === 0 && pendingNet === 0 && (
         <p className="font-mono text-[10px] text-slate-300">—</p>
       )}

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   CHANNEL_LABELS,
   CommissionLedgerEntry,
@@ -29,11 +30,8 @@ import {
 } from "../services/commissions";
 import CalculatorTab from "../../components/commissions/CalculatorTab";
 import IncentivesTab from "../../components/commissions/IncentivesTab";
-import LedgerTab from "../../components/commissions/LedgerTab";
 import PayeesTab from "../../components/commissions/PayeesTab";
-import PayoutRunsTab from "../../components/commissions/PayoutRunsTab";
 import RateCardTab from "../../components/commissions/RateCardTab";
-import StatementsTab from "../../components/commissions/StatementsTab";
 import { MetricCard } from "@/components/MetricCard";
 import { PillarCard, RingGauge, Bar, Stat, Divider } from "@/components/dashboard/shared";
 import {
@@ -60,30 +58,29 @@ function SummaryStat({ label, value, tone = "default" }: { label: string; value:
   );
 }
 
-type Tab = "overview" | "types" | "payees" | "ledger" | "runs" | "statements" | "incentives" | "calculator";
+type Tab = "overview" | "types" | "payees" | "incentives" | "calculator";
 
 const TABS: [Tab, string][] = [
   ["overview", "Overview"],
-  ["types", "Commission Types"],
+  ["types", "Commission Types & Rates"],
   ["payees", "Payees & Hierarchy"],
-  ["ledger", "Commission Ledger"],
-  ["runs", "Payout Runs"],
-  ["statements", "Statements"],
   ["incentives", "Incentives"],
   ["calculator", "Calculator"],
 ];
 
-const CLAWBACK_REASONS = [
-  "Policy cancelled within the free-look window",
-  "Policy lapsed due to non-payment of renewal premium",
-  "Underwriting rejection / material misrepresentation",
-  "Proposer bank chargeback / cheque returned",
-  "Commission overpaid — rate applied in error",
-  "Producer licence found invalid at the date of sale",
-];
-
 export default function CommissionsPage() {
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab") as Tab | null;
+  const [activeTab, setActiveTab] = useState<Tab>(
+    tabParam && TABS.some(([k]) => k === tabParam) ? tabParam : "overview"
+  );
+
+  useEffect(() => {
+    if (tabParam && TABS.some(([k]) => k === tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [tabParam]);
+
   const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [payees, setPayees] = useState<CommissionPayee[]>([]);
   const [runs, setRuns] = useState<PayoutRun[]>([]);
@@ -92,12 +89,6 @@ export default function CommissionsPage() {
   const [stats, setStats] = useState<CommissionSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
-
-  const [clawbackTarget, setClawbackTarget] = useState<CommissionLedgerEntry | null>(null);
-  const [clawbackReason, setClawbackReason] = useState(CLAWBACK_REASONS[0]);
-  const [cascade, setCascade] = useState(true);
-  const [holdTarget, setHoldTarget] = useState<CommissionLedgerEntry | null>(null);
-  const [holdReason, setHoldReason] = useState("Under investigation — payout withheld pending review");
 
   const notify = useCallback((msg: string, ok = true) => {
     setNotification({ msg, type: ok ? "success" : "error" });
@@ -119,7 +110,7 @@ export default function CommissionsPage() {
       setQualifications(evaluateIncentives(payeeData, ledgerData));
     } catch (err) {
       console.error(err);
-      notify("Could not load the commission ledger.", false);
+      notify("Could not load the commission data.", false);
     } finally {
       setLoading(false);
     }
@@ -128,56 +119,6 @@ export default function CommissionsPage() {
   useEffect(() => {
     refresh(true);
   }, [refresh]);
-
-  const handleDisburse = async (id: string, stageCode?: ReleaseStageCode) => {
-    try {
-      const before = ledger.find((l) => l.id === id)?.dueNet ?? 0;
-      const entry = await disburseCommission(id, stageCode);
-      const tail = entry.pendingNet > 0 ? ` ${fmtPKR(entry.pendingNet)} stays pending until its later stages vest.` : "";
-      notify(`${fmtPKR(stageCode ? entry.releasedNet : before)} released to ${entry.payeeName} (${entry.payeeCode}).${tail}`);
-      refresh();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Failed to release the commission.", false);
-    }
-  };
-
-  /** Walk a policy's lifecycle forward — vests whatever tranche was waiting. */
-  const handleRecordEvent = async (policyId: string, event: PolicyLifecycleEvent) => {
-    try {
-      const { affected } = await recordPolicyEvent(policyId, event);
-      notify(`${POLICY_EVENT_LABELS[event]} recorded — ${affected} commission ${affected === 1 ? "entry" : "entries"} re-evaluated.`);
-      refresh();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Failed to record the policy event.", false);
-    }
-  };
-
-  const handleHold = async () => {
-    if (!holdTarget) return;
-    try {
-      await holdCommission(holdTarget.id, holdReason);
-      notify(`${holdTarget.id} placed on hold.`);
-      setHoldTarget(null);
-      refresh();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Failed to hold the entry.", false);
-    }
-  };
-
-  const handleClawback = async () => {
-    if (!clawbackTarget) return;
-    try {
-      const result = await triggerClawback(clawbackTarget.id, clawbackReason, cascade);
-      const cascadeNote = result.cascaded.length > 0 ? ` ${result.cascaded.length} dependent override/partner row(s) reversed.` : "";
-      const recoveryNote =
-        result.recoveryRaised > 0 ? ` ${fmtPKR(result.recoveryRaised)} raised as recovery against future payouts.` : "";
-      notify(`Reversal posted for ${clawbackTarget.policyNumber}.${cascadeNote}${recoveryNote}`);
-      setClawbackTarget(null);
-      refresh();
-    } catch (err) {
-      notify(err instanceof Error ? err.message : "Failed to execute the clawback.", false);
-    }
-  };
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -198,23 +139,29 @@ export default function CommissionsPage() {
 
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
-          <h1 className="text-xl font-semibold tracking-tight text-slate-900">Commissions</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Commissions Admin</h1>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
+              Governance &amp; Setup
+            </span>
+          </div>
           <p className="text-xs text-slate-500 mt-1">
-            Every party paid on a premium — producers, managers, banks, brokers, corporate agents and referral partners
+            Manage commission types, rate cards, payee hierarchies, channel splits, performance incentives &amp; rate calculator
           </p>
         </div>
         <div className="flex items-center gap-2">
           <Link
-            href="/underwriting"
-            className="px-3 py-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg text-xs font-medium transition-colors"
+            href="/commission-ops"
+            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
           >
-            ← Underwriting
+            <span>Go to Commission Ops</span>
+            <span>→</span>
           </Link>
           <button
             onClick={() => refresh(true)}
             className="px-3 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors"
           >
-            Recompute ledger
+            Recompute Engine
           </button>
           <button
             onClick={() => setActiveTab("calculator")}
@@ -227,14 +174,38 @@ export default function CommissionsPage() {
 
       {stats && (
         <div className="space-y-4">
-          {/* Executive KPI cards strip matching main portal dashboard */}
+          {/* Executive KPI cards strip */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
-              title="Due Now (Actionable)"
-              value={fmtPKRCompact(stats.totalDueNow)}
-              subtitle="Vested, ready for payout run"
+              title="Active Payees"
+              value={`${stats.activePayeesCount} / ${payees.length}`}
+              subtitle="Producers, managers &amp; partners"
               accent="blue"
-              trend={{ value: "Releasable Now", direction: "up" }}
+              trend={{ value: "Configured", direction: "up" }}
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              }
+            />
+            <MetricCard
+              title="Team Overrides"
+              value={fmtPKRCompact(stats.overrideTotal)}
+              subtitle="Manager &amp; agency overrides"
+              accent="amber"
+              trend={{ value: "Active Rules", direction: "neutral" }}
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              }
+            />
+            <MetricCard
+              title="Performance Bonuses"
+              value={fmtPKRCompact(stats.bonusTotal)}
+              subtitle="Volume &amp; persistency bonuses"
+              accent="emerald"
+              trend={{ value: "Qualified", direction: "up" }}
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -242,33 +213,9 @@ export default function CommissionsPage() {
               }
             />
             <MetricCard
-              title="Not Yet Due (Pipeline)"
-              value={fmtPKRCompact(stats.totalNotYetDue)}
-              subtitle="Earned, vesting at future events"
-              accent="amber"
-              trend={{ value: "In Pipeline", direction: "neutral" }}
-              icon={
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              }
-            />
-            <MetricCard
-              title="Disbursed (Released)"
-              value={fmtPKRCompact(stats.totalDisbursed)}
-              subtitle="Paid out net of tax and recovery"
-              accent="emerald"
-              trend={{ value: "Settled", direction: "up" }}
-              icon={
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              }
-            />
-            <MetricCard
-              title="Total Gross Earned"
+              title="Total Gross Calculated"
               value={fmtPKRCompact(stats.totalGrossCommission)}
-              subtitle={`${stats.activePayeesCount} payees of ${payees.length} active`}
+              subtitle="Gross production across all rules"
               accent="violet"
               trend={{ value: "+18.4% MTD", direction: "up" }}
               icon={
@@ -283,15 +230,15 @@ export default function CommissionsPage() {
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_2px_10px_rgb(0,0,0,0.02)] px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Financial Ledger State</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Commission Admin Overview</span>
             </div>
             <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-xs">
-              <SummaryStat label="Accrued Liability" value={fmtPKR(stats.totalAccruedLiability)} />
-              <SummaryStat label="Locked in Runs" value={fmtPKR(stats.totalInRun)} />
-              <SummaryStat label="Hierarchy Overrides" value={fmtPKR(stats.overrideTotal)} />
-              <SummaryStat label="Incentive Bonuses" value={fmtPKR(stats.bonusTotal)} />
-              <SummaryStat label="Tax Withheld (s.233)" value={fmtPKR(stats.totalWithheldTax)} />
-              <SummaryStat label="Clawbacks / Reversals" value={fmtPKR(stats.totalClawbacks)} tone={stats.totalClawbacks > 0 ? "warn" : "muted"} />
+              <SummaryStat label="Pending Liability" value={fmtPKR(stats.totalAccruedLiability)} />
+              <SummaryStat label="Processing Payments" value={fmtPKR(stats.totalInRun)} />
+              <SummaryStat label="Team Overrides" value={fmtPKR(stats.overrideTotal)} />
+              <SummaryStat label="Performance Bonuses" value={fmtPKR(stats.bonusTotal)} />
+              <SummaryStat label="Tax Deductions" value={fmtPKR(stats.totalWithheldTax)} />
+              <SummaryStat label="Reversals" value={fmtPKR(stats.totalClawbacks)} tone={stats.totalClawbacks > 0 ? "warn" : "muted"} />
             </div>
           </div>
         </div>
@@ -304,7 +251,7 @@ export default function CommissionsPage() {
             onClick={() => setActiveTab(key)}
             className={`pb-3 -mb-px text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors ${
               activeTab === key
-                ? "border-slate-900 text-slate-900"
+                ? "border-slate-900 text-slate-900 font-bold"
                 : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
@@ -315,26 +262,13 @@ export default function CommissionsPage() {
 
       {loading && ledger.length === 0 ? (
         <Card>
-          <div className="px-5 py-12 text-center text-xs text-slate-400">Computing the commission ledger…</div>
+          <div className="px-5 py-12 text-center text-xs text-slate-400">Loading commission administration data…</div>
         </Card>
       ) : (
         <>
           {activeTab === "overview" && stats && <OverviewTab stats={stats} ledger={ledger} />}
           {activeTab === "types" && <RateCardTab notify={notify} />}
           {activeTab === "payees" && <PayeesTab payees={payees} onChanged={() => refresh(true)} notify={notify} />}
-          {activeTab === "ledger" && (
-            <LedgerTab
-              ledger={ledger}
-              onDisburse={handleDisburse}
-              onHold={(entry) => setHoldTarget(entry)}
-              onClawback={(entry) => setClawbackTarget(entry)}
-              onRecordEvent={handleRecordEvent}
-            />
-          )}
-          {activeTab === "runs" && (
-            <PayoutRunsTab runs={runs} ledger={ledger} currentUser="Commission Officer" onChanged={() => refresh()} notify={notify} />
-          )}
-          {activeTab === "statements" && <StatementsTab statements={statements} />}
           {activeTab === "incentives" && (
             <IncentivesTab qualifications={qualifications} onChanged={() => refresh()} notify={notify} />
           )}
@@ -343,126 +277,173 @@ export default function CommissionsPage() {
               payees={payees}
               onAccrued={() => {
                 refresh();
-                setActiveTab("ledger");
+                window.location.href = "/commission-ops?tab=ledger";
               }}
               notify={notify}
             />
           )}
         </>
       )}
+    </div>
+  );
+}
 
-      {clawbackTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 flex items-center justify-between text-slate-900">
-              <div>
-                <h3 className="font-bold text-sm text-slate-900">Clawback / Reversal</h3>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  {clawbackTarget.id} · {clawbackTarget.policyNumber}
-                </p>
-              </div>
-              <button onClick={() => setClawbackTarget(null)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">
-                ✕
-              </button>
-            </div>
+// ── Entity SVGs for Professional Visualizations ──────────────────────────────
 
-            <div className="p-6 space-y-4 text-xs">
-              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-1">
-                <p className="font-bold text-slate-900">
-                  Reversing {fmtPKR(clawbackTarget.netCommission)} from {clawbackTarget.payeeName} (
-                  {PAYEE_TYPE_LABELS[clawbackTarget.payeeType]})
-                </p>
-                <p className="text-[11px] text-slate-600">
-                  {clawbackTarget.status === "DISBURSED"
-                    ? "This commission was already paid, so the reversal raises a recovery balance netted off the payee's future payouts."
-                    : "This commission has not been paid, so the accrual is simply released."}
-                </p>
-              </div>
+const BankIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 21h18M3 10h18M3 7l9-4 9 4M4 10v11M8 10v11M12 10v11M16 10v11M20 10v11" />
+  </svg>
+);
 
-              <div>
-                <label className="block text-slate-700 font-semibold mb-1">Reason code</label>
-                <select value={clawbackReason} onChange={(e) => setClawbackReason(e.target.value)} className={selectClass}>
-                  {CLAWBACK_REASONS.map((r) => (
-                    <option key={r} value={r}>
-                      {r}
-                    </option>
-                  ))}
-                </select>
-              </div>
+const AgentIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+  </svg>
+);
 
-              <label className="flex items-start gap-2 font-semibold text-slate-700">
-                <input type="checkbox" checked={cascade} onChange={(e) => setCascade(e.target.checked)} className="mt-0.5" />
-                <span>
-                  Cascade to dependent rows
-                  <span className="block text-[10px] font-normal text-slate-500">
-                    Reverses the manager overrides and partner-staff shares computed from this entry — they were earned on
-                    production that no longer stands.
-                  </span>
-                </span>
-              </label>
-            </div>
+const BrokerIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </svg>
+);
 
-            <div className="border-t border-slate-200 px-6 py-3 flex justify-end gap-2 bg-slate-50">
-              <button
-                onClick={() => setClawbackTarget(null)}
-                className="px-4 py-2 bg-white border border-slate-300 font-bold rounded-xl text-slate-700 text-xs hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleClawback}
-                className="px-4 py-2 bg-rose-700 hover:bg-rose-800 text-white font-bold rounded-xl text-xs shadow-xs"
-              >
-                Post Reversal
-              </button>
-            </div>
-          </div>
+const CorporateIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0v-5a2 2 0 012-2h2a2 2 0 012 2v5m-4 0h4" />
+  </svg>
+);
+
+const ReferralIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+  </svg>
+);
+
+const DigitalIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </svg>
+);
+
+const ManagerIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+  </svg>
+);
+
+const BranchIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8 14v3m4-3v3m4-3v3M3 21h18M3 10h18M3 7l9-4 9 4M4 10v11M20 10v11" />
+  </svg>
+);
+
+const HouseIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+  </svg>
+);
+
+const DocumentIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+
+const CreditCardIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+  </svg>
+);
+
+const ClockIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const ChartIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+  </svg>
+);
+
+const CalendarIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+  </svg>
+);
+
+const RefreshIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+  </svg>
+);
+
+const CoinsIcon = (
+  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+  </svg>
+);
+
+const CHANNEL_CONFIG: Record<string, { icon: React.ReactNode; iconBg: string; iconColor: string; barColor: string }> = {
+  DIRECT_AGENCY: { icon: AgentIcon, iconBg: "bg-sky-50", iconColor: "text-sky-600", barColor: "bg-sky-400" },
+  BANCASSURANCE: { icon: BankIcon, iconBg: "bg-emerald-50", iconColor: "text-emerald-600", barColor: "bg-emerald-400" },
+  BROKER: { icon: BrokerIcon, iconBg: "bg-purple-50", iconColor: "text-purple-600", barColor: "bg-purple-400" },
+  CORPORATE_AGENT: { icon: CorporateIcon, iconBg: "bg-amber-50", iconColor: "text-amber-600", barColor: "bg-amber-400" },
+  REFERRAL: { icon: ReferralIcon, iconBg: "bg-indigo-50", iconColor: "text-indigo-600", barColor: "bg-indigo-400" },
+  DIGITAL_DIRECT: { icon: DigitalIcon, iconBg: "bg-teal-50", iconColor: "text-teal-600", barColor: "bg-teal-400" },
+};
+
+const PAYEE_CONFIG: Record<string, { icon: React.ReactNode; iconBg: string; iconColor: string; barColor: string }> = {
+  AGENT: { icon: AgentIcon, iconBg: "bg-indigo-50", iconColor: "text-indigo-600", barColor: "bg-indigo-400" },
+  SALES_MANAGER: { icon: ManagerIcon, iconBg: "bg-violet-50", iconColor: "text-violet-600", barColor: "bg-violet-400" },
+  BRANCH_MANAGER: { icon: BranchIcon, iconBg: "bg-sky-50", iconColor: "text-sky-600", barColor: "bg-sky-400" },
+  BANK_PARTNER: { icon: BankIcon, iconBg: "bg-emerald-50", iconColor: "text-emerald-600", barColor: "bg-emerald-400" },
+  BROKER: { icon: BrokerIcon, iconBg: "bg-amber-50", iconColor: "text-amber-600", barColor: "bg-amber-400" },
+  CORPORATE_AGENT: { icon: CorporateIcon, iconBg: "bg-purple-50", iconColor: "text-purple-600", barColor: "bg-purple-400" },
+  BANK_STAFF: { icon: BankIcon, iconBg: "bg-teal-50", iconColor: "text-teal-600", barColor: "bg-teal-400" },
+  REFERRAL_PARTNER: { icon: ReferralIcon, iconBg: "bg-rose-50", iconColor: "text-rose-600", barColor: "bg-rose-400" },
+  HOUSE: { icon: HouseIcon, iconBg: "bg-slate-100", iconColor: "text-slate-500", barColor: "bg-slate-300" },
+};
+
+const STAGE_CONFIG: Record<string, { icon: React.ReactNode; iconBg: string; iconColor: string; dueColor: string }> = {
+  POLICY_ISSUANCE: { icon: DocumentIcon, iconBg: "bg-sky-50", iconColor: "text-sky-600", dueColor: "bg-sky-400" },
+  PREMIUM_COLLECTION: { icon: CreditCardIcon, iconBg: "bg-indigo-50", iconColor: "text-indigo-600", dueColor: "bg-indigo-400" },
+  FREE_LOOK_EXPIRY: { icon: ClockIcon, iconBg: "bg-teal-50", iconColor: "text-teal-600", dueColor: "bg-teal-400" },
+  PERSISTENCY_13M: { icon: ChartIcon, iconBg: "bg-violet-50", iconColor: "text-violet-600", dueColor: "bg-violet-400" },
+  RENEWAL_COLLECTION: { icon: RefreshIcon, iconBg: "bg-emerald-50", iconColor: "text-emerald-600", dueColor: "bg-emerald-400" },
+};
+
+interface EntityDataRowProps {
+  icon: React.ReactNode;
+  iconBg: string;
+  iconColor: string;
+  label: string;
+  sublabel?: string;
+  pct: number;
+  barColor: string;
+  badge: string;
+}
+
+function EntityDataRow({ icon, iconBg, iconColor, label, pct, barColor, badge }: EntityDataRowProps) {
+  return (
+    <div className="flex items-center gap-2.5 py-0.5 px-1.5 rounded-lg hover:bg-slate-50/80 transition-colors">
+      <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${iconBg} ${iconColor}`}>
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0 space-y-0.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[11px] font-semibold text-slate-700 truncate">{label}</span>
+          <span className="text-[11px] font-bold text-slate-800 font-mono tabular-nums shrink-0">{badge}</span>
         </div>
-      )}
-
-      {holdTarget && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden">
-            <div className="bg-slate-50 px-6 py-4 border-b border-slate-200 text-slate-900 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-sm text-slate-900">Hold Payout</h3>
-                <p className="text-xs text-slate-500 font-mono mt-0.5">
-                  {holdTarget.id} · {holdTarget.payeeName}
-                </p>
-              </div>
-              <button onClick={() => setHoldTarget(null)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">
-                ✕
-              </button>
-            </div>
-            <div className="p-6 text-xs">
-              <label className="block text-slate-700 font-semibold mb-1">Reason</label>
-              <textarea
-                value={holdReason}
-                onChange={(e) => setHoldReason(e.target.value)}
-                rows={3}
-                className="w-full p-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-hidden focus:border-blue-500"
-              />
-              <p className="text-[10px] text-slate-500 mt-2">
-                A held entry is excluded from every payout run until it is released.
-              </p>
-            </div>
-            <div className="border-t border-slate-200 px-6 py-3 flex justify-end gap-2 bg-slate-50">
-              <button
-                onClick={() => setHoldTarget(null)}
-                className="px-4 py-2 bg-white border border-slate-300 font-bold rounded-xl text-slate-700 text-xs hover:bg-slate-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleHold}
-                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs shadow-xs"
-              >
-                Place on Hold
-              </button>
-            </div>
-          </div>
+        <div className="h-1.5 rounded-full bg-slate-100/90 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${barColor} transition-all duration-500`}
+            style={{ width: `${Math.min(pct, 100)}%` }}
+          />
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -497,21 +478,21 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
   const topPayeePct = topPayee && payeeTotalNet > 0 ? Math.round((topPayee.net / payeeTotalNet) * 100) : 0;
 
   // Premium mix calculations
-  const totalPremiumCommission = stats.firstYearCommissionTotal + stats.renewalCommissionTotal + stats.singlePremiumCommissionTotal;
-  const fypPct = totalPremiumCommission > 0 ? Math.round((stats.firstYearCommissionTotal / totalPremiumCommission) * 100) : 0;
+  const totalCollectedPremium = stats.firstYearPremiumTotal + stats.renewalPremiumTotal + stats.singlePremiumTotal;
+  const fypPct = totalCollectedPremium > 0 ? Math.round((stats.firstYearPremiumTotal / totalCollectedPremium) * 100) : 0;
 
   return (
     <div className="space-y-6">
       {/* ── Row 1: Release Pipeline & Distribution Channel ─────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Card 1: Release Pipeline Intelligence */}
+        {/* Card 1: Release Pipeline */}
         <PillarCard
           icon={
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
             </svg>
           }
-          title="Release Pipeline Intelligence"
+          title="Release Pipeline"
           barClass="bg-blue-600"
           iconBg="bg-blue-50"
           iconColor="text-blue-600"
@@ -522,44 +503,52 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
               <RingGauge
                 value={vestedPct}
                 strokeHex="#1d4ed8"
-                label="Vested Ratio"
-                sublabel="Portfolio"
+                label="Released Ratio"
+                sublabel="Ratio"
                 valueLabel={`${vestedPct}%`}
-                size={78}
-                strokeW={7}
+                size={80}
+                strokeW={8}
               />
               <RingGauge
                 value={duePct}
                 strokeHex="#3b82f6"
-                label="Actionable"
-                sublabel="Releasable"
+                label="Ready to Pay"
+                sublabel="Due"
                 valueLabel={`${duePct}%`}
-                size={78}
-                strokeW={7}
+                size={80}
+                strokeW={8}
               />
             </div>
 
             {/* Lifecycle Event Progress Bars */}
             <div className="flex-1 w-full space-y-2">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Tranche Breakdown</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Payout Timeline Steps</p>
                 <StageLegend />
               </div>
-              {stats.byStage.map((s) => (
-                <div key={s.code} className="space-y-0.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-700 truncate text-[11px]">{RELEASE_STAGE_LABELS[s.code]}</span>
-                    <span className="font-mono font-bold text-slate-900 text-[11px]">{fmtPKRCompact(s.dueNet + s.releasedNet)}</span>
+              {stats.byStage.map((s) => {
+                const cfg = STAGE_CONFIG[s.code] || { icon: DocumentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", dueColor: "bg-sky-400" };
+                return (
+                  <div key={s.code} className="flex items-center gap-2.5 py-1 px-1.5 rounded-lg hover:bg-slate-50/80 transition-colors">
+                    <div className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 ${cfg.iconBg} ${cfg.iconColor}`}>
+                      {cfg.icon}
+                    </div>
+                    <div className="flex-1 min-w-0 space-y-0.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-700 truncate text-[11px]">{RELEASE_STAGE_LABELS[s.code]}</span>
+                        <span className="font-mono font-bold text-slate-900 text-[11px] tabular-nums">{fmtPKRCompact(s.dueNet + s.releasedNet)}</span>
+                      </div>
+                      <SegmentBar
+                        segments={[
+                          { value: s.releasedNet, className: "bg-emerald-400", label: "paid" },
+                          { value: s.dueNet, className: cfg.dueColor, label: "due now" },
+                          { value: s.pendingNet, className: "bg-slate-200", label: "upcoming" },
+                        ]}
+                      />
+                    </div>
                   </div>
-                  <SegmentBar
-                    segments={[
-                      { value: s.releasedNet, className: "bg-emerald-500", label: "released" },
-                      { value: s.dueNet, className: "bg-blue-600", label: "due now" },
-                      { value: s.pendingNet, className: "bg-slate-200", label: "not yet vested" },
-                    ]}
-                  />
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
@@ -567,21 +556,21 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
 
           {/* Quick Stats Footer */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Stat label="Total Tranches" value={stageTotals.tranches} sub="active policies" />
-            <Stat label="Actionable Due" value={fmtPKRCompact(stageTotals.due)} valueClass="text-blue-600" sub="payout run ready" />
-            <Stat label="Pending Vesting" value={fmtPKRCompact(stageTotals.pending)} sub="future events" />
-            <Stat label="Avg Vesting Period" value="14.2d" sub="latency" />
+            <Stat label="Total Policies" value={stageTotals.tranches} sub="active policies" />
+            <Stat label="Ready to Pay" value={fmtPKRCompact(stageTotals.due)} valueClass="text-blue-600" sub="payout ready" />
+            <Stat label="Future Payouts" value={fmtPKRCompact(stageTotals.pending)} sub="upcoming steps" />
+            <Stat label="Avg Wait Time" value="14.2d" sub="processing time" />
           </div>
         </PillarCard>
 
-        {/* Card 2: Distribution Channel Intelligence */}
+        {/* Card 2: Distribution Channel */}
         <PillarCard
           icon={
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M3 13h2l2-7 4 12 4-9 2 4h2" />
             </svg>
           }
-          title="Distribution Channel Intelligence"
+          title="Distribution Channel"
           barClass="bg-blue-600"
           iconBg="bg-blue-50"
           iconColor="text-blue-600"
@@ -594,21 +583,25 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
                 label="Top Channel"
                 sublabel="Share"
                 valueLabel={`${topChannelPct}%`}
-                size={78}
-                strokeW={7}
+                size={80}
+                strokeW={8}
               />
             </div>
 
             <div className="flex-1 space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Channel Payout Share</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Sales Channel Breakdown</p>
               {stats.byChannel.map((c) => {
                 const pct = channelTotalNet > 0 ? Math.round((c.net / channelTotalNet) * 100) : 0;
+                const cfg = CHANNEL_CONFIG[c.channel] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-sky-400" };
                 return (
-                  <Bar
+                  <EntityDataRow
                     key={c.channel}
-                    label={`${CHANNEL_LABELS[c.channel]}`}
+                    icon={cfg.icon}
+                    iconBg={cfg.iconBg}
+                    iconColor={cfg.iconColor}
+                    label={CHANNEL_LABELS[c.channel]}
                     pct={pct}
-                    color="bg-blue-600"
+                    barColor={cfg.barColor}
                     badge={`${fmtPKRCompact(c.net)} · ${pct}%`}
                   />
                 );
@@ -627,16 +620,16 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
         </PillarCard>
       </div>
 
-      {/* ── Row 2: Payee & Hierarchy & Premium Earning Mix ─────────────── */}
+      {/* ── Row 2: Payee & Premium Earning ─────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Card 3: Payee & Hierarchy Intelligence */}
+        {/* Card 3: Payee & Hierarchy */}
         <PillarCard
           icon={
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
           }
-          title="Payee & Hierarchy Intelligence"
+          title="Payee"
           barClass="bg-indigo-600"
           iconBg="bg-indigo-50"
           iconColor="text-indigo-600"
@@ -646,24 +639,28 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
               <RingGauge
                 value={topPayeePct}
                 strokeHex="#4f46e5"
-                label="Primary Share"
-                sublabel="Producers"
+                label="Agent Share"
+                sublabel="Direct"
                 valueLabel={`${topPayeePct}%`}
-                size={78}
-                strokeW={7}
+                size={80}
+                strokeW={8}
               />
             </div>
 
             <div className="flex-1 space-y-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Payee Category Split</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Payee Team Breakdown</p>
               {stats.byPayeeType.map((t) => {
                 const pct = payeeTotalNet > 0 ? Math.round((t.net / payeeTotalNet) * 100) : 0;
+                const cfg = PAYEE_CONFIG[t.payeeType] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-indigo-400" };
                 return (
-                  <Bar
+                  <EntityDataRow
                     key={t.payeeType}
-                    label={`${PAYEE_TYPE_LABELS[t.payeeType]}`}
+                    icon={cfg.icon}
+                    iconBg={cfg.iconBg}
+                    iconColor={cfg.iconColor}
+                    label={PAYEE_TYPE_LABELS[t.payeeType]}
                     pct={pct}
-                    color="bg-indigo-600"
+                    barColor={cfg.barColor}
                     badge={`${fmtPKRCompact(t.net)} · ${pct}%`}
                   />
                 );
@@ -675,13 +672,13 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Stat label="Active Payees" value={stats.activePayeesCount} sub="registered" />
-            <Stat label="Producers Net" value={fmtPKRCompact(topPayee?.net || 0)} sub="direct commission" />
-            <Stat label="Overrides" value={fmtPKRCompact(stats.overrideTotal)} sub="hierarchy pool" />
+            <Stat label="Agent Earnings" value={fmtPKRCompact(topPayee?.net || 0)} sub="direct commission" />
+            <Stat label="Manager Overrides" value={fmtPKRCompact(stats.overrideTotal)} sub="team pool" />
             <Stat label="Avg / Payee" value={fmtPKRCompact(stats.activePayeesCount > 0 ? payeeTotalNet / stats.activePayeesCount : 0)} sub="per payee" />
           </div>
         </PillarCard>
 
-        {/* Card 4: Premium Earning Mix Intelligence */}
+        {/* Card 4: Premium Earning Mix */}
         <PillarCard
           icon={
             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -689,7 +686,7 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
               <path strokeLinecap="round" strokeLinejoin="round" d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
             </svg>
           }
-          title="Premium Earning Mix Intelligence"
+          title="Commission & Premium"
           barClass="bg-violet-600"
           iconBg="bg-violet-50"
           iconColor="text-violet-600"
@@ -698,27 +695,51 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
             <RingGauge
               value={fypPct}
               strokeHex="#7c3aed"
-              label="FYP Dominance"
-              sublabel="Share"
+              label="First-Year Share"
+              sublabel="Mix"
               valueLabel={`${fypPct}%`}
-              size={78}
-              strokeW={7}
+              size={80}
+              strokeW={8}
             />
             <div className="flex-1 space-y-2 w-full">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Earning Mix Distribution</p>
-              <Bar label="First-Year Premium" pct={fypPct} color="bg-violet-600" badge={fmtPKRCompact(stats.firstYearCommissionTotal)} />
-              <Bar label="Renewal Premium" pct={totalPremiumCommission > 0 ? Math.round((stats.renewalCommissionTotal / totalPremiumCommission) * 100) : 0} color="bg-blue-500" badge={fmtPKRCompact(stats.renewalCommissionTotal)} />
-              <Bar label="Single Premium" pct={totalPremiumCommission > 0 ? Math.round((stats.singlePremiumCommissionTotal / totalPremiumCommission) * 100) : 0} color="bg-amber-500" badge={fmtPKRCompact(stats.singlePremiumCommissionTotal)} />
+              <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Collected Premium Breakdown</p>
+              <EntityDataRow
+                icon={CalendarIcon}
+                iconBg="bg-violet-50"
+                iconColor="text-violet-600"
+                label="First-Year Premium"
+                pct={fypPct}
+                barColor="bg-violet-400"
+                badge={fmtPKRCompact(stats.firstYearPremiumTotal)}
+              />
+              <EntityDataRow
+                icon={RefreshIcon}
+                iconBg="bg-emerald-50"
+                iconColor="text-emerald-600"
+                label="Renewal Premium"
+                pct={totalCollectedPremium > 0 ? Math.round((stats.renewalPremiumTotal / totalCollectedPremium) * 100) : 0}
+                barColor="bg-emerald-400"
+                badge={fmtPKRCompact(stats.renewalPremiumTotal)}
+              />
+              <EntityDataRow
+                icon={CoinsIcon}
+                iconBg="bg-amber-50"
+                iconColor="text-amber-600"
+                label="Single Premium"
+                pct={totalCollectedPremium > 0 ? Math.round((stats.singlePremiumTotal / totalCollectedPremium) * 100) : 0}
+                barColor="bg-amber-400"
+                badge={fmtPKRCompact(stats.singlePremiumTotal)}
+              />
             </div>
           </div>
 
           <Divider className="my-3.5" />
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Stat label="First-Year" value={fmtPKRCompact(stats.firstYearCommissionTotal)} sub="FYP commission" />
-            <Stat label="Renewals" value={fmtPKRCompact(stats.renewalCommissionTotal)} sub="renewal pool" />
-            <Stat label="Tax Withheld" value={fmtPKRCompact(stats.totalWithheldTax)} sub="s.233 withholding" />
-            <Stat label="Bonuses" value={fmtPKRCompact(stats.bonusTotal)} sub="incentive pool" />
+            <Stat label="First-Year Earnings" value={fmtPKRCompact(stats.firstYearCommissionTotal)} sub="new sales commission" />
+            <Stat label="Renewal Earnings" value={fmtPKRCompact(stats.renewalCommissionTotal)} sub="renewal commission" />
+            <Stat label="Tax Withheld" value={fmtPKRCompact(stats.totalWithheldTax)} sub="tax deduction" />
+            <Stat label="Bonuses" value={fmtPKRCompact(stats.bonusTotal)} sub="bonus pool" />
           </div>
         </PillarCard>
       </div>
