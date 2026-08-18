@@ -2444,40 +2444,124 @@ class ReinsuranceReferral(SQLModel, table=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Business Rule Engine Models
+# Business Rule Engine Models (v2.1 — 6-tier hierarchy, typed actuarial impacts,
+# grouped criteria, TSAR accumulation context)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class RuleDomainEnum(str, Enum):
-    ELIGIBILITY = "ELIGIBILITY"               # Product Parameters & Eligibility
-    PRICING = "PRICING"                       # Premium Rating & Loadings
-    UNDERWRITING_GATES = "UNDERWRITING_GATES" # Pre-Underwriting Gates (1-6)
-    COMPLIANCE_AML = "COMPLIANCE_AML"         # Compliance, PEP, Sanctions & SECP
-    MEDICAL_NML = "MEDICAL_NML"               # Non-Medical Limits & Exam Grid
-    INSURANCE_HISTORY = "INSURANCE_HISTORY"   # Replacement & Over-Insurance
-    COMMISSION_SECP = "COMMISSION_SECP"       # Commission & Statutory Rates
-    RBAC_AUTHORIZATION = "RBAC_AUTHORIZATION" # Tool Access & Role Authorization
-    AI_DECISION_BANDS = "AI_DECISION_BANDS"   # AI Composite Bands & Status Mapping
-    REINSURANCE = "REINSURANCE"               # Self-Retention, Treaty Capacity & Facultative Referral
+class ScopeTypeEnum(str, Enum):
+    GLOBAL = "GLOBAL"                       # AML, SECP commission caps, statutory RBAC
+    CHANNEL_PRODUCT = "CHANNEL_PRODUCT"     # Bancassurance, Direct Agency, Digital
+    RIDER = "RIDER"                         # Accidental Death, Critical Illness riders
+
+
+class ImpactTypeEnum(str, Enum):
+    AUTO_APPROVE = "AUTO_APPROVE"
+    REQUIRE_MEDICAL = "REQUIRE_MEDICAL"
+    APPLY_LOADING = "APPLY_LOADING"
+    EXCLUSION_CLAUSE = "EXCLUSION_CLAUSE"
+    FINANCIAL_JUSTIFICATION = "FINANCIAL_JUSTIFICATION"
+    REFER_TO_UNDERWRITER = "REFER_TO_UNDERWRITER"
+    REINSURANCE_FACULTATIVE = "REINSURANCE_FACULTATIVE"
+    DECLINE = "DECLINE"
+
+
+class ComparisonOperatorEnum(str, Enum):
+    # Member names are lowercase (matching value) on purpose: SQLAlchemy's
+    # auto-generated native Postgres ENUM type stores the member *name*, not
+    # the value, so name != value here would silently create a DB enum whose
+    # labels never match the lowercase strings the evaluator/migration write.
+    eq = "eq"
+    neq = "neq"
+    gt = "gt"
+    gte = "gte"
+    lt = "lt"
+    lte = "lte"
+    between = "between"
+    in_set = "in_set"
+    contains = "contains"       # substring match — not in the original spec's 10, needed for
+                                 # real seeded occupational-hazard rules (free-text `occupation`)
+    field_gt = "field_gt"       # field_name > target_field_name * multiplier
+    field_gte = "field_gte"
 
 
 class RuleVersionStatusEnum(str, Enum):
     DRAFT = "DRAFT"
     ACTIVE = "ACTIVE"
-    RETIRED = "RETIRED"
+    ARCHIVED = "ARCHIVED"
 
+
+class ActuarialImpactDetail(SQLModel):
+    """Typed shape stored in ActualRule.impact_data (JSON). Not a table —
+    embedded/validated structure, mirrors the spec's pydantic schema."""
+    extra_mortality_pct: float = 0.0                        # e.g. 50.0 for +50% (+2 debits)
+    flat_extra_per_thousand: float = 0.0                    # PKR per 1,000 TSAR
+    medical_profile_codes: List[str] = Field(default_factory=list)  # e.g. ["MER", "FBS", "ECG"]
+    hlv_max_multiple: Optional[float] = None                # e.g. 15.0 (15x gross annual income)
+    reinsurance_retention_limit: Optional[float] = None      # self-retention ceiling
+    underwriter_authority_level: Optional[int] = None        # escalation tier required
+    exclusion_riders: List[str] = Field(default_factory=list)
+    is_terminal: bool = False                                 # short-circuits execution on true
+    commission_pct: Optional[float] = None                    # extension beyond spec: SECP commission rate
+    withholding_tax_pct: Optional[float] = None               # extension beyond spec: s.233 WHT rate
+
+
+# ── Hierarchy: Category -> SubCategory -> EligibilityProfile ──────────────────
+
+class Category(SQLModel, table=True):
+    __tablename__ = "rule_categories"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    code: str = Field(unique=True, index=True, max_length=50)   # e.g. "MEDICAL_NML"
+    name: str = Field(max_length=255)
+    description: str = Field(default="", max_length=1000)
+
+
+class SubCategory(SQLModel, table=True):
+    __tablename__ = "rule_subcategories"
+    __table_args__ = (UniqueConstraint("category_id", "code", name="uq_subcategory_code_per_category"),)
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    category_id: UUID = Field(foreign_key="rule_categories.id", index=True, nullable=False)
+    code: str = Field(index=True, max_length=50)                # e.g. "NON_MEDICAL_LIMITS"
+    name: str = Field(max_length=255)
+
+
+class EligibilityProfile(SQLModel, table=True):
+    __tablename__ = "eligibility_profiles"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    subcategory_id: UUID = Field(foreign_key="rule_subcategories.id", index=True, nullable=False)
+    channel_code: str = Field(max_length=50, index=True)         # e.g. "BANCASSURANCE_MCB", "AGENCY_DIRECT"
+    min_entry_age: int = Field(default=18)
+    max_entry_age: int = Field(default=65)
+    max_maturity_age: int = Field(default=75)
+    min_sum_assured: float = Field(default=500000.0)
+
+
+# ── Rule chain: RuleSet -> RuleVersion -> ActualRule -> RuleCriteria ──────────
 
 class RuleSet(SQLModel, table=True):
     """
     A named group of rules governing a specific functional area.
     Can be tenant-specific or global (tenant_id is None).
+
+    scope_type == GLOBAL rule sets apply everywhere and have eligibility_id
+    NULL. scope_type == CHANNEL_PRODUCT / RIDER rule sets are additionally
+    pinned to one EligibilityProfile (a channel/age/sum-assured band).
+    subcategory_id is always populated regardless of scope_type — it is the
+    single browsable taxonomy path for both scope types (see plan note on
+    spec conflict #6: the literal spec only reaches Category via
+    EligibilityProfile, which leaves GLOBAL rule sets unbrowsable).
     """
     __tablename__ = "rule_sets"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: Optional[UUID] = Field(default=None, foreign_key="tenants.id", index=True, nullable=True)
-    code: str = Field(unique=True, index=True, max_length=100)
+    scope_type: ScopeTypeEnum = Field(default=ScopeTypeEnum.CHANNEL_PRODUCT, max_length=50, index=True)
+    subcategory_id: UUID = Field(foreign_key="rule_subcategories.id", index=True, nullable=False)
+    eligibility_id: Optional[UUID] = Field(default=None, foreign_key="eligibility_profiles.id", nullable=True)
+    rule_code: str = Field(unique=True, index=True, max_length=100)   # e.g. "NML_STANDARD_GRID_2026"
     name: str = Field(max_length=255)
-    domain: RuleDomainEnum = Field(max_length=50, index=True)
     description: str = Field(default="", max_length=1000)
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
@@ -2493,54 +2577,87 @@ class RuleVersion(SQLModel, table=True):
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     rule_set_id: UUID = Field(foreign_key="rule_sets.id", index=True, nullable=False)
-    version_no: int = Field(default=1, nullable=False)
-    status: RuleVersionStatusEnum = Field(default=RuleVersionStatusEnum.DRAFT, max_length=50, nullable=False)
-    effective_from: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    effective_to: Optional[datetime] = Field(default=None, nullable=True)
+    version_number: str = Field(default="1.0.0", max_length=20)
+    status: RuleVersionStatusEnum = Field(default=RuleVersionStatusEnum.DRAFT, max_length=50, nullable=False, index=True)
+    effective_from: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    effective_to: Optional[datetime] = Field(default=None, nullable=True, index=True)
     authored_by: str = Field(default="System", max_length=255)
     approved_by: Optional[str] = Field(default=None, max_length=255, nullable=True)
     notes: Optional[str] = Field(default=None, max_length=1000, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
-class BusinessRule(SQLModel, table=True):
+class ActualRule(SQLModel, table=True):
     """
-    Single decision rule within a RuleVersion.
-    Conditions are evaluated in priority order (lower number = higher priority).
+    Single decision rule within a RuleVersion. Its RuleCriteria are grouped by
+    group_id: conditions within a group are AND'd, distinct groups are OR'd.
+    Evaluated in priority order (lower number = higher priority); a rule whose
+    impact_data.is_terminal is true short-circuits evaluation of lower-priority
+    rules once matched.
     """
     __tablename__ = "business_rules"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    rule_version_id: UUID = Field(foreign_key="rule_versions.id", index=True, nullable=False)
+    version_id: UUID = Field(foreign_key="rule_versions.id", index=True, nullable=False)
+    rule_code: str = Field(max_length=100, index=True)     # e.g. "NML_AGE_41_50_BAND_3"
     name: str = Field(max_length=255)
-    code: Optional[str] = Field(default=None, max_length=100)
-    description: Optional[str] = Field(default=None, max_length=1000)
-    category: Optional[str] = Field(default=None, max_length=255)
-    subcategory: Optional[str] = Field(default=None, max_length=255)
-    eligibility_criteria: Optional[str] = Field(default=None, max_length=1000)
-    priority: int = Field(default=10, nullable=False)
-    condition_operator: str = Field(default="ALL", max_length=10)
-    conditions: dict = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
-    action_outcome: str = Field(max_length=100)
-    outcome_payload: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
-    is_enabled: bool = Field(default=True, nullable=False)
+    priority: int = Field(default=100, nullable=False)
+    is_active: bool = Field(default=True, nullable=False, index=True)
+    affected_from: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    affected_to: Optional[datetime] = Field(default=None, nullable=True, index=True)
+    impact_type: ImpactTypeEnum = Field(max_length=50, index=True)
+    action_outcome: str = Field(max_length=100)             # free-text label, e.g. "GATE_CLEARED"
+    impact_data: dict = Field(
+        default_factory=lambda: ActuarialImpactDetail().model_dump(),
+        sa_column=Column(JSON, nullable=False),
+    )
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class RuleCriteria(SQLModel, table=True):
+    """
+    One atomic condition within an ActualRule's group_id group. Groups are
+    OR'd together; conditions within the same group_id are AND'd.
+    """
+    __tablename__ = "rule_criteria"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    rule_id: UUID = Field(foreign_key="business_rules.id", index=True, nullable=False)
+    group_id: int = Field(default=1, nullable=False)
+    field_name: str = Field(max_length=100)                  # e.g. "total_sum_at_risk", "bmi", "entry_age"
+    operator: ComparisonOperatorEnum = Field(max_length=20)
+    value_numeric: Optional[float] = Field(default=None)
+    value_string: Optional[str] = Field(default=None, max_length=500)
+    value_range_min: Optional[float] = Field(default=None)
+    value_range_max: Optional[float] = Field(default=None)
+    value_list: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))  # for in_set
+    target_field_name: Optional[str] = Field(default=None, max_length=100)   # dynamic cross-field target
+    target_multiplier: float = Field(default=1.0)
 
 
 class RuleEvaluationLog(SQLModel, table=True):
     """
-    Audit log recorded every time a rule set is evaluated against a context payload.
+    Audit log recorded every time a rule set (or scope) is evaluated against
+    a context payload — full hierarchical scoping, cumulative TSAR, matched
+    rule codes, and structured impact decisions.
     """
     __tablename__ = "rule_evaluation_logs"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: Optional[UUID] = Field(default=None, index=True, nullable=True)
-    rule_set_code: str = Field(index=True, max_length=100)
-    rule_version_no: int = Field(default=1)
-    case_id: Optional[str] = Field(default=None, index=True, max_length=100)
-    actor: Optional[str] = Field(default=None, max_length=255)
-    input_context: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
-    outcome: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
-    reasons: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
     evaluated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False, index=True)
+    proposal_id: Optional[str] = Field(default=None, index=True, max_length=100)
+    customer_cnic: Optional[str] = Field(default=None, index=True, max_length=20)
+    category_code: Optional[str] = Field(default=None, max_length=50)
+    subcategory_code: Optional[str] = Field(default=None, max_length=50)
+    channel_code: Optional[str] = Field(default=None, max_length=50)
+    rule_set_code: str = Field(index=True, max_length=100)
+    version_number: str = Field(default="1.0.0", max_length=20)
+    actor: Optional[str] = Field(default=None, max_length=255)
+    input_context_snapshot: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    tsar_accumulated: float = Field(default=0.0)
+    matched_rule_codes: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    final_impacts: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    reasons: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+    execution_duration_ms: float = Field(default=0.0)
 

@@ -103,13 +103,17 @@ def _num(x: Any) -> float:
         return 0.0
 
 
-async def _internal_policies(
+async def list_internal_policies(
     session: AsyncSession,
     tenant_id: UUID,
     customer_id: UUID,
     exclude_policy_id: Optional[UUID],
 ) -> list[dict]:
-    """Every other policy this insurer already holds for the customer."""
+    """Every other policy this insurer already holds for the customer.
+
+    Public (renamed from `_internal_policies`) so the rule engine's
+    ContextDerivationService (services/tenant-service/rule_evaluator.py) can
+    reuse it for TSAR accumulation without duplicating this query."""
     stmt = (
         select(Policy)
         .where(Policy.tenant_id == tenant_id, Policy.customer_id == customer_id)
@@ -202,7 +206,7 @@ async def screen(
     age = age_from_dob(customer.dob)
     proposed_sa = float(policy.coverage_amount or 0) if policy else 0.0
 
-    internal = await _internal_policies(
+    internal = await list_internal_policies(
         session, tenant_id, customer.id, policy.id if policy else None
     )
     external, decl_flags = _external_from_declaration(e_app)

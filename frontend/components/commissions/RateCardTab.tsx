@@ -88,9 +88,12 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
       >
         {showConfig && <EngineSettings notify={notify} />}
 
-        <div className="px-5 py-2 bg-amber-50/60 border-b border-amber-100 text-[11px] text-amber-900">
-          <span className="font-bold">Note:</span> STATUTORY = Government Rules. CONTRACTUAL = Company Terms.
-        </div>
+        {/* <div className="px-5 py-3 bg-amber-50/60 border-b border-amber-100 text-[11px] text-amber-900">
+          <span className="font-bold">Compliance note:</span> rows marked <span className="font-bold">STATUTORY</span> carry
+          inherited SECP rule/form citations that have not been checked line-by-line against the published Insurance Rules
+          2017 — have compliance sign them off before treating them as caps. Rows marked{" "}
+          <span className="font-bold">CONTRACTUAL</span> are the insurer&apos;s own negotiated terms.
+        </div> */}
 
         {grouped.map((group) => (
           <div key={group.channel} className="border-b border-slate-100 last:border-b-0">
