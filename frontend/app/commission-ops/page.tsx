@@ -54,14 +54,7 @@ function SummaryStat({ label, value, tone = "default" }: { label: string; value:
   );
 }
 
-type OpsTab = "overview" | "ledger" | "runs" | "statements";
 
-const OPS_TABS: [OpsTab, string][] = [
-  ["overview", "Overview"],
-  ["ledger", "Commission Ledger"],
-  ["runs", "Payout Runs"],
-  ["statements", "Statements"],
-];
 
 const CLAWBACK_REASONS = [
   "Policy cancelled within the free-look window",
@@ -73,17 +66,6 @@ const CLAWBACK_REASONS = [
 ];
 
 export default function CommissionOpsPage() {
-  const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab") as OpsTab | null;
-  const [activeTab, setActiveTab] = useState<OpsTab>(
-    tabParam && OPS_TABS.some(([k]) => k === tabParam) ? tabParam : "ledger"
-  );
-
-  useEffect(() => {
-    if (tabParam && OPS_TABS.some(([k]) => k === tabParam)) {
-      setActiveTab(tabParam);
-    }
-  }, [tabParam]);
 
   const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [payees, setPayees] = useState<CommissionPayee[]>([]);
@@ -180,11 +162,10 @@ export default function CommissionOpsPage() {
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
       {notification && (
         <div
-          className={`fixed top-5 right-5 z-50 max-w-md px-4 py-3 rounded-xl shadow-lg border text-xs font-bold flex items-start gap-2 bg-white text-slate-800 ${
-            notification.type === "success"
-              ? "border-blue-200 text-blue-900"
-              : "border-rose-200 text-rose-800"
-          }`}
+          className={`fixed top-5 right-5 z-50 max-w-md px-4 py-3 rounded-xl shadow-lg border text-xs font-bold flex items-start gap-2 bg-white text-slate-800 ${notification.type === "success"
+            ? "border-blue-200 text-blue-900"
+            : "border-rose-200 text-rose-800"
+            }`}
         >
           <span className={notification.type === "success" ? "text-blue-600" : "text-rose-600"}>
             {notification.type === "success" ? "✓" : "✕"}
@@ -202,10 +183,10 @@ export default function CommissionOpsPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Execute disburse &amp; hold workflows, track policy stack ledgers, trigger payout runs, and issue payee stubs
+            {/* Execute disburse &amp; hold workflows, track policy stack ledgers, trigger payout runs, and issue payee stubs */}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* <div className="flex items-center gap-2">
           <Link
             href="/commissions"
             className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
@@ -218,7 +199,7 @@ export default function CommissionOpsPage() {
           >
             Recompute Ledger
           </button>
-        </div>
+        </div> */}
       </div>
 
       {stats && (
@@ -230,6 +211,7 @@ export default function CommissionOpsPage() {
               subtitle="Vested, ready for payout run"
               accent="blue"
               trend={{ value: "Releasable Now", direction: "up" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -242,6 +224,7 @@ export default function CommissionOpsPage() {
               subtitle="Earned, vesting at future events"
               accent="amber"
               trend={{ value: "In Pipeline", direction: "neutral" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -254,6 +237,7 @@ export default function CommissionOpsPage() {
               subtitle="Paid out net of tax and recovery"
               accent="emerald"
               trend={{ value: "Settled", direction: "up" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -266,67 +250,62 @@ export default function CommissionOpsPage() {
               subtitle={`Across ${ledger.length} ledger entries`}
               accent="violet"
               trend={{ value: "Active Ledger", direction: "up" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               }
             />
-          </div>
-
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_2px_10px_rgb(0,0,0,0.02)] px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Commission Operations Totals</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-xs">
-              <SummaryStat label="Ready to Pay" value={fmtPKR(stats.totalDueNow)} tone="default" />
-              <SummaryStat label="Processing Payments" value={fmtPKR(stats.totalInRun)} />
-              <SummaryStat label="Settled Payouts" value={fmtPKR(stats.totalDisbursed)} />
-              <SummaryStat label="Tax Withheld" value={fmtPKR(stats.totalWithheldTax)} />
-              <SummaryStat label="Policy Reversals" value={fmtPKR(stats.totalClawbacks)} tone={stats.totalClawbacks > 0 ? "warn" : "muted"} />
-            </div>
+            <MetricCard
+              title="Processing Payments"
+              value={fmtPKRCompact(stats.totalInRun)}
+              subtitle="Currently in payout runs"
+              accent="blue"
+              trend={{ value: "In Progress", direction: "neutral" }}
+              size="compact"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              }
+            />
+            <MetricCard
+              title="Tax Withheld"
+              value={fmtPKRCompact(stats.totalWithheldTax)}
+              subtitle="Total tax withheld"
+              accent="amber"
+              trend={{ value: "Withheld", direction: "neutral" }}
+              size="compact"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2-2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0v-5a2 2 0 012-2h2a2 2 0 012 2v5m-4 0h4" />
+                </svg>
+              }
+            />
+            <MetricCard
+              title="Policy Reversals"
+              value={fmtPKRCompact(stats.totalClawbacks)}
+              subtitle="Clawbacks and reversals"
+              accent="red"
+              trend={{ value: "Recovered", direction: stats.totalClawbacks > 0 ? "down" : "neutral" }}
+              size="compact"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              }
+            />
           </div>
         </div>
       )}
-
-      <div className="border-b border-slate-200 flex gap-6 overflow-x-auto">
-        {OPS_TABS.map(([key, label]) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={`pb-3 -mb-px text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors ${
-              activeTab === key
-                ? "border-blue-600 text-blue-600 font-bold"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
 
       {loading && ledger.length === 0 ? (
         <Card>
           <div className="px-5 py-12 text-center text-xs text-slate-400">Loading commission operational ledger…</div>
         </Card>
       ) : (
-        <>
-          {activeTab === "overview" && stats && <OpsOverviewTab stats={stats} ledger={ledger} />}
-          {activeTab === "ledger" && (
-            <LedgerTab
-              ledger={ledger}
-              onDisburse={handleDisburse}
-              onHold={(entry) => setHoldTarget(entry)}
-              onClawback={(entry) => setClawbackTarget(entry)}
-              onRecordEvent={handleRecordEvent}
-            />
-          )}
-          {activeTab === "runs" && (
-            <PayoutRunsTab runs={runs} ledger={ledger} currentUser="Commission Officer" onChanged={() => refresh()} notify={notify} />
-          )}
-          {activeTab === "statements" && <StatementsTab statements={statements} />}
-        </>
+        stats && <OpsOverviewTab stats={stats} ledger={ledger} />
       )}
 
       {clawbackTarget && (

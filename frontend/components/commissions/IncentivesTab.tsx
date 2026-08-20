@@ -86,11 +86,10 @@ export default function IncentivesTab({
               <button
                 key={key}
                 onClick={() => setSubTab(key)}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                  subTab === key
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
-                }`}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${subTab === key
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                  }`}
               >
                 {label}
               </button>
@@ -117,7 +116,7 @@ export default function IncentivesTab({
       </div>
 
       {subTab === "schemes" && (
-        <Card title="Bonus Plans & Rules" subtitle="Performance bonuses earned on overall sales volume and policy retention">
+        <Card title="Bonus Plans & Rules">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
@@ -169,7 +168,7 @@ export default function IncentivesTab({
       {subTab === "qualified" && (
         <Card
           title="Earned Bonuses (Ready to Pay)"
-          subtitle="Approved bonuses earned by agents — click 'Add to Earnings' to add this bonus to the payout ledger"
+        // subtitle="Approved bonuses earned by agents — click 'Add to Earnings' to add this bonus to the payout ledger"
         >
           {filteredQualified.length === 0 ? (
             <EmptyState message="No agents currently qualify for an uncollected bonus." />
@@ -224,7 +223,7 @@ export default function IncentivesTab({
       )}
 
       {subTab === "shortfall" && (
-        <Card title="In-Progress Sales & Retention Goals" subtitle="Tracks how close each agent or manager is to reaching their next bonus target">
+        <Card title="In-Progress Sales & Retention Goals">
           {filteredShortfall.length === 0 ? (
             <EmptyState message="All active agents have reached their bonus targets." />
           ) : (

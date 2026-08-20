@@ -62,9 +62,9 @@ type Tab = "overview" | "types" | "payees" | "incentives" | "calculator";
 
 const TABS: [Tab, string][] = [
   ["overview", "Overview"],
-  ["types", "Commission Types & Rates"],
-  ["payees", "Payees & Hierarchy"],
-  ["incentives", "Incentives"],
+  ["types", "Commission Types"],
+  ["payees", "Payees"],
+  ["incentives", "Bonuses"],
   ["calculator", "Calculator"],
 ];
 
@@ -124,11 +124,10 @@ export default function CommissionsPage() {
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
       {notification && (
         <div
-          className={`fixed top-5 right-5 z-50 max-w-md px-4 py-3 rounded-xl shadow-lg border text-xs font-bold flex items-start gap-2 bg-white text-slate-800 ${
-            notification.type === "success"
-              ? "border-blue-200 text-blue-900"
-              : "border-rose-200 text-rose-800"
-          }`}
+          className={`fixed top-5 right-5 z-50 max-w-md px-4 py-3 rounded-xl shadow-lg border text-xs font-bold flex items-start gap-2 bg-white text-slate-800 ${notification.type === "success"
+            ? "border-blue-200 text-blue-900"
+            : "border-rose-200 text-rose-800"
+            }`}
         >
           <span className={notification.type === "success" ? "text-blue-600" : "text-rose-600"}>
             {notification.type === "success" ? "✓" : "✕"}
@@ -146,42 +145,37 @@ export default function CommissionsPage() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Manage commission types, rate cards, payee hierarchies, channel splits, performance incentives &amp; rate calculator
+            {/* Manage commission types, rate cards, payee hierarchies, channel splits, performance incentives &amp; rate calculator */}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link
-            href="/commission-ops"
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-          >
-            <span>Go to Commission Ops</span>
-            <span>→</span>
-          </Link>
-          <button
+
+          {/* <button
             onClick={() => refresh(true)}
             className="px-3 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors"
           >
             Recompute Engine
-          </button>
-          <button
+          </button> */}
+          {/* <button
             onClick={() => setActiveTab("calculator")}
             className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium transition-colors"
           >
             New calculation
-          </button>
+          </button> */}
         </div>
       </div>
 
       {stats && (
         <div className="space-y-4">
           {/* Executive KPI cards strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
             <MetricCard
               title="Active Payees"
               value={`${stats.activePayeesCount} / ${payees.length}`}
               subtitle="Producers, managers &amp; partners"
               accent="blue"
               trend={{ value: "Configured", direction: "up" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
@@ -194,6 +188,7 @@ export default function CommissionsPage() {
               subtitle="Manager &amp; agency overrides"
               accent="amber"
               trend={{ value: "Active Rules", direction: "neutral" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -206,6 +201,7 @@ export default function CommissionsPage() {
               subtitle="Volume &amp; persistency bonuses"
               accent="emerald"
               trend={{ value: "Qualified", direction: "up" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -218,28 +214,65 @@ export default function CommissionsPage() {
               subtitle="Gross production across all rules"
               accent="violet"
               trend={{ value: "+18.4% MTD", direction: "up" }}
+              size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
               }
             />
-          </div>
-
-          {/* Context financial summary banner */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-[0_2px_10px_rgb(0,0,0,0.02)] px-6 py-3.5 flex flex-wrap items-center justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Commission Admin Overview</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-x-8 gap-y-2 text-xs">
-              <SummaryStat label="Pending Liability" value={fmtPKR(stats.totalAccruedLiability)} />
-              <SummaryStat label="Processing Payments" value={fmtPKR(stats.totalInRun)} />
-              <SummaryStat label="Team Overrides" value={fmtPKR(stats.overrideTotal)} />
-              <SummaryStat label="Performance Bonuses" value={fmtPKR(stats.bonusTotal)} />
-              <SummaryStat label="Tax Deductions" value={fmtPKR(stats.totalWithheldTax)} />
-              <SummaryStat label="Reversals" value={fmtPKR(stats.totalClawbacks)} tone={stats.totalClawbacks > 0 ? "warn" : "muted"} />
-            </div>
+            <MetricCard
+              title="Pending Liability"
+              value={fmtPKRCompact(stats.totalAccruedLiability)}
+              subtitle="Accrued but not paid"
+              accent="slate"
+              trend={{ value: "Pending", direction: "neutral" }}
+              size="compact"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              }
+            />
+            <MetricCard
+              title="Processing Payments"
+              value={fmtPKRCompact(stats.totalInRun)}
+              subtitle="Currently in payout runs"
+              accent="blue"
+              trend={{ value: "In Progress", direction: "neutral" }}
+              size="compact"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              }
+            />
+            <MetricCard
+              title="Tax Deductions"
+              value={fmtPKRCompact(stats.totalWithheldTax)}
+              subtitle="Total tax withheld"
+              accent="amber"
+              trend={{ value: "Withheld", direction: "neutral" }}
+              size="compact"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l6-6m-5.5.5h.01m4.99 5h.01M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2-2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5m0 0v-5a2 2 0 012-2h2a2 2 0 012 2v5m-4 0h4" />
+                </svg>
+              }
+            />
+            <MetricCard
+              title="Reversals"
+              value={fmtPKRCompact(stats.totalClawbacks)}
+              subtitle="Clawbacks and reversals"
+              accent="red"
+              trend={{ value: "Recovered", direction: stats.totalClawbacks > 0 ? "down" : "neutral" }}
+              size="compact"
+              icon={
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                </svg>
+              }
+            />
           </div>
         </div>
       )}
@@ -249,11 +282,10 @@ export default function CommissionsPage() {
           <button
             key={key}
             onClick={() => setActiveTab(key)}
-            className={`pb-3 -mb-px text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors ${
-              activeTab === key
-                ? "border-slate-900 text-slate-900 font-bold"
-                : "border-transparent text-slate-500 hover:text-slate-800"
-            }`}
+            className={`pb-3 -mb-px text-[13px] font-medium border-b-2 whitespace-nowrap transition-colors ${activeTab === key
+              ? "border-slate-900 text-slate-900 font-bold"
+              : "border-transparent text-slate-500 hover:text-slate-800"
+              }`}
           >
             {label}
           </button>
@@ -670,10 +702,8 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
 
           <Divider className="my-3.5" />
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <Stat label="Active Payees" value={stats.activePayeesCount} sub="registered" />
+          <div className="grid grid-cols-2 gap-3">
             <Stat label="Agent Earnings" value={fmtPKRCompact(topPayee?.net || 0)} sub="direct commission" />
-            <Stat label="Manager Overrides" value={fmtPKRCompact(stats.overrideTotal)} sub="team pool" />
             <Stat label="Avg / Payee" value={fmtPKRCompact(stats.activePayeesCount > 0 ? payeeTotalNet / stats.activePayeesCount : 0)} sub="per payee" />
           </div>
         </PillarCard>
@@ -735,11 +765,9 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
 
           <Divider className="my-3.5" />
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <Stat label="First-Year Earnings" value={fmtPKRCompact(stats.firstYearCommissionTotal)} sub="new sales commission" />
             <Stat label="Renewal Earnings" value={fmtPKRCompact(stats.renewalCommissionTotal)} sub="renewal commission" />
-            <Stat label="Tax Withheld" value={fmtPKRCompact(stats.totalWithheldTax)} sub="tax deduction" />
-            <Stat label="Bonuses" value={fmtPKRCompact(stats.bonusTotal)} sub="bonus pool" />
           </div>
         </PillarCard>
       </div>
@@ -751,7 +779,7 @@ function OverviewTab({ stats, ledger }: { stats: CommissionSummaryStats; ledger:
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
           </svg>
         }
-        title="Outstanding Commission Audit Feed"
+        title="Commission Audit Log"
         barClass="bg-emerald-600"
         iconBg="bg-emerald-50"
         iconColor="text-emerald-600"
@@ -957,9 +985,8 @@ function MixRow({ label, value, muted }: { label: string; value: number; muted?:
     <div className="flex justify-between items-baseline py-2">
       <span className={`text-xs ${muted ? "text-slate-400" : "text-slate-600"}`}>{label}</span>
       <span
-        className={`font-mono tabular-nums text-xs font-bold ${
-          value === 0 ? "text-slate-300" : muted ? "text-slate-500" : "text-slate-900"
-        }`}
+        className={`font-mono tabular-nums text-xs font-bold ${value === 0 ? "text-slate-300" : muted ? "text-slate-500" : "text-slate-900"
+          }`}
       >
         {value === 0 ? "—" : fmtPKR(value)}
       </span>

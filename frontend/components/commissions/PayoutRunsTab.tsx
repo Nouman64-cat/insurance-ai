@@ -126,7 +126,7 @@ export default function PayoutRunsTab({
 
   return (
     <div className="space-y-4">
-      <Card title="Create Payout Run" subtitle="Batches every payable entry in scope; gated and held entries are left behind">
+      <Card title="Create Payout Run">
         <div className="p-5 grid grid-cols-1 md:grid-cols-4 gap-4">
           <Field label="Payout Period">
             <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className={inputClass} />
@@ -172,7 +172,7 @@ export default function PayoutRunsTab({
         </div>
       </Card>
 
-      <Card title="Payout Runs" subtitle="Maker–checker: the approver must be a different user from the preparer">
+      <Card title="Payout Runs">
         {runs.length === 0 ? (
           <EmptyState message="No payout runs yet. Create one above to batch the payable entries." />
         ) : (

@@ -50,8 +50,8 @@ function PolicyEventBar({
   ];
 
   return (
-    <div className="px-5 py-2.5 bg-slate-50/70 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
-      <div className="flex items-center gap-2">
+    <div className="px-4 py-3 bg-white rounded-xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center gap-3">
         <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Policy Events:</span>
         <div className="flex flex-wrap items-center gap-1.5">
           {state.map(([event, at]) => (
@@ -59,11 +59,10 @@ function PolicyEventBar({
               key={event}
               onClick={() => onRecord(event)}
               title={at ? `Recorded on ${at} — click to update` : `Record: ${POLICY_EVENT_LABELS[event]}`}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${
-                at
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
-                  : "bg-white text-slate-500 border-slate-200 border-dashed hover:text-slate-800 hover:border-slate-300"
-              }`}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition-all ${at
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                : "bg-white text-slate-500 border-slate-200 border-dashed hover:text-slate-800 hover:border-slate-300"
+                }`}
             >
               <span className={at ? "text-emerald-600 mr-1" : "text-slate-300 mr-1"}>{at ? "✓" : "○"}</span>
               {POLICY_EVENT_LABELS[event]}
@@ -163,29 +162,7 @@ export default function LedgerTab({
 
   return (
     <div className="space-y-5">
-      {/* Top Metric Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500">Total Gross Commission</p>
-          <p className="text-lg font-extrabold text-slate-900 mt-1">{fmtPKR(totalGross)}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">{filtered.length} total entries</p>
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-blue-600">Ready to Pay</p>
-          <p className="text-lg font-extrabold text-blue-700 mt-1">{fmtPKR(totalDue)}</p>
-          <p className="text-[10px] text-blue-500 mt-0.5">Actionable in current run</p>
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-emerald-600">Total Paid Out</p>
-          <p className="text-lg font-extrabold text-emerald-700 mt-1">{fmtPKR(totalPaid)}</p>
-          <p className="text-[10px] text-emerald-500 mt-0.5">Settled payouts</p>
-        </div>
-        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
-          <p className="text-[11px] font-semibold text-slate-500">Total Net Payout</p>
-          <p className="text-lg font-extrabold text-slate-900 mt-1">{fmtPKR(totalNet)}</p>
-          <p className="text-[10px] text-slate-400 mt-0.5">After taxes &amp; recoveries</p>
-        </div>
-      </div>
+
 
       {/* Control Bar: View Switcher, Search, and Filters */}
       <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs space-y-3">
@@ -194,7 +171,7 @@ export default function LedgerTab({
           <div className="flex p-0.5 rounded-xl bg-slate-100 border border-slate-200/60">
             {(
               [
-                ["stack", "By Policy"],
+                ["stack", "Policy Wise"],
                 ["finance", "All Transactions"],
                 ["general", "By Payee & Channel"],
               ] as [LedgerView, string][]
@@ -202,11 +179,10 @@ export default function LedgerTab({
               <button
                 key={key}
                 onClick={() => setView(key)}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${
-                  view === key
-                    ? "bg-blue-600 text-white shadow-xs"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
-                }`}
+                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all ${view === key
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
+                  }`}
               >
                 {label}
               </button>
@@ -290,9 +266,9 @@ export default function LedgerTab({
           <EmptyState message="No commission entries match these filters." />
         </Card>
       ) : view === "stack" ? (
-        <div className="space-y-3">
+        <Card className="overflow-hidden border border-slate-200 shadow-2xs">
           {/* Master Table Header Row for Policy Stack */}
-          <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-100/90 rounded-xl border border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+          <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-3 bg-slate-100/70 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[10px]">
             <div className="col-span-2">Customer</div>
             <div className="col-span-2">Policy ID</div>
             <div className="col-span-1">Channel</div>
@@ -304,14 +280,18 @@ export default function LedgerTab({
             <div className="col-span-1 text-center">Action</div>
           </div>
 
+          <div className="divide-y divide-slate-100 bg-white">
           {groups.map((group) => {
             const isOpen = openPolicyIds.has(group.policyId);
             return (
-              <Card key={group.policyId} className="overflow-hidden border border-slate-200 shadow-2xs transition-all">
+              <div key={group.policyId} className="transition-all">
                 {/* Clean Master Row Grid */}
                 <div
                   onClick={() => togglePolicy(group.policyId)}
-                  className="px-5 py-3.5 bg-slate-50/70 hover:bg-slate-100/70 cursor-pointer border-b border-slate-200/80 transition-colors"
+                  className={`px-5 py-3.5 cursor-pointer transition-all border-l-4 ${isOpen
+                    ? "bg-slate-50 border-b border-slate-200 border-l-blue-600"
+                    : "bg-white hover:bg-slate-50 border-l-transparent"
+                    }`}
                 >
                   <div className="grid grid-cols-12 gap-3 items-center text-xs">
                     {/* Col 1: Customer Name (2 cols) */}
@@ -371,11 +351,10 @@ export default function LedgerTab({
                     <div className="col-span-12 sm:col-span-1 flex justify-center">
                       <button
                         type="button"
-                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${
-                          isOpen
-                            ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
-                            : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
-                        }`}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all whitespace-nowrap flex items-center gap-1 ${isOpen
+                          ? "bg-blue-100 text-blue-800 border-blue-200 shadow-none"
+                          : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
+                          }`}
                       >
                         {isOpen ? "Hide ▲" : "View ▼"}
                       </button>
@@ -384,7 +363,7 @@ export default function LedgerTab({
                 </div>
 
                 {isOpen && (
-                  <>
+                  <div className="bg-slate-50 p-4 space-y-4 border-t border-slate-200 shadow-[inset_0_2px_4px_rgb(0,0,0,0.02)]">
                     {onRecordEvent && (
                       <PolicyEventBar
                         events={group.events}
@@ -393,24 +372,25 @@ export default function LedgerTab({
                     )}
 
                     {/* Clean Payee Table Layout with Split Columns */}
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-sm">
                       <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-100/70 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
+                        <thead className="bg-slate-100 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                           <tr>
-                            <th className="p-3">PAYEE</th>
-                            <th className="p-3">ROLE</th>
-                            <th className="p-3">PAYOUT TYPE</th>
-                            <th className="p-3">CALCULATED FROM</th>
-                            <th className="p-3 text-right">RATE</th>
-                            <th className="p-3 text-right">GROSS AMOUNT</th>
-                            <th className="p-3 text-right">TAXES</th>
-                            <th className="p-3 text-right">NET PAYOUT</th>
-                            <th className="p-3 text-center">STATUS</th>
-                            <th className="p-3 text-right">ACTIONS</th>
-                            <th className="p-3 text-center">DETAILS</th>
+                            <th className="p-3 pl-5 text-center align-middle">PAYEE</th>
+                            <th className="p-3 text-center align-middle">ROLE</th>
+                            <th className="p-3 text-center align-middle">PAYOUT TYPE</th>
+                            <th className="p-3 text-center align-middle">CALCULATED FROM</th>
+                            <th className="p-3 text-center align-middle">RATE</th>
+                            <th className="p-3 text-center align-middle">GROSS AMOUNT</th>
+                            <th className="p-3 text-center align-middle">TAXES</th>
+                            <th className="p-3 text-center align-middle">NET PAYOUT</th>
+                            <th className="p-3 text-center align-middle">TRANSACTION DATE</th>
+                            <th className="p-3 text-center align-middle">STATUS</th>
+                            <th className="p-3 text-center align-middle">ACTIONS</th>
+                            <th className="p-3 pr-5 text-center align-middle">DETAILS</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100 bg-white">
+                        <tbody className="divide-y divide-slate-100">
                           {group.entries.map((entry) => (
                             <EntryRow
                               key={entry.id}
@@ -425,32 +405,34 @@ export default function LedgerTab({
                         </tbody>
                       </table>
                     </div>
-                  </>
+                  </div>
                 )}
-              </Card>
+              </div>
             );
           })}
-        </div>
+          </div>
+        </Card>
       ) : view === "finance" ? (
         <Card className="overflow-hidden border border-slate-200 shadow-2xs">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100/70 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3">COMM. ID</th>
-                  <th className="p-3">LEAD ID</th>
-                  <th className="p-3">PAYEE</th>
-                  <th className="p-3">ROLE</th>
-                  <th className="p-3">PAYMENT YEAR</th>
-                  <th className="p-3 text-right">RATE</th>
-                  <th className="p-3 text-right">COLLECTED PREMIUM</th>
-                  <th className="p-3 text-right">GROSS AMOUNT</th>
-                  <th className="p-3 text-right">TAXES</th>
-                  <th className="p-3 text-right">NET PAYOUT</th>
-                  <th className="p-3 text-right">PAYOUT STATUS</th>
-                  <th className="p-3 text-center">STATUS</th>
-                  <th className="p-3 text-right">ACTIONS</th>
-                  <th className="p-3 text-center">DETAILS</th>
+                  <th className="p-3 text-center align-middle">COMM. ID</th>
+                  <th className="p-3 text-center align-middle">LEAD ID</th>
+                  <th className="p-3 text-center align-middle">PAYEE</th>
+                  <th className="p-3 text-center align-middle">ROLE</th>
+                  <th className="p-3 text-center align-middle">PAYMENT YEAR</th>
+                  <th className="p-3 text-center align-middle">RATE</th>
+                  <th className="p-3 text-center align-middle">COLLECTED PREMIUM</th>
+                  <th className="p-3 text-center align-middle">GROSS AMOUNT</th>
+                  <th className="p-3 text-center align-middle">TAXES</th>
+                  <th className="p-3 text-center align-middle">NET PAYOUT</th>
+                  <th className="p-3 text-center align-middle">DATE</th>
+                  <th className="p-3 text-center align-middle">PAYOUT STATUS</th>
+                  <th className="p-3 text-center align-middle">STATUS</th>
+                  <th className="p-3 text-center align-middle">ACTIONS</th>
+                  <th className="p-3 text-center align-middle">DETAILS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800 bg-white">
@@ -475,19 +457,20 @@ export default function LedgerTab({
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-100/70 text-slate-600 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3">COMM. ID</th>
-                  <th className="p-3">LEAD ID</th>
-                  <th className="p-3">PAYEE</th>
-                  <th className="p-3">ROLE</th>
-                  <th className="p-3">CUSTOMER</th>
-                  <th className="p-3">POLICY ID</th>
-                  <th className="p-3">CHANNEL</th>
-                  <th className="p-3">SEGMENT</th>
-                  <th className="p-3">CALCULATED FROM</th>
-                  <th className="p-3 text-right">RATE</th>
-                  <th className="p-3 text-right">GROSS AMOUNT</th>
-                  <th className="p-3">RULE &amp; SECP REF</th>
-                  <th className="p-3 text-center">DETAILS</th>
+                  <th className="p-3 text-center align-middle">COMM. ID</th>
+                  <th className="p-3 text-center align-middle">LEAD ID</th>
+                  <th className="p-3 text-center align-middle">PAYEE</th>
+                  <th className="p-3 text-center align-middle">ROLE</th>
+                  <th className="p-3 text-center align-middle">CUSTOMER</th>
+                  <th className="p-3 text-center align-middle">POLICY ID</th>
+                  <th className="p-3 text-center align-middle">CHANNEL</th>
+                  <th className="p-3 text-center align-middle">SEGMENT</th>
+                  <th className="p-3 text-center align-middle">CALCULATED FROM</th>
+                  <th className="p-3 text-center align-middle">RATE</th>
+                  <th className="p-3 text-center align-middle">GROSS AMOUNT</th>
+                  <th className="p-3 text-center align-middle">DATE</th>
+                  <th className="p-3 text-center align-middle">RULE &amp; SECP REF</th>
+                  <th className="p-3 text-center align-middle">DETAILS</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800 bg-white">
@@ -603,13 +586,17 @@ function EntryRow({
 }) {
   return (
     <>
-      <tr className={`hover:bg-slate-50/80 transition-colors ${entry.parentEntryId ? "bg-slate-50/30" : ""}`}>
+      <tr className={`hover:bg-slate-50/80 transition-colors border-b border-slate-100 last:border-b-0 ${entry.parentEntryId ? "bg-slate-50/50" : ""}`}>
         {/* Col 1: PAYEE */}
-        <td className="p-3">
+        <td className={`p-3 ${entry.parentEntryId ? "pl-10" : "pl-5"}`}>
           <div className="flex items-start gap-2">
-            {entry.parentEntryId && <span className="text-slate-400 font-mono text-xs mt-0.5">└</span>}
+            {entry.parentEntryId && (
+              <svg className="w-4 h-4 text-slate-300 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+              </svg>
+            )}
             <div>
-              <p className="font-bold text-slate-900">{entry.payeeName}</p>
+              <p className={`font-bold ${entry.parentEntryId ? "text-slate-700" : "text-slate-900"}`}>{entry.payeeName}</p>
               <p className="text-[10px] font-mono text-slate-400">
                 {entry.payeeCode} · <span className="text-slate-500">{entry.id}</span>
               </p>
@@ -649,6 +636,11 @@ function EntryRow({
         {/* Col 8: NET PAYABLE */}
         <td className="p-3 text-right font-extrabold tabular-nums text-blue-700 text-xs">{fmtPKRSigned(entry.netCommission)}</td>
 
+        {/* Col 8.5: DATE */}
+        <td className="p-3 text-center text-[10px] font-mono text-slate-500 whitespace-nowrap">
+          {entry.accruedAt.split("T")[0]}
+        </td>
+
         {/* Col 9: STATUS */}
         <td className="p-3 text-center">
           <StatusPill status={entry.status} title={entry.gatingReason} />
@@ -664,11 +656,10 @@ function EntryRow({
           <button
             onClick={onToggle}
             title="Toggle full payout schedule and gating checks"
-            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all whitespace-nowrap inline-flex items-center gap-1 ${
-              expanded
-                ? "bg-blue-50 text-blue-700 border-blue-300"
-                : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
-            }`}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all whitespace-nowrap inline-flex items-center gap-1 ${expanded
+              ? "bg-blue-50 text-blue-700 border-blue-300"
+              : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
+              }`}
           >
             <span className="text-[9px]">{expanded ? "▲" : "▼"}</span>
             <span>Details</span>
@@ -676,9 +667,9 @@ function EntryRow({
         </td>
       </tr>
       {expanded && (
-        <tr className="bg-slate-50/90 border-b border-slate-200">
-          <td colSpan={11} className="p-4 space-y-3">
-            <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs space-y-3">
+        <tr className="bg-slate-100/60 border-b-2 border-slate-200/80 shadow-[inset_0_4px_6px_-4px_rgb(0,0,0,0.05)]">
+          <td colSpan={12} className="p-5 space-y-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-sm space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div className="flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-600"></span>
@@ -780,6 +771,11 @@ function FinancialLedgerRow({
           {fmtPKRSigned(entry.netCommission)}
         </td>
 
+        {/* Col 10.5: DATE */}
+        <td className="p-3 text-center text-[10px] font-mono text-slate-500 whitespace-nowrap">
+          {entry.accruedAt.split("T")[0]}
+        </td>
+
         {/* Col 11: DUE STATUS */}
         <td className="p-3 text-right">
           <DueBreakdown
@@ -804,11 +800,10 @@ function FinancialLedgerRow({
         <td className="p-3 text-center">
           <button
             onClick={onToggle}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all whitespace-nowrap inline-flex items-center gap-1 ${
-              expanded
-                ? "bg-blue-50 text-blue-700 border-blue-300"
-                : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
-            }`}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all whitespace-nowrap inline-flex items-center gap-1 ${expanded
+              ? "bg-blue-50 text-blue-700 border-blue-300"
+              : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
+              }`}
           >
             <span className="text-[9px]">{expanded ? "▲" : "▼"}</span>
             <span>Details</span>
@@ -818,7 +813,7 @@ function FinancialLedgerRow({
 
       {expanded && (
         <tr className="bg-slate-50/90 border-b border-slate-200">
-          <td colSpan={14} className="p-4 space-y-3">
+          <td colSpan={15} className="p-4 space-y-3">
             <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div className="flex items-center gap-2">
@@ -923,6 +918,11 @@ function PayeeSummaryRow({
         {/* Col 11: GROSS */}
         <td className="p-3 text-right font-bold tabular-nums text-slate-900">{fmtPKRSigned(entry.grossCommission)}</td>
 
+        {/* Col 11.5: DATE */}
+        <td className="p-3 text-center text-[10px] font-mono text-slate-500 whitespace-nowrap">
+          {entry.accruedAt.split("T")[0]}
+        </td>
+
         {/* Col 12: REGULATORY REF */}
         <td className="p-3">
           <p className="font-mono text-[10px] font-bold text-slate-700">{entry.ruleId ?? "—"}</p>
@@ -933,11 +933,10 @@ function PayeeSummaryRow({
         <td className="p-3 text-center">
           <button
             onClick={onToggle}
-            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all whitespace-nowrap inline-flex items-center gap-1 ${
-              expanded
-                ? "bg-blue-50 text-blue-700 border-blue-300"
-                : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
-            }`}
+            className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-all whitespace-nowrap inline-flex items-center gap-1 ${expanded
+              ? "bg-blue-50 text-blue-700 border-blue-300"
+              : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50 hover:text-slate-800"
+              }`}
           >
             <span className="text-[9px]">{expanded ? "▲" : "▼"}</span>
             <span>Details</span>
@@ -947,7 +946,7 @@ function PayeeSummaryRow({
 
       {expanded && (
         <tr className="bg-slate-50/90 border-b border-slate-200">
-          <td colSpan={13} className="p-4 space-y-3">
+          <td colSpan={14} className="p-4 space-y-3">
             <div className="bg-white p-4 rounded-xl border border-slate-200/90 shadow-2xs space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div className="flex items-center gap-2">

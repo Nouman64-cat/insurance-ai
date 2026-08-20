@@ -2539,3 +2539,223 @@ export async function accrueCommissionForPolicy(input: AccrualInput): Promise<Wa
   ledger.unshift(...result.entries);
   return result;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Extension: Disbursement & Treasury + Risk & Regulatory Models & Stores
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface PayoutDispatchBatch {
+  batchId: string;
+  payoutRunId: string;
+  railType: 'RAAST_BULK' | '1LINK_IBFT' | 'MCB_PAYDIRECT' | 'HBL_CORPORATE';
+  targetBankCode: string;
+  totalRecords: number;
+  totalGrossAmount: number;
+  totalWhtDeducted: number;
+  totalNetDisbursed: number;
+  status: 'QUEUED' | 'GENERATED' | 'DISPATCHED' | 'ACKNOWLEDGED' | 'FAILED';
+  fileChecksumSha256: string;
+  filePath: string;
+  dispatchedAt?: string;
+  ackReference?: string;
+}
+
+export interface SettlementRecord {
+  settlementId: string;
+  batchId: string;
+  lineItemId: string;
+  payeeId: string;
+  bankReferenceNumber: string;
+  clearingDate: string;
+  status: 'CLEARED' | 'BOUNCED' | 'DISPUTED';
+  returnReasonCode?: string;
+  returnReasonDescription?: string;
+  actionTaken: 'NONE' | 'RETURNED_TO_UNPAID' | 'HELD_FOR_REVIEW';
+}
+
+export interface CommissionHoldbackLien {
+  holdbackId: string;
+  payeeId: string;
+  category: 'SECP_LICENSE_EXPIRED' | 'FRAUD_SUSPENSION' | 'DEBT_RECOVERY' | 'COURT_LIEN';
+  withholdingPercentage: number;
+  targetAmount?: number | null;
+  accumulatedRecovered: number;
+  startDate: string;
+  endDate?: string | null;
+  status: 'ACTIVE' | 'PAUSED' | 'FULFILLED' | 'CANCELLED';
+  authorizedBy: string;
+  reasonNotes: string;
+}
+
+export interface ClawbackTransaction {
+  clawbackId: string;
+  policyNumber: string;
+  originalTransactionId: string;
+  payeeId: string;
+  roleInHierarchy: 'PRODUCER' | 'UNIT_MANAGER' | 'BRANCH_MANAGER' | 'AGENCY_DIRECTOR';
+  clawbackTrigger: 'FREE_LOOK_CANCELLATION' | 'EARLY_LAPSE' | 'DISHONORED_CHEQUE' | 'FRAUD_REVERSAL';
+  grossClawbackAmount: number;
+  taxAdjustmentAmount: number;
+  netDebitAmount: number;
+  recoveryStatus: 'FULLY_RECOVERED' | 'PARTIALLY_RECOVERED' | 'CARRIED_FORWARD_DEBT';
+  createdAt: string;
+}
+
+export interface PayeeTaxProfile {
+  payeeId: string;
+  cnicOrNtn: string;
+  fbrStatus: 'ACTIVE_FILER' | 'NON_FILER' | 'EXEMPT';
+  applicableWhtRate: number;
+  lastAtlSyncTimestamp: string;
+  taxExemptionCertificateRef?: string;
+  totalTaxWithheldYtd: number;
+}
+
+export interface SecpRegulatoryMetric {
+  fiscalYear: string;
+  productLine: 'CONVENTIONAL_INDIVIDUAL_LIFE' | 'TAKAFUL_FAMILY' | 'BANCASSURANCE';
+  totalGrossPremiumCollected: number;
+  totalDistributionExpense: number;
+  currentExpenseRatio: number;
+  secpStatutoryCapRatio: number;
+  variancePercentage: number;
+  complianceStatus: 'COMPLIANT' | 'WARNING_85_PERCENT' | 'BREACHED';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Generators and stores for the 6 new modules
+// ─────────────────────────────────────────────────────────────────────────────
+
+let dispatchBatchesCache: PayoutDispatchBatch[] | null = null;
+let settlementsCache: SettlementRecord[] | null = null;
+let holdbacksCache: CommissionHoldbackLien[] | null = null;
+let clawbacksCache: ClawbackTransaction[] | null = null;
+let taxProfilesCache: PayeeTaxProfile[] | null = null;
+let secpMetricsCache: SecpRegulatoryMetric[] | null = null;
+
+export async function listPayoutDispatchBatches(): Promise<PayoutDispatchBatch[]> {
+  if (dispatchBatchesCache) return dispatchBatchesCache;
+  const runs = await listPayoutRuns();
+  dispatchBatchesCache = runs.map((run, i) => ({
+    batchId: `BATCH-${run.id}`,
+    payoutRunId: run.id,
+    railType: i % 2 === 0 ? '1LINK_IBFT' : 'RAAST_BULK',
+    targetBankCode: 'MEZ',
+    totalRecords: Math.floor(Math.random() * 50) + 10,
+    totalGrossAmount: run.totalGross,
+    totalWhtDeducted: run.totalWithheld,
+    totalNetDisbursed: run.totalNet,
+    status: i === 0 ? 'GENERATED' : 'ACKNOWLEDGED',
+    fileChecksumSha256: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`,
+    filePath: `/sftp/outbound/PAYOUT_${run.id}.csv`,
+    dispatchedAt: i === 0 ? undefined : run.createdAt,
+    ackReference: i === 0 ? undefined : `1LINK-ACK-${Math.floor(Math.random() * 1000000)}`
+  }));
+  return dispatchBatchesCache;
+}
+
+export async function listSettlementRecords(): Promise<SettlementRecord[]> {
+  if (settlementsCache) return settlementsCache;
+  const payees = await listPayees();
+  settlementsCache = payees.slice(0, 15).map((p, i) => ({
+    settlementId: `SETTL-${Math.floor(Math.random() * 90000) + 10000}`,
+    batchId: `BATCH-RUN-${Math.floor(Math.random() * 10) + 1}`,
+    lineItemId: `LI-${Math.floor(Math.random() * 90000) + 10000}`,
+    payeeId: p.id,
+    bankReferenceNumber: `BNK-${Math.floor(Math.random() * 9000000) + 1000000}`,
+    clearingDate: new Date().toISOString(),
+    status: i % 5 === 0 ? 'BOUNCED' : 'CLEARED',
+    returnReasonCode: i % 5 === 0 ? 'TITLE_MISMATCH' : undefined,
+    returnReasonDescription: i % 5 === 0 ? 'Beneficiary name does not match account title' : undefined,
+    actionTaken: i % 5 === 0 ? 'RETURNED_TO_UNPAID' : 'NONE'
+  }));
+  return settlementsCache;
+}
+
+export async function listHoldbacks(): Promise<CommissionHoldbackLien[]> {
+  if (holdbacksCache) return holdbacksCache;
+  const payees = await listPayees();
+  holdbacksCache = payees.slice(0, 5).map((p, i) => ({
+    holdbackId: `HOLD-${Math.floor(Math.random() * 9000) + 1000}`,
+    payeeId: p.id,
+    category: i === 0 ? 'FRAUD_SUSPENSION' : (i % 2 === 0 ? 'SECP_LICENSE_EXPIRED' : 'DEBT_RECOVERY'),
+    withholdingPercentage: i === 0 ? 100 : 50,
+    targetAmount: i === 0 ? null : (Math.floor(Math.random() * 100000) + 10000),
+    accumulatedRecovered: i === 0 ? 0 : (Math.floor(Math.random() * 10000) + 1000),
+    startDate: new Date(Date.now() - 1000000000).toISOString(),
+    status: 'ACTIVE',
+    authorizedBy: 'Compliance Officer (M. Arslan)',
+    reasonNotes: i === 0 ? 'Pending investigation for mis-selling' : 'Standard debt recovery schedule'
+  }));
+  return holdbacksCache;
+}
+
+export async function listClawbacks(): Promise<ClawbackTransaction[]> {
+  if (clawbacksCache) return clawbacksCache;
+  const payees = await listPayees();
+  clawbacksCache = Array.from({ length: 8 }).map((_, i) => ({
+    clawbackId: `CB-${Math.floor(Math.random() * 90000) + 10000}`,
+    policyNumber: `PL-ADAM-${Math.floor(Math.random() * 9000) + 1000}`,
+    originalTransactionId: `TRX-${Math.floor(Math.random() * 90000) + 10000}`,
+    payeeId: payees[i % payees.length].id,
+    roleInHierarchy: i % 3 === 0 ? 'BRANCH_MANAGER' : 'PRODUCER',
+    clawbackTrigger: i % 4 === 0 ? 'FREE_LOOK_CANCELLATION' : 'EARLY_LAPSE',
+    grossClawbackAmount: (Math.floor(Math.random() * 50000) + 5000),
+    taxAdjustmentAmount: (Math.floor(Math.random() * 5000) + 500),
+    netDebitAmount: (Math.floor(Math.random() * 45000) + 4500),
+    recoveryStatus: i % 2 === 0 ? 'FULLY_RECOVERED' : 'CARRIED_FORWARD_DEBT',
+    createdAt: new Date(Date.now() - (Math.random() * 10000000000)).toISOString()
+  }));
+  return clawbacksCache;
+}
+
+export async function listTaxProfiles(): Promise<PayeeTaxProfile[]> {
+  if (taxProfilesCache) return taxProfilesCache;
+  const payees = await listPayees();
+  taxProfilesCache = payees.map((p, i) => ({
+    payeeId: p.id,
+    cnicOrNtn: p.taxId || `42101-${Math.floor(Math.random() * 9000000) + 1000000}-1`,
+    fbrStatus: i % 10 === 0 ? 'NON_FILER' : 'ACTIVE_FILER',
+    applicableWhtRate: i % 10 === 0 ? 0.20 : 0.10,
+    lastAtlSyncTimestamp: new Date().toISOString(),
+    totalTaxWithheldYtd: Math.floor(Math.random() * 50000) + 1000
+  }));
+  return taxProfilesCache;
+}
+
+export async function listSecpMetrics(): Promise<SecpRegulatoryMetric[]> {
+  if (secpMetricsCache) return secpMetricsCache;
+  secpMetricsCache = [
+    {
+      fiscalYear: '2026',
+      productLine: 'CONVENTIONAL_INDIVIDUAL_LIFE',
+      totalGrossPremiumCollected: 1500000000,
+      totalDistributionExpense: 850000000,
+      currentExpenseRatio: 56.67,
+      secpStatutoryCapRatio: 65.00,
+      variancePercentage: 8.33,
+      complianceStatus: 'COMPLIANT'
+    },
+    {
+      fiscalYear: '2026',
+      productLine: 'BANCASSURANCE',
+      totalGrossPremiumCollected: 5000000000,
+      totalDistributionExpense: 3200000000,
+      currentExpenseRatio: 64.00,
+      secpStatutoryCapRatio: 65.00,
+      variancePercentage: 1.00,
+      complianceStatus: 'WARNING_85_PERCENT'
+    },
+    {
+      fiscalYear: '2026',
+      productLine: 'TAKAFUL_FAMILY',
+      totalGrossPremiumCollected: 800000000,
+      totalDistributionExpense: 490000000,
+      currentExpenseRatio: 61.25,
+      secpStatutoryCapRatio: 60.00,
+      variancePercentage: -1.25,
+      complianceStatus: 'BREACHED'
+    }
+  ];
+  return secpMetricsCache;
+}
