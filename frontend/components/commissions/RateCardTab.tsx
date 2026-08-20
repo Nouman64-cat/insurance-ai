@@ -62,7 +62,7 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
     <div className="space-y-4">
       <Card
         title="Commission Types"
-        subtitle="Rules and rates by channel"
+        // subtitle="Rules and rates by channel"
         actions={
           <>
             <select
@@ -107,11 +107,11 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
                   <tr className="bg-white text-slate-500 uppercase text-[10px] tracking-wider border-b border-slate-200 font-semibold">
                     <th className="py-3 px-5">COMM. ID</th>
                     <th className="py-3 px-5">DESCRIPTION</th>
-                    <th className="py-3 px-5">PAYEE</th>
+                    <th className="py-3 px-5">Role</th>
                     <th className="py-3 px-5 text-center">COMM. TYPE</th>
-                    <th className="py-3 px-5 text-right">RATE</th>
+                    <th className="py-3 px-5 text-right">Comm. RATE</th>
                     <th className="py-3 px-5">TO BE APPLIED WHEN</th>
-                    <th className="py-3 px-5">TRIGGERS ON</th>
+                    <th className="py-3 px-5">TRIGGERS WHEN</th>
                     <th className="py-3 px-5">EFF. FROM</th>
                     <th className="py-3 px-5 text-center">COMM. REF</th>
                   </tr>
@@ -175,11 +175,10 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
                           <td className="py-3.5 px-5 text-center">
                             <span
                               title={rule.secpRef}
-                              className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border cursor-help ${
-                                rule.refStatus === "STATUTORY"
-                                  ? "bg-amber-50 text-amber-800 border-amber-200"
-                                  : "bg-slate-50 text-slate-600 border-slate-200"
-                              }`}
+                              className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold border cursor-help ${rule.refStatus === "STATUTORY"
+                                ? "bg-amber-50 text-amber-800 border-amber-200"
+                                : "bg-slate-50 text-slate-600 border-slate-200"
+                                }`}
                             >
                               {rule.refStatus}
                             </span>

@@ -217,30 +217,80 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
-      },
+      }
+    ],
+  },
+  {
+    group: "Commissions & Financials",
+    links: [
       {
-        href: "/commissions",
-        label: "Commissions",
+        href: "#admin",
+        label: "Commission Admin & Hierarchy",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="15" y1="9" x2="9" y2="15" />
-            <circle cx="9.5" cy="9.5" r="1" fill="currentColor" />
-            <circle cx="14.5" cy="14.5" r="1" fill="currentColor" />
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
           </svg>
         ),
         badge: null,
+        subLinks: [
+          { href: "/commissions", label: "Admin Dashboard" },
+          { href: "/commissions/types", label: "Rate Cards & Schemes" },
+          { href: "/commissions/payees", label: "Payees & Hierarchy" },
+          { href: "/commissions/bonuses", label: "Incentive Engine" },
+          { href: "/commissions/calculator", label: "Commission Simulator" },
+        ]
       },
       {
-        href: "/commission-ops",
-        label: "Commission Ops",
+        href: "#ops",
+        label: "Commission Operations",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            <path d="M9 14l2 2 4-4" />
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
           </svg>
         ),
         badge: null,
+        subLinks: [
+          { href: "/commission-ops", label: "Ops Dashboard" },
+          { href: "/commission-ops/ledger", label: "Accrual Feed" },
+          { href: "/commission-ops/statements", label: "Payee Statements" },
+        ]
+      },
+      {
+        href: "/treasury",
+        label: "Disbursement & Treasury",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <rect x="2" y="5" width="20" height="14" rx="2" />
+            <line x1="2" y1="10" x2="22" y2="10" />
+          </svg>
+        ),
+        badge: null,
+        subLinks: [
+          { href: "/treasury/runs", label: "Batch Payout Runs" },
+          { href: "/treasury/banking", label: "Banking Gateway" },
+          { href: "/treasury/settlement", label: "Payment Settlement" },
+          { href: "/treasury/holdbacks", label: "Holdbacks & Lien" },
+        ]
+      },
+      {
+        href: "/risk",
+        label: "Risk, Clawbacks & Regulatory",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="M12 8v4" />
+            <path d="M12 16h.01" />
+          </svg>
+        ),
+        badge: null,
+        subLinks: [
+          { href: "/risk/clawbacks", label: "Clawback Engine" },
+          { href: "/risk/tax", label: "FBR Tax Regimes" },
+          { href: "/risk/secp", label: "SECP Expense Cap" },
+        ]
       },
     ],
   },

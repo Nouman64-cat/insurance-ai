@@ -86,11 +86,10 @@ export default function PayeesTab({
           <button
             key={c.type}
             onClick={() => setTypeFilter(typeFilter === c.type ? "all" : c.type)}
-            className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${
-              typeFilter === c.type
+            className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all ${typeFilter === c.type
                 ? "bg-blue-600 text-white border-blue-600"
                 : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-            }`}
+              }`}
           >
             {PAYEE_TYPE_LABELS[c.type]}
             <span className={`ml-2 font-mono ${typeFilter === c.type ? "text-blue-100" : "text-slate-400"}`}>
@@ -101,8 +100,8 @@ export default function PayeesTab({
       </div>
 
       <Card
-        title="Payees & Hierarchy"
-        subtitle="List of all agents, managers, banks, and partners entitled to receive commissions"
+        title="Payees"
+        // subtitle="List of all agents, managers, banks, and partners entitled to receive commissions"
         actions={
           <>
             <div className="flex rounded-xl border border-slate-200 overflow-hidden">
@@ -112,12 +111,12 @@ export default function PayeesTab({
               >
                 Table View
               </button>
-              <button
+              {/* <button
                 onClick={() => setView("hierarchy")}
                 className={`px-3 py-1.5 text-[11px] font-bold ${view === "hierarchy" ? "bg-blue-600 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
               >
                 Tree View
-              </button>
+              </button> */}
             </div>
             <button
               onClick={() => setShowAdd(true)}
@@ -161,16 +160,16 @@ export default function PayeesTab({
           </select>
         </div>
 
-        {view === "hierarchy" ? (
+        {/* view === "hierarchy" ? (
           <HierarchyView payees={filtered} allPayees={payees} />
-        ) : filtered.length === 0 ? (
+        ) : */} {filtered.length === 0 ? (
           <EmptyState message="No payees match these filters." />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="p-3">PAYEE</th>
+                  <th className="p-3">PAYEE NAME</th>
                   <th className="p-3">TYPE</th>
                   <th className="p-3">SOURCE</th>
                   <th className="p-3">PAYEE LIC. REF.</th>
@@ -199,11 +198,10 @@ export default function PayeesTab({
                         <button
                           onClick={() => toggleStatus(p)}
                           title="Suspending a payee blocks every payout to them"
-                          className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${
-                            p.status === "ACTIVE"
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-semibold border ${p.status === "ACTIVE"
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                               : "bg-amber-50 text-amber-800 border-amber-200"
-                          }`}
+                            }`}
                         >
                           {p.status}
                         </button>
@@ -280,9 +278,8 @@ function HierarchyView({ payees, allPayees }: { payees: CommissionPayee[]; allPa
         )}
 
         <div
-          className={`flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border bg-white shadow-2xs hover:shadow-xs transition-all ${
-            selfVisible ? "border-slate-200 hover:border-blue-300" : "border-slate-100 opacity-40"
-          }`}
+          className={`flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-xl border bg-white shadow-2xs hover:shadow-xs transition-all ${selfVisible ? "border-slate-200 hover:border-blue-300" : "border-slate-100 opacity-40"
+            }`}
         >
           <div className="flex items-center gap-3 min-w-0">
             {getPayeeIcon(payee.type)}
@@ -313,11 +310,10 @@ function HierarchyView({ payees, allPayees }: { payees: CommissionPayee[]; allPa
               </span>
             )}
             <span
-              className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
-                payee.status === "ACTIVE"
+              className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${payee.status === "ACTIVE"
                   ? "bg-emerald-50 text-emerald-700 border-emerald-200"
                   : "bg-amber-50 text-amber-800 border-amber-200"
-              }`}
+                }`}
             >
               {payee.status}
             </span>
