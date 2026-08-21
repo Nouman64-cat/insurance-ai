@@ -133,7 +133,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
 async def _proxy_to_tenant(request: Request, url: str) -> Response:
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         headers = dict(request.headers)
         headers.pop("host", None)
         body = await request.body()
@@ -146,7 +146,12 @@ async def _proxy_to_tenant(request: Request, url: str) -> Response:
                 content=body,
                 timeout=120.0,
             )
-            return Response(content=resp.content, status_code=resp.status_code, headers=dict(resp.headers))
+            resp_headers = dict(resp.headers)
+            if "location" in resp_headers:
+                loc = resp_headers["location"]
+                loc = loc.replace("http://tenant-service:8001", "http://localhost:8010")
+                resp_headers["location"] = loc
+            return Response(content=resp.content, status_code=resp.status_code, headers=resp_headers)
         except httpx.HTTPError as exc:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Error connecting to tenant service: {exc}")
 
@@ -914,4 +919,28 @@ async def update_branch(branch_id: UUID, request: Request, token: str = Depends(
 )
 async def delete_branch(branch_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/branches/{branch_id}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Claims Management — proxied to tenant-service
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.api_route(
+    "/tenants/{tenant_id}/claims",
+    methods=["GET", "POST"],
+    tags=["Claims"],
+    summary="List or create claims",
+)
+async def proxy_claims(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/claims")
+
+
+@app.api_route(
+    "/tenants/{tenant_id}/claims/{path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
+    tags=["Claims"],
+    summary="Proxy claim sub-resource operations",
+)
+async def proxy_claim_subroutes(tenant_id: UUID, path: str, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/claims/{path}")
 

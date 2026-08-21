@@ -15,7 +15,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import decode_access_token, oauth2_scheme
 from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
-from shared.models.core import Artifact, Case, Tenant, User
+from shared.models.core import Artifact, Case, Claim, Policy, Tenant, User
 
 router = APIRouter(prefix="/tenants", tags=["Artifacts"])
 
@@ -33,6 +33,7 @@ SUPPORTED_MIME = {
     "jpeg": "image/jpeg",
     "tiff": "image/tiff",
     "bmp": "image/bmp",
+    "heic": "image/heic",
 }
 
 
@@ -198,6 +199,116 @@ async def upload_artifact(
         )
 
     return _artifact_response(artifact, s3_key, request)
+
+
+@router.post(
+    "/{tenant_id}/claims/{claim_id}/artifacts",
+    status_code=202,
+    summary="Upload claim document — S3 sync, OCR async via Kafka",
+)
+async def upload_claim_artifact(
+    request: Request,
+    tenant_id: UUID,
+    claim_id: UUID,
+    document_type: str = Form(..., description="e.g. Hospital Bill, Discharge Summary, Death Certificate, CNIC"),
+    file: UploadFile = File(...),
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    user_id = await _get_current_user_id(token)
+
+    tenant = await session.get(Tenant, tenant_id)
+    if tenant is None or not tenant.is_active:
+        raise HTTPException(status_code=404, detail="Tenant not found or inactive")
+
+    claim = await session.get(Claim, claim_id)
+    if claim is None or claim.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    ext = (file.filename or "").lower().rsplit(".", 1)[-1]
+    if ext not in SUPPORTED_MIME:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type '.{ext}'. Allowed: {', '.join(SUPPORTED_MIME)}",
+        )
+    mime_type = SUPPORTED_MIME[ext]
+
+    file_bytes = await file.read()
+    artifact_id = uuid4()
+    s3_key = f"{tenant_id}/claims/{claim_id}/{artifact_id}/{file.filename}"
+
+    loop = asyncio.get_running_loop()
+    try:
+        storage_url = await loop.run_in_executor(
+            None, lambda: _upload_to_s3(file_bytes, s3_key, mime_type)
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"S3 upload failed: {exc}")
+
+    policy = await session.get(Policy, claim.policy_id)
+    cust_id = policy.customer_id if policy else None
+
+    artifact = Artifact(
+        id=artifact_id,
+        tenant_id=tenant_id,
+        claim_id=claim_id,
+        case_id=claim.case_id,
+        customer_id=cust_id,
+        uploaded_by=user_id,
+        document_type=document_type,
+        file_name=file.filename,
+        file_size=len(file_bytes),
+        file_type=mime_type,
+        storage_url=storage_url,
+        ocr_result=None,
+        ocr_confidence_score=0.0,
+        authenticity_score=1.0,
+        quality_score=1.0,
+        status="Processing",
+    )
+    session.add(artifact)
+    await session.commit()
+    await session.refresh(artifact)
+
+    event = ArtifactOCRRequestedEvent(
+        tenant_id=tenant_id,
+        payload=ArtifactOCRPayload(
+            artifact_id=artifact_id,
+            tenant_id=tenant_id,
+            case_id=claim.case_id or claim_id,
+            s3_key=s3_key,
+            file_name=file.filename or "",
+            mime_type=mime_type,
+        ),
+    )
+    try:
+        producer: AIOKafkaProducer = request.app.state.kafka_producer
+        await producer.send_and_wait(
+            OCR_TOPIC,
+            value=event.model_dump_json(),
+            key=str(artifact_id),
+        )
+    except Exception as exc:
+        import logging
+        logging.getLogger("tenant-service.artifacts").warning(
+            "Kafka publish failed for artifact %s: %s", artifact_id, exc
+        )
+
+    return _artifact_response(artifact, s3_key, request)
+
+
+@router.get("/{tenant_id}/claims/{claim_id}/artifacts", summary="List artifacts for a claim")
+async def list_claim_artifacts(
+    request: Request,
+    tenant_id: UUID,
+    claim_id: UUID,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_current_user_id(token)
+    stmt = select(Artifact).where(Artifact.tenant_id == tenant_id, Artifact.claim_id == claim_id)
+    artifacts = (await session.exec(stmt)).all()
+    return [_artifact_response(a, a.storage_url.replace(f"https://{_S3_BUCKET}.s3.{_AWS_REGION}.amazonaws.com/", ""), request) for a in artifacts]
 
 
 @router.get("/{tenant_id}/cases/{case_id}/artifacts", summary="List artifacts for a case")

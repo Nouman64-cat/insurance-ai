@@ -876,27 +876,97 @@ class RiskAssessment(SQLModel, table=True):
 # Claim  —  a benefit claim filed against an active policy
 # ─────────────────────────────────────────────────────────────────────────────
 
+class ClaimStatusEnum(str, Enum):
+    NEW = "New"
+    TRIAGED = "Triaged"
+    UNDER_INVESTIGATION = "Under Investigation"
+    PENDING_DOCUMENTS = "Pending Documents"
+    APPROVED = "Approved"
+    PARTIAL_APPROVAL = "Partial Approval"
+    DECLINED = "Declined"
+    REFERRED_TO_MANAGER = "Referred to Manager"
+    REINSURANCE_REFERRED = "Reinsurance Referred"
+    SETTLED = "Settled"
+    CLOSED = "Closed"
+
+
 class Claim(SQLModel, table=True):
     __tablename__ = "claims"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
     policy_id: UUID = Field(foreign_key="policies.id", index=True, nullable=False)
+    case_id: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", nullable=True)
 
-    claim_type: str = Field(max_length=100)         # e.g. 'Hospitalization', 'Death', 'Reimbursement'
+    claim_number: Optional[str] = Field(default=None, max_length=50, index=True)
+    claim_type: str = Field(max_length=100)         # e.g. 'Hospitalization', 'Surgery', 'Death Claim', 'Reimbursement'
     submitted_amount: float = Field(ge=0)
     approved_amount: float = Field(default=0, ge=0)
-    status: str = Field(max_length=50)              # e.g. 'Approved', 'Rejected', 'Investigation'
-    fraud_probability: float = Field(ge=0.0, le=1.0)
+    status: ClaimStatusEnum = Field(default=ClaimStatusEnum.NEW, max_length=50)
+    fraud_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     duplicate_flag: bool = Field(default=False)
-    ai_recommendation: str = Field(max_length=500)
+    ai_recommendation: Optional[str] = Field(default=None, max_length=500)
+
+    incident_date: Optional[date] = Field(default=None)
+    reported_date: date = Field(default_factory=date.today)
+    assigned_adjuster_id: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+    reinsurance_referral_id: Optional[UUID] = Field(default=None, foreign_key="reinsurance_referrals.id", nullable=True)
+    settlement_amount: Optional[float] = Field(default=None)
+    settled_at: Optional[datetime] = Field(default=None)
+    closed_at: Optional[datetime] = Field(default=None)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="claims")
     policy: Optional[Policy] = Relationship(back_populates="claims")
+    case: Optional["Case"] = Relationship()
+    assigned_adjuster: Optional["User"] = Relationship()
     artifacts: List["Artifact"] = Relationship(back_populates="claim")
+    status_history: List["ClaimStatusHistory"] = Relationship(
+        back_populates="claim", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    payouts: List["ClaimPayout"] = Relationship(
+        back_populates="claim", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+
+class ClaimStatusHistory(SQLModel, table=True):
+    __tablename__ = "claim_status_histories"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    claim_id: UUID = Field(foreign_key="claims.id", index=True, nullable=False)
+
+    from_status: Optional[str] = Field(default=None, max_length=50)
+    to_status: str = Field(max_length=50)
+    actor_id: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    claim: Optional[Claim] = Relationship(back_populates="status_history")
+    actor: Optional["User"] = Relationship()
+
+
+class ClaimPayout(SQLModel, table=True):
+    __tablename__ = "claim_payouts"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    claim_id: UUID = Field(foreign_key="claims.id", index=True, nullable=False)
+
+    amount: float = Field(ge=0)
+    method: str = Field(default="Bank Transfer", max_length=50)
+    status: str = Field(default="Initiated", max_length=50)
+    initiated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    completed_at: Optional[datetime] = Field(default=None)
+    reference_number: Optional[str] = Field(default=None, max_length=100)
+    notes: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+    claim: Optional[Claim] = Relationship(back_populates="payouts")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1079,6 +1149,7 @@ class SourceChannelEnum(str, Enum):
     ONLINE = "Online"
     BRANCH = "Branch"
     MOBILE = "Mobile"
+    PORTAL = "Portal"
 
 class StatusCategoryEnum(str, Enum):
     OPEN = "Open"

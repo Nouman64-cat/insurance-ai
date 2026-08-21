@@ -27,14 +27,14 @@ export default function StatementsPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Payee Statements</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Commission Statements</span>
+            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Commission Statements</span> */}
           </div>
         </div>
       </div>
       {loading && statements.length === 0 ? (
-         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading statements...</div>
+        <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading statements...</div>
       ) : (
-         <StatementsTab statements={statements} />
+        <StatementsTab statements={statements} />
       )}
     </div>
   );

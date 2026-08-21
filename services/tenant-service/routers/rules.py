@@ -796,6 +796,37 @@ _DEFAULT_RULE_SETS = [
             },
         ],
     },
+    {
+        "code": "RS-CLM-001",
+        "name": "Claims Auto-Adjudication",
+        "description": "Rules for automated claims triage, fraud detection, and adjuster threshold limits.",
+        "category_code": "CLAIMS_ADJUDICATION", "sub_code": "CLAIM_TRIAGE", "sub_name": "Claims Triage & Thresholds",
+        "scope_type": "GLOBAL", "channel_code": None,
+        "rules": [
+            {
+                "code": "CLM-ADJ-01", "name": "Low Value Fast-Track Auto-Approve", "priority": 1, "operator": "ALL",
+                "conditions": [
+                    {"field": "submitted_amount", "operator": "lte", "value": 100000},
+                    {"field": "fraud_probability", "operator": "lt", "value": 0.15},
+                    {"field": "duplicate_flag", "operator": "boolean", "value": False},
+                ],
+                "action_outcome": "AUTO_APPROVE",
+                "outcome_payload": {"terminal": True, "reason": "Claim under PKR 100,000 with low fraud score automatically approved for payout."},
+            },
+            {
+                "code": "CLM-ADJ-02", "name": "High Fraud Score Investigation", "priority": 2, "operator": "ALL",
+                "conditions": [{"field": "fraud_probability", "operator": "gte", "value": 0.70}],
+                "action_outcome": "FLAG_FOR_INVESTIGATION",
+                "outcome_payload": {"terminal": True, "reason": "High fraud probability score (>= 70%). Special investigation unit review required."},
+            },
+            {
+                "code": "CLM-ADJ-03", "name": "High Value Manager Referral", "priority": 3, "operator": "ALL",
+                "conditions": [{"field": "submitted_amount", "operator": "gt", "value": 2000000}],
+                "action_outcome": "REFER_TO_MANAGER",
+                "outcome_payload": {"terminal": True, "reason": "Claim amount exceeds PKR 2,000,000 adjuster limit. Manager approval mandatory."},
+            },
+        ],
+    },
 ]
 
 # Category.code -> display name, 1:1 with the retired RuleDomainEnum values.
@@ -810,6 +841,7 @@ _CATEGORY_SEED = [
     ("RBAC_AUTHORIZATION", "Role Authorization Rules"),
     ("AI_DECISION_BANDS", "AI Underwriting Risk Bands"),
     ("REINSURANCE", "Reinsurance & Retention"),
+    ("CLAIMS_ADJUDICATION", "Claims Auto-Adjudication"),
 ]
 
 # channel_code -> (min_entry_age, max_entry_age, max_maturity_age, min_sum_assured)
