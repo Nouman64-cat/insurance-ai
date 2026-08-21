@@ -178,9 +178,9 @@ export default function CommissionOpsPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Commission Ops</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
               Operations &amp; Execution
-            </span>
+            </span> */}
           </div>
           <p className="text-xs text-slate-500 mt-1">
             {/* Execute disburse &amp; hold workflows, track policy stack ledgers, trigger payout runs, and issue payee stubs */}

@@ -28,27 +28,27 @@ export default function ClawbackEnginePage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Clawback Engine</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Risk & Regulatory</span>
+            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Risk & Regulatory</span> */}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
+          {/* <p className="text-xs text-slate-500 mt-1">
             Automated recoveries for policy cancellations, chargebacks, and lapses.
-          </p>
+          </p> */}
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between">
-           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">14-Day Free-Look Recoveries</div>
-           <div className="text-2xl font-bold text-slate-900">100% FYC</div>
-           <div className="text-xs text-slate-400 mt-1">Immediate reversal of First-Year Commission</div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">14-Day Free-Look Recoveries</div>
+          <div className="text-2xl font-bold text-slate-900">100% FYC</div>
+          <div className="text-xs text-slate-400 mt-1">Immediate reversal of First-Year Commission</div>
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-5 flex flex-col justify-between">
-           <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Multi-Tier Cascade Engine</div>
-           <div className="text-xs text-slate-600 space-y-1">
-             <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Agent Split Reversal</span></div>
-             <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Unit Manager Override Reversal</span></div>
-             <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Branch Manager Override Reversal</span></div>
-           </div>
+          <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Multi-Tier Cascade Engine</div>
+          <div className="text-xs text-slate-600 space-y-1">
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Agent Split Reversal</span></div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Unit Manager Override Reversal</span></div>
+            <div className="flex items-center gap-2"><span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span> <span>Branch Manager Override Reversal</span></div>
+          </div>
         </div>
       </div>
 
@@ -94,11 +94,10 @@ export default function ClawbackEnginePage() {
                       <div className="font-bold text-rose-700">(Rs. {c.netDebitAmount.toLocaleString()})</div>
                     </td>
                     <td className="px-5 py-3">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        c.recoveryStatus === 'FULLY_RECOVERED' ? 'bg-emerald-100 text-emerald-800' :
-                        c.recoveryStatus === 'CARRIED_FORWARD_DEBT' ? 'bg-rose-100 text-rose-800' :
-                        'bg-amber-100 text-amber-800'
-                      }`}>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${c.recoveryStatus === 'FULLY_RECOVERED' ? 'bg-emerald-100 text-emerald-800' :
+                          c.recoveryStatus === 'CARRIED_FORWARD_DEBT' ? 'bg-rose-100 text-rose-800' :
+                            'bg-amber-100 text-amber-800'
+                        }`}>
                         {c.recoveryStatus.replace(/_/g, ' ')}
                       </span>
                       {c.recoveryStatus === 'CARRIED_FORWARD_DEBT' && (

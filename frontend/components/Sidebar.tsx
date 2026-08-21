@@ -207,6 +207,19 @@ const NAV_ITEMS = [
     group: "Insurance Operations",
     links: [
       {
+        href: "/claims",
+        label: "Claims",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
         href: "/renewals",
         label: "Renewals",
         icon: (
@@ -221,11 +234,11 @@ const NAV_ITEMS = [
     ],
   },
   {
-    group: "Commissions & Financials",
+    group: "Financials",
     links: [
       {
         href: "#admin",
-        label: "Commission Admin & Hierarchy",
+        label: "Administration",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <rect x="3" y="3" width="7" height="7" rx="1" />
@@ -237,15 +250,15 @@ const NAV_ITEMS = [
         badge: null,
         subLinks: [
           { href: "/commissions", label: "Admin Dashboard" },
-          { href: "/commissions/types", label: "Rate Cards & Schemes" },
-          { href: "/commissions/payees", label: "Payees & Hierarchy" },
-          { href: "/commissions/bonuses", label: "Incentive Engine" },
-          { href: "/commissions/calculator", label: "Commission Simulator" },
+          { href: "/commissions/types", label: "Commission Types" },
+          { href: "/commissions/payees", label: "Roles" },
+          { href: "/commissions/bonuses", label: "Bonuses" },
+          { href: "/commissions/calculator", label: "Calculator" },
         ]
       },
       {
         href: "#ops",
-        label: "Commission Operations",
+        label: "Operations",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -260,7 +273,7 @@ const NAV_ITEMS = [
       },
       {
         href: "/treasury",
-        label: "Disbursement & Treasury",
+        label: "Disbursement",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <rect x="2" y="5" width="20" height="14" rx="2" />
@@ -270,14 +283,13 @@ const NAV_ITEMS = [
         badge: null,
         subLinks: [
           { href: "/treasury/runs", label: "Batch Payout Runs" },
-          { href: "/treasury/banking", label: "Banking Gateway" },
           { href: "/treasury/settlement", label: "Payment Settlement" },
           { href: "/treasury/holdbacks", label: "Holdbacks & Lien" },
         ]
       },
       {
         href: "/risk",
-        label: "Risk, Clawbacks & Regulatory",
+        label: "Compliance",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
@@ -884,21 +896,35 @@ export function Sidebar() {
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
-        // Append any groups added to NAV_ITEMS since the order was saved, so new
-        // sections (e.g. Policy Management) still surface for returning users.
-        const savedGroups = new Set(parsed.map((g: any) => g.group));
+        const validGroupNames = new Set(NAV_ITEMS.map((g: any) => g.group).filter(Boolean));
+
+        // Filter out obsolete groups that no longer exist in NAV_ITEMS
+        const validParsed = Array.isArray(parsed)
+          ? parsed.filter((g: any) => g.group && validGroupNames.has(g.group))
+          : [];
+
+        // Append any groups added to NAV_ITEMS since order was saved
+        const savedGroups = new Set(validParsed.map((g: any) => g.group));
         NAV_ITEMS.forEach((g: any) => {
           if (g.group && !savedGroups.has(g.group)) {
-            parsed.push({ group: g.group, links: g.links.map((l: any) => l.href) });
+            validParsed.push({ group: g.group, links: g.links.map((l: any) => l.href) });
           }
         });
-        // Merge any remaining new links (from existing groups) into the first group.
-        const allSavedHrefs = new Set(parsed.flatMap((g: any) => g.links));
+
+        // Merge any remaining new links into their respective target groups
+        const allSavedHrefs = new Set(validParsed.flatMap((g: any) => g.links));
         const missingLinks = NAV_ITEMS.flatMap((g: any) => g.links).filter((l: any) => !allSavedHrefs.has(l.href));
-        if (missingLinks.length > 0 && parsed.length > 0) {
-          parsed[0].links.push(...missingLinks.map((l: any) => l.href));
+        if (missingLinks.length > 0 && validParsed.length > 0) {
+          missingLinks.forEach((l: any) => {
+            const origGroup = NAV_ITEMS.find((g: any) => g.links.some((link: any) => link.href === l.href));
+            const targetGroup = validParsed.find((g: any) => g.group === origGroup?.group) || validParsed[0];
+            if (targetGroup && !targetGroup.links.includes(l.href)) {
+              targetGroup.links.push(l.href);
+            }
+          });
         }
-        setNavOrder(parsed);
+        setNavOrder(validParsed);
+        localStorage.setItem("sidebar_nav_order", JSON.stringify(validParsed));
       } catch (e) { }
     }
   }, []);

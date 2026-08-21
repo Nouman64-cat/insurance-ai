@@ -28,7 +28,7 @@ export default function BankingGatewayPage() {
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Banking Gateway</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Disbursement & Treasury</span>
+            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">Disbursement & Treasury</span> */}
           </div>
           <p className="text-xs text-slate-500 mt-1">
             Manage API integrations for 1LINK, Raast, and multi-bank settlement rails.

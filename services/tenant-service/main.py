@@ -68,6 +68,7 @@ from routers.initial_premium_payment import router as initial_premium_payment_ro
 from routers.insurance_history import router as insurance_history_router
 from routers.medical_exam import router as medical_exam_router
 from routers.reinsurance import router as reinsurance_router
+from routers.claims import router as claims_router
 from routers.demo import router as demo_router
 from routers.rules import router as rules_router
 # STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
@@ -82,6 +83,8 @@ _SEED_ROLES = [
     ("SuperAdmin",  "Platform-level access — create tenants and bootstrap their first Admin."),
     ("Admin",       "Full tenant access — manage that tenant's users and all resources."),
     ("Underwriter", "Evaluate proposals, review risk assessments, and make decisions."),
+    ("ClaimsAdjuster", "Triage claims, verify documentation, evaluate benefit eligibility and issue payouts."),
+    ("ClaimsManager",  "Oversee claims department, approve high-value claims, manage adjusters and fraud reviews."),
     ("Agent",       "Submit proposals and track their status."),
     ("Viewer",      "Read-only access to dashboards and reports."),
 ]
@@ -191,6 +194,7 @@ app.include_router(insurance_history_router)
 app.include_router(medical_exam_router)
 # Post-underwriting — facultative reinsurance referral (before final approval).
 app.include_router(reinsurance_router)
+app.include_router(claims_router)
 app.include_router(demo_router)
 app.include_router(rules_router)
 

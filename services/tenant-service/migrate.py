@@ -966,6 +966,59 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ADD COLUMN IF NOT EXISTS final_impacts JSON, "
         "ADD COLUMN IF NOT EXISTS execution_duration_ms DOUBLE PRECISION",
     ),
+    # ── Claims Management module ────────────────────────────────────────────────
+    (
+        "v45a-enum — create claimstatusenum type if not exists",
+        "DO $$ BEGIN "
+        "  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'claimstatusenum') THEN "
+        "    CREATE TYPE claimstatusenum AS ENUM ("
+        "      'New', 'Triaged', 'Under Investigation', 'Pending Documents', "
+        "      'Approved', 'Partial Approval', 'Declined', 'Referred to Manager', "
+        "      'Reinsurance Referred', 'Settled', 'Closed'"
+        "    ); "
+        "  END IF; "
+        "END $$;",
+    ),
+    (
+        "v45b — add claim_number to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS claim_number VARCHAR(50)",
+    ),
+    (
+        "v45c — index claims.claim_number",
+        "CREATE INDEX IF NOT EXISTS ix_claims_claim_number ON claims (claim_number)",
+    ),
+    (
+        "v45d — add case_id to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS case_id UUID REFERENCES cases(caseld)",
+    ),
+    (
+        "v45e — add incident_date to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS incident_date DATE",
+    ),
+    (
+        "v45f — add reported_date to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS reported_date DATE DEFAULT CURRENT_DATE",
+    ),
+    (
+        "v45g — add assigned_adjuster_id to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS assigned_adjuster_id UUID REFERENCES users(id)",
+    ),
+    (
+        "v45h — add reinsurance_referral_id to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS reinsurance_referral_id UUID REFERENCES reinsurance_referrals(id)",
+    ),
+    (
+        "v45i — add settlement_amount to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS settlement_amount DOUBLE PRECISION",
+    ),
+    (
+        "v45j — add settled_at to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS settled_at TIMESTAMP",
+    ),
+    (
+        "v45k — add closed_at to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP",
+    ),
 ]
 
 

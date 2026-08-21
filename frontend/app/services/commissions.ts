@@ -1350,9 +1350,9 @@ export function computeCommissionWaterfall(input: WaterfallInput, payees: Commis
     const partner = byId.get(input.partnerPayeeId);
     const rule = partner
       ? findRule({
-          channel: input.channel, payeeType: partner.type, segment: input.segment,
-          premiumType: input.premiumType, policyYear: input.policyYear, onDate: eventDate,
-        })
+        channel: input.channel, payeeType: partner.type, segment: input.segment,
+        premiumType: input.premiumType, policyYear: input.policyYear, onDate: eventDate,
+      })
       : null;
     if (!partner) {
       warnings.push(`Channel partner ${input.partnerPayeeId} is not in the payee registry — skipped.`);
@@ -1375,9 +1375,9 @@ export function computeCommissionWaterfall(input: WaterfallInput, payees: Commis
     const staff = byId.get(input.partnerStaffPayeeId);
     const rule = staff
       ? findRule({
-          channel: input.channel, payeeType: staff.type, segment: input.segment,
-          premiumType: input.premiumType, policyYear: input.policyYear, onDate: eventDate,
-        })
+        channel: input.channel, payeeType: staff.type, segment: input.segment,
+        premiumType: input.premiumType, policyYear: input.policyYear, onDate: eventDate,
+      })
       : null;
     if (staff && rule && rule.basis === "PARTNER_COMMISSION") {
       makeEntry({
@@ -1398,9 +1398,9 @@ export function computeCommissionWaterfall(input: WaterfallInput, payees: Commis
     const referrer = byId.get(input.referralPayeeId);
     const rule = referrer
       ? findRule({
-          channel: "REFERRAL", payeeType: referrer.type, segment: input.segment,
-          premiumType: input.premiumType, policyYear: input.policyYear, onDate: eventDate,
-        })
+        channel: "REFERRAL", payeeType: referrer.type, segment: input.segment,
+        premiumType: input.premiumType, policyYear: input.policyYear, onDate: eventDate,
+      })
       : null;
     if (referrer && rule) {
       makeEntry({

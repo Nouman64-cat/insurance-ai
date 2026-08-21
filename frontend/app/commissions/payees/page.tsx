@@ -40,15 +40,15 @@ export default function PayeesPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Payees</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Payees & Hierarchy</span>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Roles</h1>
+            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Payees & Hierarchy</span> */}
           </div>
         </div>
       </div>
       {loading && payees.length === 0 ? (
-         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading payees...</div>
+        <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading payees...</div>
       ) : (
-         <PayeesTab payees={payees} onChanged={refresh} notify={notify} />
+        <PayeesTab payees={payees} onChanged={refresh} notify={notify} />
       )}
     </div>
   );
