@@ -29,6 +29,19 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
     newSetName, setNewSetName,
     newSetDesc, setNewSetDesc,
     handleCreateRuleSet,
+    // Create category
+    showCreateCategory, setShowCreateCategory,
+    newCatCode, setNewCatCode,
+    newCatName, setNewCatName,
+    newCatDesc, setNewCatDesc,
+    handleCreateCategory,
+    // Create subcategory
+    showCreateSubCategory, setShowCreateSubCategory,
+    newSubCategoryId, setNewSubCategoryId,
+    newSubCode, setNewSubCode,
+    newSubName, setNewSubName,
+    openCreateSubCategoryModal,
+    handleCreateSubCategory,
   } = useRuleSets(tenantId);
 
   const { notify } = useNotify();
@@ -40,16 +53,18 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
     load();
   }, [tenantId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Global Escape key handler for modal
+  // Global Escape key handler for modals
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && showCreateSet) {
-        setShowCreateSet(false);
+      if (e.key === "Escape") {
+        if (showCreateSet) setShowCreateSet(false);
+        if (showCreateCategory) setShowCreateCategory(false);
+        if (showCreateSubCategory) setShowCreateSubCategory(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [showCreateSet]);
+  }, [showCreateSet, showCreateCategory, showCreateSubCategory]);
 
   const handleCodeChange = (v: string) => {
     setNewSetCode(v);
@@ -188,6 +203,8 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             selectedId={selectedRuleSetId}
             onSelect={openDetail}
             onCreateNew={() => setShowCreateSet(true)}
+            onCreateCategory={() => setShowCreateCategory(true)}
+            onCreateSubCategory={openCreateSubCategoryModal}
             onClearFilter={() => {
               clearFilter();
               setNavSearch("");
@@ -236,7 +253,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           >
             <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
               <div>
-                <h2 className="text-base font-bold text-slate-900">New Rule Set</h2>
+                <h2 className="text-base font-bold text-slate-900">Add New Rule Set</h2>
                 <p className="text-xs text-slate-500 mt-0.5">
                   Group related decision rules under a category scope.
                 </p>
@@ -329,6 +346,196 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           </form>
         </div>
       )}
+
+      {/* Create Category Modal */}
+      {showCreateCategory && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+          onClick={() => setShowCreateCategory(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleCreateCategory}
+            className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+          >
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Add New Category</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Create a top-level rule category (e.g., UNDERWRITING, CLAIMS).
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateCategory(false)}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Category Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={newCatCode}
+                  onChange={(e) => setNewCatCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))}
+                  placeholder="e.g. CLAIMS_MANAGEMENT"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
+                  required
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Unique uppercase code (e.g. UNDERWRITING_GATES)</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Category Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={newCatName}
+                  onChange={(e) => setNewCatName(e.target.value)}
+                  placeholder="e.g. Claims Management & Settlement"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">Description</label>
+                <textarea
+                  value={newCatDesc}
+                  onChange={(e) => setNewCatDesc(e.target.value)}
+                  rows={2}
+                  placeholder="Brief description of what this domain governs…"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition resize-none"
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/60">
+              <button
+                type="button"
+                onClick={() => setShowCreateCategory(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+              >
+                Create Category
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Create SubCategory Modal */}
+      {showCreateSubCategory && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+          onClick={() => setShowCreateSubCategory(false)}
+          role="dialog"
+          aria-modal="true"
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleCreateSubCategory}
+            className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
+          >
+            <div className="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Add New Sub Category</h2>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Create a sub-domain under an existing parent category.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCreateSubCategory(false)}
+                className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Parent Category <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={newSubCategoryId}
+                  onChange={(e) => setNewSubCategoryId(e.target.value)}
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition bg-white"
+                  required
+                >
+                  <option value="" disabled>Select Parent Category...</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} ({cat.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  SubCategory Code <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={newSubCode}
+                  onChange={(e) => setNewSubCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, ""))}
+                  placeholder="e.g. DEATH_CLAIMS"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
+                  required
+                />
+                <p className="text-[11px] text-slate-400 mt-1">Unique uppercase code (e.g. ACCIDENTAL_DEATH)</p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  SubCategory Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  value={newSubName}
+                  onChange={(e) => setNewSubName(e.target.value)}
+                  placeholder="e.g. Death Benefit Claims"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-400 transition"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/60">
+              <button
+                type="button"
+                onClick={() => setShowCreateSubCategory(false)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!newSubCategoryId}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-lg shadow-sm transition"
+              >
+                Create SubCategory
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </>
   );
 }
+

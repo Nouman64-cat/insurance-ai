@@ -8,6 +8,8 @@ interface Props {
   selectedId: string | null;
   onSelect: (id: string) => void;
   onCreateNew: () => void;
+  onCreateCategory?: () => void;
+  onCreateSubCategory?: () => void;
   onClearFilter?: () => void;
   isFiltered?: boolean;
 }
@@ -22,6 +24,8 @@ export default function RuleSetList({
   selectedId,
   onSelect,
   onCreateNew,
+  onCreateCategory,
+  onCreateSubCategory,
   onClearFilter,
   isFiltered = false,
 }: Props) {
@@ -52,7 +56,7 @@ export default function RuleSetList({
             : "Create your first rule set to begin configuring automated decision logic."}
         </p>
 
-        <div className="flex items-center justify-center gap-3 mt-4">
+        <div className="flex items-center justify-center gap-2.5 mt-4 flex-wrap">
           {isFiltered && onClearFilter && (
             <button
               onClick={onClearFilter}
@@ -61,11 +65,36 @@ export default function RuleSetList({
               Clear Navigation Filter
             </button>
           )}
+          {onCreateCategory && (
+            <button
+              onClick={onCreateCategory}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+              Add New Category
+            </button>
+          )}
+          {onCreateSubCategory && (
+            <button
+              onClick={onCreateSubCategory}
+              className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              Add New Sub Category
+            </button>
+          )}
           <button
             onClick={onCreateNew}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
           >
-            Create Rule Set
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add New Rule Set
           </button>
         </div>
       </div>
@@ -75,19 +104,43 @@ export default function RuleSetList({
   return (
     <div className="flex flex-col gap-2.5">
       {/* Header bar */}
-      <div className="flex items-center justify-between px-1 mb-1">
+      <div className="flex items-center justify-between px-1 mb-1 gap-2 flex-wrap">
         <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
           Rule Sets ({ruleSets.length})
         </span>
-        <button
-          onClick={onCreateNew}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-          </svg>
-          New Rule Set
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {onCreateCategory && (
+            <button
+              onClick={onCreateCategory}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+              </svg>
+              Add New Category
+            </button>
+          )}
+          {onCreateSubCategory && (
+            <button
+              onClick={onCreateSubCategory}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+              </svg>
+              Add New Sub Category
+            </button>
+          )}
+          <button
+            onClick={onCreateNew}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            Add New Rule Set
+          </button>
+        </div>
       </div>
 
       {/* List items */}

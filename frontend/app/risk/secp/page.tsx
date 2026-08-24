@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { SecpRegulatoryMetric, listSecpMetrics } from "../../services/commissions";
+import DemoDataBanner from "@/components/DemoDataBanner";
 
 export default function SECPExpenseCapPage() {
   const [metrics, setMetrics] = useState<SecpRegulatoryMetric[]>([]);
@@ -24,6 +25,7 @@ export default function SECPExpenseCapPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+      <DemoDataBanner note="This module has no backend yet. Premium and expense figures are illustrative and the statutory cap ratios are unverified against a published SECP circular. Not valid for regulatory reporting." />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">

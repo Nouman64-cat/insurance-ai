@@ -23,6 +23,9 @@ NATURAL LANGUAGE TO PAGE MAPPINGS (use these EXACTLY):
 - "profile", "my profile", "account" → "profile"
 - "tenants" → "super-admin/tenants"
 - "underwriting" → "underwriting"
+- "rule engine", "rules", "catalog", "decision rules" → "admin/rule-engine"
+- "commissions", "ledger", "commission dashboard", "payees" → "commissions"
+- "tokens", "token economy", "finops", "costs" → "super-admin/tokens"
 
 Always resolve the user's intent to the closest page path from the enum.`,
     schema: z.object({
@@ -42,7 +45,13 @@ Always resolve the user's intent to the closest page path from the enum.`,
         "super-admin/branches",
         "super-admin/tokens",
         "admin/users",
-        "profile"
+        "profile",
+        "admin/rule-engine",
+        "commissions",
+        "commission-ops/ledger",
+        "commission-ops/statements",
+        "commissions/calculator",
+        "treasury/runs"
       ]).describe("The exact page path. Map user intent using the descriptions above.")
     }),
   }

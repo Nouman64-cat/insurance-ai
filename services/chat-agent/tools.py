@@ -736,6 +736,282 @@ def run_pre_underwriting_clearance(**kwargs) -> str:
     return "{}"
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Rules engine — versioned underwriting governance
+# ═══════════════════════════════════════════════════════════════════════════
+
+@tool(args_schema=EmptyArgs)
+def list_rule_categories() -> str:
+    """List the rule catalogue hierarchy: Category -> SubCategory -> Eligibility
+    Profile (channel). Use to find out what governance domains exist before
+    looking at individual rule sets."""
+    return "{}"
+
+
+class ListRuleSetsArgs(BaseModel):
+    category: Optional[str] = Field(default=None, description="Category code filter, e.g. MEDICAL_NML.")
+    channel: Optional[str] = Field(default=None, description="Channel code filter, e.g. AGENCY_DIRECT.")
+
+
+@tool(args_schema=ListRuleSetsArgs)
+def list_rule_sets(**kwargs) -> str:
+    """List underwriting rule sets with their active version and rule count.
+    Use for "what rules do we have?", "show the NML rules", "list rule sets"."""
+    return "{}"
+
+
+class RuleSetLookupArgs(BaseModel):
+    rule_set_code: str = Field(description="Rule set code, e.g. medical.nml_grid or commission.secp_rate_card.")
+
+
+@tool(args_schema=RuleSetLookupArgs)
+def get_rule_set(**kwargs) -> str:
+    """Show one rule set in full — every version, its status (DRAFT/ACTIVE/
+    ARCHIVED), and the rules and criteria inside the active version."""
+    return "{}"
+
+
+class EvaluateRuleArgs(BaseModel):
+    rule_set_code: str = Field(description="Which rule set to run, e.g. medical.nml_grid.")
+    context_json: str = Field(
+        description='JSON object of input facts, e.g. {"age": 45, "sum_assured": 5000000}. '
+        "Field names must match the rule criteria."
+    )
+
+
+@tool(args_schema=EvaluateRuleArgs)
+def evaluate_rule_set(**kwargs) -> str:
+    """Dry-run one rule set against a set of facts and show which rule matched
+    and what it decided. Nothing is changed — this is the simulator. Use for
+    "what happens if a 45-year-old asks for 5 million?"."""
+    return "{}"
+
+
+class EvaluateScopeArgs(BaseModel):
+    category: Optional[str] = None
+    subcategory: Optional[str] = None
+    channel: Optional[str] = None
+    context_json: str = Field(description="JSON object of input facts.")
+
+
+@tool(args_schema=EvaluateScopeArgs)
+def evaluate_rule_scope(**kwargs) -> str:
+    """Run EVERY rule set in a category/subcategory/channel against the same
+    facts and show the combined outcome. Use when the question is "what would
+    the whole rulebook do with this applicant?" rather than one rule set."""
+    return "{}"
+
+
+class RuleLogsArgs(BaseModel):
+    limit: int = Field(default=20, description="How many recent evaluations to show.")
+
+
+@tool(args_schema=RuleLogsArgs)
+def get_rule_evaluation_logs(**kwargs) -> str:
+    """Show the rule-engine audit trail — recent evaluations, which rules
+    matched, and what they decided."""
+    return "{}"
+
+
+class CreateRuleSetArgs(BaseModel):
+    code: str = Field(description="Dotted lowercase code, e.g. claims.death_benefit.")
+    name: str
+    description: Optional[str] = None
+    category_code: str = Field(description="Existing category code to file it under.")
+    subcategory_code: str
+    channel_code: Optional[str] = None
+
+
+@tool(args_schema=CreateRuleSetArgs)
+def create_rule_set(**kwargs) -> str:
+    """Create a new rule set. It starts with an empty DRAFT version — add rules
+    to it, then deploy."""
+    return "{}"
+
+
+@tool(args_schema=RuleSetLookupArgs)
+def create_rule_version(**kwargs) -> str:
+    """Open a new DRAFT version of a rule set, copying the current active rules
+    as a starting point. Rules can only be edited in a DRAFT — this is the first
+    step of any rule change."""
+    return "{}"
+
+
+class AddRuleArgs(BaseModel):
+    rule_set_code: str
+    rule_code: str = Field(description="Short uppercase code, e.g. MED-NML-07.")
+    name: str
+    priority: int = Field(description="Lower number runs first.")
+    conditions_json: str = Field(
+        description='JSON array of criteria, e.g. [{"field":"age","operator":"gte","value":61}].'
+    )
+    action_outcome: str = Field(description="e.g. REQUIRE_MEDICAL_EXAM, APPLY_COMMISSION_RATE, DECLINE.")
+    outcome_json: Optional[str] = Field(default=None, description="JSON impact payload for the outcome.")
+
+
+@tool(args_schema=AddRuleArgs)
+def add_rule_to_version(**kwargs) -> str:
+    """Add a rule to the rule set's DRAFT version. Fails if there is no draft —
+    call create_rule_version first."""
+    return "{}"
+
+
+class UpdateRuleArgs(BaseModel):
+    rule_set_code: str
+    rule_code: str
+    name: Optional[str] = None
+    priority: Optional[int] = None
+    is_active: Optional[bool] = None
+    conditions_json: Optional[str] = None
+    action_outcome: Optional[str] = None
+    outcome_json: Optional[str] = None
+
+
+@tool(args_schema=UpdateRuleArgs)
+def update_rule(**kwargs) -> str:
+    """Change a rule inside the DRAFT version. Pass only the fields that change."""
+    return "{}"
+
+
+class DeleteRuleArgs(BaseModel):
+    rule_set_code: str
+    rule_code: str
+
+
+@tool(args_schema=DeleteRuleArgs)
+def delete_rule(**kwargs) -> str:
+    """Remove a rule from the DRAFT version."""
+    return "{}"
+
+
+@tool(args_schema=RuleSetLookupArgs)
+def deploy_rule_version(**kwargs) -> str:
+    """Make the rule set's DRAFT version ACTIVE. THIS CHANGES UNDERWRITING
+    BEHAVIOUR for every case evaluated afterwards — always tell the user which
+    rule set and version number is going live before calling it."""
+    return "{}"
+
+
+@tool(args_schema=RuleSetLookupArgs)
+def archive_rule_version(**kwargs) -> str:
+    """Archive the rule set's currently active version, retiring it."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Commission engine — rate card, waterfall, ledger, payout runs
+# ═══════════════════════════════════════════════════════════════════════════
+
+class ListPayeesArgs(BaseModel):
+    search: Optional[str] = Field(default=None, description="Filter by payee name or code.")
+    channel: Optional[str] = Field(
+        default=None,
+        description="DIRECT_AGENCY, BANCASSURANCE, BROKER, CORPORATE_AGENT, DIGITAL_DIRECT or REFERRAL.",
+    )
+
+
+@tool(args_schema=ListPayeesArgs)
+def list_commission_payees(**kwargs) -> str:
+    """List everyone who can be owed commission — producers, sales and branch
+    managers, agencies, brokers, bank partners, referral partners — with their
+    licence status and year-to-date earnings."""
+    return "{}"
+
+
+class RateCardArgs(BaseModel):
+    segment: Optional[Literal["individual", "group", "family"]] = Field(
+        default=None, description="Defaults to individual."
+    )
+    policy_year: Optional[int] = Field(default=None, description="1 = first year. Defaults to 1.")
+    premium_type: Optional[Literal["FIRST_YEAR", "RENEWAL", "SINGLE_PREMIUM"]] = None
+
+
+@tool(args_schema=RateCardArgs)
+def get_commission_rate_card(**kwargs) -> str:
+    """Look up the applicable statutory commission rate from the rule engine
+    (SECP Insurance Rules 2017 rate card). Use for "what commission does a
+    first-year individual policy pay?"."""
+    return "{}"
+
+
+class CalculateCommissionArgs(BaseModel):
+    policy_number: Optional[str] = None
+    cnic: Optional[str] = None
+    applicant_name: Optional[str] = None
+    collected_premium: Optional[float] = Field(
+        default=None, description="Premium collected. Defaults to the policy's own premium."
+    )
+    policy_year: Optional[int] = Field(default=None, description="Defaults to 1.")
+
+
+@tool(args_schema=CalculateCommissionArgs)
+def calculate_commission(**kwargs) -> str:
+    """Compute the full commission waterfall for one policy — the producer's
+    commission, every hierarchy override above them, channel partner and
+    referral fees, and tax withholding. Use for "what does this policy pay
+    out?", "break down the commission on Ahmed's policy"."""
+    return "{}"
+
+
+class LedgerArgs(BaseModel):
+    payee_name: Optional[str] = Field(default=None, description="Restrict to one payee.")
+    status: Optional[
+        Literal["ACCRUED", "PAYABLE", "IN_RUN", "PARTIALLY_RELEASED", "DISBURSED", "CLAWED_BACK", "HELD"]
+    ] = None
+    limit: int = Field(default=20)
+
+
+@tool(args_schema=LedgerArgs)
+def get_commission_ledger(**kwargs) -> str:
+    """List commission ledger entries — what has been earned, what is payable,
+    what is held and what has been disbursed."""
+    return "{}"
+
+
+class StatementArgs(BaseModel):
+    payee_name: str = Field(description="Agent or payee name.")
+    period: Optional[str] = Field(default=None, description="YYYY-MM. Defaults to the current month.")
+
+
+@tool(args_schema=StatementArgs)
+def get_agent_statement(**kwargs) -> str:
+    """Produce one payee's commission statement for a period — gross earnings,
+    deductions, tax withheld and net payable."""
+    return "{}"
+
+
+@tool(args_schema=EmptyArgs)
+def get_commission_summary() -> str:
+    """Portfolio-level commission position: total accrued, payable, held and
+    disbursed, plus the top earning producers."""
+    return "{}"
+
+
+class CreatePayoutRunArgs(BaseModel):
+    period: Optional[str] = Field(default=None, description="YYYY-MM. Defaults to the current month.")
+    channel: Optional[str] = Field(default=None, description="Restrict to one channel. Omit for all.")
+
+
+@tool(args_schema=CreatePayoutRunArgs)
+def create_payout_run(**kwargs) -> str:
+    """Assemble every due commission tranche for a period into a payout run,
+    ready for approval. This is the MAKER half of maker-checker — it does not
+    release any money."""
+    return "{}"
+
+
+class ApprovePayoutRunArgs(BaseModel):
+    run_id: str = Field(description="The payout run to approve.")
+
+
+@tool(args_schema=ApprovePayoutRunArgs)
+def approve_payout_run(**kwargs) -> str:
+    """Approve a payout run, releasing its tranches for disbursement. This is
+    the CHECKER half of maker-checker and moves real money — always state the
+    run's period, payee count and net total before calling it."""
+    return "{}"
+
+
 ALL_TOOLS = [
     # navigation & discovery
     navigate_to_page,
@@ -757,7 +1033,11 @@ ALL_TOOLS = [
     # customers
     add_customer,
     update_customer,
-    delete_customer,
+    # delete_customer is deliberately NOT bound. The handler refuses
+    # unconditionally (records are retained for audit), so binding it only
+    # spent schema tokens on every call and walked the user through a
+    # "permanently deletes X" confirmation for something that never happens.
+    # The system prompt already tells the model to answer the request directly.
     bulk_add_customers,
     # users / orgs / families
     add_user,
@@ -796,4 +1076,27 @@ ALL_TOOLS = [
     start_underwriting_journey,
     continue_underwriting_journey,
     bulk_underwriting_journey,
+    # rules engine
+    list_rule_categories,
+    list_rule_sets,
+    get_rule_set,
+    evaluate_rule_set,
+    evaluate_rule_scope,
+    get_rule_evaluation_logs,
+    create_rule_set,
+    create_rule_version,
+    add_rule_to_version,
+    update_rule,
+    delete_rule,
+    deploy_rule_version,
+    archive_rule_version,
+    # commission engine
+    list_commission_payees,
+    get_commission_rate_card,
+    calculate_commission,
+    get_commission_ledger,
+    get_agent_statement,
+    get_commission_summary,
+    create_payout_run,
+    approve_payout_run,
 ]

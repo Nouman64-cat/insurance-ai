@@ -59,7 +59,31 @@ PAGES: list[Page] = [
     # ── Policy lifecycle ───────────────────────────────────────────────────
     Page("policy-issuance", "Policy Issuance", "Policy issuance queue — issue approved proposals and confirm payments.", lists="policy"),
     Page("policy-management/post-issuance", "Post-Issuance Policies", "Active policies in the post-issuance management section.", lists="policy"),
+    # ── Workflow stages ─────────────────────────────────────────────────────
+    Page("pre-underwriting", "Pre-Underwriting", "The 6 clearance gates before risk assessment.", lists="case", highlight_param="case_id"),
+    Page("post-underwriting", "Post-Underwriting", "Reinsurance referral and post-decision review."),
+    Page("renewals", "Renewals", "Policies due for renewal."),
+    # ── Commission & distribution ───────────────────────────────────────────
+    Page("commissions", "Commissions", "Commission overview — earnings, rate card, payees."),
+    Page("commissions/rate-card", "Rate Card", "Versioned SECP statutory commission rates by segment and policy year."),
+    Page("commissions/payees", "Payees", "Everyone who can be owed commission — producers, managers, partners."),
+    Page("commissions/calculator", "Commission Calculator", "Preview the commission waterfall for a policy."),
+    Page("commissions/types", "Commission Types", "Commission kinds — commission, override, partner and referral fees."),
+    Page("commissions/bonuses", "Bonuses & Incentives", "Production bonuses and persistency incentives."),
+    Page("commission-ops", "Commission Operations", "Commission operations overview."),
+    Page("commission-ops/ledger", "Commission Ledger", "Every commission entry and its release status."),
+    Page("commission-ops/statements", "Statements", "Per-payee commission statements."),
+    # ── Treasury ────────────────────────────────────────────────────────────
+    Page("treasury/runs", "Payout Runs", "Maker–checker payout runs awaiting approval or disbursement."),
+    Page("treasury/banking", "Banking & Dispatch", "Payment file generation and bank dispatch batches."),
+    Page("treasury/settlement", "Settlement", "Bank settlement reconciliation and returned payments."),
+    Page("treasury/holdbacks", "Holdbacks", "Commission liens — licence, debt recovery and suspension holds."),
+    # ── Risk & regulatory ───────────────────────────────────────────────────
+    Page("risk/clawbacks", "Clawback Engine", "Commission recoveries on free-look cancellation and early lapse."),
+    Page("risk/tax", "Tax & Withholding", "Payee tax profiles and s.233 withholding rates."),
+    Page("risk/secp", "SECP Compliance", "Distribution expense ratios against statutory caps."),
     # ── Admin ───────────────────────────────────────────────────────────────
+    Page("admin/rule-engine", "Rule Engine", "Versioned underwriting rule sets — catalogue, criteria, simulator and audit log."),
     Page("admin/leads", "Leads", "Prospective customers not yet converted.", lists="customer", highlight_param="cnic"),
     Page("admin/customers", "Customers", "All registered customers.", lists="customer", highlight_param="cnic"),
     Page("admin/policyholders", "Policy Holders", "Customers with an active policy.", lists="customer", highlight_param="cnic"),

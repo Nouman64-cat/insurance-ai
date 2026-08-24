@@ -43,6 +43,18 @@ MUTATING_TOOLS = {
     # already consented to at start; resuming it shouldn't re-prompt.)
     "start_underwriting_journey",
     "bulk_underwriting_journey",
+    # Rules engine — authoring is safe-ish, deploying changes underwriting
+    # behaviour for every case evaluated afterwards.
+    "create_rule_set",
+    "create_rule_version",
+    "add_rule_to_version",
+    "update_rule",
+    "delete_rule",
+    "deploy_rule_version",
+    "archive_rule_version",
+    # Commission — payout runs move money.
+    "create_payout_run",
+    "approve_payout_run",
 }
 
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
@@ -70,11 +82,26 @@ SAFE_TOOLS = {
     # Policy lifecycle (read-only)
     "get_pre_issuance_status",
     "get_active_policy_status",
+    # Rules engine (read-only). evaluate_* are dry runs — they change nothing,
+    # they only report what the rulebook would decide.
+    "list_rule_categories",
+    "list_rule_sets",
+    "get_rule_set",
+    "evaluate_rule_set",
+    "evaluate_rule_scope",
+    "get_rule_evaluation_logs",
+    # Commission (read-only)
+    "list_commission_payees",
+    "get_commission_rate_card",
+    "calculate_commission",
+    "get_commission_ledger",
+    "get_agent_statement",
+    "get_commission_summary",
 }
 
 # Destructive enough that the confirmation prompt names the record explicitly
 # rather than the generic "Ready to <tool name> — proceed?".
-DESTRUCTIVE_TOOLS = {"delete_customer", "delete_user", "delete_case"}
+DESTRUCTIVE_TOOLS = {"delete_customer", "delete_user", "delete_case", "delete_rule"}
 
 ADMIN_ROLES = {"SuperAdmin", "Admin"}
 
@@ -144,6 +171,7 @@ STEP_LABELS: dict[str, str] = {
     "quick_start_workflow": "Generating demo data",
     "start_underwriting_journey": "Launching autonomous underwriting journey",
     "continue_underwriting_journey": "Resuming underwriting journey",
+    "bulk_underwriting_journey": "Running bulk underwriting journey",
     # Pre-underwriting (the 6 gates)
     "get_pre_underwriting_status": "Checking pre-underwriting gates",
     "verify_e_application": "Processing E-Application",
@@ -161,6 +189,29 @@ STEP_LABELS: dict[str, str] = {
     "issue_policy": "Issuing policy",
     "confirm_policy_payment": "Confirming payment",
     "get_active_policy_status": "Checking active policy status",
+    # Rules engine
+    "list_rule_categories": "Loading rule catalogue",
+    "list_rule_sets": "Fetching rule sets",
+    "get_rule_set": "Loading rule set",
+    "evaluate_rule_set": "Simulating rule set",
+    "evaluate_rule_scope": "Simulating rulebook scope",
+    "get_rule_evaluation_logs": "Loading rule audit trail",
+    "create_rule_set": "Creating rule set",
+    "create_rule_version": "Opening draft version",
+    "add_rule_to_version": "Adding rule",
+    "update_rule": "Updating rule",
+    "delete_rule": "Deleting rule",
+    "deploy_rule_version": "Deploying rule version",
+    "archive_rule_version": "Archiving rule version",
+    # Commission engine
+    "list_commission_payees": "Fetching payees",
+    "get_commission_rate_card": "Looking up rate card",
+    "calculate_commission": "Computing commission waterfall",
+    "get_commission_ledger": "Loading commission ledger",
+    "get_agent_statement": "Building agent statement",
+    "get_commission_summary": "Loading commission summary",
+    "create_payout_run": "Assembling payout run",
+    "approve_payout_run": "Approving payout run",
 }
 
 
@@ -239,23 +290,99 @@ MOBILE_PORTAL_ONLY_TOOLS = {
     "start_underwriting_journey",
     "continue_underwriting_journey",
     "bulk_underwriting_journey",
+    # Rules-engine governance and commission payouts are back-office work —
+    # they belong on the portal, not a field agent's phone.
+    "deploy_rule_version",
+    "archive_rule_version",
+    "create_payout_run",
+    "approve_payout_run",
+}
+
+
+# Governance actions that stay with Admin even for an Underwriter: deploying a
+# rule version changes how every subsequent case is underwritten, and a payout
+# run moves money. Kept as an explicit deny-list on top of the Underwriter
+# allow-list so adding a tool can never silently grant one of these.
+ADMIN_ONLY_TOOLS = {
+    "add_user",
+    "delete_user",
+    "list_users",
+    "delete_customer",
+    "deploy_rule_version",
+    "archive_rule_version",
+    "delete_rule",
+    "create_payout_run",
+    "approve_payout_run",
+}
+
+# What an Underwriter may do beyond SAFE_TOOLS. This is an ALLOW-list: it used
+# to be expressed as "anything not in {add_user, delete_user, ...}", which meant
+# every newly declared tool — including payout approval and rule deployment —
+# was granted to Underwriter the moment it existed.
+UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
+    "add_customer",
+    "update_customer",
+    "bulk_add_customers",
+    "add_organization",
+    "add_family_group",
+    "create_case",
+    "update_case_status",
+    "assign_case",
+    "add_case_comment",
+    "delete_case",
+    "create_proposal",
+    "upload_document",
+    "run_risk_assessment",
+    "quick_start_workflow",
+    # Pre-underwriting gates
+    "get_pre_underwriting_status",
+    "verify_e_application",
+    "submit_agent_confidential_report",
+    "run_compliance_screening",
+    "override_compliance_screening",
+    "process_initial_premium_payment",
+    "run_insurance_history_check",
+    "assess_medical_examination",
+    "run_pre_underwriting_clearance",
+    # Policy lifecycle
+    "approve_case",
+    "run_pre_issuance_verification",
+    "issue_policy",
+    "confirm_policy_payment",
+    # Journeys
+    "start_underwriting_journey",
+    "continue_underwriting_journey",
+    "bulk_underwriting_journey",
+    # Rules engine — may author and simulate, may not deploy.
+    "create_rule_set",
+    "create_rule_version",
+    "add_rule_to_version",
+    "update_rule",
 }
 
 
 def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
-    if role in ("SuperAdmin", "Admin"):
+    """Whether `role` may run `tool_name`.
+
+    Every branch is an allow-list and the function ends in False. That matters:
+    the previous version ended in `return True`, so any tool missing from the
+    registries above defaulted to *permitted* for unrecognised roles, and
+    Underwriter was a deny-list that auto-granted anything newly added.
+    """
+    if role in ADMIN_ROLES:
         return True
     if role == "Agent":
         if platform == "mobile":
             return tool_name in AGENT_MOBILE_ALLOWED_TOOLS
         return tool_name in AGENT_ALLOWED_TOOLS
     if role == "Underwriter":
-        return tool_name not in {"add_user", "delete_user", "list_users", "delete_customer"}
+        if tool_name in ADMIN_ONLY_TOOLS:
+            return False
+        return tool_name in UNDERWRITER_ALLOWED_TOOLS
     if role == "Viewer":
         return tool_name in SAFE_TOOLS
-    if tool_name in MUTATING_TOOLS:
-        return role in ADMIN_ROLES
-    return True
+    # Unknown role — read-only at most.
+    return tool_name in SAFE_TOOLS
 
 
 def get_tools_for_role(role: str, platform: str = "web") -> list:

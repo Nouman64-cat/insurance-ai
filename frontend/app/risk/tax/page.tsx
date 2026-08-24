@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { PayeeTaxProfile, listTaxProfiles } from "../../services/commissions";
+import DemoDataBanner from "@/components/DemoDataBanner";
 
 export default function TaxRegimesPage() {
   const [profiles, setProfiles] = useState<PayeeTaxProfile[]>([]);
@@ -24,6 +25,7 @@ export default function TaxRegimesPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+      <DemoDataBanner note="This module has no backend yet. Filer status is read from the payee registry and withholding is computed from it; no FBR Active Taxpayer List sync has run. Not valid for tax filing." />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -69,7 +71,9 @@ export default function TaxRegimesPage() {
                 profiles.map((p) => (
                   <tr key={p.payeeId} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3 font-medium text-slate-900">{p.payeeId}</td>
-                    <td className="px-5 py-3 font-mono text-xs text-slate-600">{p.cnicOrNtn}</td>
+                    <td className="px-5 py-3 font-mono text-xs text-slate-600">
+                      {p.cnicOrNtn ?? <span className="not-italic text-slate-400">Not on file</span>}
+                    </td>
                     <td className="px-5 py-3">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${p.fbrStatus === 'ACTIVE_FILER' ? 'bg-emerald-100 text-emerald-800' :
                           p.fbrStatus === 'NON_FILER' ? 'bg-rose-100 text-rose-800' :
@@ -88,7 +92,9 @@ export default function TaxRegimesPage() {
                       Rs. {p.totalTaxWithheldYtd.toLocaleString()}
                     </td>
                     <td className="px-5 py-3 text-xs text-slate-500">
-                      {new Date(p.lastAtlSyncTimestamp).toLocaleString()}
+                      {p.lastAtlSyncTimestamp
+                        ? new Date(p.lastAtlSyncTimestamp).toLocaleString()
+                        : <span className="text-slate-400">Never synced</span>}
                     </td>
                   </tr>
                 ))

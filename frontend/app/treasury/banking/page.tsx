@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { PayoutDispatchBatch, listPayoutDispatchBatches } from "../../services/commissions";
+import DemoDataBanner from "@/components/DemoDataBanner";
 
 export default function BankingGatewayPage() {
   const [batches, setBatches] = useState<PayoutDispatchBatch[]>([]);
@@ -24,6 +25,7 @@ export default function BankingGatewayPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+      <DemoDataBanner />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -111,7 +113,9 @@ export default function BankingGatewayPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3">
-                      <div className="text-xs font-mono text-slate-600 max-w-[200px] truncate" title={b.fileChecksumSha256}>{b.fileChecksumSha256}</div>
+                      <div className="text-xs font-mono text-slate-600 max-w-[200px] truncate" title={b.fileChecksumSha256 ?? undefined}>
+                        {b.fileChecksumSha256 ?? <span className="text-slate-400 italic">No file generated</span>}
+                      </div>
                       <div className="text-[10px] text-slate-400">{b.filePath}</div>
                     </td>
                   </tr>

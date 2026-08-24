@@ -12,6 +12,10 @@ class ChatState(TypedDict, total=False):
     platform: str  # "web" or "mobile" — see permission.py
     jwt_token: str
     last_action: Optional[dict[str, Any]]
+    # Domain tool-packs bound on the previous turn (see toolsets.py). Carried
+    # forward so a multi-step flow keeps its tools once the triggering keyword
+    # has scrolled out of the matching window.
+    active_domains: list[str]
 
     # ── Autonomous underwriting journey (agentic pipeline) ──────────────────
     # The tool_call that launched the pipeline — j_finish answers it with a

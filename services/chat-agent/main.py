@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from graph import build_graph
+from tool_executor import close_shared_client
 
 
 def _psycopg_conn_string(database_url: str) -> str:
@@ -20,7 +21,12 @@ async def lifespan(app: FastAPI):
     async with AsyncPostgresSaver.from_conn_string(conn_string) as saver:
         await saver.setup()
         app.state.graph = build_graph(saver)
-        yield
+        try:
+            yield
+        finally:
+            # The pooled HTTP client outlives individual requests, so close it
+            # here rather than leaking its connections on shutdown.
+            await close_shared_client()
 
 
 app = FastAPI(title="Chat Agent", version="0.1.0", lifespan=lifespan)

@@ -2505,7 +2505,15 @@ export interface AccrualInput {
 }
 
 function toWaterfallInput(input: AccrualInput): WaterfallInput {
-  const seq = Math.floor(10_000 + Math.random() * 90_000);
+  // Placeholder ids for an accrual that arrives without a policy attached.
+  // Seeded off the stable parts of the input rather than Math.random(), so the
+  // same accrual always resolves to the same id — a random one meant the same
+  // commission could not be deduplicated or reconciled across two calls.
+  const seq = seeded(
+    `accrual:${input.leadId ?? ""}:${input.customerName}:${input.productName ?? ""}:${input.collectedPremium}`,
+    10_000,
+    99_999,
+  );
   return {
     leadId: input.leadId ?? `LEAD-${seq}`,
     policyId: input.policyId ?? `PL-${seq}`,
@@ -2554,7 +2562,9 @@ export interface PayoutDispatchBatch {
   totalWhtDeducted: number;
   totalNetDisbursed: number;
   status: 'QUEUED' | 'GENERATED' | 'DISPATCHED' | 'ACKNOWLEDGED' | 'FAILED';
-  fileChecksumSha256: string;
+  /** Null until a real payment file is produced and hashed. Never render a
+   *  placeholder digest here — a wrong checksum is worse than no checksum. */
+  fileChecksumSha256: string | null;
   filePath: string;
   dispatchedAt?: string;
   ackReference?: string;
@@ -2603,10 +2613,13 @@ export interface ClawbackTransaction {
 
 export interface PayeeTaxProfile {
   payeeId: string;
-  cnicOrNtn: string;
+  /** Null when the payee has no tax ID on file. Never synthesise one — this
+   *  identifies a real person to FBR. Render "Not on file" instead. */
+  cnicOrNtn: string | null;
   fbrStatus: 'ACTIVE_FILER' | 'NON_FILER' | 'EXEMPT';
   applicableWhtRate: number;
-  lastAtlSyncTimestamp: string;
+  /** Null until a real Active Taxpayer List sync has run. */
+  lastAtlSyncTimestamp: string | null;
   taxExemptionCertificateRef?: string;
   totalTaxWithheldYtd: number;
 }
@@ -2623,8 +2636,47 @@ export interface SecpRegulatoryMetric {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Generators and stores for the 6 new modules
+// DEMO DATA — treasury, settlement, holdback, clawback, tax and SECP modules
+//
+// Everything below this line is SYNTHETIC. There is no backend for banking
+// dispatch, settlement reconciliation, holdbacks, clawbacks, FBR tax profiles
+// or SECP expense-ratio reporting, so these six generators invent records so
+// the screens have something to render.
+//
+// Three rules apply to anything added here, learned the hard way:
+//
+//   1. It must be deterministic. These render as financial records; an amount
+//      that changes between two page loads is worse than no amount at all.
+//      Use `seeded()` below, never Math.random().
+//   2. It must not invent identity or regulatory attributes for a REAL person.
+//      Payees are real agent users. Attaching an invented CNIC, NTN or filer
+//      status to one produces a screen that libels a named individual.
+//   3. Every page that renders it must show <DemoDataBanner/>, so nobody
+//      mistakes it for a system of record.
+//
+// Replace a generator with a real API call and delete its banner. Until then
+// these are illustrations, not data.
 // ─────────────────────────────────────────────────────────────────────────────
+
+export const DEMO_DATA_NOTICE =
+  "Illustrative data. This module has no backend yet — figures are generated in the browser and are not a system of record.";
+
+/**
+ * Small deterministic PRNG (FNV-1a hash → xorshift). Same key always yields
+ * the same number, so a given record keeps its amounts across reloads and
+ * between users. This is the whole point — see rule 1 above.
+ */
+function seeded(key: string, min: number, max: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= h << 13; h >>>= 0;
+  h ^= h >> 17;
+  h ^= h << 5;  h >>>= 0;
+  return min + (h % (max - min + 1));
+}
 
 let dispatchBatchesCache: PayoutDispatchBatch[] | null = null;
 let settlementsCache: SettlementRecord[] | null = null;
@@ -2641,15 +2693,20 @@ export async function listPayoutDispatchBatches(): Promise<PayoutDispatchBatch[]
     payoutRunId: run.id,
     railType: i % 2 === 0 ? '1LINK_IBFT' : 'RAAST_BULK',
     targetBankCode: 'MEZ',
-    totalRecords: Math.floor(Math.random() * 50) + 10,
-    totalGrossAmount: run.totalGross,
-    totalWhtDeducted: run.totalWithheld,
-    totalNetDisbursed: run.totalNet,
+    // Real run totals — these were previously read as totalGross/totalWithheld/
+    // totalNet, which are not fields on PayoutRun, so every amount column on
+    // the Banking screen rendered undefined.
+    totalRecords: run.payeeCount,
+    totalGrossAmount: run.grossTotal,
+    totalWhtDeducted: run.deductionsTotal,
+    totalNetDisbursed: run.netTotal,
     status: i === 0 ? 'GENERATED' : 'ACKNOWLEDGED',
-    fileChecksumSha256: `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`,
+    // No file is actually produced, so there is nothing to hash. This used to
+    // carry the SHA-256 of the empty string, which reads as a real digest.
+    fileChecksumSha256: null,
     filePath: `/sftp/outbound/PAYOUT_${run.id}.csv`,
     dispatchedAt: i === 0 ? undefined : run.createdAt,
-    ackReference: i === 0 ? undefined : `1LINK-ACK-${Math.floor(Math.random() * 1000000)}`
+    ackReference: i === 0 ? undefined : `1LINK-ACK-${seeded(`ack:${run.id}`, 100000, 999999)}`
   }));
   return dispatchBatchesCache;
 }
@@ -2658,11 +2715,11 @@ export async function listSettlementRecords(): Promise<SettlementRecord[]> {
   if (settlementsCache) return settlementsCache;
   const payees = await listPayees();
   settlementsCache = payees.slice(0, 15).map((p, i) => ({
-    settlementId: `SETTL-${Math.floor(Math.random() * 90000) + 10000}`,
-    batchId: `BATCH-RUN-${Math.floor(Math.random() * 10) + 1}`,
-    lineItemId: `LI-${Math.floor(Math.random() * 90000) + 10000}`,
+    settlementId: `SETTL-${seeded(`settl:${p.id}`, 10000, 99999)}`,
+    batchId: `BATCH-RUN-${seeded(`batch:${p.id}`, 1, 10)}`,
+    lineItemId: `LI-${seeded(`li:${p.id}`, 10000, 99999)}`,
     payeeId: p.id,
-    bankReferenceNumber: `BNK-${Math.floor(Math.random() * 9000000) + 1000000}`,
+    bankReferenceNumber: `BNK-${seeded(`bnk:${p.id}`, 1000000, 9999999)}`,
     clearingDate: new Date().toISOString(),
     status: i % 5 === 0 ? 'BOUNCED' : 'CLEARED',
     returnReasonCode: i % 5 === 0 ? 'TITLE_MISMATCH' : undefined,
@@ -2676,12 +2733,12 @@ export async function listHoldbacks(): Promise<CommissionHoldbackLien[]> {
   if (holdbacksCache) return holdbacksCache;
   const payees = await listPayees();
   holdbacksCache = payees.slice(0, 5).map((p, i) => ({
-    holdbackId: `HOLD-${Math.floor(Math.random() * 9000) + 1000}`,
+    holdbackId: `HOLD-${seeded(`hold:${p.id}`, 1000, 9999)}`,
     payeeId: p.id,
     category: i === 0 ? 'FRAUD_SUSPENSION' : (i % 2 === 0 ? 'SECP_LICENSE_EXPIRED' : 'DEBT_RECOVERY'),
     withholdingPercentage: i === 0 ? 100 : 50,
-    targetAmount: i === 0 ? null : (Math.floor(Math.random() * 100000) + 10000),
-    accumulatedRecovered: i === 0 ? 0 : (Math.floor(Math.random() * 10000) + 1000),
+    targetAmount: i === 0 ? null : seeded(`hold:tgt:${p.id}`, 10000, 110000),
+    accumulatedRecovered: i === 0 ? 0 : seeded(`hold:rec:${p.id}`, 1000, 11000),
     startDate: new Date(Date.now() - 1000000000).toISOString(),
     status: 'ACTIVE',
     authorizedBy: 'Compliance Officer (M. Arslan)',
@@ -2693,38 +2750,58 @@ export async function listHoldbacks(): Promise<CommissionHoldbackLien[]> {
 export async function listClawbacks(): Promise<ClawbackTransaction[]> {
   if (clawbacksCache) return clawbacksCache;
   const payees = await listPayees();
-  clawbacksCache = Array.from({ length: 8 }).map((_, i) => ({
-    clawbackId: `CB-${Math.floor(Math.random() * 90000) + 10000}`,
-    policyNumber: `PL-ADAM-${Math.floor(Math.random() * 9000) + 1000}`,
-    originalTransactionId: `TRX-${Math.floor(Math.random() * 90000) + 10000}`,
-    payeeId: payees[i % payees.length].id,
-    roleInHierarchy: i % 3 === 0 ? 'BRANCH_MANAGER' : 'PRODUCER',
-    clawbackTrigger: i % 4 === 0 ? 'FREE_LOOK_CANCELLATION' : 'EARLY_LAPSE',
-    grossClawbackAmount: (Math.floor(Math.random() * 50000) + 5000),
-    taxAdjustmentAmount: (Math.floor(Math.random() * 5000) + 500),
-    netDebitAmount: (Math.floor(Math.random() * 45000) + 4500),
-    recoveryStatus: i % 2 === 0 ? 'FULLY_RECOVERED' : 'CARRIED_FORWARD_DEBT',
-    createdAt: new Date(Date.now() - (Math.random() * 10000000000)).toISOString()
-  }));
+  clawbacksCache = Array.from({ length: 8 }).map((_, i) => {
+    // Gross, tax and net were drawn independently, so net + tax never
+    // reconciled to gross on any row. Derive the parts from the whole.
+    const gross = seeded(`cb:gross:${i}`, 5000, 55000);
+    const tax = Math.round(gross * 0.1);
+    return {
+      clawbackId: `CB-${seeded(`cb:id:${i}`, 10000, 99999)}`,
+      policyNumber: `PL-DEMO-${seeded(`cb:pol:${i}`, 1000, 9999)}`,
+      originalTransactionId: `TRX-${seeded(`cb:trx:${i}`, 10000, 99999)}`,
+      payeeId: payees[i % payees.length].id,
+      roleInHierarchy: i % 3 === 0 ? 'BRANCH_MANAGER' as const : 'PRODUCER' as const,
+      clawbackTrigger: i % 4 === 0 ? 'FREE_LOOK_CANCELLATION' as const : 'EARLY_LAPSE' as const,
+      grossClawbackAmount: gross,
+      taxAdjustmentAmount: tax,
+      netDebitAmount: gross - tax,
+      recoveryStatus: i % 2 === 0 ? 'FULLY_RECOVERED' as const : 'CARRIED_FORWARD_DEBT' as const,
+      createdAt: new Date(Date.now() - seeded(`cb:age:${i}`, 1, 120) * 86_400_000).toISOString()
+    };
+  });
   return clawbacksCache;
 }
 
 export async function listTaxProfiles(): Promise<PayeeTaxProfile[]> {
   if (taxProfilesCache) return taxProfilesCache;
   const payees = await listPayees();
-  taxProfilesCache = payees.map((p, i) => ({
-    payeeId: p.id,
-    cnicOrNtn: p.taxId || `42101-${Math.floor(Math.random() * 9000000) + 1000000}-1`,
-    fbrStatus: i % 10 === 0 ? 'NON_FILER' : 'ACTIVE_FILER',
-    applicableWhtRate: i % 10 === 0 ? 0.20 : 0.10,
-    lastAtlSyncTimestamp: new Date().toISOString(),
-    totalTaxWithheldYtd: Math.floor(Math.random() * 50000) + 1000
-  }));
+  taxProfilesCache = payees.map((p) => {
+    // Filer status comes from the payee registry rather than an index trick,
+    // so this screen agrees with the Payees screen for the same person.
+    // The CNIC/NTN is NEVER synthesised — it identifies a real taxpayer.
+    const isFiler = p.taxFilerStatus === "FILER";
+    return {
+      payeeId: p.id,
+      cnicOrNtn: p.taxId ?? null,
+      fbrStatus: (isFiler ? 'ACTIVE_FILER' : 'NON_FILER') as 'ACTIVE_FILER' | 'NON_FILER',
+      // s.233 Income Tax Ordinance: filer 10%, non-filer double.
+      applicableWhtRate: isFiler ? 0.10 : 0.20,
+      lastAtlSyncTimestamp: null,
+      totalTaxWithheldYtd: Math.round(p.ytdCommission * (isFiler ? 0.10 : 0.20)),
+    };
+  });
   return taxProfilesCache;
 }
 
 export async function listSecpMetrics(): Promise<SecpRegulatoryMetric[]> {
   if (secpMetricsCache) return secpMetricsCache;
+  // ILLUSTRATIVE FIGURES — not this insurer's actual book, and the statutory
+  // cap ratios below (65% conventional, 60% takaful) are inherited numbers
+  // that have NOT been confirmed against a published SECP circular. The
+  // TAKAFUL_FAMILY row therefore reports a regulatory BREACH on invented
+  // premium against an unverified cap. Do not put this in front of a
+  // regulator, an auditor or a board pack until both sides are real:
+  // premium/expense from the ledger, cap ratios from a cited source.
   secpMetricsCache = [
     {
       fiscalYear: '2026',

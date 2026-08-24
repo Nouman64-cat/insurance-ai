@@ -17,6 +17,11 @@ class TokenUsageCreate(BaseModel):
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    # Optional so the older callers (OCR, summarizer) keep working unchanged.
+    cached_tokens: int = 0
+    tenant_id: Optional[UUID] = None
+    model_name: Optional[str] = None
+    thread_id: Optional[str] = None
 
 @router.post("/usage")
 async def record_token_usage(
@@ -28,7 +33,11 @@ async def record_token_usage(
         service_name=data.service_name,
         input_tokens=data.input_tokens,
         output_tokens=data.output_tokens,
-        total_tokens=data.total_tokens
+        total_tokens=data.total_tokens,
+        cached_tokens=data.cached_tokens,
+        tenant_id=data.tenant_id,
+        model_name=data.model_name,
+        thread_id=data.thread_id,
     )
     session.add(usage)
     await session.commit()
@@ -40,6 +49,10 @@ async def record_token_usage(
 async def get_token_usage(
     start_date: str = Query(..., description="Start date (YYYY-MM-DD)"),
     end_date: str = Query(..., description="End date (YYYY-MM-DD)"),
+    tenant_id: Optional[UUID] = Query(
+        default=None,
+        description="Restrict to one tenant's spend. Omit for the platform-wide total.",
+    ),
     session: AsyncSession = Depends(get_session)
 ):
     """Retrieve token usage aggregated by date and service name."""
@@ -60,7 +73,9 @@ async def get_token_usage(
         TokenUsage.created_at >= query_start_dt,
         TokenUsage.created_at <= query_end_dt
     )
-    
+    if tenant_id is not None:
+        statement = statement.where(TokenUsage.tenant_id == tenant_id)
+
     results = (await session.exec(statement)).all()
     
     # Aggregate by date
@@ -78,11 +93,17 @@ async def get_token_usage(
             aggregated[day_str][svc] = {
                 "input": 0,
                 "output": 0,
-                "requests": 0
+                "cached": 0,
+                "requests": 0,
+                "models": [],
             }
-            
-        aggregated[day_str][svc]["input"] += row.input_tokens
-        aggregated[day_str][svc]["output"] += row.output_tokens
-        aggregated[day_str][svc]["requests"] += 1
-        
+
+        bucket = aggregated[day_str][svc]
+        bucket["input"] += row.input_tokens
+        bucket["output"] += row.output_tokens
+        bucket["cached"] += (row.cached_tokens or 0)
+        bucket["requests"] += 1
+        if row.model_name and row.model_name not in bucket["models"]:
+            bucket["models"].append(row.model_name)
+
     return {"data": aggregated}
