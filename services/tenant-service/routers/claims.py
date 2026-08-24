@@ -415,9 +415,11 @@ async def update_claim_status(
 
     # 2. Document Prerequisite Gate (Required for Approved, Partial Approval, or Settled)
     if body.status in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL, ClaimStatusEnum.SETTLED):
-        art_count = len((await session.exec(
-            select(Artifact).where((Artifact.claim_id == claim.id) | (Artifact.case_id == claim.case_id))
-        )).all())
+        if claim.case_id:
+            art_stmt = select(Artifact).where((Artifact.claim_id == claim.id) | (Artifact.case_id == claim.case_id))
+        else:
+            art_stmt = select(Artifact).where(Artifact.claim_id == claim.id)
+        art_count = len((await session.exec(art_stmt)).all())
         if art_count == 0:
             raise HTTPException(
                 status_code=400,
@@ -489,10 +491,11 @@ async def adjudicate_claim(
     old_status = claim.status.value if hasattr(claim.status, "value") else str(claim.status)
     decision = body.decision.upper()
 
-    # Document Prerequisite Gate for Adjudication
-    art_count = len((await session.exec(
-        select(Artifact).where((Artifact.claim_id == claim.id) | (Artifact.case_id == claim.case_id))
-    )).all())
+    if claim.case_id:
+        adj_art_stmt = select(Artifact).where((Artifact.claim_id == claim.id) | (Artifact.case_id == claim.case_id))
+    else:
+        adj_art_stmt = select(Artifact).where(Artifact.claim_id == claim.id)
+    art_count = len((await session.exec(adj_art_stmt)).all())
     if decision in ("APPROVED", "PARTIAL_APPROVAL") and art_count == 0:
         raise HTTPException(
             status_code=400,
@@ -514,6 +517,19 @@ async def adjudicate_claim(
             raise HTTPException(
                 status_code=403,
                 detail=f"Manager Gate Error: Approving claims exceeding PKR 500,000 or referred to manager requires a ClaimsManager role (your role is {r_name}).",
+            )
+
+    if decision in ("APPROVED", "PARTIAL_APPROVAL"):
+        app_amt = body.approved_amount if body.approved_amount else claim.submitted_amount
+        if app_amt > claim.submitted_amount:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Validation Error: Approved amount (PKR {app_amt:,.2f}) cannot exceed the claimed amount (PKR {claim.submitted_amount:,.2f}).",
+            )
+        if app_amt <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Validation Error: Approved amount must be greater than 0.",
             )
 
     if decision == "APPROVED":
@@ -576,13 +592,27 @@ async def create_claim_payout(
             detail=f"Payout Gate Error: Payouts can only be issued for claims in 'Approved' or 'Partial Approval' status (current status is '{claim.status.value}').",
         )
 
-    art_count = len((await session.exec(
-        select(Artifact).where((Artifact.claim_id == claim.id) | (Artifact.case_id == claim.case_id))
-    )).all())
+    if claim.case_id:
+        p_art_stmt = select(Artifact).where((Artifact.claim_id == claim.id) | (Artifact.case_id == claim.case_id))
+    else:
+        p_art_stmt = select(Artifact).where(Artifact.claim_id == claim.id)
+    art_count = len((await session.exec(p_art_stmt)).all())
     if art_count == 0:
         raise HTTPException(
             status_code=400,
             detail="Document Gate Error: Cannot issue disbursement payout without at least 1 verified claim document attached.",
+        )
+
+    max_allowed = claim.approved_amount if claim.approved_amount > 0 else claim.submitted_amount
+    if body.amount > max_allowed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Validation Error: Payout amount (PKR {body.amount:,.2f}) cannot exceed approved claim amount (PKR {max_allowed:,.2f}).",
+        )
+    if body.amount <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Validation Error: Payout amount must be greater than 0.",
         )
 
     payout = ClaimPayout(
