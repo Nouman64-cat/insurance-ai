@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from "react";
 import { useNotify } from "@/components/NotificationContext";
 import {
   Category, RuleSetSummary, RuleSetDetail, RuleDetail, RuleDraft, ScopeType,
-  listCategories, listRuleSets, createRuleSet, getRuleSetDetail, createRuleVersion,
+  listCategories, createCategory, createSubCategory, listRuleSets, createRuleSet, getRuleSetDetail, createRuleVersion,
   updateVersionStatus, addRuleToVersion, updateRule, deleteRule,
   DEFAULT_IMPACT_DATA, ImpactType,
 } from "@/app/services/ruleEngine";
@@ -63,6 +63,18 @@ export function useRuleSets(tenantId: string) {
   const [newSetName, setNewSetName] = useState("");
   const [newSetDesc, setNewSetDesc] = useState("");
 
+  // ── Create category modal state ────────────────────────────────────────
+  const [showCreateCategory, setShowCreateCategory] = useState(false);
+  const [newCatCode, setNewCatCode] = useState("");
+  const [newCatName, setNewCatName] = useState("");
+  const [newCatDesc, setNewCatDesc] = useState("");
+
+  // ── Create subcategory modal state ─────────────────────────────────────
+  const [showCreateSubCategory, setShowCreateSubCategory] = useState(false);
+  const [newSubCategoryId, setNewSubCategoryId] = useState("");
+  const [newSubCode, setNewSubCode] = useState("");
+  const [newSubName, setNewSubName] = useState("");
+
   // ── Load catalog (with race guard & unfiltered count sync) ─────────────
   const load = useCallback(
     async (f?: HierarchySelection) => {
@@ -89,7 +101,7 @@ export function useRuleSets(tenantId: string) {
         if (currentReq === reqSequenceRef.current) {
           notify(err.message || "Failed to load rule catalog.", false);
         }
-      } fontFinally: {
+      } finally {
         if (currentReq === reqSequenceRef.current) {
           setLoading(false);
         }
@@ -320,6 +332,76 @@ export function useRuleSets(tenantId: string) {
     [tenantId, notify, refreshDetail, selectedVersionId]
   );
 
+  // ── Create Category ───────────────────────────────────────────────────
+  const handleCreateCategory = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newCatCode.trim() || !newCatName.trim()) {
+        notify("Category code and name are required.", false);
+        return;
+      }
+      try {
+        await createCategory(tenantId, {
+          code: newCatCode.trim().toUpperCase(),
+          name: newCatName.trim(),
+          description: newCatDesc.trim(),
+        });
+        notify("Category created successfully.", true);
+        setShowCreateCategory(false);
+        setNewCatCode("");
+        setNewCatName("");
+        setNewCatDesc("");
+        load();
+      } catch (err: any) {
+        notify(err.message || "Failed to create category.", false);
+      }
+    },
+    [tenantId, newCatCode, newCatName, newCatDesc, notify, load]
+  );
+
+  // ── Open Create SubCategory modal with preselected parent ─────────────
+  const openCreateSubCategoryModal = useCallback(() => {
+    if (filter.categoryCode) {
+      const parent = categories.find((c) => c.code === filter.categoryCode);
+      if (parent) {
+        setNewSubCategoryId(parent.id);
+      }
+    } else if (categories.length > 0) {
+      setNewSubCategoryId(categories[0].id);
+    }
+    setShowCreateSubCategory(true);
+  }, [filter.categoryCode, categories]);
+
+  // ── Create SubCategory ────────────────────────────────────────────────
+  const handleCreateSubCategory = useCallback(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!newSubCategoryId) {
+        notify("Please select a parent Category.", false);
+        return;
+      }
+      if (!newSubCode.trim() || !newSubName.trim()) {
+        notify("SubCategory code and name are required.", false);
+        return;
+      }
+      try {
+        await createSubCategory(tenantId, newSubCategoryId, {
+          code: newSubCode.trim().toUpperCase(),
+          name: newSubName.trim(),
+        });
+        notify("SubCategory created successfully.", true);
+        setShowCreateSubCategory(false);
+        setNewSubCategoryId("");
+        setNewSubCode("");
+        setNewSubName("");
+        load();
+      } catch (err: any) {
+        notify(err.message || "Failed to create subcategory.", false);
+      }
+    },
+    [tenantId, newSubCategoryId, newSubCode, newSubName, notify, load]
+  );
+
   // ── Create rule set ────────────────────────────────────────────────────
   const handleCreateRuleSet = useCallback(
     async (e: React.FormEvent) => {
@@ -379,5 +461,18 @@ export function useRuleSets(tenantId: string) {
     newSetName, setNewSetName,
     newSetDesc, setNewSetDesc,
     handleCreateRuleSet,
+    // Create category
+    showCreateCategory, setShowCreateCategory,
+    newCatCode, setNewCatCode,
+    newCatName, setNewCatName,
+    newCatDesc, setNewCatDesc,
+    handleCreateCategory,
+    // Create subcategory
+    showCreateSubCategory, setShowCreateSubCategory,
+    newSubCategoryId, setNewSubCategoryId,
+    newSubCode, setNewSubCode,
+    newSubName, setNewSubName,
+    openCreateSubCategoryModal,
+    handleCreateSubCategory,
   };
 }

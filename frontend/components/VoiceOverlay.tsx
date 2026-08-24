@@ -155,7 +155,7 @@ export default function VoiceOverlay({ onClose }: Props) {
                     },
                     prompt: SYSTEM_PROMPT,
                     functions: ALL_TOOLS.map(t => {
-                      const s = (t.schema as any).toJSONSchema ? (t.schema as any).toJSONSchema() : zodToJsonSchema(t.schema);
+                      const s = (t.schema as any).toJSONSchema ? (t.schema as any).toJSONSchema() : zodToJsonSchema(t.schema as any);
                       const { $schema, ...params } = s;
                       return {
                         name: t.name,

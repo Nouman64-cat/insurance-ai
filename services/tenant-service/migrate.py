@@ -966,6 +966,22 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ADD COLUMN IF NOT EXISTS final_impacts JSON, "
         "ADD COLUMN IF NOT EXISTS execution_duration_ms DOUBLE PRECISION",
     ),
+    (
+        "v44 — token_usage: per-tenant attribution, cache hits, model and thread",
+        "ALTER TABLE token_usage "
+        "ADD COLUMN IF NOT EXISTS cached_tokens INTEGER NOT NULL DEFAULT 0, "
+        "ADD COLUMN IF NOT EXISTS tenant_id UUID, "
+        "ADD COLUMN IF NOT EXISTS model_name VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS thread_id VARCHAR(100)",
+    ),
+    (
+        "v44a — token_usage: index tenant_id for chargeback queries",
+        "CREATE INDEX IF NOT EXISTS ix_token_usage_tenant_id ON token_usage (tenant_id)",
+    ),
+    (
+        "v44b — token_usage: index thread_id for per-conversation cost",
+        "CREATE INDEX IF NOT EXISTS ix_token_usage_thread_id ON token_usage (thread_id)",
+    ),
     # ── Claims Management module ────────────────────────────────────────────────
     (
         "v45a-enum — create claimstatusenum type if not exists",

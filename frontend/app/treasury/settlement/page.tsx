@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { SettlementRecord, listSettlementRecords } from "../../services/commissions";
+import DemoDataBanner from "@/components/DemoDataBanner";
 
 export default function SettlementPage() {
   const [records, setRecords] = useState<SettlementRecord[]>([]);
@@ -24,6 +25,7 @@ export default function SettlementPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+      <DemoDataBanner />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">

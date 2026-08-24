@@ -9,6 +9,7 @@ import { useNotify } from "./NotificationContext";
 import { ProcessGraph } from "./ProcessGraph";
 import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
+import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
 import type { AgentMessage, QuickAction } from "@/lib/agent/types";
 import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
@@ -61,29 +62,56 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
     return [
       { label: "Add a new customer", actionType: "submit", payload: "Add a new customer" },
       { label: "Start underwriting", actionType: "submit", payload: "Start underwriting journey for a customer" },
-      { label: "Create a proposal", actionType: "submit", payload: "Create a proposal for a customer" },
+      { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+      { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
+      { label: "FinOps Token Economy ⚡", actionType: "navigate", payload: "super-admin/tokens" },
+      { label: "Calculate Commission", actionType: "submit", payload: "Calculate commission for active policy" },
+      { label: "Check Payout Schedule", actionType: "submit", payload: "Show commission payout runs" },
       { label: "Check pending cases", actionType: "submit", payload: "Show me all pending cases" },
-      { label: "View dashboard stats", actionType: "submit", payload: "Show me the dashboard statistics" },
-      { label: "List active quotes", actionType: "submit", payload: "List all quotes" },
-      { label: "Search records", actionType: "submit", payload: "Search for a customer by name" },
-      { label: "Test with demo data", actionType: "submit", payload: "Test the full workflow with demo data" },
     ];
   }
 
   const text = (lastMessage.text || "").toLowerCase();
+
+  if (text.includes("rule") || text.includes("catalog") || text.includes("category")) {
+    return [
+      { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+      { label: "Evaluate Rule Set", actionType: "submit", payload: "Evaluate rule set for current case" },
+      { label: "Check Live Underwriting Rules", actionType: "submit", payload: "Show live underwriting rule sets" },
+      { label: "View Token Costs", actionType: "navigate", payload: "super-admin/tokens" },
+    ];
+  }
+
+  if (text.includes("commission") || text.includes("payee") || text.includes("ledger") || text.includes("payout") || text.includes("waterfall")) {
+    return [
+      { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
+      { label: "View Commission Ledger", actionType: "navigate", payload: "commission-ops/ledger" },
+      { label: "Calculate Commission", actionType: "submit", payload: "Calculate commission for active policy" },
+      { label: "Create Payout Run", actionType: "submit", payload: "Create a payout run for this month" },
+      { label: "Open Statements", actionType: "navigate", payload: "commission-ops/statements" },
+    ];
+  }
+
+  if (text.includes("token") || text.includes("cost") || text.includes("finops") || text.includes("llm") || text.includes("quota")) {
+    return [
+      { label: "Open Token Economy ⚡", actionType: "navigate", payload: "super-admin/tokens" },
+      { label: "Check Token Usage", actionType: "submit", payload: "Show token usage breakdown and costs" },
+      { label: "Rule Engine FinOps", actionType: "navigate", payload: "admin/rule-engine" },
+      { label: "Commission Engine FinOps", actionType: "navigate", payload: "commissions" },
+    ];
+  }
   
   if (text.includes("missing documents") || (text.includes("upload") && text.includes("document"))) {
     const isCNIC = text.includes("cnic");
     const isMed = text.includes("medical");
     const isSalary = text.includes("salary");
-    const actions = [];
+    const actions: QuickAction[] = [];
     if (isCNIC || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload CNIC", actionType: "upload", payload: JSON.stringify({ document_type: "CNIC" }) });
     if (isMed || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload Medical Report", actionType: "upload", payload: JSON.stringify({ document_type: "Medical Report" }) });
     if (isSalary || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload Salary Slip", actionType: "upload", payload: JSON.stringify({ document_type: "Salary Slip" }) });
     actions.push({ label: "I have uploaded them", actionType: "submit", payload: "I have uploaded the documents. Please check and proceed." });
     return actions;
   }
-
 
   if (text.includes("customer") && text.includes("added")) {
     return [
@@ -179,9 +207,10 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
     ];
   }
   return [
-    { label: "What's next?", actionType: "submit", payload: "What should I do next?" },
+    { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+    { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
+    { label: "FinOps Token Economy ⚡", actionType: "navigate", payload: "super-admin/tokens" },
     { label: "View all cases", actionType: "navigate", payload: "underwriting" },
-    { label: "Add new customer", actionType: "submit", payload: "Add a new customer" },
   ];
 }
 
@@ -595,6 +624,30 @@ export function CopilotInterface() {
     })();
   }, [pendingInterrupt, resolveInterrupt]);
 
+  // Commission tools run in the browser — the payee registry, waterfall,
+  // ledger and payout runs live in app/services/commissions.ts because there
+  // is no commission backend yet. chat-agent resolves what it can server-side
+  // and hands the rest here through the same client_execute interrupt.
+  const commissionRunRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (pendingInterrupt?.kind !== "client_execute") return;
+    const name = pendingInterrupt.toolCall.name;
+    if (!isCommissionTool(name)) return;
+    // Guard against the effect re-firing for the same pending interrupt and
+    // running a payout twice.
+    if (commissionRunRef.current === name) return;
+    commissionRunRef.current = name;
+
+    (async () => {
+      try {
+        const result = await runCommissionTool(name, pendingInterrupt.toolCall.args ?? {});
+        resolveInterrupt(result);
+      } finally {
+        commissionRunRef.current = null;
+      }
+    })();
+  }, [pendingInterrupt, resolveInterrupt]);
+
   // Client-executed Policy Issuance and Payment
   useEffect(() => {
     if (pendingInterrupt?.kind !== "client_execute") return;
@@ -721,9 +774,15 @@ export function CopilotInterface() {
 
   // Fire RAG "next best action" suggestions once a turn finishes — fire-and-
   // forget, completely off the critical path.
+  //
+  // Only when the turn produced no backend suggestions of its own. Tools
+  // already return `quick_actions` computed from real state, and those are
+  // both better and free; running the RAG pipeline anyway spent an embedding
+  // call plus a Gemini generation on every single turn to produce chips that
+  // were then overwritten by the tool's own.
   const wasLoadingRef = useRef(false);
   useEffect(() => {
-    if (wasLoadingRef.current && !isLoading) {
+    if (wasLoadingRef.current && !isLoading && turnActions.length === 0) {
       const tenantId = localStorage.getItem("tenant_id");
       if (tenantId) {
         const ctx = messages.slice(-4).map((m) => `${m.role}: ${m.text}`).join("\n");
@@ -733,6 +792,9 @@ export function CopilotInterface() {
       }
     }
     wasLoadingRef.current = isLoading;
+    // turnActions intentionally read, not depended on: adding it would re-run
+    // this when the chips arrive and fire the very call we are trying to skip.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, messages]);
 
   const [sessions, setSessions] = useState<{id: string, date: number, title: string, messages: any[], actions: any[]}[]>(() => {

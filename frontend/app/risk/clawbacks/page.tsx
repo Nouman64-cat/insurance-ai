@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { ClawbackTransaction, listClawbacks } from "../../services/commissions";
+import DemoDataBanner from "@/components/DemoDataBanner";
 
 export default function ClawbackEnginePage() {
   const [clawbacks, setClawbacks] = useState<ClawbackTransaction[]>([]);
@@ -24,6 +25,7 @@ export default function ClawbackEnginePage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+      <DemoDataBanner note="This module has no backend yet. These recoveries are generated in the browser against real payee records — no debit has been raised against anyone." />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">

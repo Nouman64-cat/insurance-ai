@@ -63,9 +63,13 @@ class ExecCtx:
 
 @dataclass
 class Ctx:
-    """What each handler gets: an open HTTP client already carrying auth
-    headers, plus the resolved tenant."""
-    client: httpx.AsyncClient
+    """What each handler gets: an HTTP client already carrying this call's auth
+    headers and timeout, plus the resolved tenant.
+
+    `client` is a `_ScopedClient` (defined below) wrapping the process-wide
+    pooled client — same get/post/put/patch/delete surface handlers already use.
+    """
+    client: Any
     tenant_id: str
     exec_ctx: ExecCtx
 
@@ -78,6 +82,76 @@ class Ctx:
 
 Handler = Callable[[dict[str, Any], Ctx], Awaitable[dict[str, Any]]]
 _HANDLERS: dict[str, Handler] = {}
+
+
+# ── Shared HTTP client ───────────────────────────────────────────────────────
+# Built once and reused, so connections stay keep-alive across the many calls a
+# single turn (or a whole autonomous journey) makes.
+
+_CLIENT: Optional[httpx.AsyncClient] = None
+_CLIENT_LOCK = asyncio.Lock()
+
+
+async def _shared_client() -> httpx.AsyncClient:
+    global _CLIENT
+    if _CLIENT is None or _CLIENT.is_closed:
+        async with _CLIENT_LOCK:
+            if _CLIENT is None or _CLIENT.is_closed:
+                _CLIENT = httpx.AsyncClient(
+                    # Connection-level retries only (safe for POSTs — nothing
+                    # has been sent yet when a connect fails); response-level
+                    # errors still surface normally.
+                    transport=httpx.AsyncHTTPTransport(retries=2),
+                    limits=httpx.Limits(max_keepalive_connections=20, max_connections=100),
+                    timeout=60.0,
+                )
+    return _CLIENT
+
+
+async def close_shared_client() -> None:
+    """Called from the FastAPI lifespan on shutdown."""
+    global _CLIENT
+    if _CLIENT is not None and not _CLIENT.is_closed:
+        await _CLIENT.aclose()
+    _CLIENT = None
+
+
+class _ScopedClient:
+    """Thin façade over the shared client that pins this call's auth headers
+    and timeout.
+
+    Handlers already call `ctx.client.get(...)` / `.post(...)` etc. with the
+    client carrying auth, so the per-call scoping has to live here rather than
+    on the shared client (whose headers would otherwise leak between tenants).
+    """
+
+    __slots__ = ("_client", "_headers", "_timeout")
+
+    def __init__(self, client: httpx.AsyncClient, headers: dict[str, str], timeout: float):
+        self._client = client
+        self._headers = headers
+        self._timeout = timeout
+
+    def _merge(self, kwargs: dict) -> dict:
+        headers = {**self._headers, **(kwargs.pop("headers", None) or {})}
+        kwargs["headers"] = headers
+        kwargs.setdefault("timeout", self._timeout)
+        return kwargs
+
+    async def get(self, url: str, **kwargs):
+        return await self._client.get(url, **self._merge(kwargs))
+
+    async def post(self, url: str, **kwargs):
+        return await self._client.post(url, **self._merge(kwargs))
+
+    async def put(self, url: str, **kwargs):
+        return await self._client.put(url, **self._merge(kwargs))
+
+    async def patch(self, url: str, **kwargs):
+        return await self._client.patch(url, **self._merge(kwargs))
+
+    async def delete(self, url: str, **kwargs):
+        return await self._client.delete(url, **self._merge(kwargs))
 
 
 def handles(name: str):
@@ -2813,13 +2887,22 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
     # and add_family_group / add_organization run concurrent risk engine calls
     # for all members. Give them real headroom.
     timeout = 180.0 if name in ("run_risk_assessment", "add_family_group", "add_organization") else 60.0
-    # Connection-level retries only (safe for POSTs — nothing has been sent
-    # yet when a connect fails); response-level errors still surface normally.
-    transport = httpx.AsyncHTTPTransport(retries=2)
 
     try:
-        async with httpx.AsyncClient(timeout=timeout, headers=ctx.headers, transport=transport) as client:
-            return await handler(args, Ctx(client=client, tenant_id=ctx.effective_tenant_id, exec_ctx=ctx))
+        # One pooled client for the whole process rather than a fresh one (and
+        # a fresh connection pool) per tool call. An autonomous journey makes
+        # 15+ calls and used to pay TCP setup on every one of them.
+        #
+        # Headers are per-call, not per-client, because auth differs by caller;
+        # timeout likewise, because the risk-engine path needs far more headroom
+        # than a list endpoint.
+        client = await _shared_client()
+        scoped = Ctx(
+            client=_ScopedClient(client, headers=ctx.headers, timeout=timeout),
+            tenant_id=ctx.effective_tenant_id,
+            exec_ctx=ctx,
+        )
+        return await handler(args, scoped)
     except LookupError as exc:
         # Expected "couldn't find it" paths — surfaced verbatim so the model can
         # relay a useful sentence instead of an HTTP trace.
@@ -2877,3 +2960,767 @@ async def _bulk_underwriting_journey(args: dict, ctx: Ctx) -> dict:
             "args": {"cnics": cnics}
         }
     }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Rules engine — versioned underwriting governance
+#
+# All of this is backed by tenant-service/routers/rules.py. Rule sets are
+# addressed by their dotted code (medical.nml_grid) rather than a UUID,
+# because that is what a human says and what the model will echo back.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _rules(ctx: Ctx, path: str) -> str:
+    return f"{TENANT_SERVICE_URL}/tenants/{ctx.tenant_id}/rules{path}"
+
+
+def _parse_json_arg(raw: Any, field: str) -> Any:
+    """Tool args carrying JSON arrive as strings (the model writes them into a
+    string field). Accept both a real object and a string, and fence-strip the
+    ```json blocks the model sometimes wraps them in."""
+    if raw in (None, ""):
+        return None
+    if not isinstance(raw, str):
+        return raw
+    text = raw.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise LookupError(f"{field} isn't valid JSON: {exc.msg}") from exc
+
+
+async def _find_rule_set(ctx: Ctx, code: str) -> dict:
+    res = await ctx.client.get(_rules(ctx, "/sets"))
+    res.raise_for_status()
+    sets = res.json()
+    needle = (code or "").strip().lower()
+    match = next(
+        (s for s in sets if (s.get("rule_code") or s.get("code") or "").lower() == needle),
+        None,
+    ) or next(
+        (s for s in sets if needle and needle in (s.get("name") or "").lower()),
+        None,
+    )
+    if not match:
+        known = ", ".join(sorted(s.get("rule_code") or s.get("code") or "" for s in sets)[:8])
+        raise LookupError(f'No rule set "{code}". Known codes include: {known}.')
+    return match
+
+
+async def _rule_set_detail(ctx: Ctx, code: str) -> tuple[dict, dict]:
+    rs = await _find_rule_set(ctx, code)
+    res = await ctx.client.get(_rules(ctx, f"/sets/{rs['id']}"))
+    res.raise_for_status()
+    return rs, res.json()
+
+
+def _versions(detail: dict) -> list[dict]:
+    return detail.get("versions") or []
+
+
+def _version_with_status(detail: dict, status: str) -> Optional[dict]:
+    return next((v for v in _versions(detail) if (v.get("status") or "").upper() == status), None)
+
+
+@handles("list_rule_categories")
+async def _list_rule_categories(args: dict, ctx: Ctx) -> dict:
+    res = await ctx.client.get(_rules(ctx, "/categories"))
+    res.raise_for_status()
+    cats = res.json()
+    if not cats:
+        return {"success": True, "message": "No rule categories are set up yet.", "categories": []}
+
+    lines = []
+    for c in cats:
+        subs = c.get("subcategories") or []
+        lines.append(f"- **{c.get('name')}** (`{c.get('code')}`) — {len(subs)} subcategor(ies)")
+        for s in subs[:4]:
+            profiles = s.get("eligibility_profiles") or []
+            channels = ", ".join(p.get("channel_code", "") for p in profiles) or "no channels"
+            lines.append(f"    - {s.get('name')} (`{s.get('code')}`) — {channels}")
+    return {
+        "success": True,
+        "message": f"{len(cats)} rule categor(ies):\n" + "\n".join(lines),
+        "categories": cats,
+        "quick_actions": [
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+            {"label": "List rule sets", "actionType": "submit", "payload": "List all rule sets"},
+        ],
+    }
+
+
+@handles("list_rule_sets")
+async def _list_rule_sets(args: dict, ctx: Ctx) -> dict:
+    params = {}
+    if args.get("category"):
+        params["category"] = args["category"]
+    if args.get("channel"):
+        params["channel"] = args["channel"]
+    res = await ctx.client.get(_rules(ctx, "/sets"), params=params or None)
+    res.raise_for_status()
+    rows = res.json()
+    if not rows:
+        return {"success": True, "message": "No rule sets match that.", "rule_sets": []}
+
+    lines = "\n".join(
+        f"- `{r.get('rule_code') or r.get('code')}` **{r.get('name')}** — "
+        f"v{r.get('active_version_number') or '—'} "
+        f"({r.get('active_version_status') or 'no active version'}), "
+        f"{r.get('rule_count', 0)} rule(s)"
+        for r in rows[:20]
+    )
+    return {
+        "success": True,
+        "message": f"{len(rows)} rule set(s):\n{lines}",
+        "rule_sets": rows,
+        "quick_actions": [
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+@handles("get_rule_set")
+async def _get_rule_set(args: dict, ctx: Ctx) -> dict:
+    rs, detail = await _rule_set_detail(ctx, args.get("rule_set_code", ""))
+    versions = _versions(detail)
+    active = _version_with_status(detail, "ACTIVE")
+    draft = _version_with_status(detail, "DRAFT")
+
+    lines = [f"**{detail.get('name')}** (`{detail.get('rule_code') or detail.get('code')}`)"]
+    if detail.get("description"):
+        lines.append(f"_{detail['description']}_")
+    lines.append("")
+    lines.append(f"| Version | Status | Rules | Effective |")
+    lines.append("| :-- | :-- | --: | :-- |")
+    for v in versions[:8]:
+        lines.append(
+            f"| v{v.get('version_number')} | {v.get('status')} | "
+            f"{len(v.get('rules') or [])} | {v.get('effective_from') or '—'} |"
+        )
+
+    if active and active.get("rules"):
+        lines.append("")
+        lines.append(f"**Rules in the active version (v{active.get('version_number')}):**")
+        for r in sorted(active["rules"], key=lambda x: x.get("priority", 999))[:15]:
+            state = "" if r.get("is_active", True) else " _(inactive)_"
+            lines.append(f"- `{r.get('rule_code')}` p{r.get('priority')} — {r.get('name')} → {r.get('action_outcome')}{state}")
+
+    qa = [{"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"}]
+    if draft:
+        qa.insert(0, {
+            "label": f"Deploy draft v{draft.get('version_number')}",
+            "actionType": "submit",
+            "payload": f"Deploy the draft version of rule set {detail.get('rule_code') or detail.get('code')}",
+        })
+    else:
+        qa.insert(0, {
+            "label": "Open a draft version",
+            "actionType": "submit",
+            "payload": f"Create a new draft version of rule set {detail.get('rule_code') or detail.get('code')}",
+        })
+    qa.append({
+        "label": "Simulate this rule set",
+        "actionType": "submit",
+        "payload": f"Simulate rule set {detail.get('rule_code') or detail.get('code')} for a 45 year old with 5000000 sum assured",
+    })
+
+    return {
+        "success": True,
+        "message": "\n".join(lines),
+        "rule_set": detail,
+        "quick_actions": qa,
+    }
+
+
+def _format_evaluation(payload: dict) -> str:
+    status = payload.get("status", "UNKNOWN")
+    matched = payload.get("matched_rule_codes") or []
+    outcome = payload.get("outcome_payload") or {}
+    impacts = payload.get("final_impacts") or {}
+
+    lines = [f"**Result: {status}**"]
+    if matched:
+        lines.append(f"Matched rule(s): {', '.join(f'`{m}`' for m in matched)}")
+    if outcome.get("reason"):
+        lines.append(f"> {outcome['reason']}")
+    interesting = {k: v for k, v in impacts.items() if v not in (None, 0, 0.0, [], {})}
+    if interesting:
+        lines.append("")
+        lines.append("Impacts:")
+        for k, v in list(interesting.items())[:8]:
+            lines.append(f"- {k.replace('_', ' ')}: **{v}**")
+    if not matched and not outcome:
+        lines.append("_No rule matched this context — the rulebook has nothing to say about it._")
+    return "\n".join(lines)
+
+
+@handles("evaluate_rule_set")
+async def _evaluate_rule_set(args: dict, ctx: Ctx) -> dict:
+    code = args.get("rule_set_code", "")
+    context = _parse_json_arg(args.get("context_json"), "context_json") or {}
+    if not isinstance(context, dict):
+        return {"success": False, "error": "context_json must be a JSON object, e.g. {\"age\": 45}."}
+
+    # Confirm the code resolves before posting, so a typo produces a helpful
+    # "known codes are..." message rather than a bare 404 from the API.
+    rs = await _find_rule_set(ctx, code)
+    real_code = rs.get("rule_code") or rs.get("code")
+
+    res = await ctx.client.post(
+        _rules(ctx, "/evaluate"),
+        json={"rule_set_code": real_code, "context": context, "actor": "AI Copilot"},
+    )
+    res.raise_for_status()
+    payload = res.json()
+
+    return {
+        "success": True,
+        "message": f"Simulated `{real_code}` with {json.dumps(context)}:\n\n" + _format_evaluation(payload),
+        "evaluation": payload,
+        "quick_actions": [
+            {"label": "Open Simulator", "actionType": "navigate", "payload": "admin/rule-engine"},
+            {"label": "View rule set", "actionType": "submit", "payload": f"Show rule set {real_code}"},
+            {"label": "View audit log", "actionType": "submit", "payload": "Show the rule evaluation logs"},
+        ],
+    }
+
+
+@handles("evaluate_rule_scope")
+async def _evaluate_rule_scope(args: dict, ctx: Ctx) -> dict:
+    context = _parse_json_arg(args.get("context_json"), "context_json") or {}
+    subcategory = args.get("subcategory") or args.get("category")
+    if not subcategory:
+        return {
+            "success": False,
+            "error": "Which subcategory should I evaluate? Call list_rule_categories to see what exists.",
+        }
+    body = {"subcategory_code": subcategory, "context": context, "actor": "AI Copilot"}
+    if args.get("channel"):
+        body["channel_code"] = args["channel"]
+
+    res = await ctx.client.post(_rules(ctx, "/evaluate-scope"), json=body)
+    res.raise_for_status()
+    payload = res.json()
+
+    results = payload.get("results") or payload.get("evaluations") or []
+    lines = [f"Evaluated **{len(results)}** rule set(s) in scope `{subcategory}`:"]
+    for r in results[:10]:
+        matched = ", ".join(r.get("matched_rule_codes") or []) or "no match"
+        lines.append(f"- `{r.get('rule_set_code')}` → {r.get('status')} ({matched})")
+    combined = payload.get("final_impacts") or payload.get("combined_impacts") or {}
+    interesting = {k: v for k, v in combined.items() if v not in (None, 0, 0.0, [], {})}
+    if interesting:
+        lines.append("")
+        lines.append("**Combined impacts:** " + ", ".join(f"{k.replace('_',' ')}=**{v}**" for k, v in list(interesting.items())[:8]))
+
+    return {
+        "success": True,
+        "message": "\n".join(lines),
+        "evaluation": payload,
+        "quick_actions": [
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+@handles("get_rule_evaluation_logs")
+async def _get_rule_evaluation_logs(args: dict, ctx: Ctx) -> dict:
+    limit = min(int(args.get("limit") or 20), 50)
+    res = await ctx.client.get(_rules(ctx, "/logs"), params={"limit": limit})
+    res.raise_for_status()
+    logs = res.json()
+    if not logs:
+        return {"success": True, "message": "No rule evaluations recorded yet.", "logs": []}
+
+    lines = "\n".join(
+        f"- `{l.get('rule_set_code')}` v{l.get('version_number') or '—'} → "
+        f"{l.get('status') or '—'} "
+        f"({', '.join(l.get('matched_rule_codes') or []) or 'no match'})"
+        + (f" · {l.get('customer_cnic')}" if l.get("customer_cnic") else "")
+        for l in logs[:15]
+    )
+    return {
+        "success": True,
+        "message": f"{len(logs)} recent rule evaluation(s):\n{lines}",
+        "logs": logs,
+        "quick_actions": [
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+@handles("create_rule_set")
+async def _create_rule_set(args: dict, ctx: Ctx) -> dict:
+    cats_res = await ctx.client.get(_rules(ctx, "/categories"))
+    cats_res.raise_for_status()
+    cats = cats_res.json()
+
+    cat_code = (args.get("category_code") or "").upper()
+    sub_code = (args.get("subcategory_code") or "").upper()
+    category = next((c for c in cats if (c.get("code") or "").upper() == cat_code), None)
+    if not category:
+        known = ", ".join(c.get("code", "") for c in cats)
+        return {"success": False, "error": f'No category "{args.get("category_code")}". Existing: {known}.'}
+
+    subs = category.get("subcategories") or []
+    sub = next((s for s in subs if (s.get("code") or "").upper() == sub_code), None)
+    if not sub:
+        known = ", ".join(s.get("code", "") for s in subs) or "none yet"
+        return {"success": False, "error": f'No subcategory "{args.get("subcategory_code")}" under {cat_code}. Existing: {known}.'}
+
+    body = {
+        "rule_code": args.get("code"),
+        "name": args.get("name"),
+        "description": args.get("description") or "",
+        "subcategory_id": sub["id"],
+    }
+    profiles = sub.get("eligibility_profiles") or []
+    if args.get("channel_code"):
+        prof = next((p for p in profiles if (p.get("channel_code") or "").upper() == args["channel_code"].upper()), None)
+        if prof:
+            body["eligibility_id"] = prof["id"]
+
+    res = await ctx.client.post(_rules(ctx, "/sets"), json=body)
+    res.raise_for_status()
+    created = res.json()
+    code = created.get("rule_code") or args.get("code")
+
+    return {
+        "success": True,
+        "message": (
+            f"Created rule set **{args.get('name')}** (`{code}`) under {cat_code} / {sub_code}. "
+            "It has an empty DRAFT version — add rules to it, then deploy."
+        ),
+        "rule_set": created,
+        "last_action": _action("create_rule_set", "rule_set", str(created.get("id", "")),
+                               "admin/rule-engine", f"Rule set {code} created"),
+        "quick_actions": [
+            {"label": "Add a rule", "actionType": "submit", "payload": f"Add a rule to rule set {code}"},
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+@handles("create_rule_version")
+async def _create_rule_version(args: dict, ctx: Ctx) -> dict:
+    rs, detail = await _rule_set_detail(ctx, args.get("rule_set_code", ""))
+    code = detail.get("rule_code") or detail.get("code")
+
+    existing_draft = _version_with_status(detail, "DRAFT")
+    if existing_draft:
+        return {
+            "success": True,
+            "message": (
+                f"`{code}` already has a DRAFT — v{existing_draft.get('version_number')} "
+                f"with {len(existing_draft.get('rules') or [])} rule(s). Edit that one rather than opening another."
+            ),
+            "version": existing_draft,
+            "quick_actions": [
+                {"label": "Add a rule", "actionType": "submit", "payload": f"Add a rule to rule set {code}"},
+                {"label": f"Deploy v{existing_draft.get('version_number')}", "actionType": "submit",
+                 "payload": f"Deploy the draft version of rule set {code}"},
+            ],
+        }
+
+    res = await ctx.client.post(_rules(ctx, f"/sets/{rs['id']}/versions"))
+    res.raise_for_status()
+    version = res.json()
+    return {
+        "success": True,
+        "message": (
+            f"Opened DRAFT **v{version.get('version_number')}** of `{code}`, copying the active rules. "
+            "Changes now go into this draft; nothing is live until you deploy it."
+        ),
+        "version": version,
+        "last_action": _action("create_rule_version", "rule_set", str(rs["id"]),
+                               "admin/rule-engine", f"Draft v{version.get('version_number')} opened on {code}"),
+        "quick_actions": [
+            {"label": "Add a rule", "actionType": "submit", "payload": f"Add a rule to rule set {code}"},
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+# The model writes conditions in the compact seed shape
+# ({"field","operator","value"}); the API wants RuleCriteriaCreate. Translate.
+def _to_criteria(conditions: list) -> list[dict]:
+    out = []
+    for c in conditions or []:
+        if not isinstance(c, dict):
+            continue
+        op = (c.get("operator") or "eq").lower()
+        value = c.get("value")
+        crit: dict[str, Any] = {
+            "group_id": int(c.get("group_id") or 1),
+            "field_name": c.get("field") or c.get("field_name") or "",
+            "operator": op,
+        }
+        if op == "between" and isinstance(value, (list, tuple)) and len(value) == 2:
+            crit["value_range_min"] = _as_float(value[0])
+            crit["value_range_max"] = _as_float(value[1])
+        elif op in ("in", "not_in") and isinstance(value, (list, tuple)):
+            crit["value_list"] = list(value)
+        elif isinstance(value, bool):
+            crit["value_string"] = "true" if value else "false"
+        elif isinstance(value, (int, float)):
+            crit["value_numeric"] = float(value)
+        elif value is not None:
+            crit["value_string"] = str(value)
+        out.append(crit)
+    return out
+
+
+_OUTCOME_TO_IMPACT_TYPE = {
+    "REQUIRE_MEDICAL_EXAM": "REQUIRE_MEDICAL",
+    "WAIVE_MEDICAL": "AUTO_APPROVE",
+    "APPLY_COMMISSION_RATE": "APPLY_LOADING",
+    "APPLY_LOADING": "APPLY_LOADING",
+    "DECLINE": "DECLINE",
+    "REFER": "REFER_TO_UNDERWRITER",
+    "REFER_TO_UNDERWRITER": "REFER_TO_UNDERWRITER",
+    "EXCLUSION": "EXCLUSION_CLAUSE",
+    "HLV_MULTIPLE_LOOKUP": "FINANCIAL_JUSTIFICATION",
+}
+
+
+async def _draft_for(ctx: Ctx, code: str) -> tuple[dict, dict, str]:
+    """Resolve (rule_set, draft_version, code) or explain why there is no draft."""
+    rs, detail = await _rule_set_detail(ctx, code)
+    real_code = detail.get("rule_code") or detail.get("code")
+    draft = _version_with_status(detail, "DRAFT")
+    if not draft:
+        raise LookupError(
+            f"`{real_code}` has no DRAFT version. Rules can only be changed in a draft — "
+            f"open one first, then make the change."
+        )
+    return rs, draft, real_code
+
+
+@handles("add_rule_to_version")
+async def _add_rule_to_version(args: dict, ctx: Ctx) -> dict:
+    _rs, draft, code = await _draft_for(ctx, args.get("rule_set_code", ""))
+    conditions = _parse_json_arg(args.get("conditions_json"), "conditions_json") or []
+    outcome = _parse_json_arg(args.get("outcome_json"), "outcome_json") or {}
+    action = args.get("action_outcome") or "REFER_TO_UNDERWRITER"
+
+    body = {
+        "name": args.get("name"),
+        "rule_code": args.get("rule_code"),
+        "priority": int(args.get("priority") or 100),
+        "is_active": True,
+        "impact_type": _OUTCOME_TO_IMPACT_TYPE.get(action.upper(), "REFER_TO_UNDERWRITER"),
+        "action_outcome": action,
+        "criteria": _to_criteria(conditions if isinstance(conditions, list) else [conditions]),
+    }
+    if isinstance(outcome, dict) and outcome:
+        body["impact_data"] = {k: v for k, v in outcome.items() if k != "reason"}
+
+    res = await ctx.client.post(_rules(ctx, f"/versions/{draft['id']}/rules"), json=body)
+    res.raise_for_status()
+    rule = res.json()
+
+    return {
+        "success": True,
+        "message": (
+            f"Added `{args.get('rule_code')}` — {args.get('name')} — to DRAFT "
+            f"v{draft.get('version_number')} of `{code}` at priority {body['priority']}. "
+            "Still a draft: deploy it to make it live."
+        ),
+        "rule": rule,
+        "last_action": _action("add_rule_to_version", "rule_set", str(_rs["id"]),
+                               "admin/rule-engine", f"Rule {args.get('rule_code')} added to {code}"),
+        "quick_actions": [
+            {"label": "Simulate it", "actionType": "submit",
+             "payload": f"Simulate rule set {code} for a 45 year old with 5000000 sum assured"},
+            {"label": f"Deploy v{draft.get('version_number')}", "actionType": "submit",
+             "payload": f"Deploy the draft version of rule set {code}"},
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+def _find_rule(draft: dict, rule_code: str) -> dict:
+    needle = (rule_code or "").strip().lower()
+    rule = next((r for r in (draft.get("rules") or []) if (r.get("rule_code") or "").lower() == needle), None)
+    if not rule:
+        known = ", ".join(r.get("rule_code", "") for r in (draft.get("rules") or [])[:10]) or "none"
+        raise LookupError(f'No rule "{rule_code}" in the draft. It has: {known}.')
+    return rule
+
+
+@handles("update_rule")
+async def _update_rule(args: dict, ctx: Ctx) -> dict:
+    _rs, draft, code = await _draft_for(ctx, args.get("rule_set_code", ""))
+    rule = _find_rule(draft, args.get("rule_code", ""))
+
+    body: dict[str, Any] = {}
+    if args.get("name"):
+        body["name"] = args["name"]
+    if args.get("priority") is not None:
+        body["priority"] = int(args["priority"])
+    if args.get("is_active") is not None:
+        body["is_active"] = bool(args["is_active"])
+    if args.get("action_outcome"):
+        body["action_outcome"] = args["action_outcome"]
+        body["impact_type"] = _OUTCOME_TO_IMPACT_TYPE.get(args["action_outcome"].upper(), "REFER_TO_UNDERWRITER")
+    conditions = _parse_json_arg(args.get("conditions_json"), "conditions_json")
+    if conditions is not None:
+        body["criteria"] = _to_criteria(conditions if isinstance(conditions, list) else [conditions])
+    outcome = _parse_json_arg(args.get("outcome_json"), "outcome_json")
+    if isinstance(outcome, dict) and outcome:
+        body["impact_data"] = {k: v for k, v in outcome.items() if k != "reason"}
+
+    if not body:
+        return {"success": False, "error": "Nothing to change — tell me which field to update."}
+
+    res = await ctx.client.put(_rules(ctx, f"/versions/{draft['id']}/rules/{rule['id']}"), json=body)
+    res.raise_for_status()
+    return {
+        "success": True,
+        "message": f"Updated `{rule.get('rule_code')}` in DRAFT v{draft.get('version_number')} of `{code}`.",
+        "rule": res.json(),
+        "last_action": _action("update_rule", "rule_set", str(_rs["id"]),
+                               "admin/rule-engine", f"Rule {rule.get('rule_code')} updated"),
+        "quick_actions": [
+            {"label": f"Deploy v{draft.get('version_number')}", "actionType": "submit",
+             "payload": f"Deploy the draft version of rule set {code}"},
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+@handles("delete_rule")
+async def _delete_rule(args: dict, ctx: Ctx) -> dict:
+    _rs, draft, code = await _draft_for(ctx, args.get("rule_set_code", ""))
+    rule = _find_rule(draft, args.get("rule_code", ""))
+    res = await ctx.client.delete(_rules(ctx, f"/rules/{rule['id']}"))
+    res.raise_for_status()
+    return {
+        "success": True,
+        "message": f"Deleted `{rule.get('rule_code')}` from DRAFT v{draft.get('version_number')} of `{code}`.",
+        "last_action": _action("delete_rule", "rule_set", str(_rs["id"]),
+                               "admin/rule-engine", f"Rule {rule.get('rule_code')} deleted"),
+        "quick_actions": [
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+@handles("deploy_rule_version")
+async def _deploy_rule_version(args: dict, ctx: Ctx) -> dict:
+    rs, detail = await _rule_set_detail(ctx, args.get("rule_set_code", ""))
+    code = detail.get("rule_code") or detail.get("code")
+    draft = _version_with_status(detail, "DRAFT")
+    if not draft:
+        return {
+            "success": False,
+            "message": f"`{code}` has no DRAFT version to deploy. Open one, make the change, then deploy.",
+            "quick_actions": [
+                {"label": "Open a draft version", "actionType": "submit",
+                 "payload": f"Create a new draft version of rule set {code}"},
+            ],
+        }
+
+    previous = _version_with_status(detail, "ACTIVE")
+    res = await ctx.client.patch(
+        _rules(ctx, f"/versions/{draft['id']}/status"),
+        json={"status": "ACTIVE", "approved_by": ctx.exec_ctx.role or "AI Copilot"},
+    )
+    res.raise_for_status()
+
+    was = f" replacing v{previous.get('version_number')}" if previous else ""
+    return {
+        "success": True,
+        "message": (
+            f"Deployed **v{draft.get('version_number')}** of `{code}`{was}. "
+            f"{len(draft.get('rules') or [])} rule(s) are now live and will apply to every case "
+            "evaluated from now on."
+        ),
+        "version": res.json(),
+        "last_action": _action("deploy_rule_version", "rule_set", str(rs["id"]),
+                               "admin/rule-engine", f"{code} v{draft.get('version_number')} deployed"),
+        "quick_actions": [
+            {"label": "Simulate the live rules", "actionType": "submit",
+             "payload": f"Simulate rule set {code} for a 45 year old with 5000000 sum assured"},
+            {"label": "View audit log", "actionType": "submit", "payload": "Show the rule evaluation logs"},
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+@handles("archive_rule_version")
+async def _archive_rule_version(args: dict, ctx: Ctx) -> dict:
+    rs, detail = await _rule_set_detail(ctx, args.get("rule_set_code", ""))
+    code = detail.get("rule_code") or detail.get("code")
+    active = _version_with_status(detail, "ACTIVE")
+    if not active:
+        return {"success": False, "message": f"`{code}` has no ACTIVE version to archive."}
+
+    res = await ctx.client.patch(
+        _rules(ctx, f"/versions/{active['id']}/status"),
+        json={"status": "ARCHIVED", "approved_by": ctx.exec_ctx.role or "AI Copilot"},
+    )
+    res.raise_for_status()
+    return {
+        "success": True,
+        "message": f"Archived v{active.get('version_number')} of `{code}`. It no longer applies to new evaluations.",
+        "last_action": _action("archive_rule_version", "rule_set", str(rs["id"]),
+                               "admin/rule-engine", f"{code} v{active.get('version_number')} archived"),
+        "quick_actions": [
+            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+        ],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Commission engine
+#
+# Split brain, deliberately, until the backend lands:
+#
+#   get_commission_rate_card  — REAL. The SECP statutory rate card is seeded
+#                               into the rule engine (commission.secp_rate_card)
+#                               so the rate comes from the same place the
+#                               portal reads it from.
+#   everything else           — CLIENT-EXECUTED. The payee registry, waterfall,
+#                               ledger and payout runs live in the browser
+#                               (frontend/app/services/commissions.ts) because
+#                               there is no commission table yet. The browser
+#                               already holds that state, so the tool hands
+#                               execution to it the same way upload_document
+#                               and issue_policy do.
+#
+# When routers/commissions.py exists, these handlers move server-side and the
+# client-execute markers come out. The tool contract stays the same.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_COMMISSION_CLIENT_TOOLS = {
+    "list_commission_payees",
+    "calculate_commission",
+    "get_commission_ledger",
+    "get_agent_statement",
+    "get_commission_summary",
+    "create_payout_run",
+    "approve_payout_run",
+}
+
+
+def _commission_client_call(name: str, args: dict) -> dict:
+    return {
+        "__client_execute__": True,
+        "kind": "client_execute",
+        "tool_call": {"name": name, "args": args},
+    }
+
+
+@handles("get_commission_rate_card")
+async def _get_commission_rate_card(args: dict, ctx: Ctx) -> dict:
+    segment = (args.get("segment") or "individual").lower()
+    category = {"group": "Group", "family": "Family"}.get(segment, "Individual")
+    policy_year = int(args.get("policy_year") or 1)
+    premium_type = args.get("premium_type") or ("FIRST_YEAR" if policy_year == 1 else "RENEWAL")
+
+    res = await ctx.client.post(
+        _rules(ctx, "/evaluate"),
+        json={
+            "rule_set_code": "commission.secp_rate_card",
+            "context": {
+                "category": category,
+                "policy_year": policy_year,
+                "premium_type": premium_type,
+            },
+            "actor": "AI Copilot",
+        },
+    )
+    res.raise_for_status()
+    payload = res.json()
+    outcome = payload.get("outcome_payload") or {}
+    rate = outcome.get("commission_pct")
+    wht = outcome.get("withholding_tax_pct")
+
+    if rate is None:
+        return {
+            "success": False,
+            "message": (
+                f"The rate card has no rule for {category} / {premium_type} / year {policy_year}. "
+                "Check the commission.secp_rate_card rule set."
+            ),
+            "evaluation": payload,
+            "quick_actions": [
+                {"label": "View rate card rules", "actionType": "submit",
+                 "payload": "Show rule set commission.secp_rate_card"},
+            ],
+        }
+
+    lines = [
+        f"**{category}** · {premium_type.replace('_', ' ').title()} · policy year {policy_year}",
+        "",
+        f"- Commission: **{rate}%** of premium",
+    ]
+    if wht is not None:
+        lines.append(f"- Withholding tax: **{wht}%** (filer rate; non-filers are doubled under s.233)")
+    if outcome.get("reason"):
+        lines.append(f"\n> {outcome['reason']}")
+
+    return {
+        "success": True,
+        "message": "\n".join(lines),
+        "rate_pct": rate,
+        "withholding_tax_pct": wht,
+        "evaluation": payload,
+        "quick_actions": [
+            {"label": "Open Rate Card", "actionType": "navigate", "payload": "commissions/rate-card"},
+            {"label": "Calculate a policy", "actionType": "submit",
+             "payload": "Calculate the commission waterfall for the most recent policy"},
+            {"label": "View rate card rules", "actionType": "submit",
+             "payload": "Show rule set commission.secp_rate_card"},
+        ],
+    }
+
+
+@handles("list_commission_payees")
+async def _list_commission_payees(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("list_commission_payees", args)
+
+
+@handles("calculate_commission")
+async def _calculate_commission(args: dict, ctx: Ctx) -> dict:
+    # Resolve the policy server-side where we can, so the browser gets a real
+    # policy rather than having to guess from a name.
+    resolved = dict(args)
+    if not args.get("policy_number") and (args.get("cnic") or args.get("applicant_name")):
+        policy = await _find_policy_by_customer(ctx, args.get("cnic"), args.get("applicant_name"))
+        if policy:
+            resolved["policy_id"] = policy.get("id")
+            resolved["policy_number"] = policy.get("policy_number")
+            resolved["product_name"] = policy.get("product_name")
+            resolved["coverage_amount"] = policy.get("coverage_amount")
+            resolved["annual_premium"] = policy.get("annual_premium") or policy.get("premium_amount")
+            resolved["customer_name"] = policy.get("customer_name")
+    return _commission_client_call("calculate_commission", resolved)
+
+
+@handles("get_commission_ledger")
+async def _get_commission_ledger(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("get_commission_ledger", args)
+
+
+@handles("get_agent_statement")
+async def _get_agent_statement(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("get_agent_statement", args)
+
+
+@handles("get_commission_summary")
+async def _get_commission_summary(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("get_commission_summary", args)
+
+
+@handles("create_payout_run")
+async def _create_payout_run(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("create_payout_run", args)
+
+
+@handles("approve_payout_run")
+async def _approve_payout_run(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("approve_payout_run", args)

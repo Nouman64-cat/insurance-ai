@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useCallback } from "react";
 import { CommissionHoldbackLien, listHoldbacks } from "../../services/commissions";
+import DemoDataBanner from "@/components/DemoDataBanner";
 
 export default function HoldbacksPage() {
   const [holdbacks, setHoldbacks] = useState<CommissionHoldbackLien[]>([]);
@@ -24,6 +25,7 @@ export default function HoldbacksPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
+      <DemoDataBanner note="This module has no backend yet. These liens are generated in the browser against real payee records — they are not live suspensions and must not be acted on." />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
           <div className="flex items-center gap-2">

@@ -1583,6 +1583,15 @@ class InitialPremiumPayment(SQLModel, table=True):
 # 11. TokenUsage
 # ─────────────────────────────────────────────────────────────────────────────
 class TokenUsage(SQLModel, table=True):
+    """One LLM call's token consumption.
+
+    Every service that calls a model writes a row here; the Token Economy page
+    aggregates them. `tenant_id` is nullable because the platform-level
+    services (OCR, summarizer) predate per-tenant attribution — but anything
+    added from here on should populate it, or that tenant's spend is invisible
+    to chargeback.
+    """
+
     __tablename__ = "token_usage"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
@@ -1590,6 +1599,17 @@ class TokenUsage(SQLModel, table=True):
     input_tokens: int = Field(default=0)
     output_tokens: int = Field(default=0)
     total_tokens: int = Field(default=0)
+    # Prompt-cache hits, when the provider reports them. Billed at a reduced
+    # rate, so the dashboard must not price these as fresh input tokens.
+    cached_tokens: int = Field(default=0)
+    # Who to bill. Null = platform-level call with no tenant in scope.
+    tenant_id: Optional[UUID] = Field(default=None, index=True)
+    # The model actually invoked — pricing differs per model, and the
+    # dashboard used to assume one hardcoded rate for everything.
+    model_name: Optional[str] = Field(default=None, max_length=100)
+    # Conversation this call belonged to, for per-thread cost attribution.
+    # Null for one-shot calls (OCR, summarization).
+    thread_id: Optional[str] = Field(default=None, index=True, max_length=100)
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)
 
 

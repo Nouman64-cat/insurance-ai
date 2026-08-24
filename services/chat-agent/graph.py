@@ -20,12 +20,16 @@ import os
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
+import usage
+from history import compact_tool_result, trim_history
 from journey import register_journey
+from toolsets import select_domains, tool_names_for
 
 from pages import catalogue
 from permission import (
@@ -118,6 +122,46 @@ Brief (2–3 sentences), warm, professional. After every completed action, state
 happened and what the sensible next step is — the UI turns your tool results into \
 clickable recommendation buttons automatically."""
 
+# Prompt sections that ship WITH their tool pack, never without it.
+#
+# A section naming a tool that is not bound this turn is worse than no section
+# at all: the model reads the instruction, tries to call the tool, finds it
+# missing, and returns an empty completion. So these are keyed by domain and
+# appended by _build_prompt only when that pack is bound — see toolsets.py.
+DOMAIN_PROMPTS: dict[str, str] = {}
+
+DOMAIN_PROMPTS["rules"] = """
+
+## RULES ENGINE (underwriting governance)
+
+The platform's underwriting thresholds live in versioned rule sets — NML medical \
+grids, HLV over-insurance ceilings, reinsurance retention, SECP commission rates. \
+Read them with **list_rule_sets** / **get_rule_set**, dry-run them with \
+**evaluate_rule_set** (one set) or **evaluate_rule_scope** (everything in a \
+category/channel), and show the audit trail with **get_rule_evaluation_logs**.
+
+Editing follows maker–checker and is version-scoped, so keep that order:
+1. **create_rule_version** opens a DRAFT off the active version.
+2. **add_rule_to_version** / **update_rule** / **delete_rule** — DRAFT only. A rule \
+   cannot be changed once its version is ACTIVE; that is the point of versioning.
+3. **deploy_rule_version** makes the draft ACTIVE. This changes underwriting \
+   behaviour for every case evaluated afterwards, so always state which rule set \
+   and version number is going live before you call it."""
+
+DOMAIN_PROMPTS["commission"] = """
+
+## COMMISSION ENGINE
+
+**get_commission_rate_card** reads the SECP statutory rates out of the rule engine. \
+**calculate_commission** previews the full waterfall for a policy — producer \
+commission, hierarchy overrides, partner and referral fees, tax withholding. \
+**get_commission_ledger** and **get_agent_statement** report what is owed and to \
+whom; **get_commission_summary** is the portfolio-level view.
+
+Payouts are maker–checker: **create_payout_run** assembles due tranches, \
+**approve_payout_run** releases them, and the approver must not be the maker. \
+Always name the period and the total before creating or approving a run."""
+
 AGENT_ROLE_RESTRICTION_TEMPLATE = (
     "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user's role is 'Agent'. "
     "As an Agent, your authorized scope is strictly limited to LEAD GENERATION and PROPOSAL CREATION (adding/updating customers, creating cases, generating policy proposals/quotes, and uploading required documents).\n"
@@ -146,52 +190,180 @@ ROLE_RESTRICTION_TEMPLATE = (
 )
 
 
-def _build_prompt(role: str, platform: str = "web") -> str:
-    prompt = SYSTEM_PROMPT.format(pages=catalogue())
+# The system prompt is built ONCE and is byte-identical for every role and
+# platform. That is deliberate: the prompt plus the tool schemas form the
+# cacheable prefix of every request, and the old per-role variants fragmented
+# that prefix six ways, so each role paid full price for its own cache entry.
+#
+# Dropping the role text costs nothing in safety. Role enforcement never lived
+# in the prompt — permission_gate blocks the call and returns the "no access"
+# message before a tool can run, and the model is only ever bound tools it is
+# actually allowed. The prompt was belt-and-braces on top of a hard gate.
+_SYSTEM_PROMPT_CACHED = SYSTEM_PROMPT.format(pages=catalogue())
+
+# One message per platform, appended only where it changes what the model
+# should SAY (the mobile app has to hand off to the web portal). Kept to two
+# variants rather than six.
+_MOBILE_SUFFIX = AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE
+
+
+def _build_prompt(role: str, platform: str = "web", domains: frozenset[str] | None = None) -> str:
+    """The system prompt for this turn.
+
+    The base is identical for every role — the cacheable prefix. Domain
+    sections are appended in a stable (sorted) order so the same domain set
+    always produces byte-identical text, which is what keeps the prompt cache
+    hitting; and only for domains whose tools are actually bound, so the prompt
+    never advertises a tool the model cannot call.
+    """
+    prompt = _SYSTEM_PROMPT_CACHED
+    for domain in sorted(domains or ()):
+        prompt += DOMAIN_PROMPTS.get(domain, "")
     if role == "Agent" and platform == "mobile":
-        prompt += AGENT_MOBILE_ROLE_RESTRICTION_TEMPLATE
-    elif role == "Agent":
-        prompt += AGENT_ROLE_RESTRICTION_TEMPLATE
-    elif role not in ("SuperAdmin", "Admin"):
-        prompt += ROLE_RESTRICTION_TEMPLATE.format(role=role)
+        prompt += _MOBILE_SUFFIX
     return prompt
 
 
-def _llm(role: str = "Admin", platform: str = "web") -> ChatGoogleGenerativeAI:
-    tools = get_tools_for_role(role, platform)
+# Cheap memo: binding tools re-serialises every schema, and the set of
+# (role, platform, domains) combinations in play is tiny.
+_LLM_CACHE: dict[tuple, ChatGoogleGenerativeAI] = {}
+
+
+def _llm(role: str = "Admin", platform: str = "web", domains: frozenset[str] | None = None):
+    """The tool-bound model for this turn's scope."""
+    key = (role, platform, domains)
+    cached = _LLM_CACHE.get(key)
+    if cached is not None:
+        return cached
+
+    allowed = get_tools_for_role(role, platform)
+    if domains is not None:
+        in_scope = tool_names_for(domains)
+        allowed = [t for t in allowed if t.name in in_scope]
+
+    llm = _bare_llm().bind_tools(allowed)
+    _LLM_CACHE[key] = llm
+    return llm
+
+
+def _bare_llm() -> ChatGoogleGenerativeAI:
+    """An unbound model — no tool schemas attached.
+
+    Use this for side tasks like the plan advisor. Those used to go through
+    _llm(), which bound all ~50 tool schemas (~7k tokens) to a call that
+    needed none of them.
+    """
     return ChatGoogleGenerativeAI(
         model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
         temperature=0.1,
         google_api_key=os.getenv("GEMINI_API_KEY"),
         max_output_tokens=2048,
-        # Belt: the SDK's own retry layer for rate-limit/transient errors.
-        max_retries=3,
-    ).bind_tools(tools)
+        # Retries are handled by the explicit loop in agent_node. Leaving the
+        # SDK's own layer at 3 on top of that meant a sustained 503 burned up
+        # to nine billed calls for one turn.
+        max_retries=0,
+    )
 
 
-async def agent_node(state: ChatState) -> dict:
+def _recent_text(messages: list, limit: int = 6) -> list[str]:
+    """Plain text of the last few messages, for domain keyword matching."""
+    out: list[str] = []
+    for m in messages[-limit:]:
+        content = getattr(m, "content", "")
+        if isinstance(content, str):
+            out.append(content)
+        elif isinstance(content, list):
+            out.extend(b.get("text", "") for b in content if isinstance(b, dict))
+        for tc in (getattr(m, "tool_calls", None) or []):
+            out.append(tc.get("name", ""))
+    return out
+
+
+def _is_empty(response: AIMessage) -> bool:
+    """A completion with no text and no tool call.
+
+    Gemini does this on some terse imperatives — "List all rule sets" returns
+    finish_reason STOP with zero output tokens, while the same request phrased
+    as a question works. Whatever the cause, it must never reach the user as
+    silence: `_route_after_agent` sends a no-tool-call response straight to END
+    and routers/chat.py emits no `token` event for empty content, so the chat
+    would simply sit there having apparently ignored them.
+    """
+    if response.tool_calls:
+        return False
+    content = response.content
+    if isinstance(content, list):
+        content = "".join(b.get("text", "") for b in content if isinstance(b, dict))
+    return not (content or "").strip()
+
+
+_EMPTY_NUDGE = (
+    "Answer the user's last message. If a tool can fetch what they asked for, call it now; "
+    "otherwise reply in one or two sentences. Do not return an empty response."
+)
+
+_EMPTY_FALLBACK = (
+    "Sorry — I didn't manage to put that into words. Could you rephrase it, "
+    "or tell me which record or page you'd like me to open?"
+)
+
+
+async def _retry_empty(llm, messages, state, thread_id) -> AIMessage:
+    """One nudged retry, then a plain-English fallback so the turn always says
+    something. Only fires on the degenerate path, so it costs nothing in the
+    normal case."""
+    retried = await llm.ainvoke([*messages, SystemMessage(content=_EMPTY_NUDGE)])
+    usage.record(retried, tenant_id=state.get("tenant_id"), thread_id=thread_id)
+    if not _is_empty(retried):
+        return retried
+    return AIMessage(content=_EMPTY_FALLBACK)
+
+
+async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> dict:
     user_role = state.get("user_role") or "Admin"
     platform = state.get("platform") or "web"
-    messages = [SystemMessage(content=_build_prompt(user_role, platform)), *state["messages"]]
-    # Braces: Gemini intermittently 429s/503s under load — one failed call must
-    # not kill a live conversation turn, so retry with short exponential
-    # backoff on top of the SDK's internal retries before giving up.
-    llm = _llm(user_role, platform)
+
+    # Bind only the tools this conversation is plausibly about — see toolsets.py.
+    sticky = state.get("active_domains") or []
+    domains = frozenset(select_domains(_recent_text(state["messages"]), sticky))
+
+    # Trim before sending. Without this the whole thread is re-sent every turn
+    # and a long conversation's input cost climbs without any ceiling.
+    history = trim_history(state["messages"])
+    messages = [SystemMessage(content=_build_prompt(user_role, platform, domains)), *history]
+
+    llm = _llm(user_role, platform, domains)
+    thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
+
+    # Gemini intermittently 429s/503s under load — one failed call must not
+    # kill a live conversation turn, so retry with short exponential backoff
+    # before giving up. This is now the ONLY retry layer (see _bare_llm).
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
             response = await llm.ainvoke(messages)
-            return {"messages": [response]}
+            usage.record(
+                response,
+                tenant_id=state.get("tenant_id"),
+                thread_id=thread_id,
+            )
+            if _is_empty(response):
+                response = await _retry_empty(llm, messages, state, thread_id)
+            return {"messages": [response], "active_domains": sorted(domains)}
         except Exception as exc:  # noqa: BLE001 — SDK raises provider-specific types
             last_exc = exc
-            # Quota/billing exhaustion (RESOURCE_EXHAUSTED / "prepayment
-            # credits are depleted") isn't transient — retrying just burns
-            # 3 more calls against the same exhausted key for nothing. Fail
-            # fast with the real cause instead of a misleading "try again".
-            if "RESOURCE_EXHAUSTED" in str(exc) or "prepayment credits" in str(exc):
+            text = str(exc)
+            # Quota/billing exhaustion and rate limits aren't transient in a way
+            # a 1.5s backoff fixes — retrying just burns more calls against the
+            # same exhausted key. Fail fast with the real cause.
+            if "RESOURCE_EXHAUSTED" in text or "prepayment credits" in text:
                 raise RuntimeError(
                     "The AI model is out of quota (prepayment credits depleted on the Gemini API key). "
                     "This needs billing topped up at https://ai.studio/projects — resending won't help."
+                ) from exc
+            if "429" in text or "rate limit" in text.lower():
+                raise RuntimeError(
+                    "The AI model is rate-limited right now. Give it a moment and resend that message."
                 ) from exc
             if attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
@@ -208,7 +380,14 @@ def _route_after_agent(state: ChatState) -> str:
 
 
 def _tool_result_message(name: str, call_id: str, result: dict) -> ToolMessage:
-    return ToolMessage(content=json.dumps(result), tool_call_id=call_id, name=name)
+    # Compact before it reaches the checkpointer: whatever goes in here is
+    # re-sent to the model on every later turn of this thread. The UI has
+    # already been handed the full result via the SSE stream by this point.
+    return ToolMessage(
+        content=json.dumps(compact_tool_result(result), default=str),
+        tool_call_id=call_id,
+        name=name,
+    )
 
 
 # Tools that hand control to the autonomous journey pipeline instead of a
@@ -259,21 +438,49 @@ async def permission_gate(state: ChatState) -> Command:
             customer_name_or_cnic = args.get("applicant_name") or args.get("customer_name") or args.get("cnic")
             if customer_name_or_cnic:
                 try:
-                    cust_res = await execute_tool("list_customers", {}, ctx)
+                    # Search server-side rather than pulling the whole customer
+                    # collection and scanning it here.
+                    cust_res = await execute_tool(
+                        "list_customers", {"search": customer_name_or_cnic, "limit": 5}, ctx
+                    )
                     query = customer_name_or_cnic.lower()
                     customer_data = None
-                    for c in cust_res.get("items", []):
+                    # _list_customers returns "customers"; this used to read
+                    # "items", so customer_data was always None and the plan
+                    # advisor silently never ran.
+                    for c in cust_res.get("customers", []):
                         if query in (c.get("first_name", "") + " " + c.get("last_name", "")).lower() or query == c.get("cnic"):
                             customer_data = c
                             break
                     if customer_data:
-                        llm = _llm().with_structured_output(Top5PlansOutput)
+                        # Bare model — this ranks five plan names and needs no
+                        # tools. It used to go through _llm(), which bound the
+                        # entire toolset (~7k tokens of schema) to every call.
+                        llm = _bare_llm().with_structured_output(Top5PlansOutput, include_raw=True)
                         prompt = ChatPromptTemplate.from_messages([
                             ("system", "You are an expert life insurance advisor. You will be provided with a customer's details and a list of available insurance plans. Your task is to recommend the top 5 most suitable plans for this customer based on their demographics, age, and occupation. Return ONLY the exact plan names from the provided list, ordered by suitability."),
                             ("user", "Customer Data: {customer}\n\nAvailable Plans: {plans}")
                         ])
-                        result = await (prompt | llm).ainvoke({"customer": customer_data, "plans": plans})
-                        options = [opt for opt in result.plan_names if opt in valid_options]
+                        # Only the fields the ranking actually needs — sending the
+                        # whole customer and plan rows wasted input tokens on
+                        # fields the advisor never reads.
+                        slim_customer = {
+                            k: customer_data.get(k)
+                            for k in ("date_of_birth", "gender", "occupation", "declared_income", "is_smoker")
+                        }
+                        slim_plans = [
+                            {"name": p.get("label") or p.get("name"), "type": p.get("insurance_type")}
+                            for p in plans
+                        ]
+                        raw = await (prompt | llm).ainvoke({"customer": slim_customer, "plans": slim_plans})
+                        usage.record(
+                            raw.get("raw"),
+                            service_name=usage.SERVICE_PLAN_ADVISOR,
+                            tenant_id=state.get("tenant_id"),
+                        )
+                        parsed = raw.get("parsed")
+                        if parsed:
+                            options = [opt for opt in parsed.plan_names if opt in valid_options]
                 except Exception as e:
                     print(f"Failed to use AI for plan suggestion: {e}")
             
