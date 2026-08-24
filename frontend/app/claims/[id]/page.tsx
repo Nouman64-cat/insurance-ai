@@ -10,23 +10,35 @@ import {
 } from "@/app/services/claims";
 
 const VALID_NEXT: Record<string, ClaimStatus[]> = {
-  "New":                  ["Triaged", "Under Investigation", "Pending Documents"],
-  "Triaged":              ["Under Investigation", "Pending Documents", "Referred to Manager", "Declined"],
-  "Pending Documents":    ["Under Investigation", "Triaged", "Declined"],
-  "Under Investigation":  ["Approved", "Partial Approval", "Declined", "Pending Documents", "Referred to Manager"],
-  "Referred to Manager":  ["Approved", "Partial Approval", "Declined", "Under Investigation"],
-  "Approved":             ["Settled", "Closed"],
-  "Partial Approval":     ["Settled", "Closed"],
-  "Declined":             ["Closed"],
-  "Settled":              ["Closed"],
-  "Closed":               [],
+  "New": ["Triaged", "Under Investigation", "Pending Documents"],
+  "Triaged": ["Under Investigation", "Pending Documents", "Referred to Manager", "Declined"],
+  "Pending Documents": ["Under Investigation", "Triaged", "Declined"],
+  "Under Investigation": ["Approved", "Partial Approval", "Declined", "Pending Documents", "Referred to Manager"],
+  "Referred to Manager": ["Approved", "Partial Approval", "Declined", "Under Investigation"],
+  "Approved": ["Settled", "Closed"],
+  "Partial Approval": ["Settled", "Closed"],
+  "Declined": ["Closed"],
+  "Settled": ["Closed"],
+  "Closed": [],
 };
 
 const WORKFLOW_STEPS: ClaimStatus[] = ["New", "Triaged", "Under Investigation", "Approved", "Settled"];
 
 function StatusBadge({ status }: { status: string }) {
+  const isBlue = ["Under Investigation", "Triaged", "In Progress", "Processing", "New"].includes(status);
+  const isGreen = ["Approved", "Settled", "Active", "Uploaded"].includes(status);
+  const isRed = ["Declined", "Rejected"].includes(status);
+
+  const colorClass = isBlue
+    ? "bg-blue-50 text-blue-700 border-blue-200 font-semibold"
+    : isGreen
+      ? "bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold"
+      : isRed
+        ? "bg-rose-50 text-rose-700 border-rose-200 font-semibold"
+        : "bg-slate-100 text-slate-800 border-slate-200 font-semibold";
+
   return (
-    <span className="px-2.5 py-0.5 rounded-md text-xs font-semibold bg-slate-100 text-slate-800 border border-slate-200">
+    <span className={`px-2.5 py-0.5 rounded-md text-xs border ${colorClass}`}>
       {status}
     </span>
   );
@@ -42,11 +54,14 @@ export default function ClaimDetailPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [modal, setModal] = useState<"adj" | "payout" | "doc" | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
+  const openModal = (m: "adj" | "payout" | "doc") => { setModalError(null); setModal(m); };
+  const closeModal = () => { setModalError(null); setModal(null); };
 
   const [nextStatus, setNextStatus] = useState<ClaimStatus>("Triaged");
   const [statusNote, setStatusNote] = useState("");
 
-  const [adjDecision, setAdjDecision] = useState<"APPROVED"|"PARTIAL_APPROVAL"|"DECLINED"|"REFERRED_TO_MANAGER">("APPROVED");
+  const [adjDecision, setAdjDecision] = useState<"APPROVED" | "PARTIAL_APPROVAL" | "DECLINED" | "REFERRED_TO_MANAGER">("APPROVED");
   const [adjAmount, setAdjAmount] = useState(0);
   const [adjNotes, setAdjNotes] = useState("");
 
@@ -78,32 +93,108 @@ export default function ClaimDetailPage() {
   useEffect(() => { if (claimId) load(); }, [claimId]);
 
   const handleStatus = async () => {
+    // 1. Document Gate Prerequisite
+    if (!hasDocs && ["Approved", "Partial Approval", "Settled"].includes(nextStatus)) {
+      showToast("err", "Document Gate Error: Cannot approve or settle claim without at least 1 verified claim document attached.");
+      return;
+    }
+
+    // 2. Guided Assessment Flow: Selecting 'Approved' or 'Partial Approval' opens Assess modal
+    if (["Approved", "Partial Approval"].includes(nextStatus)) {
+      setAdjDecision(nextStatus === "Approved" ? "APPROVED" : "PARTIAL_APPROVAL");
+      if (claim?.submitted_amount && adjAmount === 0) {
+        setAdjAmount(claim.submitted_amount);
+      }
+      openModal("adj");
+      return;
+    }
+
+    // 3. Guided Settlement Flow: Selecting 'Settled' opens Issue Payout modal
+    if (nextStatus === "Settled") {
+      if (!canPayout) {
+        showToast("err", "Assessment Gate Error: Claim must be assessed and approved before issuing a disbursement payout.");
+        return;
+      }
+      if (claim && payAmount === 0) {
+        const maxPay = (claim.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim.submitted_amount;
+        setPayAmount(maxPay);
+      }
+      openModal("payout");
+      return;
+    }
+
+    // 4. Standard Status Update
     setSubmitting(true);
     try {
       await updateClaimStatus(claimId, nextStatus, statusNote);
       showToast("ok", `Status updated to ${nextStatus}`);
-      setStatusNote(""); setModal(null); load();
-    } catch (e: any) { showToast("err", e.response?.data?.detail || "Status update failed."); }
+      setStatusNote(""); closeModal(); load();
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : (Array.isArray(detail) ? detail[0]?.msg : "Status update failed.");
+      showToast("err", msg);
+    }
     finally { setSubmitting(false); }
   };
 
   const handleAdj = async (e: React.FormEvent) => {
-    e.preventDefault(); setSubmitting(true);
+    e.preventDefault();
+    setModalError(null);
+    if (!hasDocs && ["APPROVED", "PARTIAL_APPROVAL"].includes(adjDecision)) {
+      const msg = "Document Gate Error: Cannot approve claim without at least 1 verified claim document attached.";
+      setModalError(msg);
+      showToast("err", msg);
+      return;
+    }
+    if (["APPROVED", "PARTIAL_APPROVAL"].includes(adjDecision)) {
+      if (claim && adjAmount > claim.submitted_amount) {
+        const msg = `Approved amount cannot exceed the submitted claim limit of PKR ${claim.submitted_amount.toLocaleString()}.`;
+        setModalError(msg);
+        showToast("err", msg);
+        return;
+      }
+      if (adjAmount <= 0) {
+        const msg = "Approved amount must be greater than 0.";
+        setModalError(msg);
+        showToast("err", msg);
+        return;
+      }
+    }
+    setSubmitting(true);
     try {
       await adjudicateClaim(claimId, { decision: adjDecision, approved_amount: adjAmount, notes: adjNotes });
       showToast("ok", `Decision recorded: ${adjDecision}`);
       setModal(null); setAdjNotes(""); load();
-    } catch (e: any) { showToast("err", e.response?.data?.detail || "Adjudication failed."); }
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : (Array.isArray(detail) ? detail[0]?.msg : "Adjudication failed.");
+      setModalError(msg);
+      showToast("err", msg);
+    }
     finally { setSubmitting(false); }
   };
 
   const handlePayout = async (e: React.FormEvent) => {
-    e.preventDefault(); setSubmitting(true);
+    e.preventDefault();
+    const maxAllowed = (claim?.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim?.submitted_amount ?? 0;
+    if (payAmount > maxAllowed) {
+      showToast("err", `Payout amount cannot exceed approved amount of PKR ${maxAllowed.toLocaleString()}.`);
+      return;
+    }
+    if (payAmount <= 0) {
+      showToast("err", "Payout amount must be greater than 0.");
+      return;
+    }
+    setSubmitting(true);
     try {
       await createClaimPayout(claimId, { amount: payAmount, method: payMethod, reference_number: payRef || undefined });
       showToast("ok", `Payout issued successfully`);
-      setModal(null); setPayRef(""); load();
-    } catch (e: any) { showToast("err", e.response?.data?.detail || "Payout failed."); }
+      closeModal(); setPayRef(""); load();
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : (Array.isArray(detail) ? detail[0]?.msg : "Payout failed.");
+      showToast("err", msg);
+    }
     finally { setSubmitting(false); }
   };
 
@@ -114,8 +205,12 @@ export default function ClaimDetailPage() {
     try {
       await uploadClaimDocument(claimId, docFile, docType);
       showToast("ok", `${docFile.name} uploaded successfully`);
-      setModal(null); setDocFile(null); load();
-    } catch (e: any) { showToast("err", e.response?.data?.detail || "Document upload failed."); }
+      closeModal(); setDocFile(null); load();
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : (Array.isArray(detail) ? detail[0]?.msg : "Document upload failed.");
+      showToast("err", msg);
+    }
     finally { setSubmitting(false); }
   };
 
@@ -125,7 +220,11 @@ export default function ClaimDetailPage() {
       await referClaimToReinsurance(claimId);
       showToast("ok", "Referred to Reinsurance team");
       load();
-    } catch (e: any) { showToast("err", e.response?.data?.detail || "Referral failed."); }
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : (Array.isArray(detail) ? detail[0]?.msg : "Referral failed.");
+      showToast("err", msg);
+    }
     finally { setSubmitting(false); }
   };
 
@@ -145,8 +244,25 @@ export default function ClaimDetailPage() {
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
       {/* Toast Alert */}
       {toast && (
-        <div className="fixed top-5 right-5 z-50 px-4 py-2.5 rounded-lg shadow-sm text-xs font-medium bg-slate-900 text-white">
-          {toast.msg}
+        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-xs font-semibold flex items-center gap-3 max-w-lg border transition-all animate-in fade-in slide-in-from-top-4 ${
+          toast.type === "err"
+            ? "bg-rose-950/95 backdrop-blur-md text-rose-100 border-rose-800/80 shadow-rose-950/40"
+            : "bg-slate-900/95 backdrop-blur-md text-white border-slate-800 shadow-slate-900/40"
+        }`}>
+          {toast.type === "err" ? (
+            <div className="w-6 h-6 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center flex-shrink-0 text-rose-400">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+          ) : (
+            <div className="w-6 h-6 rounded-lg bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center flex-shrink-0 text-emerald-400">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            </div>
+          )}
+          <span className="leading-relaxed">{toast.msg}</span>
         </div>
       )}
 
@@ -172,48 +288,79 @@ export default function ClaimDetailPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* <button
             onClick={() => setModal("doc")}
-            className="text-xs font-semibold px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 shadow-sm"
+            className="text-xs font-semibold px-3.5 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
           >
-            Upload Doc
-          </button>
-          <button
+            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Upload Doc</span>
+          </button> */}
+
+          {/* <button
             onClick={() => setModal("adj")}
-            className="text-xs font-semibold px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg shadow-sm"
+            className="text-xs font-semibold px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center gap-1.5"
           >
-            Adjudicate
-          </button>
+            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Assess</span>
+          </button> */}
+
           {canPayout && (
             <button
               onClick={() => setModal("payout")}
-              className="text-xs font-semibold px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg shadow-sm"
+              className="text-xs font-semibold px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl shadow-md shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center gap-1.5"
             >
-              Issue Payout
+              <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Issue Payout</span>
             </button>
           )}
-          <button
+
+          {/* <button
             onClick={handleReinsurance}
             disabled={submitting}
-            className="text-xs font-semibold px-3 py-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-700 shadow-sm disabled:opacity-50"
+            className="text-xs font-semibold px-3.5 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs active:scale-[0.98] transition-all disabled:opacity-50 flex items-center gap-1.5"
           >
-            Reinsurance
-          </button>
+            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+            <span>Reinsurance</span>
+          </button> */}
         </div>
       </div>
 
       {/* Mandatory Document Gate Notice */}
       {!hasDocs && claim.status !== "Closed" && claim.status !== "Declined" && (
-        <div className="p-3 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 flex items-center justify-between shadow-sm">
-          <div>
-            <span className="font-semibold text-slate-900">Document Gate:</span> At least 1 verified document is required before approval or settlement.
+        <div className="p-3 bg-amber-50/70 border-y border-r border-amber-200/80 border-l-4 border-l-amber-500 rounded-xl text-xs text-amber-950 flex items-center justify-between shadow-2xs gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded-lg bg-amber-500/15 border border-amber-500/30 flex items-center justify-center flex-shrink-0 text-amber-600">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-amber-900 text-[11px] uppercase tracking-wide">Document Gate</span>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-200/60 text-amber-800">Prerequisite</span>
+              </div>
+              <p className="text-xs text-amber-900/90 font-medium mt-0.5">
+                At least 1 verified document is required before claim approval or settlement.
+              </p>
+            </div>
           </div>
           <button
-            onClick={() => setModal("doc")}
-            className="px-3 py-1 bg-slate-900 text-white rounded text-xs font-medium ml-4 shrink-0"
+            onClick={() => openModal("doc")}
+            className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0"
           >
-            Upload
+            <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+            <span>Upload Document</span>
           </button>
         </div>
       )}
@@ -229,22 +376,28 @@ export default function ClaimDetailPage() {
               <div key={step} className="flex-1 flex items-center">
                 <div className="flex flex-col items-center flex-1 gap-1">
                   <div
-                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
-                      isCurrent
-                        ? "bg-slate-900 text-white"
-                        : isDone
-                        ? "bg-slate-200 text-slate-700"
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isCurrent
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-200 ring-4 ring-blue-50"
+                      : isDone
+                        ? "bg-blue-100 text-blue-700 border border-blue-200"
                         : "bg-slate-100 text-slate-400"
-                    }`}
+                      }`}
                   >
                     {isDone ? "✓" : i + 1}
                   </div>
-                  <span className={`text-[11px] font-medium text-center ${isCurrent ? "text-slate-900 font-bold" : "text-slate-500"}`}>
+                  <span
+                    className={`text-[11px] text-center transition-colors ${isCurrent
+                      ? "text-blue-600 font-bold"
+                      : isDone
+                        ? "text-slate-700 font-semibold"
+                        : "text-slate-400 font-medium"
+                      }`}
+                  >
                     {step}
                   </span>
                 </div>
                 {i < WORKFLOW_STEPS.length - 1 && (
-                  <div className={`h-0.5 flex-1 mx-2 ${isDone ? "bg-slate-300" : "bg-slate-100"}`} />
+                  <div className={`h-0.5 flex-1 mx-2 transition-colors ${isDone ? "bg-blue-500" : "bg-slate-200"}`} />
                 )}
               </div>
             );
@@ -297,62 +450,242 @@ export default function ClaimDetailPage() {
             </div>
           </div>
 
-          {/* Documents Table */}
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-              <h2 className="text-sm font-bold text-slate-800">Verification Documents</h2>
-              <button onClick={() => setModal("doc")} className="text-xs font-semibold text-slate-700 hover:underline">
-                + Upload
-              </button>
+          {/* Verification Documents Card */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900 tracking-tight">Verification Documents</h2>
+                  <p className="text-[11px] text-slate-500 font-medium">Claim prerequisites & medical evidence</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                {hasDocs ? (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    {claim.artifacts!.length} Attached
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200/80 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                    Required
+                  </span>
+                )}
+                <button
+                  onClick={() => openModal("doc")}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
+                >
+                  <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                  </svg>
+                  <span>Upload</span>
+                </button>
+              </div>
             </div>
+
             <div className="p-5">
               {!hasDocs ? (
-                <p className="text-xs text-slate-400 py-2">No verification documents attached.</p>
+                <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center bg-slate-50/40 space-y-2">
+                  <div className="w-10 h-10 rounded-full bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold text-slate-700">No documents uploaded yet</p>
+                    <p className="text-[11px] text-slate-400 max-w-xs mx-auto mt-0.5">
+                      Upload hospital bill, CNIC, or medical reports to pass the Document Gate prerequisite.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => openModal("doc")}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs shadow-2xs transition-all"
+                  >
+                    Select File to Upload
+                  </button>
+                </div>
               ) : (
-                <div className="divide-y divide-slate-100">
-                  {claim.artifacts!.map(art => (
-                    <div key={art.id} className="py-2.5 flex items-center justify-between text-xs">
-                      <div>
-                        <div className="font-medium text-slate-900">{art.file_name}</div>
-                        <div className="text-[10px] text-slate-400">{art.document_type} · {art.created_at.split("T")[0]}</div>
+                <div className="space-y-3">
+                  {claim.artifacts!.map(art => {
+                    const ext = art.file_name?.split(".").pop()?.toUpperCase() || "DOC";
+                    const isPdf = ext === "PDF";
+                    return (
+                      <div
+                        key={art.id}
+                        className="p-3.5 rounded-xl border border-slate-200/90 bg-white hover:border-blue-300 hover:shadow-xs transition-all flex items-center justify-between gap-4 group"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {/* File Type Icon Badge */}
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-[10px] tracking-wider uppercase border ${
+                            isPdf
+                              ? "bg-rose-50 text-rose-600 border-rose-100"
+                              : "bg-blue-50 text-blue-600 border-blue-100"
+                          }`}>
+                            <div className="flex flex-col items-center">
+                              <svg className="w-4 h-4 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                              </svg>
+                              <span>{ext.slice(0, 3)}</span>
+                            </div>
+                          </div>
+
+                          {/* File Details */}
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-xs font-bold text-slate-800 truncate group-hover:text-blue-600 transition-colors">
+                                {art.file_name?.replace(/\s*\(\d+\)(\.[a-zA-Z0-9]+)?$/, "$1")}
+                              </h4>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                                {art.document_type}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-3 text-[11px] text-slate-400 mt-1 font-medium">
+                              <span>Uploaded {art.created_at?.split("T")[0]}</span>
+                              {art.file_size && (
+                                <>
+                                  <span>·</span>
+                                  <span>{(art.file_size / 1024).toFixed(1)} KB</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status & View Button */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/80 flex items-center gap-1">
+                            <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                            <span>Verified</span>
+                          </span>
+
+                          <a
+                            href={`http://localhost:8010/tenants/${claim.tenant_id}/artifacts/${art.id}/view`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs transition-all flex items-center gap-1.5"
+                          >
+                              <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                              <span>View</span>
+                            </a>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
-                          {art.status}
-                        </span>
-                        {art.storage_url && (
-                          <a href={art.storage_url} target="_blank" rel="noreferrer" className="font-semibold text-slate-700 hover:underline">
-                            View
-                          </a>
-                        )}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
 
-          {/* Audit History */}
+          {/* Audit History / Lifecycle Journey */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
-              <h2 className="text-sm font-bold text-slate-800">Status & Audit History</h2>
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                <h2 className="text-sm font-bold text-slate-800 tracking-tight">Status & Audit Journey</h2>
+              </div>
+              {claim.status_history && claim.status_history.length > 0 && (
+                <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                  {claim.status_history.length} event{claim.status_history.length > 1 ? "s" : ""}
+                </span>
+              )}
             </div>
-            <div className="p-5">
+            <div className="p-6">
               {(!claim.status_history || claim.status_history.length === 0) ? (
-                <p className="text-xs text-slate-400 py-2">No status history logged.</p>
+                <div className="flex flex-col items-center justify-center py-6 text-slate-400 gap-2">
+                  <svg className="w-8 h-8 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p className="text-xs text-slate-500 font-medium">No audit events recorded yet.</p>
+                </div>
               ) : (
-                <div className="space-y-3 text-xs">
-                  {claim.status_history.map((h, i) => (
-                    <div key={h.id || i} className="pb-2 border-b border-slate-50 last:border-0 last:pb-0">
-                      <div className="flex justify-between font-semibold text-slate-900">
-                        <span>{h.from_status ? `${h.from_status} → ${h.to_status}` : h.to_status}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">{h.created_at.replace("T", " ").slice(0, 16)}</span>
+                <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+                  {claim.status_history.map((h, i) => {
+                    const isLatest = i === 0;
+                    const isInitial = i === claim.status_history.length - 1;
+                    const actorInitials = (h.actor_name || "A").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase();
+
+                    return (
+                      <div key={h.id || i} className="relative group">
+                        {/* Node Marker */}
+                        <div
+                          className={`absolute -left-[23px] top-0.5 w-5 h-5 rounded-full flex items-center justify-center transition-all ${isLatest
+                            ? "bg-blue-600 text-white ring-4 ring-blue-100 shadow-sm shadow-blue-200"
+                            : isInitial
+                              ? "bg-emerald-500 text-white ring-4 ring-emerald-50"
+                              : "bg-white border-2 border-slate-300 text-slate-500 group-hover:border-blue-400"
+                            }`}
+                        >
+                          {isLatest ? (
+                            <span className="w-1.5 h-1.5 bg-white rounded-full" />
+                          ) : isInitial ? (
+                            <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          ) : (
+                            <span className="w-1.5 h-1.5 bg-slate-400 rounded-full" />
+                          )}
+                        </div>
+
+                        {/* Event Card Content */}
+                        <div className="bg-slate-50/70 border border-slate-100 hover:border-slate-200 rounded-xl p-3.5 transition-all">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+                            {/* Status Badges */}
+                            <div className="flex items-center gap-1.5 flex-wrap text-xs">
+                              {h.from_status ? (
+                                <>
+                                  <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-white text-slate-600 border border-slate-200">
+                                    {h.from_status}
+                                  </span>
+                                  <svg className="w-3 h-3 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                                  </svg>
+                                  <span className={`px-2 py-0.5 rounded text-[11px] font-semibold border ${isLatest ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-white text-slate-800 border-slate-200"
+                                    }`}>
+                                    {h.to_status}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  {h.to_status}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Timestamp */}
+                            <span className="text-[10px] font-mono text-slate-500 bg-white border border-slate-200 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-2xs">
+                              <svg className="w-2.5 h-2.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                              </svg>
+                              {h.created_at.replace("T", " ").slice(0, 16)}
+                            </span>
+                          </div>
+
+                          {/* Notes */}
+                          <p className="text-xs font-medium text-slate-700 leading-snug">
+                            {h.notes || "Status transition completed."}
+                          </p>
+
+                          {/* Actor Info */}
+                          <div className="flex items-center gap-1.5 mt-2 text-[11px] text-slate-500">
+                            <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center text-[9px] font-bold flex-shrink-0">
+                              {actorInitials}
+                            </div>
+                            <span>By <strong className="font-semibold text-slate-700">{h.actor_name || "System"}</strong></span>
+                          </div>
+                        </div>
                       </div>
-                      <p className="text-slate-600 mt-0.5">{h.notes || "Status transition"}</p>
-                      <p className="text-[10px] text-slate-400">By {h.actor_name}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -470,14 +803,32 @@ export default function ClaimDetailPage() {
 
               {["APPROVED", "PARTIAL_APPROVAL"].includes(adjDecision) && (
                 <div>
-                  <label className="block font-semibold text-slate-700 mb-1">Approved Amount (PKR)</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="block font-semibold text-slate-700">Approved Amount (PKR)</label>
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      Max Claimed: <strong className="text-slate-800 font-mono">PKR {claim?.submitted_amount?.toLocaleString()}</strong>
+                    </span>
+                  </div>
                   <input
                     type="number"
                     required
+                    min={1}
+                    max={claim?.submitted_amount}
                     value={adjAmount}
                     onChange={e => setAdjAmount(parseFloat(e.target.value) || 0)}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200"
+                    className={`w-full px-3 py-2 rounded-lg border transition-colors focus:outline-none focus:ring-2 ${claim && adjAmount > claim.submitted_amount
+                      ? "border-rose-300 bg-rose-50 text-rose-900 focus:ring-rose-400 font-semibold"
+                      : "border-slate-200 focus:ring-blue-400 font-medium"
+                      }`}
                   />
+                  {claim && adjAmount > claim.submitted_amount && (
+                    <p className="text-[10px] text-rose-600 font-medium mt-1 flex items-center gap-1">
+                      <svg className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Amount cannot exceed claimed limit of PKR {claim.submitted_amount.toLocaleString()}
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -495,7 +846,11 @@ export default function ClaimDetailPage() {
 
               <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
                 <button type="button" onClick={() => setModal(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+                <button
+                  type="submit"
+                  disabled={submitting || (!!claim && ["APPROVED", "PARTIAL_APPROVAL"].includes(adjDecision) && adjAmount > claim.submitted_amount)}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50"
+                >
                   Confirm
                 </button>
               </div>
@@ -514,14 +869,32 @@ export default function ClaimDetailPage() {
             </div>
             <form onSubmit={handlePayout} className="p-5 space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 mb-1">Amount (PKR)</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block font-semibold text-slate-700">Amount (PKR)</label>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    Max Limit: <strong className="text-slate-800 font-mono">PKR {((claim?.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim?.submitted_amount)?.toLocaleString()}</strong>
+                  </span>
+                </div>
                 <input
                   type="number"
                   required
+                  min={1}
+                  max={(claim?.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim?.submitted_amount}
                   value={payAmount}
                   onChange={e => setPayAmount(parseFloat(e.target.value) || 0)}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-200"
+                  className={`w-full px-3 py-2 rounded-lg border transition-colors focus:outline-none focus:ring-2 ${claim && payAmount > ((claim.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim.submitted_amount)
+                    ? "border-rose-300 bg-rose-50 text-rose-900 focus:ring-rose-400 font-semibold"
+                    : "border-slate-200 focus:ring-blue-400 font-medium"
+                    }`}
                 />
+                {claim && payAmount > ((claim.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim.submitted_amount) && (
+                  <p className="text-[10px] text-rose-600 font-medium mt-1 flex items-center gap-1">
+                    <svg className="w-3.5 h-3.5 text-rose-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    Amount cannot exceed max limit of PKR {((claim.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim.submitted_amount).toLocaleString()}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -550,7 +923,11 @@ export default function ClaimDetailPage() {
 
               <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
                 <button type="button" onClick={() => setModal(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium">Cancel</button>
-                <button type="submit" disabled={submitting} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+                <button
+                  type="submit"
+                  disabled={submitting || (!!claim && payAmount > ((claim.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim.submitted_amount))}
+                  className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50"
+                >
                   Issue Payout
                 </button>
               </div>

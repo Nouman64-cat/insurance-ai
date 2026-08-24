@@ -802,6 +802,11 @@ async def proxy_agent(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/agent/{path}")
 
 
+@app.api_route("/tenants/{tenant_id}/artifacts{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_artifacts(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/artifacts{path}")
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Health

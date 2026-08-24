@@ -207,7 +207,7 @@ const NAV_ITEMS = [
     group: "Insurance Operations",
     links: [
       {
-        href: "/claims",
+        href: "/claims/dashboard",
         label: "Claims",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -218,6 +218,10 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
+        subLinks: [
+          { href: "/claims/dashboard", label: "Dashboard" },
+          { href: "/claims/register", label: "Claims Register" },
+        ]
       },
       {
         href: "/renewals",
@@ -879,6 +883,14 @@ export function Sidebar() {
     } else {
       setActiveHref(pathname);
     }
+
+    NAV_ITEMS.forEach((g: any) => {
+      g.links.forEach((l: any) => {
+        if (l.subLinks && l.subLinks.some((sub: any) => pathname.startsWith(sub.href.split("?")[0]))) {
+          setExpandedMenus(prev => ({ ...prev, [l.href]: true }));
+        }
+      });
+    });
   }, [pathname, searchParams]);
 
   useEffect(() => {
@@ -973,7 +985,7 @@ export function Sidebar() {
     links: g.links.map((href: string) => allLinksMap.get(href)).filter(Boolean)
   }));
 
-  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial"];
+  const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
   const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens"];
 
   const displayGroups = (userRole === "SuperAdmin"

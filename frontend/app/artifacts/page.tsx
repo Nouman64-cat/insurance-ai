@@ -66,6 +66,7 @@ const STATUS_COLORS: Record<string, string> = {
   "Accepted": "bg-blue-50 text-blue-700 border-blue-200",
   "Re-submission Requested": "bg-amber-50 text-amber-700 border-amber-200",
   "Processing": "bg-blue-50 text-blue-700 border-blue-200",
+  "Uploaded": "bg-emerald-50 text-emerald-700 border-emerald-200",
 };
 
 function calcCost(u: TokenUsage) {

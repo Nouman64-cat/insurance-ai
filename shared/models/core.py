@@ -994,7 +994,7 @@ class Artifact(SQLModel, table=True):
     authenticity_score: float = Field(default=1.0, ge=0.0, le=1.0)
     quality_score: float = Field(default=1.0, ge=0.0, le=1.0)
     tampered_flag: bool = Field(default=False)
-    status: str = Field(default="Processing", max_length=50)
+    status: str = Field(default="Uploaded", max_length=50)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 

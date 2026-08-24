@@ -104,12 +104,30 @@ export interface ClaimPayoutRequest {
   notes?: string;
 }
 
-export async function listClaims(params?: { status?: string; claim_type?: string; search?: string }): Promise<Claim[]> {
+export interface ListClaimsParams {
+  status?: string;
+  claim_type?: string;
+  search?: string;
+  start_date?: string;
+  end_date?: string;
+  date_field?: string;
+  risk_level?: string;
+  min_amount?: number;
+  max_amount?: number;
+}
+
+export async function listClaims(params?: ListClaimsParams): Promise<Claim[]> {
   const tid = tenantId();
   const query = new URLSearchParams();
   if (params?.status) query.append("status", params.status);
   if (params?.claim_type) query.append("claim_type", params.claim_type);
   if (params?.search) query.append("search", params.search);
+  if (params?.start_date) query.append("start_date", params.start_date);
+  if (params?.end_date) query.append("end_date", params.end_date);
+  if (params?.date_field) query.append("date_field", params.date_field);
+  if (params?.risk_level) query.append("risk_level", params.risk_level);
+  if (params?.min_amount !== undefined) query.append("min_amount", params.min_amount.toString());
+  if (params?.max_amount !== undefined) query.append("max_amount", params.max_amount.toString());
 
   const res = await api.get(`/tenants/${tid}/claims?${query.toString()}`);
   return res.data;
