@@ -134,19 +134,54 @@ DOMAIN_PROMPTS["rules"] = """
 
 ## RULES ENGINE (underwriting governance)
 
-The platform's underwriting thresholds live in versioned rule sets — NML medical \
-grids, HLV over-insurance ceilings, reinsurance retention, SECP commission rates. \
-Read them with **list_rule_sets** / **get_rule_set**, dry-run them with \
-**evaluate_rule_set** (one set) or **evaluate_rule_scope** (everything in a \
-category/channel), and show the audit trail with **get_rule_evaluation_logs**.
+The platform's underwriting thresholds live in versioned rule sets. Below are the
+seeded rule sets — use these codes directly when calling tools.
 
-Editing follows maker–checker and is version-scoped, so keep that order:
-1. **create_rule_version** opens a DRAFT off the active version.
-2. **add_rule_to_version** / **update_rule** / **delete_rule** — DRAFT only. A rule \
-   cannot be changed once its version is ACTIVE; that is the point of versioning.
-3. **deploy_rule_version** makes the draft ACTIVE. This changes underwriting \
-   behaviour for every case evaluated afterwards, so always state which rule set \
-   and version number is going live before you call it."""
+### Seeded Rule Set Codes (use in evaluate_rule_set / get_rule_set / etc.)
+| Code | Name | Governs |
+| :--- | :--- | :--- |
+| `RS-MED-001` | NML — Agency Direct | Whether an applicant needs a medical exam (age + sum assured grid) |
+| `RS-MED-002` | NML — Window Takaful | Medical limits for Takaful channel |
+| `RS-MED-003` | NML — Bancassurance MCB | Medical limits for MCB Bancassurance |
+| `RS-MED-004` | NML — Bancassurance Alfalah | Medical limits for Alfalah Bancassurance |
+| `RS-COM-001` | SECP Commission Rates | Statutory commission rates (Rule 24, first-year/renewal/single-premium) |
+| `RS-CMP-001` | AML & Sanctions | PEP clearance, sanctions block, enhanced due diligence |
+| `RS-PRC-001` | Risk Loadings | BMI, smoker, and combined surcharges |
+| `RS-PRC-002` | Occupational Hazard | Extra-mortality loading by occupation class |
+| `RS-AI-001` | AI Risk Bands | Composite score → AUTO_APPROVE / APPROVE_WITH_LOADING / REQUIRE_HUMAN_REVIEW |
+| `RS-ELG-001` | Proposal Eligibility | Entry age, term, maturity age, income multiple checks |
+| `RS-UW-001` | Pre-Underwriting Gates | The 6 clearance gate definitions |
+| `RS-HIS-001` | HLV Ceiling | Age-banded income multiple for over-insurance check |
+| `RS-HIS-002` | History Score Bands | Insurance history score → CLEAR / FLAGGED / FAILED |
+| `RS-RBA-001` | RBAC Matrix | Action → allowed role(s) governance table |
+| `RS-REI-001` | Self-Retention & Treaty | Age-banded retention limit and automatic treaty capacity |
+| `RS-REI-002` | Facultative Referral | Whether a case exceeds retention + treaty and needs reinsurer |
+| `RS-CLM-001` | Claims Benefits | Death benefit and claims eligibility rules |
+
+### Simulation workflow
+1. **evaluate_rule_set** — dry-run one rule set with a JSON facts object.
+   Example: `evaluate_rule_set(rule_set_code="RS-MED-001", context_json='{"age":45,"sum_assured":5000000}')`
+2. **evaluate_rule_scope** — run every rule set in a category/channel at once.
+   Example: `evaluate_rule_scope(subcategory="NON_MEDICAL_LIMITS", context_json='{"age":55,"sum_assured":3000000}')`
+3. Inspect `matched_rule_codes` and `final_impacts` in the result to understand the decision.
+4. Use **get_rule_evaluation_logs** to show the audit trail of past evaluations.
+
+### Reading rules
+- **list_rule_categories** → browse the full catalogue
+- **list_rule_sets** → filter by category or channel
+- **get_rule_set** → full detail including version history and every rule in the active version
+
+### Authoring (maker–checker, version-scoped)
+1. **create_rule_version** — opens a DRAFT from the active version (copy-on-write).
+2. **add_rule_to_version** / **update_rule** / **delete_rule** — DRAFT only.
+   Rules cannot be changed once the version is ACTIVE — that is the point of versioning.
+3. **deploy_rule_version** — makes the draft ACTIVE. ALWAYS state the rule set code and
+   version number before calling. This changes underwriting behaviour for every case
+   evaluated from that moment onwards.
+4. **archive_rule_version** — retires the currently active version.
+
+After any rule operation, offer to navigate to `admin/rule-engine` so the user can
+visually confirm the change in the Rule Engine UI."""
 
 DOMAIN_PROMPTS["commission"] = """
 
@@ -513,6 +548,141 @@ async def permission_gate(state: ChatState) -> Command:
                     update["last_action"] = result["last_action"]
                 return back_to_agent(update)
 
+    if name == "create_rule_set":
+        # Fetch the live category → subcategory tree so the user can pick from
+        # real options rather than typing codes from memory.
+        try:
+
+            cats_res = await execute_tool("list_rule_categories", {}, ctx)
+            cats = cats_res.get("categories", [])
+        except Exception:
+            cats = []
+
+        if cats:
+            # Build a flat list of "CATEGORY → Subcategory" display strings
+            # that the clarify interrupt renders as clickable chips.
+            # Also store eligibility_profiles per sub so we can ask for a
+            # channel when the subcategory is CHANNEL_PRODUCT-scoped.
+            cat_options: list[str] = []
+            cat_map: dict[str, dict] = {}  # display → metadata
+            for cat in cats:
+                for sub in (cat.get("subcategories") or []):
+                    display = f"{cat.get('name', cat.get('code'))} → {sub.get('name', sub.get('code'))}"
+                    cat_options.append(display)
+                    cat_map[display] = {
+                        "category_code": cat.get("code", ""),
+                        "subcategory_code": sub.get("code", ""),
+                        "cat_name": cat.get("name", ""),
+                        "sub_name": sub.get("name", ""),
+                        # Profiles present → CHANNEL_PRODUCT scope; absent → GLOBAL
+                        "profiles": sub.get("eligibility_profiles") or [],
+                    }
+
+            # Check if the model already resolved both codes to known values.
+            provided_cat = (args.get("category_code") or "").upper()
+            provided_sub = (args.get("subcategory_code") or "").upper()
+            already_known = any(
+                m["category_code"].upper() == provided_cat and m["subcategory_code"].upper() == provided_sub
+                for m in cat_map.values()
+            ) if provided_cat and provided_sub else False
+
+            if not already_known and cat_options:
+                # ── Step 1: pick category / subcategory ──────────────────────
+                name_hint = f" **\"{args.get('name')}\"**" if args.get("name") else ""
+                answer = interrupt({
+                    "kind": "clarify",
+                    "tool_call": {"name": name, "args": args},
+                    "question": (
+                        f"Creating rule set{name_hint}. "
+                        "Which **category → subcategory** should it belong to?"
+                    ),
+                    "options": cat_options[:20],
+                })
+
+                # Match back to a known cat/sub entry
+                selected = str(answer).strip()
+                matched = cat_map.get(selected)
+                if not matched:
+                    for display, mapping in cat_map.items():
+                        if selected.lower() in display.lower() or display.lower() in selected.lower():
+                            matched = mapping
+                            break
+
+                if matched:
+                    args["category_code"] = matched["category_code"]
+                    args["subcategory_code"] = matched["subcategory_code"]
+
+                    # ── Step 2: pick channel (only for CHANNEL_PRODUCT subs) ──
+                    # If the subcategory has eligibility profiles, the API
+                    # requires a channel_code so it can resolve eligibility_id.
+                    # GLOBAL-scoped subcategories have no profiles — skip this.
+                    profiles = matched["profiles"]
+                    if profiles and not args.get("channel_code"):
+                        channel_options = [
+                            p.get("channel_code", p.get("id", ""))
+                            for p in profiles
+                            if p.get("channel_code")
+                        ]
+                        channel_options.append("GLOBAL (no specific channel)")
+                        channel_answer = interrupt({
+                            "kind": "clarify",
+                            "tool_call": {"name": name, "args": args},
+                            "question": (
+                                f"**{matched['sub_name']}** is channel-scoped. "
+                                "Which channel should this rule set apply to?"
+                            ),
+                            "options": channel_options,
+                        })
+                        chosen_channel = str(channel_answer).strip()
+                        if "global" not in chosen_channel.lower():
+                            # Strip any trailing label text — keep just the code
+                            args["channel_code"] = chosen_channel.split()[0].upper()
+
+                    # ── Auto-suggest a code if none provided ─────────────────
+                    if not args.get("code"):
+                        try:
+                            existing_res = await execute_tool("list_rule_sets", {"category": matched["category_code"]}, ctx)
+                            existing = existing_res.get("rule_sets", [])
+                        except Exception:
+                            existing = []
+                        n = len(existing) + 1
+                        cat_code = matched["category_code"]
+                        prefix_map = {
+                            "MEDICAL": "MED", "PRICING": "PRC", "COMMISSION": "COM",
+                            "COMPLIANCE": "CMP", "UNDERWRITING": "UW", "INSURANCE": "HIS",
+                            "REINSURANCE": "REI", "RBAC": "RBA", "AI_DECISION": "AI",
+                            "ELIGIBILITY": "ELG", "CLAIMS": "CLM",
+                        }
+                        prefix = next(
+                            (v for k, v in prefix_map.items() if k in cat_code.upper()),
+                            cat_code[:3].upper()
+                        )
+                        args["code"] = f"RS-{prefix}-{n:03d}"
+
+                # ── Step 3: ask for name if not provided ──────────────────────
+                if not args.get("name"):
+                    cat_label = args.get("category_code", "")
+                    sub_label = args.get("subcategory_code", "")
+                    chan_label = f" · channel `{args['channel_code']}`" if args.get("channel_code") else ""
+                    name_answer = interrupt({
+                        "kind": "clarify",
+                        "tool_call": {"name": name, "args": args},
+                        "question": (
+                            f"Got it — filing under **{cat_label} / {sub_label}**{chan_label}. "
+                            f"I've suggested the code **`{args.get('code')}`**. "
+                            "What should the rule set be named? (Give it a clear description.)"
+                        ),
+                    })
+                    args["name"] = str(name_answer).strip()
+
+                # Execute immediately with all args resolved
+                result = await execute_tool(name, args, ctx)
+                update = {"messages": [_tool_result_message(name, call_id, result)]}
+                if result.get("last_action"):
+                    update["last_action"] = result["last_action"]
+                return back_to_agent(update)
+
+
     missing = missing_args(name, args)
     if missing:
         answer = interrupt({
@@ -559,6 +729,15 @@ async def permission_gate(state: ChatState) -> Command:
             or args.get("case_number") or args.get("email") or args.get("full_name") or ""
         if is_destructive(name):
             question = f"⚠️ This permanently deletes {target or 'this record'} and cannot be undone. Proceed?"
+        elif name == "deploy_rule_version":
+            # Deploying a rule version changes live underwriting behaviour for every
+            # case evaluated afterwards — give the user the rule set code so "Yes"
+            # is informed consent rather than a reflex click.
+            rs_code = args.get("rule_set_code") or target or "this rule set"
+            question = (
+                f"⚠️ About to deploy a new ACTIVE version of **`{rs_code}`** — "
+                "this changes underwriting decisions for every case evaluated from now on. Proceed?"
+            )
         else:
             question = f"Ready to {name.replace('_', ' ')}" + (f" for {target}" if target else "") + " — proceed?"
         answer = interrupt({

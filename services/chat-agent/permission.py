@@ -131,6 +131,15 @@ REQUIRED_ARGS: dict[str, list[str]] = {
     "assign_case": ["assigned_user_name"],
     "add_case_comment": ["comment_text"],
     "navigate_to_page": ["page_name"],
+    # Rules engine — guard against the model calling authoring tools with no args.
+    # The clarify-interrupt is friendlier than a raw 422 from the API.
+    # Note: create_rule_set is NOT here — permission_gate has a dedicated interceptor
+    # that fetches live categories and presents them as clickable chips before executing.
+    "add_rule_to_version": ["rule_set_code", "rule_code", "name", "priority", "conditions_json", "action_outcome"],
+    "deploy_rule_version": ["rule_set_code"],
+    "archive_rule_version": ["rule_set_code"],
+    "get_rule_set": ["rule_set_code"],
+    "evaluate_rule_set": ["rule_set_code"],
 }
 
 # Tools that emit progress steps worth showing in the UI's process graph, with
