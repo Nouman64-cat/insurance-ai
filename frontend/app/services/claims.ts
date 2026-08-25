@@ -13,6 +13,7 @@ export type ClaimStatus =
   | "Declined"
   | "Referred to Manager"
   | "Reinsurance Referred"
+  | "Re-Underwriting Required"
   | "Settled"
   | "Closed";
 
@@ -23,6 +24,7 @@ export interface ClaimArtifact {
   file_size?: number;
   file_type?: string;
   storage_url?: string;
+  download_url?: string;
   status: string;
   ocr_result?: any;
   created_at: string;
@@ -66,6 +68,9 @@ export interface Claim {
   assigned_adjuster_id?: string | null;
   assigned_adjuster_name?: string | null;
   reinsurance_referral_id?: string | null;
+  is_contestable?: boolean;
+  underwriting_referral_reason?: string | null;
+  underwriting_decision_notes?: string | null;
   settlement_amount?: number | null;
   settled_at?: string | null;
   closed_at?: string | null;
@@ -201,3 +206,30 @@ export async function uploadClaimDocument(
   });
   return res.data;
 }
+
+export async function referClaimToUnderwriting(
+  claimId: string,
+  referral_reason: string,
+  notes?: string
+): Promise<Claim> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/claims/${claimId}/re-underwrite`, {
+    referral_reason,
+    notes,
+  });
+  return res.data;
+}
+
+export async function resolveClaimUnderwriting(
+  claimId: string,
+  decision: "APPROVE_CONTINUE" | "APPROVE_WITH_EXCLUSION" | "APPROVE_WITH_LOADING" | "DECLINE_NON_DISCLOSURE",
+  decision_notes: string
+): Promise<Claim> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/claims/${claimId}/resolve-underwriting`, {
+    decision,
+    decision_notes,
+  });
+  return res.data;
+}
+
