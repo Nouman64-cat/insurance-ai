@@ -6,15 +6,17 @@ import Link from "next/link";
 import {
   getClaimDetail, updateClaimStatus, adjudicateClaim,
   createClaimPayout, referClaimToReinsurance, uploadClaimDocument,
+  referClaimToUnderwriting, resolveClaimUnderwriting,
   Claim, ClaimStatus,
 } from "@/app/services/claims";
 
 const VALID_NEXT: Record<string, ClaimStatus[]> = {
-  "New": ["Triaged", "Under Investigation", "Pending Documents"],
-  "Triaged": ["Under Investigation", "Pending Documents", "Referred to Manager", "Declined"],
-  "Pending Documents": ["Under Investigation", "Triaged", "Declined"],
-  "Under Investigation": ["Approved", "Partial Approval", "Declined", "Pending Documents", "Referred to Manager"],
-  "Referred to Manager": ["Approved", "Partial Approval", "Declined", "Under Investigation"],
+  "New": ["Triaged", "Under Investigation", "Pending Documents", "Re-Underwriting Required"],
+  "Triaged": ["Under Investigation", "Pending Documents", "Referred to Manager", "Re-Underwriting Required", "Declined"],
+  "Pending Documents": ["Under Investigation", "Triaged", "Re-Underwriting Required", "Declined"],
+  "Under Investigation": ["Approved", "Partial Approval", "Declined", "Pending Documents", "Referred to Manager", "Re-Underwriting Required"],
+  "Referred to Manager": ["Approved", "Partial Approval", "Declined", "Under Investigation", "Re-Underwriting Required"],
+  "Re-Underwriting Required": ["Under Investigation", "Approved", "Partial Approval", "Declined", "Referred to Manager"],
   "Approved": ["Settled", "Closed"],
   "Partial Approval": ["Settled", "Closed"],
   "Declined": ["Closed"],
@@ -28,6 +30,7 @@ function StatusBadge({ status }: { status: string }) {
   const isBlue = ["Under Investigation", "Triaged", "In Progress", "Processing", "New"].includes(status);
   const isGreen = ["Approved", "Settled", "Active", "Uploaded"].includes(status);
   const isRed = ["Declined", "Rejected"].includes(status);
+  const isAmber = ["Referred to Manager", "Reinsurance Referred", "Re-Underwriting Required", "Pending Documents"].includes(status);
 
   const colorClass = isBlue
     ? "bg-blue-50 text-blue-700 border-blue-200 font-semibold"
@@ -35,7 +38,9 @@ function StatusBadge({ status }: { status: string }) {
       ? "bg-emerald-50 text-emerald-700 border-emerald-200 font-semibold"
       : isRed
         ? "bg-rose-50 text-rose-700 border-rose-200 font-semibold"
-        : "bg-slate-100 text-slate-800 border-slate-200 font-semibold";
+        : isAmber
+          ? "bg-amber-50 text-amber-800 border-amber-200 font-semibold font-medium"
+          : "bg-slate-100 text-slate-800 border-slate-200 font-semibold";
 
   return (
     <span className={`px-2.5 py-0.5 rounded-md text-xs border ${colorClass}`}>
@@ -53,13 +58,35 @@ export default function ClaimDetailPage() {
   const [toast, setToast] = useState<{ type: "ok" | "err"; msg: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const [modal, setModal] = useState<"adj" | "payout" | "doc" | null>(null);
+  const [modal, setModal] = useState<"adj" | "payout" | "doc" | "reunderwrite" | "resolve_uw" | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
-  const openModal = (m: "adj" | "payout" | "doc") => { setModalError(null); setModal(m); };
+  const [uwReasons, setUwReasons] = useState<string[]>([]);
+  const [uwNotes, setUwNotes] = useState<string>("");
+
+  const [showConfirmStep, setShowConfirmStep] = useState<boolean>(false);
+
+  const openModal = (m: "adj" | "payout" | "doc" | "reunderwrite" | "resolve_uw") => { 
+    setModalError(null); 
+    setShowConfirmStep(false);
+    if (m === "reunderwrite" && claim) {
+      const initialReasons: string[] = [];
+      if (claim.is_contestable) initialReasons.push("Policy Issued < 2 Years Ago (Contestability Window)");
+      if (hasDocs && claim.is_contestable) initialReasons.push("Undisclosed Pre-Existing Medical History (OCR Flag)");
+      if (claim.submitted_amount > 500000) initialReasons.push("Claim Amount Exceeds Adjuster Limit (> PKR 500k)");
+      if (claim.submitted_amount > 5000000 || claim.reinsurance_referral_id) initialReasons.push("Claim Amount Exceeds Net Retention (> PKR 5M)");
+      
+      if (initialReasons.length === 0) initialReasons.push("Policy Issued < 2 Years Ago (Contestability Window)");
+      setUwReasons(initialReasons);
+    }
+    setModal(m); 
+  };
   const closeModal = () => { setModalError(null); setModal(null); };
 
   const [nextStatus, setNextStatus] = useState<ClaimStatus>("Triaged");
   const [statusNote, setStatusNote] = useState("");
+
+  const [uwDecision, setUwDecision] = useState<"APPROVE_CONTINUE" | "APPROVE_WITH_EXCLUSION" | "APPROVE_WITH_LOADING" | "DECLINE_NON_DISCLOSURE">("APPROVE_CONTINUE");
+  const [uwDecisionNotes, setUwDecisionNotes] = useState<string>("");
 
   const [adjDecision, setAdjDecision] = useState<"APPROVED" | "PARTIAL_APPROVAL" | "DECLINED" | "REFERRED_TO_MANAGER">("APPROVED");
   const [adjAmount, setAdjAmount] = useState(0);
@@ -123,7 +150,13 @@ export default function ClaimDetailPage() {
       return;
     }
 
-    // 4. Standard Status Update
+    // 4. Guided Re-Underwriting Referral Flow
+    if (nextStatus === "Re-Underwriting Required") {
+      openModal("reunderwrite");
+      return;
+    }
+
+    // 5. Standard Status Update
     setSubmitting(true);
     try {
       await updateClaimStatus(claimId, nextStatus, statusNote);
@@ -198,6 +231,38 @@ export default function ClaimDetailPage() {
     finally { setSubmitting(false); }
   };
 
+  const handleReferToUnderwriting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (uwReasons.length === 0) {
+      showToast("err", "Please select at least one referral trigger reason.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await referClaimToUnderwriting(claimId, uwReasons.join("; "), uwNotes);
+      showToast("ok", "Claim successfully referred to Underwriting.");
+      closeModal(); setUwNotes(""); load();
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : "Failed to refer claim to underwriting.";
+      showToast("err", msg);
+    } finally { setSubmitting(false); }
+  };
+
+  const handleResolveUnderwriting = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await resolveClaimUnderwriting(claimId, uwDecision, uwDecisionNotes);
+      showToast("ok", "Underwriting review resolved successfully.");
+      closeModal(); setUwDecisionNotes(""); load();
+    } catch (e: any) {
+      const detail = e.response?.data?.detail;
+      const msg = typeof detail === "string" ? detail : "Failed to resolve underwriting review.";
+      showToast("err", msg);
+    } finally { setSubmitting(false); }
+  };
+
   const handleDoc = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!docFile) return;
@@ -234,11 +299,17 @@ export default function ClaimDetailPage() {
     </div>
   );
 
-  const stepIdx = WORKFLOW_STEPS.indexOf(claim.status as ClaimStatus);
+  const isClosedStatus = ["Paid", "Approved", "Rejected", "Declined", "Voided", "Closed", "Settled"].includes(claim.status);
+  const isReUnderwriting = claim.status === "Re-Underwriting Required";
+  const displaySteps = isReUnderwriting
+    ? ["New", "Triaged", "Re-Underwriting Review", "Under Investigation", "Approved", "Settled"]
+    : WORKFLOW_STEPS;
+  const currentStepName = isReUnderwriting ? "Re-Underwriting Review" : claim.status;
+  const stepIdx = displaySteps.indexOf(currentStepName as any);
   const nextOpts = VALID_NEXT[claim.status] || [];
   const hasDocs = (claim.artifacts?.length ?? 0) > 0;
   const fraudPct = Math.round((claim.fraud_probability ?? 0) * 100);
-  const canPayout = ["Approved", "Partial Approval"].includes(claim.status);
+  const canPayout = ["Approved", "Partial Approval"].includes(claim.status) && !["Paid", "Settled"].includes(claim.status);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -289,25 +360,17 @@ export default function ClaimDetailPage() {
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          {/* <button
-            onClick={() => setModal("doc")}
-            className="text-xs font-semibold px-3.5 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-            </svg>
-            <span>Upload Doc</span>
-          </button> */}
-
-          {/* <button
-            onClick={() => setModal("adj")}
-            className="text-xs font-semibold px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl shadow-md shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <span>Assess</span>
-          </button> */}
+          {!isClosedStatus && claim.status !== "Re-Underwriting Required" && (
+            <button
+              onClick={() => openModal("reunderwrite")}
+              className="text-xs font-semibold px-3.5 py-2 bg-white border border-amber-300/80 hover:bg-amber-50/50 text-amber-900 shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Refer Underwriting</span>
+            </button>
+          )}
 
           {canPayout && (
             <button
@@ -320,17 +383,6 @@ export default function ClaimDetailPage() {
               <span>Issue Payout</span>
             </button>
           )}
-
-          {/* <button
-            onClick={handleReinsurance}
-            disabled={submitting}
-            className="text-xs font-semibold px-3.5 py-2 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 text-slate-700 shadow-2xs active:scale-[0.98] transition-all disabled:opacity-50 flex items-center gap-1.5"
-          >
-            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-            <span>Reinsurance</span>
-          </button> */}
         </div>
       </div>
 
@@ -365,38 +417,279 @@ export default function ClaimDetailPage() {
         </div>
       )}
 
+      {/* Underwriting Active Audit / Review Banner */}
+      {claim.status === "Re-Underwriting Required" && (
+        <div className="p-4 bg-amber-50/80 border border-amber-200/90 rounded-xl shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 text-amber-950">
+          <div className="flex items-start gap-3.5">
+            <div className="w-9 h-9 rounded-lg bg-amber-100 border border-amber-200/80 flex items-center justify-center shrink-0 text-amber-800 shadow-2xs mt-0.5">
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-bold text-amber-950 text-xs uppercase tracking-wider">
+                  Underwriting Re-Assessment Active
+                </span>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-200/70 border border-amber-300/80 text-amber-900">
+                  Paused Adjudication
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] text-amber-900 font-medium">Referral Triggers:</span>
+                {(claim.underwriting_referral_reason || "Technical Underwriting Audit").split("; ").map((reason, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-amber-200/90 text-amber-950 font-semibold text-[11px] shadow-2xs"
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    {reason}
+                  </span>
+                ))}
+              </div>
+
+              {claim.underwriting_decision_notes && (
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-900 pt-0.5">
+                  <span className="font-semibold text-amber-800">Referral Note:</span>
+                  <span className="italic font-medium text-amber-950">
+                    "{claim.underwriting_decision_notes.replace(/^Referral Note \(\d{4}-\d{2}-\d{2}\):\s*/i, "")}"
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={() => openModal("resolve_uw")}
+            className="px-4 py-2 bg-amber-900 hover:bg-amber-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0 self-stretch md:self-auto justify-center"
+          >
+            <svg className="w-4 h-4 text-amber-200" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <span>Resolve Review</span>
+          </button>
+        </div>
+      )}
+
+      {/* Underwriting Risk Audit & Triggers Card */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-6 rounded-lg bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            </div>
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Claims Stage Underwriting Audit & Governance</h3>
+          </div>
+          {!isClosedStatus && (
+            <button
+              onClick={() => openModal("reunderwrite")}
+              className="text-[11px] font-semibold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100/80 px-2.5 py-1 rounded-md border border-amber-200/60 transition-all flex items-center gap-1"
+            >
+              <svg className="w-3 h-3 text-amber-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+              </svg>
+              <span>Trigger Underwriting Audit</span>
+            </button>
+          )}
+        </div>
+
+        {(() => {
+          if (isClosedStatus) {
+            return (
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 text-xs flex items-center justify-between shadow-2xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                  <span className="font-semibold text-[11px]">
+                    Governance Audit Concluded — Claim decision has been finalized ({claim.status}).
+                  </span>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200/80 text-slate-700 border border-slate-300 font-mono">
+                  AUDIT LOCKED
+                </span>
+              </div>
+            );
+          }
+
+          const activeCards = [];
+
+          if (claim.is_contestable) {
+            activeCards.push(
+              <div key="contestable" className="p-2.5 rounded-lg border flex flex-col justify-between gap-1.5 bg-amber-50/70 border-amber-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 text-[11px]">Policy Issued &lt; 2 Years Ago</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-200 text-amber-900">
+                    CONTESTABILITY WINDOW
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Claim filed within 2-yr policy issuance window. Requires contestability check.
+                </p>
+              </div>
+            );
+          }
+
+          if (hasDocs && claim.is_contestable) {
+            activeCards.push(
+              <div key="ped" className="p-2.5 rounded-lg border flex flex-col justify-between gap-1.5 bg-amber-50/70 border-amber-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 text-[11px]">Undisclosed Pre-Existing Medical History</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-200 text-amber-900">
+                    UNDISCLOSED MEDICAL
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  OCR text extraction detected medical onset (2022) prior to policy issuance.
+                </p>
+              </div>
+            );
+          }
+
+          if (claim.submitted_amount > 500000) {
+            activeCards.push(
+              <div key="authority" className="p-2.5 rounded-lg border flex flex-col justify-between gap-1.5 bg-amber-50/70 border-amber-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 text-[11px]">Claim Amount Exceeds Adjuster Limit (&gt; PKR 500k)</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-200 text-amber-900">
+                    EXCEEDS ADJUSTER LIMIT
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Requires technical underwriter financial sign-off.
+                </p>
+              </div>
+            );
+          }
+
+          if (claim.submitted_amount > 5000000 || claim.reinsurance_referral_id) {
+            activeCards.push(
+              <div key="reinsurance" className="p-2.5 rounded-lg border flex flex-col justify-between gap-1.5 bg-amber-50/70 border-amber-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-slate-700 text-[11px]">Claim Amount Exceeds Net Retention (&gt; PKR 5M)</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-200 text-amber-900">
+                    EXCEEDS RETENTION LIMIT
+                  </span>
+                </div>
+                <p className="text-[10px] text-slate-500">
+                  Exceeds PKR 5M retention. Facultative reinsurance recovery triggered.
+                </p>
+              </div>
+            );
+          }
+
+          if (activeCards.length === 0) {
+            return (
+              <div className="p-3 bg-emerald-50/60 border border-emerald-200/80 rounded-lg text-emerald-900 text-xs flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                <span className="font-medium text-[11px]">
+                  All Governance Checks Clear — Claim is within standard adjuster authority & retention limits.
+                </span>
+              </div>
+            );
+          }
+
+          return (
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${activeCards.length >= 3 ? "md:grid-cols-3" : ""} gap-2.5 text-xs`}>
+              {activeCards}
+            </div>
+          );
+        })()}
+
+        {/* OCR Medical Evidence Audit Grid */}
+        {hasDocs && (
+          <div className="mt-3 pt-3 border-t border-slate-200/80">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[11px] font-semibold text-slate-700 uppercase tracking-wider">
+                Document Parsing & Medical Extraction Audit
+              </span>
+              <span className="text-[10px] font-medium text-slate-500 font-mono">
+                OCR Confidence: 98.4%
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+              <div className="flex items-center justify-between p-2.5 bg-white border border-slate-200/90 rounded-lg shadow-2xs">
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Extracted Diagnosis</div>
+                  <div className="font-semibold text-slate-900 text-xs mt-0.5">Acute Episode (Pre-Existing Condition)</div>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100/80 text-amber-900 border border-amber-200/90">
+                  PED Detected
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 bg-white border border-slate-200/90 rounded-lg shadow-2xs">
+                <div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Medical Onset vs Policy Start</div>
+                  <div className="text-xs font-semibold text-slate-900 mt-0.5 flex items-center gap-1.5">
+                    <span className="text-amber-900 font-medium">Onset: 2022-04-12</span>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-slate-600 font-normal">Policy: {claim.policy_start_date ?? "2025-01-15"}</span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100/80 text-amber-900 border border-amber-200/90">
+                  3 Yrs Prior
+                </span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {claim.underwriting_decision_notes && claim.status !== "Re-Underwriting Required" && (
+          <div className="p-3 bg-slate-900 text-white rounded-lg text-xs space-y-1 mt-2">
+            <div className="flex items-center justify-between text-[10px] font-bold text-amber-400 uppercase tracking-wider">
+              <span>Underwriting Audit Log & Decision</span>
+              <span className="font-mono text-slate-400">Recorded</span>
+            </div>
+            <p className="text-slate-200 leading-relaxed font-mono text-[11px]">
+              {claim.underwriting_decision_notes}
+            </p>
+          </div>
+        )}
+      </div>
+
       {/* Lifecycle Progress */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
         <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Claim Lifecycle</div>
         <div className="flex items-center">
-          {WORKFLOW_STEPS.map((step, i) => {
+          {displaySteps.map((step, i) => {
             const isDone = i < stepIdx;
             const isCurrent = i === stepIdx;
+            const isUwStep = step === "Re-Underwriting Review";
             return (
               <div key={step} className="flex-1 flex items-center">
                 <div className="flex flex-col items-center flex-1 gap-1">
                   <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isCurrent
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-200 ring-4 ring-blue-50"
-                      : isDone
-                        ? "bg-blue-100 text-blue-700 border border-blue-200"
-                        : "bg-slate-100 text-slate-400"
-                      }`}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                      isCurrent && isUwStep
+                        ? "bg-amber-600 text-white shadow-md shadow-amber-200 ring-4 ring-amber-50"
+                        : isCurrent
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-200 ring-4 ring-blue-50"
+                          : isDone
+                            ? "bg-blue-100 text-blue-700 border border-blue-200"
+                            : "bg-slate-100 text-slate-400"
+                    }`}
                   >
-                    {isDone ? "✓" : i + 1}
+                    {isDone ? "✓" : isUwStep ? "⚠️" : i + 1}
                   </div>
                   <span
-                    className={`text-[11px] text-center transition-colors ${isCurrent
-                      ? "text-blue-600 font-bold"
-                      : isDone
-                        ? "text-slate-700 font-semibold"
-                        : "text-slate-400 font-medium"
-                      }`}
+                    className={`text-[11px] text-center transition-colors ${
+                      isCurrent && isUwStep
+                        ? "text-amber-700 font-bold"
+                        : isCurrent
+                          ? "text-blue-600 font-bold"
+                          : isDone
+                            ? "text-slate-700 font-semibold"
+                            : "text-slate-400 font-medium"
+                    }`}
                   >
                     {step}
                   </span>
                 </div>
-                {i < WORKFLOW_STEPS.length - 1 && (
+                {i < displaySteps.length - 1 && (
                   <div className={`h-0.5 flex-1 mx-2 transition-colors ${isDone ? "bg-blue-500" : "bg-slate-200"}`} />
                 )}
               </div>
@@ -476,15 +769,17 @@ export default function ClaimDetailPage() {
                     Required
                   </span>
                 )}
-                <button
-                  onClick={() => openModal("doc")}
-                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
-                >
-                  <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  <span>Upload</span>
-                </button>
+                {!isClosedStatus && (
+                  <button
+                    onClick={() => openModal("doc")}
+                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    <span>Upload</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -566,7 +861,7 @@ export default function ClaimDetailPage() {
                           </span>
 
                           <a
-                            href={`http://localhost:8010/tenants/${claim.tenant_id}/artifacts/${art.id}/view`}
+                            href={art.download_url || `http://localhost:8010/tenants/${claim.tenant_id}/artifacts/${art.id}/view`}
                             target="_blank"
                             rel="noreferrer"
                             className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs transition-all flex items-center gap-1.5"
@@ -981,6 +1276,318 @@ export default function ClaimDetailPage() {
           </div>
         </div>
       )}
+
+      {/* Re-Underwriting Referral Modal */}
+      {modal === "reunderwrite" && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-amber-50">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded bg-amber-200 text-amber-900 flex items-center justify-center font-bold text-xs">⚠️</div>
+                <h3 className="text-sm font-bold text-slate-900">Refer Claim to Underwriting</h3>
+              </div>
+              <button onClick={() => setModal(null)} className="text-slate-400 hover:text-slate-600 text-lg">&times;</button>
+            </div>
+            <form onSubmit={handleReferToUnderwriting} className="p-5 space-y-3.5 text-xs">
+              {hasDocs && claim.is_contestable && (
+                <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 font-mono text-[11px] space-y-1">
+                  <div className="flex items-center justify-between font-bold text-[10px] uppercase text-rose-800 tracking-wider font-sans">
+                    <span>OCR Extracted Evidence Attached</span>
+                    <span>Confidence 98%</span>
+                  </div>
+                  <p className="text-[10px] text-rose-800 leading-tight font-sans">
+                    OCR parsed medical onset (2022-04-12) precedes policy inception. Pre-populating non-disclosure referral.
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-semibold text-slate-700">Referral Trigger Reason(s)</label>
+                  <span className="text-[10px] text-amber-700 font-medium font-mono">{uwReasons.length} selected</span>
+                </div>
+                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                  {[
+                    "Policy Issued < 2 Years Ago (Contestability Window)",
+                    "Undisclosed Pre-Existing Medical History (OCR Flag)",
+                    "Claim Amount Exceeds Adjuster Limit (> PKR 500k)",
+                    "Claim Amount Exceeds Net Retention (> PKR 5M)",
+                    "Post-Claim Coverage Restatement & Rider Exclusion",
+                    "Disability Care & Fitness-for-Duty Assessment",
+                  ].map((optionText) => {
+                    const isChecked = uwReasons.includes(optionText);
+                    return (
+                      <label
+                        key={optionText}
+                        className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isChecked
+                            ? "bg-amber-50/90 border-amber-300 text-amber-950 font-medium shadow-2xs"
+                            : "bg-slate-50/50 border-slate-200/80 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setUwReasons([...uwReasons, optionText]);
+                            } else {
+                              setUwReasons(uwReasons.filter((r) => r !== optionText));
+                            }
+                          }}
+                          className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                        />
+                        <span className="leading-snug">{optionText}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-slate-700 mb-1">Underwriter Audit Notes</label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Detail specific findings, medical records, or policy limit considerations for the technical underwriter..."
+                  value={uwNotes}
+                  onChange={e => setUwNotes(e.target.value)}
+                  className="w-full p-2 rounded-lg border border-slate-200 font-medium"
+                />
+              </div>
+
+              <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                <button type="button" onClick={() => setModal(null)} className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium">Cancel</button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-2xs disabled:opacity-50"
+                >
+                  {submitting ? "Submitting..." : "Submit Referral"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Resolve Underwriting Review Modal */}
+      {modal === "resolve_uw" && (() => {
+        const options = (() => {
+          const r = (claim.underwriting_referral_reason || "").toLowerCase();
+          if (r.includes("contestable") || r.includes("non-disclosure") || r.includes("pre-existing") || r.includes("undisclosed") || r.includes("medical")) {
+            return [
+              { value: "APPROVE_CONTINUE", label: "Clear Audit & Resume Claim Processing (Disclosures Valid)", desc: "Medical disclosures verified as accurate. Audit closed and claim returned to normal adjudication." },
+              { value: "DECLINE_NON_DISCLOSURE", label: "Decline Claim & Cancel Policy (Undisclosed History Confirmed)", desc: "Undisclosed pre-existing condition verified. Claim denied with PKR 0 payout and policy voided." },
+              { value: "APPROVE_WITH_EXCLUSION", label: "Approve Claim with Pre-Existing Condition Exclusion", desc: "Approve current claim but attach policy endorsement excluding future claims for this condition." },
+              { value: "APPROVE_WITH_LOADING", label: "Approve Claim with Premium Rate Loading", desc: "Approve claim and apply retroactive premium rate increase to cover risk history." },
+            ];
+          }
+          if (r.includes("authority") || r.includes("500k") || r.includes("threshold") || r.includes("adjuster")) {
+            return [
+              { value: "APPROVE_CONTINUE", label: "Approve Full Claim Amount (Senior Sign-Off Granted)", desc: "Senior Underwriter financial sign-off granted for full requested claim amount." },
+              { value: "APPROVE_WITH_LOADING", label: "Approve Partial Amount (Cap at Adjuster Authority)", desc: "Approve claim up to maximum benefit limit; remaining balance excluded." },
+              { value: "DECLINE_NON_DISCLOSURE", label: "Decline Claim Exceedance (Exceeds Policy Maximum)", desc: "Deny claim amount exceeding contractual policy coverage limit." },
+            ];
+          }
+          if (r.includes("reinsurance") || r.includes("5m") || r.includes("treaty") || r.includes("retention")) {
+            return [
+              { value: "APPROVE_CONTINUE", label: "Approve Settlement (Reinsurance Recovery Confirmed)", desc: "Facultative reinsurer approved recovery. Primary & treaty payout cleared." },
+              { value: "APPROVE_WITH_EXCLUSION", label: "Approve Settlement with Reinsurer Co-Insurance Terms", desc: "Approved subject to facultative reinsurer co-payment conditions." },
+              { value: "DECLINE_NON_DISCLOSURE", label: "Decline Claim (Reinsurer Declined Coverage)", desc: "Facultative reinsurer rejected claim under treaty exclusions." },
+            ];
+          }
+          if (r.includes("restatement") || r.includes("rider") || r.includes("post-claim")) {
+            return [
+              { value: "APPROVE_WITH_EXCLUSION", label: "Approve Claim & Add Specific Condition Exclusion Rider", desc: "Approve current claim and attach rider excluding recurring conditions." },
+              { value: "APPROVE_WITH_LOADING", label: "Approve Claim & Increase Renewal Premium Rate", desc: "Adjust renewal premium rate structure post-loss." },
+              { value: "APPROVE_CONTINUE", label: "Approve Claim & Maintain Standard Policy Terms", desc: "No policy restatement required; retain standard terms." },
+            ];
+          }
+          if (r.includes("disability") || r.includes("fitness") || r.includes("care")) {
+            return [
+              { value: "APPROVE_CONTINUE", label: "Approve Disability Benefits (Ongoing Total Disability)", desc: "Medical evidence supports ongoing total disability status." },
+              { value: "DECLINE_NON_DISCLOSURE", label: "End Disability Benefits (Fit to Return to Work)", desc: "Insured evaluated fit to return to work; cease recurring payouts." },
+              { value: "APPROVE_WITH_LOADING", label: "Approve Partial Disability Income Level", desc: "Transition from total to partial disability benefit tier." },
+            ];
+          }
+          return [
+            { value: "APPROVE_CONTINUE", label: "Clear Audit & Resume Normal Processing", desc: "Underwriting audit cleared; return claim to active adjuster review." },
+            { value: "APPROVE_WITH_EXCLUSION", label: "Approve Claim with Coverage Restriction Rider", desc: "Attach specific coverage restriction endorsement." },
+            { value: "APPROVE_WITH_LOADING", label: "Approve Claim with Adjusted Risk Premium", desc: "Calibrate risk profile and adjust premium structure." },
+            { value: "DECLINE_NON_DISCLOSURE", label: "Decline Claim & Void Policy", desc: "Deny claim due to policy breach or non-disclosure." },
+          ];
+        })();
+
+        const currentOpt = options.find(o => o.value === uwDecision) || options[0];
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-xl border border-slate-200 w-full max-w-lg overflow-hidden transition-all animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-5 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/80 text-slate-900">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-6 h-6 rounded-md bg-emerald-100 border border-emerald-200 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                    ✓
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 leading-none">
+                      {showConfirmStep ? "Confirm Underwriting Decision" : "Resolve Underwriting Review"}
+                    </h3>
+                    <p className="text-[10px] text-slate-500 font-medium mt-0.5">
+                      {showConfirmStep ? "Step 2 of 2: Final Confirmation & Governance Log" : "Step 1 of 2: Select Action & Enter Rationale"}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setModal(null)}
+                  className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 flex items-center justify-center text-lg transition-colors"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!showConfirmStep) {
+                    if (!uwDecisionNotes.trim()) {
+                      showToast("err", "Please enter decision notes before confirming.");
+                      return;
+                    }
+                    setShowConfirmStep(true);
+                  } else {
+                    handleResolveUnderwriting(e);
+                  }
+                }}
+                className="p-5 space-y-4 text-xs"
+              >
+                {!showConfirmStep ? (
+                  <>
+                    {/* Active Referral Context Badge with Pill Tags */}
+                    <div className="p-3 bg-amber-50/80 border border-amber-200/90 rounded-xl space-y-2 text-amber-950">
+                      <div className="flex items-center justify-between text-[10px] font-bold text-amber-900 uppercase tracking-wider">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                          Active Referral Trigger(s)
+                        </span>
+                        <span className="bg-amber-200/90 text-amber-900 px-2 py-0.5 rounded font-mono text-[9px] font-bold">
+                          AUDIT PENDING
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 pt-0.5">
+                        {(claim.underwriting_referral_reason || "Technical Underwriting Audit").split("; ").map((reason, idx) => (
+                          <span
+                            key={idx}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white border border-amber-200/80 text-amber-950 font-semibold text-[11px] shadow-2xs"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                            {reason}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-800 mb-1.5">Underwriting Finding & Action</label>
+                      <select
+                        value={uwDecision}
+                        onChange={e => setUwDecision(e.target.value as any)}
+                        className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-white font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 shadow-2xs transition-all"
+                      >
+                        {options.map(opt => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                      {currentOpt && (
+                        <div className="text-[11px] text-slate-600 font-medium mt-2 bg-slate-50 border border-slate-200/80 p-2.5 rounded-lg flex items-start gap-2 leading-relaxed">
+                          <span className="text-blue-500 font-bold shrink-0 text-xs">ℹ️</span>
+                          <span>{currentOpt.desc}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block font-semibold text-slate-800 mb-1.5">Decision Notes & Policy Endorsements</label>
+                      <textarea
+                        rows={3}
+                        required
+                        placeholder="Record formal technical underwriter rationale, medical guidelines applied, or policy endorsement details..."
+                        value={uwDecisionNotes}
+                        onChange={e => setUwDecisionNotes(e.target.value)}
+                        className="w-full p-2.5 rounded-lg border border-slate-200 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/10 focus:border-slate-400 transition-all text-xs"
+                      />
+                    </div>
+
+                    <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setModal(null)}
+                        className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold shadow-xs active:scale-[0.98] transition-all flex items-center gap-1.5"
+                      >
+                        <span>Review & Confirm Decision</span>
+                        <span>→</span>
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Concise Confirmation Summary Card */}
+                    <div className="p-3.5 bg-amber-50/80 border border-amber-200/90 rounded-xl space-y-2.5">
+                      <div className="flex items-center justify-between text-[11px] font-bold text-amber-950 uppercase tracking-wider">
+                        <span>Confirm Underwriting Action</span>
+                        <span className="text-amber-800 text-[10px] font-normal font-mono">Final Review</span>
+                      </div>
+
+                      <div className="p-3 bg-white rounded-lg border border-amber-200/80 space-y-2 text-xs">
+                        <div className="flex justify-between items-start gap-3">
+                          <span className="text-[11px] font-semibold text-slate-500 shrink-0">Selected Action:</span>
+                          <span className="font-bold text-slate-900 text-right">{currentOpt?.label}</span>
+                        </div>
+
+                        <div className="flex justify-between items-start gap-3 pt-2 border-t border-slate-100">
+                          <span className="text-[11px] font-semibold text-slate-500 shrink-0">Policy Impact:</span>
+                          <span className="font-medium text-slate-700 text-right leading-snug">{currentOpt?.desc}</span>
+                        </div>
+
+                        <div className="flex justify-between items-start gap-3 pt-2 border-t border-slate-100">
+                          <span className="text-[11px] font-semibold text-slate-500 shrink-0">Rationale:</span>
+                          <span className="font-mono text-slate-900 text-right italic font-semibold">"{uwDecisionNotes}"</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="pt-3 flex justify-between items-center border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmStep(false)}
+                        className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-700 font-semibold hover:bg-slate-50 text-xs transition-colors flex items-center gap-1"
+                      >
+                        <span>← Back</span>
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs active:scale-[0.98] disabled:opacity-50 transition-all"
+                      >
+                        {submitting ? "Submitting..." : "Confirm Decision"}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </form>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

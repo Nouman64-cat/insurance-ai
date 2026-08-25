@@ -1035,6 +1035,22 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v45k — add closed_at to claims",
         "ALTER TABLE claims ADD COLUMN IF NOT EXISTS closed_at TIMESTAMP",
     ),
+    (
+        "v46a — add is_contestable to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS is_contestable BOOLEAN DEFAULT FALSE",
+    ),
+    (
+        "v46b — add underwriting_referral_reason to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS underwriting_referral_reason TEXT",
+    ),
+    (
+        "v46c — add underwriting_decision_notes to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS underwriting_decision_notes TEXT",
+    ),
+    (
+        "v46d-enum — add REUNDERWRITING_REQUIRED to claimstatusenum",
+        "ALTER TYPE claimstatusenum ADD VALUE IF NOT EXISTS 'REUNDERWRITING_REQUIRED'",
+    ),
 ]
 
 

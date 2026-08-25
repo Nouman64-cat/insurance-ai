@@ -65,10 +65,26 @@ async def _generate_claim_number(session: AsyncSession, tenant_id: UUID) -> str:
             seq = int(last.claim_number.rsplit("-", 1)[-1]) + 1
         except ValueError:
             seq = 1
-    return f"CLM-{year}-{seq:04d}"
+    while True:
+        candidate = f"CLM-{year}-{seq:04d}"
+        case_num = f"CASE-{candidate}"
+        existing_case = (await session.exec(
+            select(Case).where(Case.tenant_id == tenant_id, Case.caseNumber == case_num)
+        )).first()
+        if not existing_case:
+            return candidate
+        seq += 1
 
 
 def _claim_dict(claim: Claim, policy: Optional[Policy] = None, customer: Optional[Customer] = None, adjuster: Optional[User] = None, artifacts_count: int = 0) -> dict:
+    is_contestable_calc = False
+    if policy:
+        ref_date = policy.issued_at or policy.effective_date or policy.created_at
+        if ref_date:
+            days_since = (date.today() - (ref_date.date() if isinstance(ref_date, datetime) else ref_date)).days
+            if days_since <= 730:  # 2-year contestability window
+                is_contestable_calc = True
+
     return {
         "id": str(claim.id),
         "tenant_id": str(claim.tenant_id),
@@ -82,6 +98,9 @@ def _claim_dict(claim: Claim, policy: Optional[Policy] = None, customer: Optiona
         "fraud_probability": claim.fraud_probability,
         "duplicate_flag": claim.duplicate_flag,
         "ai_recommendation": claim.ai_recommendation,
+        "is_contestable": getattr(claim, "is_contestable", False) or is_contestable_calc,
+        "underwriting_referral_reason": getattr(claim, "underwriting_referral_reason", None),
+        "underwriting_decision_notes": getattr(claim, "underwriting_decision_notes", None),
         "incident_date": claim.incident_date.isoformat() if claim.incident_date else None,
         "reported_date": claim.reported_date.isoformat() if claim.reported_date else None,
         "assigned_adjuster_id": str(claim.assigned_adjuster_id) if claim.assigned_adjuster_id else None,
@@ -320,17 +339,8 @@ async def get_claim_detail(
         "notes": p.notes,
     } for p in payout_rows]
 
-    art_list = [{
-        "id": str(a.id),
-        "document_type": a.document_type,
-        "file_name": a.file_name,
-        "file_size": a.file_size,
-        "file_type": a.file_type,
-        "storage_url": a.storage_url,
-        "status": a.status,
-        "ocr_result": a.ocr_result,
-        "created_at": a.created_at.isoformat(),
-    } for a in artifacts]
+    from routers.artifacts import _artifact_response
+    art_list = [_artifact_response(a) for a in artifacts]
 
     base = _claim_dict(claim, policy, customer, adjuster, len(artifacts))
     base["status_history"] = history_list
@@ -345,16 +355,19 @@ VALID_TRANSITIONS = {
         ClaimStatusEnum.TRIAGED,
         ClaimStatusEnum.UNDER_INVESTIGATION,
         ClaimStatusEnum.PENDING_DOCUMENTS,
+        ClaimStatusEnum.REUNDERWRITING_REQUIRED,
     },
     ClaimStatusEnum.TRIAGED: {
         ClaimStatusEnum.UNDER_INVESTIGATION,
         ClaimStatusEnum.PENDING_DOCUMENTS,
         ClaimStatusEnum.REFERRED_TO_MANAGER,
+        ClaimStatusEnum.REUNDERWRITING_REQUIRED,
         ClaimStatusEnum.DECLINED,
     },
     ClaimStatusEnum.PENDING_DOCUMENTS: {
         ClaimStatusEnum.UNDER_INVESTIGATION,
         ClaimStatusEnum.TRIAGED,
+        ClaimStatusEnum.REUNDERWRITING_REQUIRED,
         ClaimStatusEnum.DECLINED,
     },
     ClaimStatusEnum.UNDER_INVESTIGATION: {
@@ -363,12 +376,21 @@ VALID_TRANSITIONS = {
         ClaimStatusEnum.DECLINED,
         ClaimStatusEnum.PENDING_DOCUMENTS,
         ClaimStatusEnum.REFERRED_TO_MANAGER,
+        ClaimStatusEnum.REUNDERWRITING_REQUIRED,
     },
     ClaimStatusEnum.REFERRED_TO_MANAGER: {
         ClaimStatusEnum.APPROVED,
         ClaimStatusEnum.PARTIAL_APPROVAL,
         ClaimStatusEnum.DECLINED,
         ClaimStatusEnum.UNDER_INVESTIGATION,
+        ClaimStatusEnum.REUNDERWRITING_REQUIRED,
+    },
+    ClaimStatusEnum.REUNDERWRITING_REQUIRED: {
+        ClaimStatusEnum.UNDER_INVESTIGATION,
+        ClaimStatusEnum.APPROVED,
+        ClaimStatusEnum.PARTIAL_APPROVAL,
+        ClaimStatusEnum.DECLINED,
+        ClaimStatusEnum.REFERRED_TO_MANAGER,
     },
     ClaimStatusEnum.APPROVED: {
         ClaimStatusEnum.SETTLED,
@@ -717,3 +739,97 @@ async def refer_claim_to_reinsurance(
         "status": claim.status.value,
         "reinsurance_referral_id": str(referral.id),
     }
+
+
+class ClaimReUnderwriteRequest(BaseModel):
+    referral_reason: str
+    notes: Optional[str] = None
+
+
+class ClaimUnderwritingResolveRequest(BaseModel):
+    decision: str  # APPROVE_CONTINUE, APPROVE_WITH_EXCLUSION, APPROVE_WITH_LOADING, DECLINE_NON_DISCLOSURE
+    decision_notes: str
+
+
+@router.post("/{claim_id}/re-underwrite", summary="Refer Claim to Underwriting")
+async def refer_claim_to_underwriting(
+    tenant_id: UUID,
+    claim_id: UUID,
+    body: ClaimReUnderwriteRequest,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    current_user = await _assert_claims_role(token, session)
+    claim = await session.get(Claim, claim_id)
+    if claim is None or claim.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    old_status = claim.status.value if hasattr(claim.status, "value") else str(claim.status)
+    claim.status = ClaimStatusEnum.REUNDERWRITING_REQUIRED
+    claim.underwriting_referral_reason = body.referral_reason
+    if body.notes:
+        claim.underwriting_decision_notes = f"Referral Note ({datetime.utcnow().strftime('%Y-%m-%d')}): {body.notes}"
+    session.add(claim)
+
+    history = ClaimStatusHistory(
+        tenant_id=tenant_id,
+        claim_id=claim.id,
+        from_status=old_status,
+        to_status=ClaimStatusEnum.REUNDERWRITING_REQUIRED.value,
+        actor_id=current_user.id,
+        notes=f"Referred to Underwriting for: {body.referral_reason}. {body.notes or ''}",
+    )
+    session.add(history)
+    await session.commit()
+    await session.refresh(claim)
+
+    policy = await session.get(Policy, claim.policy_id)
+    customer = await session.get(Customer, policy.customer_id) if policy else None
+    adjuster = await session.get(User, claim.assigned_adjuster_id) if claim.assigned_adjuster_id else None
+
+    return _claim_dict(claim, policy, customer, adjuster, 0)
+
+
+@router.post("/{claim_id}/resolve-underwriting", summary="Resolve Claim Underwriting Review")
+async def resolve_claim_underwriting(
+    tenant_id: UUID,
+    claim_id: UUID,
+    body: ClaimUnderwritingResolveRequest,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    current_user = await _assert_claims_role(token, session)
+    claim = await session.get(Claim, claim_id)
+    if claim is None or claim.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    old_status = claim.status.value if hasattr(claim.status, "value") else str(claim.status)
+    
+    if body.decision == "DECLINE_NON_DISCLOSURE":
+        claim.status = ClaimStatusEnum.DECLINED
+        claim.approved_amount = 0.0
+    else:
+        claim.status = ClaimStatusEnum.UNDER_INVESTIGATION
+
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M')
+    claim.underwriting_decision_notes = f"Underwriting Resolution [{body.decision}] ({timestamp}): {body.decision_notes}"
+    session.add(claim)
+
+    history = ClaimStatusHistory(
+        tenant_id=tenant_id,
+        claim_id=claim.id,
+        from_status=old_status,
+        to_status=claim.status.value,
+        actor_id=current_user.id,
+        notes=f"Underwriting Review Completed [{body.decision}]: {body.decision_notes}",
+    )
+    session.add(history)
+    await session.commit()
+    await session.refresh(claim)
+
+    policy = await session.get(Policy, claim.policy_id)
+    customer = await session.get(Customer, policy.customer_id) if policy else None
+    adjuster = await session.get(User, claim.assigned_adjuster_id) if claim.assigned_adjuster_id else None
+
+    return _claim_dict(claim, policy, customer, adjuster, 0)
+

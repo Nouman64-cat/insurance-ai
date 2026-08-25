@@ -46,41 +46,39 @@ def _s3_client():
     )
 
 
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 
 def _upload_to_s3(file_bytes: bytes, key: str, content_type: str) -> str:
-    try:
-        # Check if dummy credentials are used to avoid slow timeout/exception
-        access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        if not access_key or "your_aws_access_key" in access_key:
-            raise ValueError("Dummy AWS credentials detected")
+    access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+    if access_key and "your_aws_access_key" not in access_key:
+        try:
+            client = _s3_client()
+            client.put_object(
+                Bucket=_S3_BUCKET,
+                Key=key,
+                Body=file_bytes,
+                ContentType=content_type,
+            )
+            return f"https://{_S3_BUCKET}.s3.{_AWS_REGION}.amazonaws.com/{key}"
+        except Exception as exc:
+            import logging
+            logging.getLogger("tenant-service.artifacts").warning(
+                "S3 upload failed: %s. Using local filesystem storage fallback.", exc
+            )
 
-        client = _s3_client()
-        client.put_object(
-            Bucket=_S3_BUCKET,
-            Key=key,
-            Body=file_bytes,
-            ContentType=content_type,
-        )
-        return f"https://{_S3_BUCKET}.s3.{_AWS_REGION}.amazonaws.com/{key}"
-    except Exception as exc:
-        import logging
-        logging.getLogger("tenant-service.artifacts").warning(
-            "S3 upload failed: %s. Using local filesystem storage fallback.", exc
-        )
-        local_path = os.path.join("/app/shared/storage", key)
-        os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        with open(local_path, "wb") as f:
-            f.write(file_bytes)
-        return f"local://{key}"
+    # Local fallback for dev/offline testing
+    local_path = os.path.join("/app/shared/storage", key)
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    with open(local_path, "wb") as f:
+        f.write(file_bytes)
+    return f"local://{key}"
 
 
 def _presign_url(key: str, expires: int = 3600) -> str:
+    access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
+    if not access_key or "your_aws_access_key" in access_key:
+        return ""
     try:
-        access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        if not access_key or "your_aws_access_key" in access_key:
-            raise ValueError("Dummy AWS credentials")
-
         client = _s3_client()
         return client.generate_presigned_url(
             "get_object",
@@ -329,50 +327,6 @@ async def list_case_artifacts(
     return [_artifact_response(a, a.storage_url.split(".amazonaws.com/", 1)[1] if a.storage_url and ".amazonaws.com/" in a.storage_url else None, request) for a in rows]
 
 
-def _upload_to_s3(file_bytes: bytes, key: str, content_type: str) -> str:
-    # Always write to local storage first so previewing and viewing work 100% reliably
-    local_path = os.path.join("/app/shared/storage", key)
-    os.makedirs(os.path.dirname(local_path), exist_ok=True)
-    with open(local_path, "wb") as f:
-        f.write(file_bytes)
-
-    try:
-        access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        if not access_key or "your_aws_access_key" in access_key:
-            return f"local://{key}"
-
-        client = _s3_client()
-        client.put_object(
-            Bucket=_S3_BUCKET,
-            Key=key,
-            Body=file_bytes,
-            ContentType=content_type,
-        )
-        return f"local://{key}"
-    except Exception as exc:
-        import logging
-        logging.getLogger("tenant-service.artifacts").warning(
-            "S3 upload failed: %s. Using local filesystem storage fallback.", exc
-        )
-        return f"local://{key}"
-
-
-def _presign_url(key: str, expires: int = 3600) -> str:
-    try:
-        access_key = os.environ.get("AWS_ACCESS_KEY_ID", "")
-        if not access_key or "your_aws_access_key" in access_key:
-            raise ValueError("Dummy AWS credentials")
-
-        client = _s3_client()
-        return client.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": _S3_BUCKET, "Key": key},
-            ExpiresIn=expires,
-        )
-    except Exception:
-        return f"/tenants/demo/artifacts/{key}"
-
-
 @router.get("/{tenant_id}/artifacts/{artifact_id}/download", summary="Download/View artifact file")
 @router.get("/{tenant_id}/artifacts/{artifact_id}/view", summary="View artifact document preview")
 async def view_artifact_file(
@@ -384,7 +338,25 @@ async def view_artifact_file(
     if artifact is None or artifact.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Artifact not found")
 
-    # 1. Search for local file on disk
+    # 1. Check if S3 Presigned URL is available (serving directly from S3)
+    s3_key_found = None
+    if artifact.storage_url and not artifact.storage_url.startswith("local://"):
+        if ".amazonaws.com/" in artifact.storage_url:
+            s3_key_found = artifact.storage_url.split(".amazonaws.com/", 1)[-1]
+        else:
+            s3_key_found = artifact.storage_url
+
+    if not s3_key_found and artifact.claim_id:
+        s3_key_found = f"{tenant_id}/claims/{artifact.claim_id}/{artifact_id}/{artifact.file_name}"
+    elif not s3_key_found and artifact.case_id:
+        s3_key_found = f"{tenant_id}/cases/{artifact.case_id}/{artifact_id}/{artifact.file_name}"
+
+    if s3_key_found:
+        presigned = _presign_url(s3_key_found)
+        if presigned:
+            return RedirectResponse(url=presigned, status_code=307)
+
+    # 2. Search for local file on disk fallback
     possible_keys = []
     if artifact.storage_url:
         if artifact.storage_url.startswith("local://"):
@@ -634,7 +606,18 @@ def _artifact_response(artifact: Artifact, s3_key: str | None = None, request: R
         else:
             presigned = f"/tenants/{artifact.tenant_id}/artifacts/{artifact.id}/download"
     else:
-        presigned = _presign_url(s3_key) if s3_key else ""
+        key = s3_key
+        if not key and artifact.storage_url:
+            if ".amazonaws.com/" in artifact.storage_url:
+                key = artifact.storage_url.split(".amazonaws.com/", 1)[-1]
+            elif not artifact.storage_url.startswith("http"):
+                key = artifact.storage_url
+        if not key and artifact.claim_id:
+            key = f"{artifact.tenant_id}/claims/{artifact.claim_id}/{artifact.id}/{artifact.file_name}"
+        elif not key and artifact.case_id:
+            key = f"{artifact.tenant_id}/cases/{artifact.case_id}/{artifact.id}/{artifact.file_name}"
+
+        presigned = _presign_url(key) if key else ""
 
     return {
         "id": str(artifact.id),

@@ -886,6 +886,7 @@ class ClaimStatusEnum(str, Enum):
     DECLINED = "Declined"
     REFERRED_TO_MANAGER = "Referred to Manager"
     REINSURANCE_REFERRED = "Reinsurance Referred"
+    REUNDERWRITING_REQUIRED = "Re-Underwriting Required"
     SETTLED = "Settled"
     CLOSED = "Closed"
 
@@ -906,6 +907,9 @@ class Claim(SQLModel, table=True):
     fraud_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     duplicate_flag: bool = Field(default=False)
     ai_recommendation: Optional[str] = Field(default=None, max_length=500)
+    is_contestable: bool = Field(default=False)
+    underwriting_referral_reason: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    underwriting_decision_notes: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
 
     incident_date: Optional[date] = Field(default=None)
     reported_date: date = Field(default_factory=date.today)
