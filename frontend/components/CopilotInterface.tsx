@@ -73,14 +73,80 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
 
   const text = (lastMessage.text || "").toLowerCase();
 
+
+  // ── Rule engine: post-deploy / archive ──────────────────────────────────
+  if (
+    (text.includes("deployed") || text.includes("archived")) &&
+    (text.includes("rule") || text.includes("version"))
+  ) {
+    // Extract the rule set code from the message if present (e.g. `RS-MED-001`)
+    const codeMatch = text.match(/`(rs-[a-z]+-\d+[a-z]?)`/i);
+    const code = codeMatch ? codeMatch[1].toUpperCase() : "the rule set";
+    return [
+      { label: "Simulate the live rules", actionType: "submit", payload: `Simulate ${code} for a 45 year old with 5000000 sum assured` },
+      { label: "View audit log", actionType: "submit", payload: "Show the rule evaluation logs" },
+      { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+    ];
+  }
+
+  // ── Rule engine: post-simulation / evaluation ────────────────────────────
+  if (
+    (text.includes("simulated") || text.includes("result:") || text.includes("matched rule") || text.includes("matched_rule")) &&
+    text.includes("rule")
+  ) {
+    const codeMatch = text.match(/`(rs-[a-z]+-\d+[a-z]?)`/i);
+    const code = codeMatch ? codeMatch[1].toUpperCase() : "";
+    return [
+      { label: "View rule set detail", actionType: "submit", payload: code ? `Show rule set ${code}` : "Show live underwriting rule sets" },
+      { label: "Edit rules (open draft)", actionType: "submit", payload: code ? `Create a draft version of rule set ${code}` : "Open a draft version" },
+      { label: "View audit log", actionType: "submit", payload: "Show the rule evaluation logs" },
+      { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+    ];
+  }
+
+  // ── Rule engine: post-draft / rule added / updated ───────────────────────
+  if (
+    text.includes("draft") &&
+    (text.includes("rule") || text.includes("version")) &&
+    (text.includes("added") || text.includes("updated") || text.includes("opened") || text.includes("copying"))
+  ) {
+    const codeMatch = text.match(/`(rs-[a-z]+-\d+[a-z]?)`/i);
+    const code = codeMatch ? codeMatch[1].toUpperCase() : "";
+    const deployPayload = code ? `Deploy the draft version of rule set ${code}` : "Deploy the draft version";
+    const simulatePayload = code ? `Simulate rule set ${code} for a 45 year old with 5000000 sum assured` : "Simulate the draft rules";
+    return [
+      { label: "Simulate draft rules", actionType: "submit", payload: simulatePayload },
+      { label: "Deploy to production ⚡", actionType: "submit", payload: deployPayload },
+      { label: "Add another rule", actionType: "submit", payload: code ? `Add a rule to rule set ${code}` : "Add a rule to the draft version" },
+      { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+    ];
+  }
+
+  // ── Rule engine: created rule set ────────────────────────────────────────
+  if (
+    text.includes("rule set") &&
+    text.includes("created") &&
+    text.includes("draft")
+  ) {
+    const codeMatch = text.match(/`([A-Z0-9-]+)`/);
+    const code = codeMatch ? codeMatch[1] : "";
+    return [
+      { label: "Add a rule", actionType: "submit", payload: code ? `Add a rule to rule set ${code}` : "Add a rule to the new rule set" },
+      { label: "Create draft version", actionType: "submit", payload: code ? `Create a draft version of rule set ${code}` : "Open a draft version" },
+      { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+    ];
+  }
+
+  // ── Rule engine: generic context ─────────────────────────────────────────
   if (text.includes("rule") || text.includes("catalog") || text.includes("category")) {
     return [
       { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
-      { label: "Evaluate Rule Set", actionType: "submit", payload: "Evaluate rule set for current case" },
-      { label: "Check Live Underwriting Rules", actionType: "submit", payload: "Show live underwriting rule sets" },
-      { label: "View Token Costs", actionType: "navigate", payload: "super-admin/tokens" },
+      { label: "Simulate NML rules", actionType: "submit", payload: "Simulate rule set RS-MED-001 for a 45 year old with 5000000 sum assured" },
+      { label: "Show all rule sets", actionType: "submit", payload: "List all rule sets" },
+      { label: "View audit log", actionType: "submit", payload: "Show the rule evaluation logs" },
     ];
   }
+
 
   if (text.includes("commission") || text.includes("payee") || text.includes("ledger") || text.includes("payout") || text.includes("waterfall")) {
     return [
