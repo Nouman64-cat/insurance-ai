@@ -6,8 +6,17 @@
 
 export interface QuickAction {
   label: string;
-  actionType: "navigate" | "submit" | "upload" | "confirm";
+  // "select" renders an inline dropdown instead of a chip — used wherever the
+  // choice is a live list too long for chips (a rule category, a policy to
+  // claim against, an adjuster). Picking a value runs `payload` with the
+  // {value} placeholder substituted, through the same path a "submit" chip
+  // takes, so it resumes a pending clarify interrupt or starts a new turn
+  // exactly as typing the sentence would have.
+  actionType: "navigate" | "submit" | "upload" | "confirm" | "select" | "download";
   payload: string;
+  // "select" only.
+  options?: { label: string; value: string }[];
+  placeholder?: string;
 }
 
 export interface ActionResult {

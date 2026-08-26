@@ -45,3 +45,27 @@ class ChatState(TypedDict, total=False):
     # them are valid; their values are overwritten at every stage.
     journey_done: Optional[dict[str, Any]]
     journey_next: Optional[dict[str, Any]]
+
+    # ── Autonomous claims journey (claims_journey.py) ───────────────────────
+    # Deliberately a separate namespace from the `journey_*` keys above: an
+    # underwriting journey and a claims journey can both be suspended on the
+    # same thread (a claim referred back to underwriting is exactly that), so
+    # sharing the keys would have one pipeline resume into the other's state.
+    # The two exceptions are `pending_call` and the transient journey_done /
+    # journey_next UI markers, which are per-turn and shared on purpose.
+    claim_stage: Optional[str]
+    claim_id: Optional[str]
+    claim_number: Optional[str]
+    claim_record: Optional[dict[str, Any]]
+    claim_missing_documents: list[str]
+    claim_referral_reasons: list[str]
+    claim_decision: Optional[str]
+    claim_payout: Optional[dict[str, Any]]
+    # Settled | Declined | Pending Documents | Underwriting Referral | Manager Review
+    claim_outcome: Optional[str]
+    requires_claim_intervention: bool
+    claim_audit: list[str]
+    claim_error: Optional[str]
+    # Chips carried out of a node that failed a gate, so the suspension is
+    # still one click to clear (see claims_journey._finish_actions).
+    claim_blocking_actions: list[dict[str, Any]]

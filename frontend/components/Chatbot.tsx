@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useNotify } from "./NotificationContext";
 import { useAgentChat } from "@/lib/agent/useAgentChat";
 import type { AgentMessage, QuickAction } from "@/lib/agent/types";
+import { QuickActionSelect } from "./agent/QuickActionSelect";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -265,7 +266,13 @@ export function Chatbot() {
                   }
                   {m.quickActions && m.quickActions.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {m.quickActions.map((action, idx) => (
+                      {m.quickActions.map((action, idx) => action.actionType === "select" ? (
+                        <QuickActionSelect
+                          key={`select-${action.label}-${idx}`}
+                          action={action}
+                          onRun={sendText}
+                        />
+                      ) : (
                         <button
                           key={`${action.actionType}-${action.label}-${idx}`}
                           onClick={() => handleQuickAction(action)}

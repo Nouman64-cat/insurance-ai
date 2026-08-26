@@ -899,6 +899,274 @@ def archive_rule_version(**kwargs) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Rules catalogue authoring — Category -> SubCategory -> EligibilityProfile
+#
+# A rule set cannot exist without a subcategory to hang off, and a subcategory
+# cannot exist without a category. Rather than telling the user "create a
+# category first", the agent offers to create the missing level itself — these
+# are the tools that let it.
+# ═══════════════════════════════════════════════════════════════════════════
+
+class CreateRuleCategoryArgs(BaseModel):
+    code: str = Field(description="UPPER_SNAKE code, e.g. CLAIMS_GOVERNANCE.")
+    name: str = Field(description="Human-readable name, e.g. Claims Governance.")
+    description: Optional[str] = None
+
+
+@tool(args_schema=CreateRuleCategoryArgs)
+def create_rule_category(**kwargs) -> str:
+    """Create a new top-level rule CATEGORY in the catalogue. Use when the user
+    wants to file rules under a governance domain that does not exist yet."""
+    return "{}"
+
+
+class CreateRuleSubcategoryArgs(BaseModel):
+    category_code: str = Field(description="Existing category code to nest under.")
+    code: str = Field(description="UPPER_SNAKE code, e.g. DEATH_BENEFIT.")
+    name: str
+
+
+@tool(args_schema=CreateRuleSubcategoryArgs)
+def create_rule_subcategory(**kwargs) -> str:
+    """Create a SubCategory inside an existing rule category. Rule sets attach to
+    subcategories, so this is the level a new rule set needs."""
+    return "{}"
+
+
+class CreateEligibilityProfileArgs(BaseModel):
+    category_code: str
+    subcategory_code: str
+    channel_code: str = Field(description="e.g. AGENCY_DIRECT, BANCA_MCB, WINDOW_TAKAFUL.")
+    min_entry_age: int = 18
+    max_entry_age: int = 65
+    max_maturity_age: int = 75
+    min_sum_assured: float = 500000.0
+
+
+@tool(args_schema=CreateEligibilityProfileArgs)
+def create_eligibility_profile(**kwargs) -> str:
+    """Add a distribution-channel eligibility profile to a subcategory so rule
+    sets can be scoped to that channel."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Claims — FNOL intake, adjuster workbench, adjudication, payout, recovery
+#
+# The claims lifecycle mirrors the underwriting one: an intake step, a set of
+# gates (documents, manager authority, contestability), a decision, and a
+# money movement. Every tool below resolves a claim by its CLAIM NUMBER
+# (CLM-2026-0001) or the claimant's name — never a raw UUID, because that is
+# what a human says and what the model can echo back.
+# ═══════════════════════════════════════════════════════════════════════════
+
+ClaimStatusLiteral = Literal[
+    "New", "Triaged", "Under Investigation", "Pending Documents",
+    "Approved", "Partial Approval", "Declined", "Referred to Manager",
+    "Reinsurance Referred", "Re-Underwriting Required", "Settled", "Closed",
+]
+
+
+class ListClaimsArgs(BaseModel):
+    status: Optional[str] = Field(default=None, description='Filter by claim status, e.g. "New", "Under Investigation".')
+    claim_type: Optional[str] = Field(default=None, description="Hospitalization, Surgery, Death Claim or Reimbursement.")
+    search: Optional[str] = Field(default=None, description="Claim number, claimant name or policy number.")
+
+
+@tool(args_schema=ListClaimsArgs)
+def list_claims(**kwargs) -> str:
+    """List claims in the claims workbench, optionally filtered by status, type
+    or a search term. Use for "show me open claims", "any death claims?",
+    "what is pending with the adjusters?"."""
+    return "{}"
+
+
+class ClaimLookupArgs(BaseModel):
+    claim_number: Optional[str] = Field(default=None, description="e.g. CLM-2026-0001.")
+    claimant_name: Optional[str] = Field(default=None, description="Claimant / policyholder name, when the number isn't known.")
+
+
+@tool(args_schema=ClaimLookupArgs)
+def get_claim_details(**kwargs) -> str:
+    """Full claim file — status, amounts, fraud and duplicate flags, documents
+    on record, status history and payouts, plus what the next legal move is."""
+    return "{}"
+
+
+@tool(args_schema=EmptyArgs)
+def get_claims_dashboard() -> str:
+    """Portfolio view of claims: counts by status, total submitted vs settled,
+    how many are blocked on documents, and what needs a manager. Use for
+    "how are claims doing?", "claims summary", "what needs my attention?"."""
+    return "{}"
+
+
+@tool(args_schema=ClaimLookupArgs)
+def get_claim_document_checklist(**kwargs) -> str:
+    """Which claim documents are on file and which are still missing for this
+    claim type. ALWAYS call this before approving or settling — the platform
+    hard-blocks both without at least one verified document."""
+    return "{}"
+
+
+class RegisterClaimArgs(BaseModel):
+    policy_number: Optional[str] = Field(default=None, description="Policy the claim is against, e.g. POL-2026-000123.")
+    claimant_name: Optional[str] = Field(default=None, description="Policyholder name, when the policy number isn't known.")
+    cnic: Optional[str] = Field(default=None, description="Policyholder CNIC, when the policy number isn't known.")
+    claim_type: Optional[str] = Field(default=None, description="Hospitalization, Surgery, Death Claim or Reimbursement.")
+    submitted_amount: Optional[float] = Field(default=None, description="Amount claimed, in PKR.")
+    incident_date: Optional[str] = Field(default=None, description="YYYY-MM-DD. Defaults to today.")
+    notes: Optional[str] = None
+
+
+@tool(args_schema=RegisterClaimArgs)
+def register_claim(**kwargs) -> str:
+    """Register a First Notice of Loss (FNOL) — opens a claim against an active
+    policy, auto-generates the claim number, runs duplicate detection and opens
+    the linked SLA case. Call it with whatever you have; the platform presents
+    a policy picker and claim-type buttons for anything missing."""
+    return "{}"
+
+
+class UpdateClaimStatusArgs(BaseModel):
+    claim_number: Optional[str] = None
+    claimant_name: Optional[str] = None
+    new_status: ClaimStatusLiteral = Field(description="Target status. The state machine only allows legal transitions.")
+    notes: Optional[str] = None
+
+
+@tool(args_schema=UpdateClaimStatusArgs)
+def update_claim_status(**kwargs) -> str:
+    """Move a claim through the claims state machine (New -> Triaged ->
+    Under Investigation -> decision -> Settled -> Closed). Illegal jumps are
+    refused with the list of legal next steps."""
+    return "{}"
+
+
+class AdjudicateClaimArgs(BaseModel):
+    claim_number: Optional[str] = None
+    claimant_name: Optional[str] = None
+    decision: Literal["APPROVED", "PARTIAL_APPROVAL", "DECLINED", "REFERRED_TO_MANAGER"] = Field(
+        description="The adjudication outcome."
+    )
+    approved_amount: Optional[float] = Field(default=None, description="PKR approved. Cannot exceed the claimed amount.")
+    notes: Optional[str] = Field(
+        default=None,
+        description="Adjudicator rationale. REQUIRED (min 15 chars) when approving a duplicate-flagged claim.",
+    )
+
+
+@tool(args_schema=AdjudicateClaimArgs)
+def adjudicate_claim(**kwargs) -> str:
+    """Record the adjudication decision on a claim. Requires at least one
+    document on file to approve; claims over PKR 500,000 or already referred
+    need a ClaimsManager."""
+    return "{}"
+
+
+class ClaimPayoutArgs(BaseModel):
+    claim_number: Optional[str] = None
+    claimant_name: Optional[str] = None
+    amount: Optional[float] = Field(default=None, description="PKR to disburse. Defaults to the approved amount.")
+    method: Optional[str] = Field(default=None, description="Bank Transfer, Cheque or Cash.")
+    reference_number: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@tool(args_schema=ClaimPayoutArgs)
+def issue_claim_payout(**kwargs) -> str:
+    """Disburse an approved claim — creates the payout record and moves the
+    claim to Settled. THIS MOVES MONEY: state the claim number and amount
+    before calling. Only valid from Approved or Partial Approval."""
+    return "{}"
+
+
+@tool(args_schema=ClaimLookupArgs)
+def refer_claim_to_reinsurance(**kwargs) -> str:
+    """Open a facultative reinsurance recovery referral for a claim whose sum
+    assured exceeds the net retention limit (PKR 5M)."""
+    return "{}"
+
+
+class ReUnderwriteClaimArgs(BaseModel):
+    claim_number: Optional[str] = None
+    claimant_name: Optional[str] = None
+    referral_reason: Optional[str] = Field(
+        default=None,
+        description="Why underwriting must re-open the risk, e.g. contestability window, non-disclosure. "
+        "Multiple reasons are joined with '; '.",
+    )
+    notes: Optional[str] = None
+
+
+@tool(args_schema=ReUnderwriteClaimArgs)
+def refer_claim_to_underwriting(**kwargs) -> str:
+    """Refer a claim back to underwriting for a technical re-underwriting audit
+    — used inside the 2-year contestability window, on suspected non-disclosure,
+    or when the amount exceeds adjuster authority."""
+    return "{}"
+
+
+class ResolveClaimUnderwritingArgs(BaseModel):
+    claim_number: Optional[str] = None
+    claimant_name: Optional[str] = None
+    decision: Literal[
+        "APPROVE_CONTINUE", "APPROVE_WITH_EXCLUSION", "APPROVE_WITH_LOADING", "DECLINE_NON_DISCLOSURE"
+    ] = Field(description="Underwriting's verdict on the re-underwriting referral.")
+    decision_notes: Optional[str] = Field(default=None, description="The underwriter's written rationale.")
+
+
+@tool(args_schema=ResolveClaimUnderwritingArgs)
+def resolve_claim_underwriting(**kwargs) -> str:
+    """Close out a re-underwriting referral. DECLINE_NON_DISCLOSURE declines the
+    claim outright; the other three send it back to Under Investigation."""
+    return "{}"
+
+
+class UploadClaimDocumentArgs(BaseModel):
+    claim_number: Optional[str] = None
+    claimant_name: Optional[str] = None
+    document_type: str = Field(
+        description="Hospital Bill, Discharge Summary, Death Certificate, CNIC or Lab Test Report."
+    )
+
+
+@tool(args_schema=UploadClaimDocumentArgs)
+def upload_claim_document(**kwargs) -> str:
+    """Attach a claim document. The browser holds the file, so this hands over
+    to the file picker — call it and the user just chooses a file."""
+    return "{}"
+
+
+class StartClaimJourneyArgs(BaseModel):
+    claim_number: Optional[str] = Field(default=None, description="Existing claim to drive end-to-end.")
+    policy_number: Optional[str] = Field(default=None, description="Policy to register a fresh FNOL against.")
+    claimant_name: Optional[str] = None
+    cnic: Optional[str] = None
+    claim_type: Optional[str] = None
+    submitted_amount: Optional[float] = None
+    incident_date: Optional[str] = None
+
+
+@tool(args_schema=StartClaimJourneyArgs)
+def start_claim_journey(**kwargs) -> str:
+    """Run the ENTIRE claims pipeline autonomously: FNOL -> Triage -> Document
+    Audit -> Fraud & Contestability Review -> Adjudication -> Disbursement ->
+    Closure. Suspends only for missing documents, a manager decision, or an
+    underwriting referral. Use for "settle this claim end to end", "process
+    claim CLM-2026-0001", "handle Ahmed's claim"."""
+    return "{}"
+
+
+@tool(args_schema=ClaimLookupArgs)
+def continue_claim_journey(**kwargs) -> str:
+    """Resume a suspended claims journey after documents were uploaded or a
+    human decision was recorded. Pass the claim number when the user names one
+    — the thread may have been started in a different session."""
+    return "{}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Commission engine — rate card, waterfall, ledger, payout runs
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1090,6 +1358,24 @@ ALL_TOOLS = [
     delete_rule,
     deploy_rule_version,
     archive_rule_version,
+    create_rule_category,
+    create_rule_subcategory,
+    create_eligibility_profile,
+    # claims
+    list_claims,
+    get_claim_details,
+    get_claims_dashboard,
+    get_claim_document_checklist,
+    register_claim,
+    update_claim_status,
+    adjudicate_claim,
+    issue_claim_payout,
+    refer_claim_to_reinsurance,
+    refer_claim_to_underwriting,
+    resolve_claim_underwriting,
+    upload_claim_document,
+    start_claim_journey,
+    continue_claim_journey,
     # commission engine
     list_commission_payees,
     get_commission_rate_card,
