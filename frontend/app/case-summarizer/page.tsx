@@ -6,6 +6,7 @@ import api from "@/app/services/api";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { StatusBadge } from "@/components/StatusBadge";
 import type { AIDecision } from "@/lib/mock-data";
+import { formatCnic } from "@/lib/cnic";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
 
@@ -920,7 +921,7 @@ export default function CaseSummarizerPage() {
                 {showEvalForm && (
                   <div className="p-5">
                     <div className="grid grid-cols-2 gap-3 mb-4">
-                      <EvalField label="CNIC"                value={evalForm.cnic}            onChange={v => setEvalForm({ ...evalForm, cnic: v })}            placeholder="35201-1234567-1" />
+                      <EvalField label="CNIC"                value={evalForm.cnic}            onChange={v => setEvalForm({ ...evalForm, cnic: formatCnic(v) })}            placeholder="35201-1234567-1" />
                       <EvalField label="Full Name"           value={evalForm.name}            onChange={v => setEvalForm({ ...evalForm, name: v })}            placeholder="Muhammad Ali" />
                       <EvalField label="Date of Birth" type="date" value={evalForm.dob}       onChange={v => setEvalForm({ ...evalForm, dob: v })} />
                       <div>

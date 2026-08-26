@@ -126,6 +126,12 @@ export default function ClaimDetailPage() {
       return;
     }
 
+    // 1b. Underwriting Audit Prerequisite
+    if (hasUnresolvedFlags && ["Approved", "Partial Approval", "Settled"].includes(nextStatus)) {
+      showToast("err", "Underwriting Block: Active risk flags (Contestability / Limit Exceeded) must be resolved by Underwriting before approving or settling this claim.");
+      return;
+    }
+
     // 2. Guided Assessment Flow: Selecting 'Approved' or 'Partial Approval' opens Assess modal
     if (["Approved", "Partial Approval"].includes(nextStatus)) {
       setAdjDecision(nextStatus === "Approved" ? "APPROVED" : "PARTIAL_APPROVAL");
@@ -175,6 +181,12 @@ export default function ClaimDetailPage() {
     setModalError(null);
     if (!hasDocs && ["APPROVED", "PARTIAL_APPROVAL"].includes(adjDecision)) {
       const msg = "Document Gate Error: Cannot approve claim without at least 1 verified claim document attached.";
+      setModalError(msg);
+      showToast("err", msg);
+      return;
+    }
+    if (hasUnresolvedFlags && ["APPROVED", "PARTIAL_APPROVAL"].includes(adjDecision)) {
+      const msg = "Underwriting Block: Active risk flags must be resolved by Underwriting before approving this claim.";
       setModalError(msg);
       showToast("err", msg);
       return;
@@ -310,6 +322,12 @@ export default function ClaimDetailPage() {
   const hasDocs = (claim.artifacts?.length ?? 0) > 0;
   const fraudPct = Math.round((claim.fraud_probability ?? 0) * 100);
   const canPayout = ["Approved", "Partial Approval"].includes(claim.status) && !["Paid", "Settled"].includes(claim.status);
+  const hasUnresolvedFlags = (!claim.underwriting_decision_notes) && (
+    claim.is_contestable ||
+    claim.submitted_amount > 500000 ||
+    claim.submitted_amount > 5000000 ||
+    !!claim.reinsurance_referral_id
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -340,6 +358,15 @@ export default function ClaimDetailPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div>
+          <Link
+            href="/claims"
+            className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-800 transition-colors mb-3 bg-blue-50/60 hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100/50"
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Claims Register
+          </Link>
           <div className="flex items-center gap-2 text-xs text-slate-500 mb-1">
             <Link href="/claims" className="hover:underline">Claims</Link>
             <span>/</span>
@@ -407,7 +434,7 @@ export default function ClaimDetailPage() {
           </div>
           <button
             onClick={() => openModal("doc")}
-            className="px-3.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0"
+            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5 shrink-0"
           >
             <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -704,28 +731,79 @@ export default function ClaimDetailPage() {
         <div className="lg:col-span-2 space-y-6">
           {/* Policy & Claimant Info */}
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+            <div className="px-5 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-800">Policy & Claimant Overview</h2>
+              {claim.claimant_type && claim.claimant_type !== "SELF" ? (
+                <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-amber-100/80 text-amber-900 border border-amber-200 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  Beneficiary / Representative Claim ({claim.claimant_relationship || "Nominee"})
+                </span>
+              ) : (
+                <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                  Insured Self Claim
+                </span>
+              )}
             </div>
             <div className="p-5 space-y-4 text-xs">
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
                 <div>
-                  <div className="text-slate-400">Claimant</div>
-                  <div className="font-semibold text-slate-900 mt-0.5">{claim.claimant_name}</div>
+                  <div className="text-slate-400">Claimant Name</div>
+                  <div className="font-semibold text-slate-900 mt-0.5 flex flex-col items-start gap-1">
+                    <span>{claim.claimant_name || "Self"}</span>
+                    {claim.claimant_type && claim.claimant_type !== "SELF" && (
+                      claim.nominee_match ? (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200/50 uppercase tracking-wide">
+                          ✓ Verified Nominee
+                        </span>
+                      ) : (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200/50 uppercase tracking-wide">
+                          ⚠️ Mismatch
+                        </span>
+                      )
+                    )}
+                  </div>
                 </div>
                 <div>
-                  <div className="text-slate-400">Policy Ref</div>
+                  <div className="text-slate-400">Policy Holder</div>
+                  <div className="font-semibold text-slate-900 mt-0.5">{claim.customer_name || "Policyholder"}</div>
+                </div>
+                <div>
+                  <div className="text-slate-400">Policy Ref & Plan</div>
                   <div className="font-mono font-semibold text-slate-900 mt-0.5">{claim.policy_number ?? "—"}</div>
+                  <div className="text-[10px] text-slate-500 font-medium">{claim.policy_type ?? "—"}</div>
                 </div>
                 <div>
-                  <div className="text-slate-400">Plan</div>
-                  <div className="font-semibold text-slate-900 mt-0.5">{claim.policy_type ?? "—"}</div>
-                </div>
-                <div>
-                  <div className="text-slate-400">Coverage Limit</div>
-                  <div className="font-semibold text-slate-900 mt-0.5">PKR {(claim.coverage_amount ?? 0).toLocaleString()}</div>
+                  {claim.claimant_type && claim.claimant_type !== "SELF" ? (
+                    <>
+                      <div className="text-slate-400">Claimant Contact</div>
+                      <div className="font-semibold text-slate-900 mt-0.5 font-mono text-[11px] leading-tight space-y-0.5">
+                        <div>ID: {claim.claimant_cnic || "—"}</div>
+                        <div className="font-sans font-medium text-slate-500 text-[10px]">Ph: {claim.claimant_phone || "—"}</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-slate-400">Coverage Limit</div>
+                      <div className="font-semibold text-slate-900 mt-0.5">PKR {(claim.coverage_amount ?? 0).toLocaleString()}</div>
+                    </>
+                  )}
                 </div>
               </div>
+
+              {/* Beneficiary / Nominee Mismatch Banner */}
+              {claim.claimant_type && claim.claimant_type !== "SELF" && !claim.nominee_match && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200/80 rounded-xl space-y-1.5 text-xs">
+                  <div className="flex items-center gap-2 text-rose-800 font-bold text-[11.5px] uppercase tracking-wider">
+                    <svg className="w-4 h-4 text-rose-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <span>Nominee Mismatch Warning</span>
+                  </div>
+                  <div className="text-rose-900 leading-relaxed text-[11px]">
+                    The policy record designates <strong className="text-rose-950">{claim.nominee_name || "No nominee"}</strong> ({claim.nominee_relationship || "Nominee"}) as the authorized beneficiary. However, this claim was filed by <strong className="text-rose-950">{claim.claimant_name || "Unknown"}</strong>.
+                  </div>
+                </div>
+              )}
 
               <div className="pt-3 border-t border-slate-100 space-y-1">
                 <div className="flex justify-between text-xs text-slate-600 font-medium">
@@ -772,7 +850,7 @@ export default function ClaimDetailPage() {
                 {!isClosedStatus && (
                   <button
                     onClick={() => openModal("doc")}
-                    className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs shadow-2xs active:scale-[0.98] transition-all flex items-center gap-1.5"
                   >
                     <svg className="w-3.5 h-3.5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -1017,6 +1095,17 @@ export default function ClaimDetailPage() {
               <p className="text-xs text-slate-400">No status transitions available.</p>
             ) : (
               <div className="space-y-3 text-xs">
+                {hasUnresolvedFlags && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-200/80 text-amber-900 rounded-lg text-[10.5px] font-medium leading-relaxed">
+                    <div className="font-bold flex items-center gap-1 mb-0.5 text-amber-950">
+                      <svg className="w-3.5 h-3.5 text-amber-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      </svg>
+                      Underwriting Review Required
+                    </div>
+                    Active risk flags must be resolved by Underwriting before approving or settling this claim.
+                  </div>
+                )}
                 <div>
                   <label className="block text-slate-600 mb-1 font-medium">Target Status</label>
                   <select
@@ -1042,7 +1131,7 @@ export default function ClaimDetailPage() {
                 <button
                   onClick={handleStatus}
                   disabled={submitting}
-                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
+                  className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold transition-colors disabled:opacity-50"
                 >
                   Update Status
                 </button>
@@ -1144,7 +1233,7 @@ export default function ClaimDetailPage() {
                 <button
                   type="submit"
                   disabled={submitting || (!!claim && ["APPROVED", "PARTIAL_APPROVAL"].includes(adjDecision) && adjAmount > claim.submitted_amount)}
-                  className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50"
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
                   Confirm
                 </button>
@@ -1221,7 +1310,7 @@ export default function ClaimDetailPage() {
                 <button
                   type="submit"
                   disabled={submitting || (!!claim && payAmount > ((claim.approved_amount && claim.approved_amount > 0) ? claim.approved_amount : claim.submitted_amount))}
-                  className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50"
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
                 >
                   Issue Payout
                 </button>
@@ -1268,7 +1357,7 @@ export default function ClaimDetailPage() {
 
               <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
                 <button type="button" onClick={() => setModal(null)} className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium">Cancel</button>
-                <button type="submit" disabled={submitting || !docFile} className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50">
+                <button type="submit" disabled={submitting || !docFile} className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50">
                   {submitting ? "Uploading..." : "Upload"}
                 </button>
               </div>

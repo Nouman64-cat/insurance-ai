@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { MetricCard } from "@/components/MetricCard";
 import FiltersPanel from "@/components/FiltersPanel";
+import { formatCnic } from "@/lib/cnic";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -624,9 +625,12 @@ export default function AcquisitionSourcesPage() {
                   <label className="text-xs font-bold text-slate-700 uppercase tracking-wider">CNIC</label>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    maxLength={15}
+                    placeholder="42101-1234567-1"
                     value={form.cnic}
-                    onChange={(e) => setForm((f) => ({ ...f, cnic: e.target.value }))}
-                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
+                    onChange={(e) => setForm((f) => ({ ...f, cnic: formatCnic(e.target.value) }))}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all font-mono"
                   />
                 </div>
                 <div className="space-y-1.5">

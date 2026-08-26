@@ -78,8 +78,16 @@ export interface Claim {
   policy_number?: string | null;
   policy_type?: string | null;
   coverage_amount?: number;
-  claimant_name: string;
   customer_id?: string | null;
+  customer_name?: string | null;
+  claimant_name: string;
+  claimant_type?: string | null;
+  claimant_cnic?: string | null;
+  claimant_relationship?: string | null;
+  claimant_phone?: string | null;
+  nominee_name?: string | null;
+  nominee_relationship?: string | null;
+  nominee_match?: boolean;
   artifacts_count?: number;
   status_history?: ClaimStatusHistoryItem[];
   payouts?: ClaimPayoutItem[];
@@ -92,6 +100,11 @@ export interface CreateClaimRequest {
   submitted_amount: number;
   incident_date?: string;
   notes?: string;
+  claimant_type?: string;
+  claimant_name?: string;
+  claimant_cnic?: string;
+  claimant_relationship?: string;
+  claimant_phone?: string;
 }
 
 export interface AdjudicateClaimRequest {

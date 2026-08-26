@@ -919,6 +919,13 @@ class Claim(SQLModel, table=True):
     settled_at: Optional[datetime] = Field(default=None)
     closed_at: Optional[datetime] = Field(default=None)
 
+    # Claimant details (for Death Claims, Nominee/Beneficiary, or Representative Claims)
+    claimant_type: Optional[str] = Field(default="SELF", max_length=50) # SELF, NOMINEE_BENEFICIARY, LEGAL_HEIR, GUARDIAN
+    claimant_name: Optional[str] = Field(default=None, max_length=255)
+    claimant_cnic: Optional[str] = Field(default=None, max_length=20)
+    claimant_relationship: Optional[str] = Field(default=None, max_length=50) # Self, Spouse, Child, Parent, Legal Heir
+    claimant_phone: Optional[str] = Field(default=None, max_length=50)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
