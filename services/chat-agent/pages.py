@@ -43,7 +43,9 @@ PAGES: list[Page] = [
     # ── Underwriting ────────────────────────────────────────────────────────
     Page("underwriting", "Underwriting", "Underwriting case queue grouped by customer.", lists="case", highlight_param="case_id"),
     Page("applications", "Applications", "Insurance applications with downloadable PDFs.", lists="case", highlight_param="case_id"),
-    Page("claims", "Claims", "Claim cases and their investigation status.", lists="claim"),
+    Page("claims", "Claims", "The claims workbench — every claim, its status, documents and adjudication.", lists="claim"),
+    Page("claims/dashboard", "Claims Dashboard", "Claims portfolio analytics — volumes, settlement ratios and SLA breaches."),
+    Page("claims/register", "Register a Claim", "First Notice of Loss intake form."),
     Page("reimbursements", "Reimbursements", "Reimbursement requests."),
     Page("fraud", "Fraud Detection", "Fraud ring analysis and flagged patterns."),
     Page("score-engine", "Score Engine", "Risk scoring engine configuration and outputs."),

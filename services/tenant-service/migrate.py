@@ -1051,6 +1051,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v46d-enum — add REUNDERWRITING_REQUIRED to claimstatusenum",
         "ALTER TYPE claimstatusenum ADD VALUE IF NOT EXISTS 'REUNDERWRITING_REQUIRED'",
     ),
+    (
+        # SourceChannelEnum.PORTAL was added to the model but never to the
+        # Postgres type, so routers/claims.py's FNOL intake — which stamps every
+        # linked SLA case with PORTAL — failed with
+        # "invalid input value for enum sourcechannelenum" on every call.
+        "v46e-enum — add PORTAL to sourcechannelenum",
+        "ALTER TYPE sourcechannelenum ADD VALUE IF NOT EXISTS 'PORTAL'",
+    ),
 ]
 
 

@@ -10,6 +10,7 @@ import { ProcessGraph } from "./ProcessGraph";
 import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
+import { QuickActionSelect } from "./agent/QuickActionSelect";
 import type { AgentMessage, QuickAction } from "@/lib/agent/types";
 import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
@@ -31,6 +32,8 @@ const actionIcons: Record<string, string> = {
   submit: "▶️",
   upload: "📤",
   confirm: "✅",
+  select: "🔽",
+  download: "⬇️",
 };
 
 function checkIsUploaded(action: QuickAction, uploadedDocs: string[]): boolean {
@@ -62,17 +65,99 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
     return [
       { label: "Add a new customer", actionType: "submit", payload: "Add a new customer" },
       { label: "Start underwriting", actionType: "submit", payload: "Start underwriting journey for a customer" },
+      { label: "Register a claim (FNOL)", actionType: "submit", payload: "Register a new claim" },
+      { label: "Claims dashboard", actionType: "submit", payload: "Show the claims dashboard" },
       { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
       { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
-      { label: "FinOps Token Economy ⚡", actionType: "navigate", payload: "super-admin/tokens" },
       { label: "Calculate Commission", actionType: "submit", payload: "Calculate commission for active policy" },
-      { label: "Check Payout Schedule", actionType: "submit", payload: "Show commission payout runs" },
       { label: "Check pending cases", actionType: "submit", payload: "Show me all pending cases" },
     ];
   }
 
   const text = (lastMessage.text || "").toLowerCase();
 
+  // Claim numbers are the most reliable anchor in a claims conversation — the
+  // backend puts one in every claims message, so recover it and build the
+  // follow-ups around that specific claim rather than a generic prompt.
+  const claimMatch = text.match(/clm-\d{4}-\d{3,}/i);
+  const claimRef = claimMatch ? claimMatch[0].toUpperCase() : "";
+  const looksLikeClaim =
+    !!claimRef ||
+    text.includes("claim") ||
+    text.includes("fnol") ||
+    text.includes("adjudicat") ||
+    text.includes("claimant");
+
+  // ── Claims: blocked on documents ────────────────────────────────────────
+  // The single most common dead end in the claims flow: the API refuses every
+  // approval and payout without a document, so lead with the upload buttons.
+  if (looksLikeClaim && (text.includes("no documents") || text.includes("document gate") || text.includes("nothing on file"))) {
+    return [
+      { label: "Upload Hospital Bill", actionType: "upload", payload: JSON.stringify({ document_type: "Hospital Bill" }) },
+      { label: "Upload Discharge Summary", actionType: "upload", payload: JSON.stringify({ document_type: "Discharge Summary" }) },
+      { label: "Upload CNIC", actionType: "upload", payload: JSON.stringify({ document_type: "CNIC" }) },
+      { label: "What's still missing?", actionType: "submit", payload: claimRef ? `What documents are missing on claim ${claimRef}?` : "What documents are missing on this claim?" },
+    ];
+  }
+
+  // ── Claims: settled / closed ────────────────────────────────────────────
+  if (looksLikeClaim && (text.includes("settled") || text.includes("disbursed") || text.includes("payout of"))) {
+    return [
+      { label: "Close the claim", actionType: "submit", payload: claimRef ? `Move claim ${claimRef} to Closed` : "Close the claim" },
+      { label: "Recover from reinsurer", actionType: "submit", payload: claimRef ? `Refer claim ${claimRef} to reinsurance` : "Refer this claim to reinsurance" },
+      { label: "Claims dashboard", actionType: "submit", payload: "Show the claims dashboard" },
+      { label: "Open Claims", actionType: "navigate", payload: "claims" },
+    ];
+  }
+
+  // ── Claims: approved, awaiting disbursement ─────────────────────────────
+  if (looksLikeClaim && (text.includes("approved") || text.includes("partial approval"))) {
+    return [
+      { label: "Disburse the payout", actionType: "submit", payload: claimRef ? `Issue claim payout for ${claimRef} by Bank Transfer` : "Issue the claim payout" },
+      { label: "Recover from reinsurer", actionType: "submit", payload: claimRef ? `Refer claim ${claimRef} to reinsurance` : "Refer this claim to reinsurance" },
+      { label: "Open claim file", actionType: "navigate", payload: "claims" },
+    ];
+  }
+
+  // ── Claims: re-underwriting referral open ───────────────────────────────
+  if (looksLikeClaim && (text.includes("re-underwriting") || text.includes("contestability") || text.includes("non-disclosure"))) {
+    return [
+      { label: "Risk stands — continue", actionType: "submit", payload: claimRef ? `Resolve underwriting on claim ${claimRef} as APPROVE_CONTINUE` : "Resolve underwriting as APPROVE_CONTINUE" },
+      { label: "Approve with exclusion", actionType: "submit", payload: claimRef ? `Resolve underwriting on claim ${claimRef} as APPROVE_WITH_EXCLUSION` : "Resolve underwriting as APPROVE_WITH_EXCLUSION" },
+      { label: "Approve with loading", actionType: "submit", payload: claimRef ? `Resolve underwriting on claim ${claimRef} as APPROVE_WITH_LOADING` : "Resolve underwriting as APPROVE_WITH_LOADING" },
+      { label: "Decline — non-disclosure", actionType: "submit", payload: claimRef ? `Resolve underwriting on claim ${claimRef} as DECLINE_NON_DISCLOSURE` : "Resolve underwriting as DECLINE_NON_DISCLOSURE" },
+    ];
+  }
+
+  // ── Claims: needs a manager ─────────────────────────────────────────────
+  if (looksLikeClaim && (text.includes("referred to manager") || text.includes("manager gate") || text.includes("claimsmanager"))) {
+    return [
+      { label: "Approve as manager", actionType: "submit", payload: claimRef ? `Adjudicate claim ${claimRef} as APPROVED` : "Approve the claim" },
+      { label: "Partial approval", actionType: "submit", payload: claimRef ? `Adjudicate claim ${claimRef} as PARTIAL_APPROVAL` : "Partially approve the claim" },
+      { label: "Decline", actionType: "submit", payload: claimRef ? `Adjudicate claim ${claimRef} as DECLINED` : "Decline the claim" },
+      { label: "Open Claims", actionType: "navigate", payload: "claims" },
+    ];
+  }
+
+  // ── Claims: freshly registered / under investigation ────────────────────
+  if (looksLikeClaim && (text.includes("registered fnol") || text.includes("triaged") || text.includes("under investigation"))) {
+    return [
+      { label: "Upload Hospital Bill", actionType: "upload", payload: JSON.stringify({ document_type: "Hospital Bill" }) },
+      { label: "Check the document file", actionType: "submit", payload: claimRef ? `What documents are missing on claim ${claimRef}?` : "What documents are missing on this claim?" },
+      { label: "Settle it end to end", actionType: "submit", payload: claimRef ? `Run the claims journey for ${claimRef}` : "Run the claims journey for this claim" },
+      { label: "Open Claims", actionType: "navigate", payload: "claims" },
+    ];
+  }
+
+  // ── Claims: generic context ─────────────────────────────────────────────
+  if (looksLikeClaim) {
+    return [
+      { label: "Register a claim (FNOL)", actionType: "submit", payload: "Register a new claim" },
+      { label: "Show open claims", actionType: "submit", payload: "List claims that are Under Investigation" },
+      { label: "Claims dashboard", actionType: "submit", payload: "Show the claims dashboard" },
+      { label: "Open Claims", actionType: "navigate", payload: "claims" },
+    ];
+  }
 
   // ── Rule engine: post-deploy / archive ──────────────────────────────────
   if (
@@ -133,6 +218,18 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
     return [
       { label: "Add a rule", actionType: "submit", payload: code ? `Add a rule to rule set ${code}` : "Add a rule to the new rule set" },
       { label: "Create draft version", actionType: "submit", payload: code ? `Create a draft version of rule set ${code}` : "Open a draft version" },
+      { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
+    ];
+  }
+
+  // ── Rule engine: a catalogue level was just created ──────────────────────
+  if ((text.includes("category") || text.includes("subcategory")) && text.includes("created")) {
+    const codeMatch = text.match(/`([A-Z0-9_]+)`/);
+    const code = codeMatch ? codeMatch[1] : "";
+    return [
+      { label: "Create a rule set here", actionType: "submit", payload: code ? `Create a rule set under ${code}` : "Create a rule set here" },
+      { label: "Add a subcategory", actionType: "submit", payload: code ? `Add a subcategory under category ${code}` : "Add a subcategory" },
+      { label: "Add a channel profile", actionType: "submit", payload: code ? `Add an eligibility profile to ${code}` : "Add a channel eligibility profile" },
       { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
     ];
   }
@@ -362,7 +459,9 @@ export function CopilotInterface() {
   // suggestion, which already knows document_type + cnic precisely) — as
   // opposed to an agent-initiated upload_document tool call, which arrives via
   // pendingInterrupt.kind === "client_execute" instead.
-  const pendingUploadRef = useRef<{ document_type: string; cnic: string } | null>(null);
+  const pendingUploadRef = useRef<
+    { document_type: string; cnic?: string; claim_id?: string; claim_number?: string } | null
+  >(null);
 
   useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
 
@@ -384,8 +483,42 @@ export function CopilotInterface() {
   // ── Document upload — the one tool the browser must execute itself, since
   // it's the only place holding the attached File object (see graph.py's
   // CLIENT_EXECUTED_TOOLS / permission_gate's "client_execute" interrupt kind).
-  const uploadDocument = useCallback(async (args: { document_type: string; cnic?: string; applicant_name?: string }, file: File) => {
+  const uploadDocument = useCallback(async (
+    args: { document_type: string; cnic?: string; applicant_name?: string; claim_id?: string; claim_number?: string },
+    file: File,
+  ) => {
     const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
+
+    // Claim documents hang off the claim, not the case — different endpoint,
+    // different route to send the user to afterwards. The agent resolves the
+    // claim server-side and hands the id down, so there is nothing to look up.
+    if (args.claim_id) {
+      const claimForm = new FormData();
+      claimForm.append("document_type", args.document_type);
+      claimForm.append("file", file);
+      await api.post(`/tenants/${tenantId}/claims/${args.claim_id}/artifacts`, claimForm, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const claimRoute = `claims/${args.claim_id}`;
+      const ref = args.claim_number || args.claim_id;
+      return {
+        success: true,
+        message: `${args.document_type} (${file.name}) attached to claim ${args.claim_number || ""}.`,
+        last_action: {
+          tool_name: "upload_claim_document",
+          entity_type: "claim",
+          entity_id: args.claim_id,
+          route: claimRoute,
+          label: `${args.document_type} attached`,
+        },
+        quick_actions: [
+          { label: "View claim file", actionType: "navigate", payload: claimRoute },
+          { label: "What's still missing?", actionType: "submit", payload: `What documents are missing on claim ${ref}?` },
+          { label: "Continue the claim", actionType: "submit", payload: `Continue the claims journey for ${ref}` },
+        ],
+      };
+    }
+
     const list = await api.get(`/tenants/${tenantId}/cases`);
     const c = list.data.find((c: any) => {
       if (args.cnic && c.customer_cnic === args.cnic) return true;
@@ -438,7 +571,7 @@ export function CopilotInterface() {
   // automatically and the graph resumes with the result.
   useEffect(() => {
     if (pendingInterrupt?.kind !== "client_execute") return;
-    if (pendingInterrupt.toolCall.name !== "upload_document") return;
+    if (!["upload_document", "upload_claim_document"].includes(pendingInterrupt.toolCall.name)) return;
     const file = selectedFileRef.current;
     if (!file) {
       interruptUploadRef.current = { args: pendingInterrupt.toolCall.args };
@@ -1301,7 +1434,14 @@ export function CopilotInterface() {
                        {(turnActions.length > 0
                          ? turnActions
                          : getRecommendedActions(undefined)
-                       ).slice(0, 8).map((action, idx) => (
+                       ).slice(0, 8).map((action, idx) => action.actionType === "select" ? (
+                         <QuickActionSelect
+                           key={idx}
+                           action={action}
+                           onRun={(text) => handleSubmit(undefined, text)}
+                           variant="card"
+                         />
+                       ) : (
                          <button
                            key={idx}
                            onClick={() => handleQuickAction(action)}
@@ -1425,6 +1565,16 @@ export function CopilotInterface() {
                            {msg.quickActions && msg.quickActions.length > 0 && (
                              <div className={`flex flex-wrap gap-2 mt-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                                {msg.quickActions.map((action, idx) => {
+                                 if (action.actionType === "select") {
+                                   return (
+                                     <QuickActionSelect
+                                       key={`select-${action.label}-${idx}`}
+                                       action={action}
+                                       onRun={(text) => handleSubmit(undefined, text)}
+                                       variant="card"
+                                     />
+                                   );
+                                 }
                                  const isUploaded = checkIsUploaded(action, uploadedDocs);
                                  return (
                                    <button
@@ -1905,6 +2055,15 @@ export function CopilotInterface() {
                       {msg.quickActions && msg.quickActions.length > 0 && (
                         <div className="flex flex-wrap gap-2 mt-1">
                           {msg.quickActions.map((action, idx) => {
+                            if (action.actionType === "select") {
+                              return (
+                                <QuickActionSelect
+                                  key={`select-${action.label}-${idx}`}
+                                  action={action}
+                                  onRun={(text) => handleSubmit(undefined, text)}
+                                />
+                              );
+                            }
                             const isUploaded = checkIsUploaded(action, uploadedDocs);
                             return (
                             <button

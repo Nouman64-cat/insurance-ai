@@ -32,7 +32,10 @@ ROLES = ["SuperAdmin", "Admin", "Underwriter", "Agent", "Viewer"]
 
 # Executed by the browser or routed by the graph rather than by a handler.
 CLIENT_EXECUTED = {"upload_document"}
-GRAPH_ROUTED = {"start_underwriting_journey", "continue_underwriting_journey"}
+GRAPH_ROUTED = {
+    "start_underwriting_journey", "continue_underwriting_journey",
+    "start_claim_journey", "continue_claim_journey",
+}
 
 
 def test_every_tool_has_an_executor():
@@ -100,6 +103,36 @@ def test_admin_only_tools_are_denied_to_agent(tool_name):
     assert not is_role_allowed(tool_name, "Agent"), f"Agent may run admin-only {tool_name}"
 
 
+def test_claims_money_movement_needs_a_manager():
+    """Disbursement and reinsurance recovery are the two claims actions that
+    move money or bind the reinsurer — an adjuster prepares them, a manager
+    releases them."""
+    for tool_name in permission.CLAIMS_MANAGER_ONLY_TOOLS:
+        assert not is_role_allowed(tool_name, "ClaimsAdjuster"), f"Adjuster may run {tool_name}"
+        assert is_role_allowed(tool_name, "ClaimsManager"), f"Manager cannot run {tool_name}"
+
+
+def test_claims_roles_cannot_reach_underwriting_or_governance():
+    """A claims desk is not an underwriting desk: the claims roles read cases
+    but must not decide them, issue policies, or touch the rule engine."""
+    forbidden = {
+        "run_risk_assessment", "approve_case", "issue_policy", "confirm_policy_payment",
+        "update_case_status", "deploy_rule_version", "create_rule_set", "add_user",
+        "create_payout_run", "start_underwriting_journey",
+    }
+    for role in ("ClaimsAdjuster", "ClaimsManager"):
+        for tool_name in forbidden:
+            assert not is_role_allowed(tool_name, role), f"{role} may run {tool_name}"
+
+
+def test_underwriter_rules_on_referrals_but_does_not_adjudicate():
+    """The underwriter's half of the claims workflow is the re-underwriting
+    verdict — not the adjudication, the FNOL, or the money."""
+    assert is_role_allowed("resolve_claim_underwriting", "Underwriter")
+    for tool_name in ("adjudicate_claim", "register_claim", "issue_claim_payout"):
+        assert not is_role_allowed(tool_name, "Underwriter"), f"Underwriter may run {tool_name}"
+
+
 def test_governance_tools_are_admin_only():
     """Deploying a rule version changes underwriting for every later case;
     approving a payout run moves money. Neither belongs to a non-admin."""
@@ -131,6 +164,9 @@ def test_admin_can_run_everything_declared():
         ("deploy the draft rule version", "rules"),
         ("simulate the NML rule set", "rules"),
         ("add a new underwriter user", "admin"),
+        ("register an FNOL for this policy", "claims"),
+        ("adjudicate the hospitalization claim", "claims"),
+        ("settle claim CLM-2026-0001", "claims"),
     ],
 )
 def test_domain_keywords_route_correctly(text, expected):

@@ -3281,6 +3281,12 @@ async def _create_rule_set(args: dict, ctx: Ctx) -> dict:
         prof = next((p for p in profiles if (p.get("channel_code") or "").upper() == args["channel_code"].upper()), None)
         if prof:
             body["eligibility_id"] = prof["id"]
+    if not body.get("eligibility_id"):
+        # The API requires eligibility_id unless scope_type is GLOBAL — without
+        # this it 400s on every rule set that has no channel (either the
+        # subcategory carries no eligibility profiles at all, or the user
+        # deliberately chose "every channel").
+        body["scope_type"] = "GLOBAL"
 
     res = await ctx.client.post(_rules(ctx, "/sets"), json=body)
     res.raise_for_status()
@@ -3345,12 +3351,25 @@ async def _create_rule_version(args: dict, ctx: Ctx) -> dict:
 
 # The model writes conditions in the compact seed shape
 # ({"field","operator","value"}); the API wants RuleCriteriaCreate. Translate.
+# rule_evaluator.py only recognizes eq/neq/gt/gte/lt/lte/between/in_set/contains
+# as stored operator values (services/tenant-service/rule_evaluator.py:170-209).
+# The model (and the older seed data) writes looser synonyms — map them onto
+# the canonical name so a rule the picker builds with "in one of" actually
+# matches at evaluation time instead of silently never firing.
+_OPERATOR_ALIASES = {
+    "in": "in_set", "not_in": "in_set", "is_one_of": "in_set", "is_not_one_of": "in_set",
+    "ne": "neq", "!=": "neq", "not_equals": "neq", "not_equal": "neq",
+    ">": "gt", ">=": "gte", "<": "lt", "<=": "lte", "=": "eq", "==": "eq",
+}
+
+
 def _to_criteria(conditions: list) -> list[dict]:
     out = []
     for c in conditions or []:
         if not isinstance(c, dict):
             continue
         op = (c.get("operator") or "eq").lower()
+        op = _OPERATOR_ALIASES.get(op, op)
         value = c.get("value")
         crit: dict[str, Any] = {
             "group_id": int(c.get("group_id") or 1),
@@ -3360,7 +3379,7 @@ def _to_criteria(conditions: list) -> list[dict]:
         if op == "between" and isinstance(value, (list, tuple)) and len(value) == 2:
             crit["value_range_min"] = _as_float(value[0])
             crit["value_range_max"] = _as_float(value[1])
-        elif op in ("in", "not_in") and isinstance(value, (list, tuple)):
+        elif op == "in_set" and isinstance(value, (list, tuple)):
             crit["value_list"] = list(value)
         elif isinstance(value, bool):
             crit["value_string"] = "true" if value else "false"
@@ -3724,3 +3743,1173 @@ async def _create_payout_run(args: dict, ctx: Ctx) -> dict:
 @handles("approve_payout_run")
 async def _approve_payout_run(args: dict, ctx: Ctx) -> dict:
     return _commission_client_call("approve_payout_run", args)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Rules catalogue authoring — Category / SubCategory / EligibilityProfile
+#
+# Backed by tenant-service/routers/rules.py's hierarchy endpoints. These exist
+# so the agent never has to answer "you must create a category first" with a
+# dead end: when a prerequisite level is missing it offers to create it, and
+# these are what that offer executes.
+# ═══════════════════════════════════════════════════════════════════════════
+
+async def _categories(ctx: Ctx) -> list[dict]:
+    res = await ctx.client.get(_rules(ctx, "/categories"))
+    res.raise_for_status()
+    return res.json()
+
+
+def _find_category(cats: list[dict], code: str) -> Optional[dict]:
+    needle = (code or "").strip().upper()
+    if not needle:
+        return None
+    return next((c for c in cats if (c.get("code") or "").upper() == needle), None) or next(
+        (c for c in cats if needle in (c.get("name") or "").upper()), None
+    )
+
+
+def _find_subcategory(category: dict, code: str) -> Optional[dict]:
+    needle = (code or "").strip().upper()
+    if not needle:
+        return None
+    subs = category.get("subcategories") or []
+    return next((s for s in subs if (s.get("code") or "").upper() == needle), None) or next(
+        (s for s in subs if needle in (s.get("name") or "").upper()), None
+    )
+
+
+def _slug_code(text: str) -> str:
+    """"Claims Governance" -> "CLAIMS_GOVERNANCE". The catalogue codes are
+    UPPER_SNAKE by convention; the model reliably writes prose instead."""
+    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in (text or ""))
+    return "_".join(part.upper() for part in cleaned.split())[:60] or "CATEGORY"
+
+
+@handles("create_rule_category")
+async def _create_rule_category(args: dict, ctx: Ctx) -> dict:
+    cats = await _categories(ctx)
+    code = (args.get("code") or _slug_code(args.get("name", ""))).strip().upper()
+    existing = _find_category(cats, code)
+    if existing:
+        return {
+            "success": True,
+            "message": f"Category **{existing.get('name')}** (`{existing.get('code')}`) already exists — using it.",
+            "category": existing,
+            "quick_actions": _catalogue_actions(existing.get("code", code)),
+        }
+
+    display_name = args.get("name") or code.replace("_", " ").title()
+    res = await ctx.client.post(
+        _rules(ctx, "/categories"),
+        json={"code": code, "name": display_name, "description": args.get("description") or ""},
+    )
+    res.raise_for_status()
+    # The API's create response is a bare {id, code} — the name it was given
+    # never round-trips, so carry the one we sent rather than reading it back.
+    created = {**res.json(), "name": display_name}
+    return {
+        "success": True,
+        "message": (
+            f"Created category **{created.get('name')}** (`{created.get('code')}`). "
+            "It needs at least one subcategory before rule sets can be filed under it."
+        ),
+        "category": created,
+        "last_action": _action("create_rule_category", "rule_category", str(created.get("id", "")),
+                               "admin/rule-engine", f"Category {created.get('code')} created"),
+        "quick_actions": _catalogue_actions(created.get("code", code)),
+    }
+
+
+def _catalogue_actions(category_code: str) -> list[dict]:
+    return [
+        {"label": "Add a subcategory", "actionType": "submit",
+         "payload": f"Add a subcategory under category {category_code}"},
+        {"label": "Create a rule set here", "actionType": "submit",
+         "payload": f"Create a rule set under category {category_code}"},
+        {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+    ]
+
+
+@handles("create_rule_subcategory")
+async def _create_rule_subcategory(args: dict, ctx: Ctx) -> dict:
+    cats = await _categories(ctx)
+    category = _find_category(cats, args.get("category_code", ""))
+    if not category:
+        known = ", ".join(c.get("code", "") for c in cats) or "none yet"
+        return {
+            "success": False,
+            "error": f'No category "{args.get("category_code")}". Existing categories: {known}.',
+            "quick_actions": [
+                {"label": "Create the category first", "actionType": "submit",
+                 "payload": f"Create a rule category called {args.get('category_code')}"},
+            ],
+        }
+
+    code = (args.get("code") or _slug_code(args.get("name", ""))).strip().upper()
+    existing = _find_subcategory(category, code)
+    if existing:
+        return {
+            "success": True,
+            "message": f"Subcategory **{existing.get('name')}** (`{existing.get('code')}`) already exists under `{category.get('code')}`.",
+            "subcategory": existing,
+            "quick_actions": _subcategory_actions(category.get("code", ""), existing.get("code", code)),
+        }
+
+    display_name = args.get("name") or code.replace("_", " ").title()
+    res = await ctx.client.post(
+        _rules(ctx, f"/categories/{category['id']}/subcategories"),
+        json={"code": code, "name": display_name},
+    )
+    res.raise_for_status()
+    # Same bare {id, code} response shape as create_category — carry the name.
+    created = {**res.json(), "name": display_name}
+    return {
+        "success": True,
+        "message": (
+            f"Created subcategory **{created.get('name')}** (`{created.get('code')}`) "
+            f"under **{category.get('name')}**. Rule sets can now be filed here."
+        ),
+        "subcategory": created,
+        "last_action": _action("create_rule_subcategory", "rule_subcategory", str(created.get("id", "")),
+                               "admin/rule-engine", f"Subcategory {created.get('code')} created"),
+        "quick_actions": _subcategory_actions(category.get("code", ""), created.get("code", code)),
+    }
+
+
+def _subcategory_actions(category_code: str, subcategory_code: str) -> list[dict]:
+    return [
+        {"label": "Create a rule set here", "actionType": "submit",
+         "payload": f"Create a rule set under {category_code} / {subcategory_code}"},
+        {"label": "Add a channel profile", "actionType": "submit",
+         "payload": f"Add an eligibility profile to {category_code} / {subcategory_code}"},
+        {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+    ]
+
+
+@handles("create_eligibility_profile")
+async def _create_eligibility_profile(args: dict, ctx: Ctx) -> dict:
+    cats = await _categories(ctx)
+    category = _find_category(cats, args.get("category_code", ""))
+    if not category:
+        known = ", ".join(c.get("code", "") for c in cats) or "none yet"
+        return {"success": False, "error": f'No category "{args.get("category_code")}". Existing: {known}.'}
+    sub = _find_subcategory(category, args.get("subcategory_code", ""))
+    if not sub:
+        known = ", ".join(s.get("code", "") for s in (category.get("subcategories") or [])) or "none yet"
+        return {"success": False, "error": f'No subcategory "{args.get("subcategory_code")}" under {category.get("code")}. Existing: {known}.'}
+
+    channel = (args.get("channel_code") or "").strip().upper()
+    already = next(
+        (p for p in (sub.get("eligibility_profiles") or []) if (p.get("channel_code") or "").upper() == channel),
+        None,
+    )
+    if already:
+        return {
+            "success": True,
+            "message": f"`{channel}` is already a channel on **{sub.get('name')}**.",
+            "eligibility_profile": already,
+            "quick_actions": _subcategory_actions(category.get("code", ""), sub.get("code", "")),
+        }
+
+    res = await ctx.client.post(
+        _rules(ctx, f"/subcategories/{sub['id']}/eligibility-profiles"),
+        json={
+            "channel_code": channel,
+            "min_entry_age": int(args.get("min_entry_age") or 18),
+            "max_entry_age": int(args.get("max_entry_age") or 65),
+            "max_maturity_age": int(args.get("max_maturity_age") or 75),
+            "min_sum_assured": float(args.get("min_sum_assured") or 500000.0),
+        },
+    )
+    res.raise_for_status()
+    created = res.json()
+    return {
+        "success": True,
+        "message": (
+            f"Added channel **{channel}** to **{sub.get('name')}** — entry age "
+            f"{args.get('min_entry_age') or 18}–{args.get('max_entry_age') or 65}, "
+            f"maturity by {args.get('max_maturity_age') or 75}, "
+            f"minimum sum assured PKR {float(args.get('min_sum_assured') or 500000):,.0f}."
+        ),
+        "eligibility_profile": created,
+        "last_action": _action("create_eligibility_profile", "rule_subcategory", str(sub.get("id", "")),
+                               "admin/rule-engine", f"Channel {channel} added to {sub.get('code')}"),
+        "quick_actions": _subcategory_actions(category.get("code", ""), sub.get("code", "")),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Claims — FNOL, triage, document audit, adjudication, disbursement, recovery
+#
+# Backed by tenant-service/routers/claims.py. Two things shape every handler
+# here:
+#
+#   1. Claims are addressed by CLAIM NUMBER (CLM-2026-0001) or claimant name.
+#      The UUID never leaves this module.
+#   2. The API enforces four hard gates — a legal-transition state machine, a
+#      "at least one document" gate on approve/settle, a payout-record gate on
+#      Settled, and a ClaimsManager gate over PKR 500k. A raw 400 from any of
+#      those is a dead end for a chat user, so `_claim_actions` reads the claim
+#      and hands back the buttons that clear the *specific* gate blocking it.
+#      That is what makes the flow clickable end-to-end instead of typed.
+# ═══════════════════════════════════════════════════════════════════════════
+
+CLAIM_TYPES = ("Hospitalization", "Surgery", "Death Claim", "Reimbursement")
+
+# What a complete claim file looks like, per claim type. The API only requires
+# ONE document, but an adjuster asking "what's missing?" means this.
+CLAIM_DOCUMENTS: dict[str, tuple[str, ...]] = {
+    "Hospitalization": ("Hospital Bill", "Discharge Summary", "CNIC", "Lab Test Report"),
+    "Surgery": ("Hospital Bill", "Discharge Summary", "Lab Test Report", "CNIC"),
+    "Death Claim": ("Death Certificate", "CNIC", "Hospital Bill"),
+    "Reimbursement": ("Hospital Bill", "CNIC", "Lab Test Report"),
+}
+CLAIM_DOCUMENT_FALLBACK = ("Hospital Bill", "CNIC")
+
+# Mirrors VALID_TRANSITIONS in routers/claims.py. Duplicated deliberately: the
+# agent has to know what is legal *before* calling, so it can offer only the
+# moves that will succeed rather than proposing one and eating a 400.
+CLAIM_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "New": ("Triaged", "Under Investigation", "Pending Documents", "Re-Underwriting Required"),
+    "Triaged": ("Under Investigation", "Pending Documents", "Referred to Manager",
+                "Re-Underwriting Required", "Declined"),
+    "Pending Documents": ("Under Investigation", "Triaged", "Re-Underwriting Required", "Declined"),
+    "Under Investigation": ("Approved", "Partial Approval", "Declined", "Pending Documents",
+                            "Referred to Manager", "Re-Underwriting Required"),
+    "Referred to Manager": ("Approved", "Partial Approval", "Declined", "Under Investigation",
+                            "Re-Underwriting Required"),
+    "Re-Underwriting Required": ("Under Investigation", "Approved", "Partial Approval",
+                                 "Declined", "Referred to Manager"),
+    "Approved": ("Settled", "Closed"),
+    "Partial Approval": ("Settled", "Closed"),
+    "Declined": ("Closed",),
+    "Settled": ("Closed",),
+    "Closed": (),
+}
+
+CLAIM_MANAGER_THRESHOLD = 500_000.0
+CLAIM_RETENTION_LIMIT = 5_000_000.0
+
+CLAIM_REFERRAL_REASONS = (
+    "Policy Issued < 2 Years Ago (Contestability Window)",
+    "Undisclosed Pre-Existing Medical History (OCR Flag)",
+    "Claim Amount Exceeds Adjuster Limit (> PKR 500k)",
+    "Claim Amount Exceeds Net Retention (> PKR 5M)",
+    "Post-Claim Coverage Restatement & Rider Exclusion",
+    "Disability Care & Fitness-for-Duty Assessment",
+)
+
+
+def _claims(ctx: Ctx, path: str = "") -> str:
+    return f"{TENANT_SERVICE_URL}/tenants/{ctx.tenant_id}/claims{path}"
+
+
+def _claim_status(claim: dict) -> str:
+    return str(claim.get("status") or "New")
+
+
+def _claim_ref(claim: dict) -> str:
+    """How the user (and the model) refers to this claim in the next message."""
+    return claim.get("claim_number") or claim.get("claimant_name") or str(claim.get("id", ""))
+
+
+def _claim_route(claim: dict) -> str:
+    cid = str(claim.get("id") or "")
+    return f"claims/{cid}" if cid else "claims"
+
+
+def _claim_docs_missing(claim: dict) -> list[str]:
+    expected = CLAIM_DOCUMENTS.get(claim.get("claim_type") or "", CLAIM_DOCUMENT_FALLBACK)
+    on_file = {
+        (a.get("document_type") or "").strip().lower()
+        for a in (claim.get("artifacts") or [])
+    }
+    return [d for d in expected if d.lower() not in on_file]
+
+
+def _claim_doc_count(claim: dict) -> int:
+    arts = claim.get("artifacts")
+    if arts is not None:
+        return len(arts)
+    return int(claim.get("artifacts_count") or 0)
+
+
+def _upload_action(claim: dict, doc_type: str) -> dict:
+    return {
+        "label": f"Upload {doc_type}",
+        "actionType": "upload",
+        "payload": json.dumps({
+            "document_type": doc_type,
+            "claim_id": str(claim.get("id") or ""),
+            "claim_number": claim.get("claim_number") or "",
+        }),
+    }
+
+
+def _claim_actions(claim: dict) -> list[dict]:
+    """The next legal moves on this claim, as one-click chips.
+
+    Ordered by what an adjuster would actually do next, and filtered by the
+    gates the API will enforce — so every chip shown is a chip that works.
+    """
+    ref = _claim_ref(claim)
+    status = _claim_status(claim)
+    docs = _claim_doc_count(claim)
+    missing = _claim_docs_missing(claim)
+    amount = float(claim.get("submitted_amount") or 0)
+    approved = float(claim.get("approved_amount") or 0)
+    actions: list[dict] = []
+
+    def submit(label: str, payload: str) -> dict:
+        return {"label": label, "actionType": "submit", "payload": payload}
+
+    if status in ("New", "Triaged", "Pending Documents"):
+        # Documents first: nothing downstream of triage can succeed without one.
+        for doc in missing[:2]:
+            actions.append(_upload_action(claim, doc))
+        if status == "New":
+            actions.append(submit("Triage this claim", f"Move claim {ref} to Triaged"))
+        if docs:
+            actions.append(submit("Start investigation", f"Move claim {ref} to Under Investigation"))
+        else:
+            actions.append(submit("Mark pending documents", f"Move claim {ref} to Pending Documents"))
+
+    elif status == "Under Investigation":
+        if docs == 0:
+            for doc in missing[:2]:
+                actions.append(_upload_action(claim, doc))
+            actions.append(submit("Mark pending documents", f"Move claim {ref} to Pending Documents"))
+        else:
+            actions.append(submit(f"Approve PKR {amount:,.0f}", f"Adjudicate claim {ref} as APPROVED for {amount:.0f}"))
+            actions.append(submit("Partial approval", f"Adjudicate claim {ref} as PARTIAL_APPROVAL"))
+            actions.append(submit("Decline claim", f"Adjudicate claim {ref} as DECLINED"))
+        if amount > CLAIM_MANAGER_THRESHOLD:
+            actions.append(submit("Refer to manager", f"Adjudicate claim {ref} as REFERRED_TO_MANAGER"))
+        if claim.get("is_contestable"):
+            actions.append(submit("Refer to underwriting", f"Refer claim {ref} to underwriting"))
+
+    elif status == "Referred to Manager":
+        actions.append(submit("Approve as manager", f"Adjudicate claim {ref} as APPROVED for {amount:.0f}"))
+        actions.append(submit("Partial approval", f"Adjudicate claim {ref} as PARTIAL_APPROVAL"))
+        actions.append(submit("Decline claim", f"Adjudicate claim {ref} as DECLINED"))
+        actions.append(submit("Send back to investigation", f"Move claim {ref} to Under Investigation"))
+
+    elif status == "Re-Underwriting Required":
+        actions.append(submit("Approve & continue", f"Resolve underwriting on claim {ref} as APPROVE_CONTINUE"))
+        actions.append(submit("Approve with exclusion", f"Resolve underwriting on claim {ref} as APPROVE_WITH_EXCLUSION"))
+        actions.append(submit("Approve with loading", f"Resolve underwriting on claim {ref} as APPROVE_WITH_LOADING"))
+        actions.append(submit("Decline — non-disclosure", f"Resolve underwriting on claim {ref} as DECLINE_NON_DISCLOSURE"))
+
+    elif status in ("Approved", "Partial Approval"):
+        payable = approved or amount
+        actions.append(submit(f"Disburse PKR {payable:,.0f}", f"Issue claim payout for {ref} of {payable:.0f} by Bank Transfer"))
+        coverage = float(claim.get("coverage_amount") or 0)
+        if coverage > CLAIM_RETENTION_LIMIT and not claim.get("reinsurance_referral_id"):
+            actions.append(submit("Recover from reinsurer", f"Refer claim {ref} to reinsurance"))
+        actions.append(submit("Close without payout", f"Move claim {ref} to Closed"))
+
+    elif status == "Settled":
+        actions.append(submit("Close the claim", f"Move claim {ref} to Closed"))
+        actions.append(submit("Recover from reinsurer", f"Refer claim {ref} to reinsurance"))
+
+    elif status == "Declined":
+        actions.append(submit("Close the claim", f"Move claim {ref} to Closed"))
+        actions.append(submit("Reopen investigation", f"Move claim {ref} to Under Investigation"))
+
+    elif status == "Reinsurance Referred":
+        actions.append(submit("View claim file", f"Show claim {ref}"))
+
+    if status != "Closed":
+        actions.append(submit("What's missing?", f"What documents are missing on claim {ref}?"))
+    actions.append({"label": "Open claim file", "actionType": "navigate", "payload": _claim_route(claim)})
+    return actions[:6]
+
+
+def _claim_summary(claim: dict) -> str:
+    status = _claim_status(claim)
+    lines = [
+        f"**{claim.get('claim_number')}** — {claim.get('claimant_name')} · "
+        f"{claim.get('claim_type')} · **{status}**",
+        f"Claimed **PKR {float(claim.get('submitted_amount') or 0):,.0f}**"
+        + (f" · approved PKR {float(claim.get('approved_amount') or 0):,.0f}" if claim.get("approved_amount") else "")
+        + (f" · settled PKR {float(claim.get('settlement_amount') or 0):,.0f}" if claim.get("settlement_amount") else ""),
+    ]
+    if claim.get("policy_number"):
+        lines.append(f"Policy `{claim['policy_number']}` · {claim.get('policy_type') or '—'} · "
+                     f"cover PKR {float(claim.get('coverage_amount') or 0):,.0f}")
+    flags = []
+    if claim.get("duplicate_flag"):
+        flags.append("⚠️ duplicate suspected")
+    if float(claim.get("fraud_probability") or 0) >= 0.5:
+        flags.append(f"⚠️ fraud probability {float(claim['fraud_probability']):.0%}")
+    if claim.get("is_contestable"):
+        flags.append("⚠️ inside the 2-year contestability window")
+    if float(claim.get("submitted_amount") or 0) > CLAIM_MANAGER_THRESHOLD:
+        flags.append("needs ClaimsManager sign-off (> PKR 500k)")
+    if flags:
+        lines.append("· ".join(flags))
+    docs = _claim_doc_count(claim)
+    lines.append(f"Documents on file: **{docs}**" + (f" — missing {', '.join(_claim_docs_missing(claim))}" if _claim_docs_missing(claim) else " — file complete"))
+    nxt = CLAIM_TRANSITIONS.get(status, ())
+    if nxt:
+        lines.append(f"Legal next states: {', '.join(nxt)}")
+    return "\n".join(lines)
+
+
+async def _list_claims_raw(ctx: Ctx, params: Optional[dict] = None) -> list[dict]:
+    res = await ctx.client.get(_claims(ctx), params=params or None)
+    res.raise_for_status()
+    return res.json()
+
+
+async def _resolve_claim(args: dict, ctx: Ctx) -> dict:
+    """"Which claim did they mean?" — by number, then by claimant name.
+
+    Returns the FULL detail payload (artifacts, history, payouts), because
+    every caller needs the document count to decide what is even legal.
+    """
+    number = (args.get("claim_number") or "").strip()
+    name = (args.get("claimant_name") or args.get("cnic") or "").strip()
+    claims = await _list_claims_raw(ctx, {"search": number or name} if (number or name) else None)
+
+    match = None
+    if number:
+        match = next((c for c in claims if (c.get("claim_number") or "").lower() == number.lower()), None)
+        if not match:
+            match = next((c for c in claims if str(c.get("id")) == number), None)
+    if not match and name:
+        match = next((c for c in claims if name.lower() in (c.get("claimant_name") or "").lower()), None)
+        if not match:
+            match = next((c for c in claims if name.lower() in (c.get("policy_number") or "").lower()), None)
+    if not match and len(claims) == 1:
+        match = claims[0]
+
+    if not match:
+        hint = number or name or "that"
+        raise LookupError(
+            f'No claim found for "{hint}". Register a First Notice of Loss first, '
+            "or ask me to list the open claims."
+        )
+
+    detail = await ctx.client.get(_claims(ctx, f"/{match['id']}"))
+    detail.raise_for_status()
+    return detail.json()
+
+
+@handles("list_claims")
+async def _list_claims(args: dict, ctx: Ctx) -> dict:
+    params = {}
+    for key in ("status", "claim_type", "search"):
+        if args.get(key):
+            params[key] = args[key]
+    claims = await _list_claims_raw(ctx, params)
+    if not claims:
+        return {
+            "success": True,
+            "message": "No claims match that." if params else "No claims have been registered yet.",
+            "claims": [],
+            "quick_actions": [
+                {"label": "Register a claim (FNOL)", "actionType": "submit", "payload": "Register a new claim"},
+                {"label": "Open Claims", "actionType": "navigate", "payload": "claims"},
+            ],
+        }
+
+    lines = "\n".join(
+        f"- `{c.get('claim_number')}` **{c.get('claimant_name')}** — {c.get('claim_type')} · "
+        f"PKR {float(c.get('submitted_amount') or 0):,.0f} · **{_claim_status(c)}**"
+        + (" ⚠️ duplicate" if c.get("duplicate_flag") else "")
+        + (f" · {c.get('artifacts_count') or 0} doc(s)")
+        for c in claims[:15]
+    )
+    actionable = [c for c in claims if _claim_status(c) not in ("Closed", "Settled")]
+    qa: list[dict] = []
+    for c in actionable[:3]:
+        qa.append({"label": f"Work {c.get('claim_number')}", "actionType": "submit",
+                   "payload": f"Show claim {c.get('claim_number')}"})
+    qa.append({"label": "Register a claim (FNOL)", "actionType": "submit", "payload": "Register a new claim"})
+    qa.append({"label": "Open Claims", "actionType": "navigate", "payload": "claims"})
+
+    return {
+        "success": True,
+        "message": f"{len(claims)} claim(s){' matching that filter' if params else ''}:\n{lines}",
+        "claims": claims,
+        "quick_actions": qa[:6],
+    }
+
+
+@handles("get_claim_details")
+async def _get_claim_details(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    lines = [_claim_summary(claim)]
+
+    history = claim.get("status_history") or []
+    if history:
+        lines.append("")
+        lines.append("**Recent activity:**")
+        for h in history[:4]:
+            lines.append(f"- {h.get('from_status') or '—'} → **{h.get('to_status')}** by {h.get('actor_name')}"
+                         + (f" · {h['notes']}" if h.get("notes") else ""))
+
+    payouts = claim.get("payouts") or []
+    if payouts:
+        lines.append("")
+        lines.append("**Payouts:** " + ", ".join(
+            f"PKR {float(p.get('amount') or 0):,.0f} via {p.get('method')} ({p.get('reference_number')})"
+            for p in payouts[:3]
+        ))
+
+    if claim.get("underwriting_referral_reason"):
+        lines.append("")
+        lines.append(f"**Referred to underwriting for:** {claim['underwriting_referral_reason']}")
+    if claim.get("underwriting_decision_notes"):
+        lines.append(f"**Underwriting note:** {claim['underwriting_decision_notes']}")
+
+    return {
+        "success": True,
+        "message": "\n".join(lines),
+        "claim": claim,
+        "navigate": {"route": _claim_route(claim), "entity_id": str(claim.get("id") or ""), "highlight": False},
+        "quick_actions": _claim_actions(claim),
+    }
+
+
+@handles("get_claims_dashboard")
+async def _get_claims_dashboard(args: dict, ctx: Ctx) -> dict:
+    claims = await _list_claims_raw(ctx)
+    if not claims:
+        return {
+            "success": True,
+            "message": "No claims registered yet — the book is clean.",
+            "quick_actions": [
+                {"label": "Register a claim (FNOL)", "actionType": "submit", "payload": "Register a new claim"},
+                {"label": "Open Claims", "actionType": "navigate", "payload": "claims"},
+            ],
+        }
+
+    by_status: dict[str, int] = {}
+    submitted = settled = 0.0
+    blocked_on_docs: list[dict] = []
+    needs_manager: list[dict] = []
+    for c in claims:
+        st = _claim_status(c)
+        by_status[st] = by_status.get(st, 0) + 1
+        submitted += float(c.get("submitted_amount") or 0)
+        settled += float(c.get("settlement_amount") or 0)
+        if st not in ("Closed", "Settled", "Declined") and not (c.get("artifacts_count") or 0):
+            blocked_on_docs.append(c)
+        if st == "Referred to Manager" or (
+            st in ("Under Investigation", "Triaged") and float(c.get("submitted_amount") or 0) > CLAIM_MANAGER_THRESHOLD
+        ):
+            needs_manager.append(c)
+
+    open_count = sum(v for k, v in by_status.items() if k not in ("Closed", "Settled", "Declined"))
+    lines = [
+        f"**{len(claims)} claim(s)** · {open_count} still open",
+        f"Submitted **PKR {submitted:,.0f}** · settled **PKR {settled:,.0f}**",
+        "",
+        "| Status | Count |", "| :-- | --: |",
+        *(f"| {k} | {v} |" for k, v in sorted(by_status.items(), key=lambda kv: -kv[1])),
+    ]
+    if blocked_on_docs:
+        lines.append("")
+        lines.append(f"⚠️ **{len(blocked_on_docs)}** claim(s) cannot be approved — no documents on file: "
+                     + ", ".join(f"`{c.get('claim_number')}`" for c in blocked_on_docs[:5]))
+    if needs_manager:
+        lines.append(f"⚠️ **{len(needs_manager)}** claim(s) need ClaimsManager sign-off: "
+                     + ", ".join(f"`{c.get('claim_number')}`" for c in needs_manager[:5]))
+
+    qa: list[dict] = []
+    if blocked_on_docs:
+        c = blocked_on_docs[0]
+        qa.append({"label": f"Fix documents on {c.get('claim_number')}", "actionType": "submit",
+                   "payload": f"What documents are missing on claim {c.get('claim_number')}?"})
+    if needs_manager:
+        c = needs_manager[0]
+        qa.append({"label": f"Decide {c.get('claim_number')}", "actionType": "submit",
+                   "payload": f"Show claim {c.get('claim_number')}"})
+    qa += [
+        {"label": "Show open claims", "actionType": "submit", "payload": "List claims that are Under Investigation"},
+        {"label": "Register a claim (FNOL)", "actionType": "submit", "payload": "Register a new claim"},
+        {"label": "Open Claims", "actionType": "navigate", "payload": "claims"},
+    ]
+    return {
+        "success": True,
+        "message": "\n".join(lines),
+        "claims": claims,
+        "quick_actions": qa[:6],
+    }
+
+
+@handles("get_claim_document_checklist")
+async def _get_claim_document_checklist(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    expected = CLAIM_DOCUMENTS.get(claim.get("claim_type") or "", CLAIM_DOCUMENT_FALLBACK)
+    on_file = [(a.get("document_type") or "?") for a in (claim.get("artifacts") or [])]
+    missing = _claim_docs_missing(claim)
+
+    lines = [f"Document file for **{claim.get('claim_number')}** ({claim.get('claim_type')}):"]
+    for doc in expected:
+        lines.append(f"- {'✅' if doc not in missing else '⬜'} {doc}")
+    extra = [d for d in on_file if d not in expected]
+    for doc in extra:
+        lines.append(f"- ✅ {doc} _(additional)_")
+    if not on_file:
+        lines.append("")
+        lines.append("⚠️ Nothing on file yet — the platform blocks approval, payout and settlement "
+                     "until at least one verified document is attached.")
+
+    qa = [_upload_action(claim, d) for d in missing[:3]]
+    if on_file:
+        qa.append({"label": "Continue adjudication", "actionType": "submit",
+                   "payload": f"Show claim {_claim_ref(claim)}"})
+    qa.append({"label": "Open claim file", "actionType": "navigate", "payload": _claim_route(claim)})
+
+    return {
+        "success": True,
+        "message": "\n".join(lines),
+        "claim": claim,
+        "missing": missing,
+        "quick_actions": qa[:6],
+    }
+
+
+async def _resolve_claim_policy(args: dict, ctx: Ctx) -> dict:
+    """Which policy is the FNOL against? Number first, then claimant/CNIC.
+
+    Only policies that can actually carry a claim are candidates — you cannot
+    claim on a proposal that was never issued.
+    """
+    res = await ctx.client.get(ctx.tsvc("/policies"))
+    res.raise_for_status()
+    policies = res.json()
+    claimable = [p for p in policies if (p.get("status") or "").lower() in ("active", "pendingpayment", "lapsed", "matured")]
+    pool = claimable or policies
+
+    number = (args.get("policy_number") or "").strip()
+    if number:
+        match = next((p for p in pool if (p.get("policy_number") or "").lower() == number.lower()), None) \
+            or next((p for p in pool if str(p.get("id")) == number), None)
+        if match:
+            return match
+
+    name = (args.get("claimant_name") or "").strip()
+    if name:
+        match = next((p for p in pool if name.lower() in (p.get("customer_name") or "").lower()), None)
+        if match:
+            return match
+
+    cnic = (args.get("cnic") or "").strip()
+    if cnic:
+        cust = await ctx.client.get(ctx.tsvc("/customers"))
+        cust.raise_for_status()
+        customer = _find_customer(cust.json(), cnic, None)
+        if customer:
+            match = next((p for p in pool if str(p.get("customer_id")) == str(customer.get("id"))), None)
+            if match:
+                return match
+
+    if not pool:
+        raise LookupError(
+            "There are no policies to claim against yet. A claim needs an issued policy — "
+            "run the underwriting journey first."
+        )
+    hint = number or name or cnic or "that"
+    known = ", ".join(f"{p.get('policy_number')} ({p.get('customer_name')})" for p in pool[:5])
+    raise LookupError(f'No policy matches "{hint}". Claimable policies include: {known}.')
+
+
+async def fetch_claimable_policies(exec_ctx: ExecCtx) -> list[dict]:
+    """Policies a claim can actually be filed against, for callers outside a
+    handler (graph.py's FNOL policy picker).
+
+    A proposal that was never issued cannot carry a loss, so unissued statuses
+    are filtered out here rather than offered to the user and then rejected by
+    the API. Falls back to the full list only when the filter empties it — an
+    empty picker is worse than a slightly permissive one.
+    """
+    client = await _shared_client()
+    scoped = _ScopedClient(client, headers=exec_ctx.headers, timeout=30.0)
+    res = await scoped.get(
+        f"{TENANT_SERVICE_URL}/tenants/{exec_ctx.effective_tenant_id}/policies"
+    )
+    res.raise_for_status()
+    policies = res.json()
+    claimable = [
+        p for p in policies
+        if (p.get("status") or "").lower() in ("active", "pendingpayment", "lapsed", "matured")
+    ]
+    return claimable or policies
+
+
+@handles("register_claim")
+async def _register_claim(args: dict, ctx: Ctx) -> dict:
+    policy = await _resolve_claim_policy(args, ctx)
+
+    claim_type = (args.get("claim_type") or "").strip()
+    matched_type = next((t for t in CLAIM_TYPES if t.lower() == claim_type.lower()), None) \
+        or next((t for t in CLAIM_TYPES if claim_type and claim_type.lower() in t.lower()), None)
+    if not matched_type:
+        return {
+            "success": False,
+            "error": f"What kind of claim is this on policy {policy.get('policy_number')}?",
+            "quick_actions": [
+                {"label": t, "actionType": "submit",
+                 "payload": f"Register a {t} claim on policy {policy.get('policy_number')}"
+                            + (f" for {args['submitted_amount']:.0f}" if args.get("submitted_amount") else "")}
+                for t in CLAIM_TYPES
+            ],
+        }
+
+    amount = _as_float(args.get("submitted_amount"))
+    if not amount or amount <= 0:
+        cover = float(policy.get("coverage_amount") or 0)
+        suggestions = [a for a in (50_000, 200_000, 500_000, cover) if a and a <= (cover or a)]
+        return {
+            "success": False,
+            "error": f"How much is being claimed on {policy.get('policy_number')} "
+                     f"(cover PKR {cover:,.0f})?",
+            "quick_actions": [
+                {"label": f"PKR {a:,.0f}", "actionType": "submit",
+                 "payload": f"Register a {matched_type} claim on policy {policy.get('policy_number')} for {a:.0f}"}
+                for a in dict.fromkeys(suggestions)
+            ][:4],
+        }
+
+    body: dict[str, Any] = {
+        "policy_id": str(policy["id"]),
+        "claim_type": matched_type,
+        "submitted_amount": float(amount),
+    }
+    if args.get("incident_date"):
+        body["incident_date"] = args["incident_date"]
+    if args.get("notes"):
+        body["notes"] = args["notes"]
+
+    res = await ctx.client.post(_claims(ctx), json=body)
+    res.raise_for_status()
+    claim = res.json()
+
+    warn = []
+    if claim.get("duplicate_flag"):
+        warn.append("⚠️ **Duplicate suspected** — a claim of the same type and amount already exists on this policy. "
+                    "Approving it will require written rationale (15+ characters).")
+    if claim.get("is_contestable"):
+        warn.append("⚠️ The policy is inside its **2-year contestability window** — a re-underwriting referral may be required.")
+    if float(amount) > CLAIM_MANAGER_THRESHOLD:
+        warn.append(f"⚠️ Over PKR {CLAIM_MANAGER_THRESHOLD:,.0f} — approval needs a **ClaimsManager**.")
+
+    message = (
+        f"Registered FNOL **{claim.get('claim_number')}** — {matched_type} for "
+        f"PKR {float(amount):,.0f} on policy `{policy.get('policy_number')}` "
+        f"({policy.get('customer_name')}). AI recommendation: **{claim.get('ai_recommendation')}**. "
+        f"Linked SLA case opened."
+    )
+    if warn:
+        message += "\n\n" + "\n".join(warn)
+    message += "\n\nNothing can be approved or settled until at least one document is on file."
+
+    return {
+        "success": True,
+        "message": message,
+        "claim": claim,
+        "last_action": _action("register_claim", "claim", str(claim.get("id", "")),
+                               _claim_route(claim), f"Claim {claim.get('claim_number')} registered"),
+        "navigate": {"route": _claim_route(claim), "entity_id": str(claim.get("id") or ""), "highlight": False},
+        "quick_actions": _claim_actions(claim),
+    }
+
+
+@handles("update_claim_status")
+async def _update_claim_status(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    current = _claim_status(claim)
+    target = (args.get("new_status") or "").strip()
+    legal = CLAIM_TRANSITIONS.get(current, ())
+
+    resolved = next((s for s in legal if s.lower() == target.lower()), None) \
+        or next((s for s in legal if target and target.lower() in s.lower()), None)
+    if not resolved:
+        return {
+            "success": False,
+            "error": (
+                f"`{claim.get('claim_number')}` is **{current}** — it cannot move to \"{target}\". "
+                + (f"Legal next states: {', '.join(legal)}." if legal else "It is closed; nothing further is possible.")
+            ),
+            "quick_actions": [
+                {"label": s, "actionType": "submit", "payload": f"Move claim {_claim_ref(claim)} to {s}"}
+                for s in legal[:4]
+            ] + [{"label": "Open claim file", "actionType": "navigate", "payload": _claim_route(claim)}],
+        }
+
+    # Pre-flight the two gates the API enforces, so the user gets buttons that
+    # clear the blocker rather than a 400 they cannot act on.
+    if resolved in ("Approved", "Partial Approval", "Settled") and _claim_doc_count(claim) == 0:
+        missing = _claim_docs_missing(claim)
+        return {
+            "success": False,
+            "error": (
+                f"Cannot move `{claim.get('claim_number')}` to **{resolved}** — no documents are on file. "
+                f"At least one verified claim document is required."
+            ),
+            "quick_actions": [_upload_action(claim, d) for d in missing[:3]]
+                             + [{"label": "Open claim file", "actionType": "navigate", "payload": _claim_route(claim)}],
+        }
+    if resolved == "Settled" and not (claim.get("payouts") or []):
+        payable = float(claim.get("approved_amount") or claim.get("submitted_amount") or 0)
+        return {
+            "success": False,
+            "error": (
+                f"`{claim.get('claim_number')}` cannot be marked **Settled** without a disbursement record. "
+                "Issue the payout instead — that settles it in one step."
+            ),
+            "quick_actions": [
+                {"label": f"Disburse PKR {payable:,.0f}", "actionType": "submit",
+                 "payload": f"Issue claim payout for {_claim_ref(claim)} of {payable:.0f} by Bank Transfer"},
+                {"label": "Open claim file", "actionType": "navigate", "payload": _claim_route(claim)},
+            ],
+        }
+
+    body = {"status": resolved}
+    if args.get("notes"):
+        body["notes"] = args["notes"]
+    res = await ctx.client.patch(_claims(ctx, f"/{claim['id']}/status"), json=body)
+    res.raise_for_status()
+    updated = {**claim, **res.json()}
+
+    return {
+        "success": True,
+        "message": f"`{claim.get('claim_number')}` moved **{current} → {resolved}**.\n\n" + _claim_summary(updated),
+        "claim": updated,
+        "last_action": _action("update_claim_status", "claim", str(claim.get("id", "")),
+                               _claim_route(claim), f"{claim.get('claim_number')} → {resolved}"),
+        "quick_actions": _claim_actions(updated),
+    }
+
+
+@handles("adjudicate_claim")
+async def _adjudicate_claim(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    decision = (args.get("decision") or "").strip().upper()
+    if decision not in ("APPROVED", "PARTIAL_APPROVAL", "DECLINED", "REFERRED_TO_MANAGER"):
+        return {
+            "success": False,
+            "error": f"What is the decision on `{claim.get('claim_number')}`?",
+            "quick_actions": _claim_actions(claim),
+        }
+
+    submitted = float(claim.get("submitted_amount") or 0)
+
+    if decision in ("APPROVED", "PARTIAL_APPROVAL") and _claim_doc_count(claim) == 0:
+        missing = _claim_docs_missing(claim)
+        return {
+            "success": False,
+            "error": (
+                f"`{claim.get('claim_number')}` has no documents on file — approval is blocked until "
+                "at least one verified document is attached."
+            ),
+            "quick_actions": [_upload_action(claim, d) for d in missing[:3]]
+                             + [{"label": "Decline instead", "actionType": "submit",
+                                 "payload": f"Adjudicate claim {_claim_ref(claim)} as DECLINED"}],
+        }
+
+    notes = args.get("notes")
+    if claim.get("duplicate_flag") and decision in ("APPROVED", "PARTIAL_APPROVAL") and len((notes or "").strip()) < 15:
+        return {
+            "success": False,
+            "error": (
+                f"`{claim.get('claim_number')}` is flagged as a **possible duplicate**. Approving it needs a written "
+                "adjudicator rationale of at least 15 characters. Pick one, or dictate your own:"
+            ),
+            "quick_actions": [
+                {"label": "Different incident date", "actionType": "submit",
+                 "payload": f"Adjudicate claim {_claim_ref(claim)} as {decision} with notes "
+                            "'Verified against prior claim: distinct incident date and separate admission — not a duplicate.'"},
+                {"label": "Separate treatment episode", "actionType": "submit",
+                 "payload": f"Adjudicate claim {_claim_ref(claim)} as {decision} with notes "
+                            "'Documents confirm a separate treatment episode with independent hospital billing.'"},
+                {"label": "Prior claim was reversed", "actionType": "submit",
+                 "payload": f"Adjudicate claim {_claim_ref(claim)} as {decision} with notes "
+                            "'Earlier matching claim was reversed and never disbursed; this is the valid submission.'"},
+                {"label": "Decline as duplicate", "actionType": "submit",
+                 "payload": f"Adjudicate claim {_claim_ref(claim)} as DECLINED"},
+            ],
+        }
+
+    approved = _as_float(args.get("approved_amount"))
+    if decision == "APPROVED" and not approved:
+        approved = submitted
+    if decision == "PARTIAL_APPROVAL" and not approved:
+        return {
+            "success": False,
+            "error": f"How much of the PKR {submitted:,.0f} claimed on `{claim.get('claim_number')}` is being approved?",
+            "quick_actions": [
+                {"label": f"{pct}% — PKR {submitted * pct / 100:,.0f}", "actionType": "submit",
+                 "payload": f"Adjudicate claim {_claim_ref(claim)} as PARTIAL_APPROVAL for {submitted * pct / 100:.0f}"}
+                for pct in (75, 50, 25)
+            ] + [{"label": "Approve in full", "actionType": "submit",
+                  "payload": f"Adjudicate claim {_claim_ref(claim)} as APPROVED for {submitted:.0f}"}],
+        }
+    if approved and approved > submitted:
+        return {
+            "success": False,
+            "error": f"PKR {approved:,.0f} exceeds the PKR {submitted:,.0f} claimed — the approved amount cannot be higher.",
+            "quick_actions": [
+                {"label": f"Approve the full PKR {submitted:,.0f}", "actionType": "submit",
+                 "payload": f"Adjudicate claim {_claim_ref(claim)} as APPROVED for {submitted:.0f}"},
+            ],
+        }
+
+    body: dict[str, Any] = {"decision": decision}
+    if approved:
+        body["approved_amount"] = float(approved)
+    if notes:
+        body["notes"] = notes
+    res = await ctx.client.post(_claims(ctx, f"/{claim['id']}/adjudicate"), json=body)
+    res.raise_for_status()
+    updated = {**claim, **res.json()}
+
+    verdict = {
+        "APPROVED": f"**Approved** for PKR {float(updated.get('approved_amount') or 0):,.0f}",
+        "PARTIAL_APPROVAL": f"**Partially approved** — PKR {float(updated.get('approved_amount') or 0):,.0f} of PKR {submitted:,.0f}",
+        "DECLINED": "**Declined**",
+        "REFERRED_TO_MANAGER": "**Referred to the claims manager**",
+    }[decision]
+
+    return {
+        "success": True,
+        "message": f"`{claim.get('claim_number')}` — {verdict}.\n\n" + _claim_summary(updated),
+        "claim": updated,
+        "last_action": _action("adjudicate_claim", "claim", str(claim.get("id", "")),
+                               _claim_route(claim), f"{claim.get('claim_number')} {decision}"),
+        "quick_actions": _claim_actions(updated),
+    }
+
+
+@handles("issue_claim_payout")
+async def _issue_claim_payout(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    status = _claim_status(claim)
+    if status not in ("Approved", "Partial Approval"):
+        return {
+            "success": False,
+            "error": (
+                f"`{claim.get('claim_number')}` is **{status}** — payouts can only be issued from "
+                "Approved or Partial Approval."
+            ),
+            "quick_actions": _claim_actions(claim),
+        }
+    if _claim_doc_count(claim) == 0:
+        return {
+            "success": False,
+            "error": f"`{claim.get('claim_number')}` has no documents on file — disbursement is blocked.",
+            "quick_actions": [_upload_action(claim, d) for d in _claim_docs_missing(claim)[:3]],
+        }
+
+    max_allowed = float(claim.get("approved_amount") or 0) or float(claim.get("submitted_amount") or 0)
+    amount = _as_float(args.get("amount")) or max_allowed
+    if amount > max_allowed:
+        return {
+            "success": False,
+            "error": f"PKR {amount:,.0f} exceeds the approved PKR {max_allowed:,.0f}.",
+            "quick_actions": [
+                {"label": f"Disburse PKR {max_allowed:,.0f}", "actionType": "submit",
+                 "payload": f"Issue claim payout for {_claim_ref(claim)} of {max_allowed:.0f} by Bank Transfer"},
+            ],
+        }
+
+    method = args.get("method") or "Bank Transfer"
+    body: dict[str, Any] = {"amount": float(amount), "method": method}
+    if args.get("reference_number"):
+        body["reference_number"] = args["reference_number"]
+    if args.get("notes"):
+        body["notes"] = args["notes"]
+
+    res = await ctx.client.post(_claims(ctx, f"/{claim['id']}/payout"), json=body)
+    res.raise_for_status()
+    payout = res.json()
+
+    refreshed = await ctx.client.get(_claims(ctx, f"/{claim['id']}"))
+    refreshed.raise_for_status()
+    updated = refreshed.json()
+
+    return {
+        "success": True,
+        "message": (
+            f"Disbursed **PKR {float(amount):,.0f}** on `{claim.get('claim_number')}` via {method} — "
+            f"reference `{payout.get('reference_number')}`. The claim is now **Settled**."
+        ),
+        "claim": updated,
+        "payout": payout,
+        "last_action": _action("issue_claim_payout", "claim", str(claim.get("id", "")),
+                               _claim_route(claim), f"PKR {float(amount):,.0f} disbursed on {claim.get('claim_number')}"),
+        "quick_actions": _claim_actions(updated),
+    }
+
+
+@handles("refer_claim_to_reinsurance")
+async def _refer_claim_to_reinsurance(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    if claim.get("reinsurance_referral_id"):
+        return {
+            "success": True,
+            "message": f"`{claim.get('claim_number')}` already has a reinsurance recovery referral open.",
+            "claim": claim,
+            "quick_actions": _claim_actions(claim),
+        }
+    res = await ctx.client.post(_claims(ctx, f"/{claim['id']}/reinsurance-refer"))
+    res.raise_for_status()
+    payload = res.json()
+    coverage = float(claim.get("coverage_amount") or 0)
+    ceded = max(0.0, coverage - CLAIM_RETENTION_LIMIT)
+
+    return {
+        "success": True,
+        "message": (
+            f"Opened a facultative recovery referral on `{claim.get('claim_number')}` — "
+            f"sum assured PKR {coverage:,.0f}, retained PKR {min(coverage, CLAIM_RETENTION_LIMIT):,.0f}, "
+            f"ceded PKR {ceded:,.0f}. The claim is now **Reinsurance Referred**."
+        ),
+        "claim": {**claim, "status": "Reinsurance Referred", "reinsurance_referral_id": payload.get("reinsurance_referral_id")},
+        "last_action": _action("refer_claim_to_reinsurance", "claim", str(claim.get("id", "")),
+                               _claim_route(claim), f"{claim.get('claim_number')} referred to reinsurance"),
+        "quick_actions": [
+            {"label": "Open Post-Underwriting", "actionType": "navigate", "payload": "post-underwriting"},
+            {"label": "Open claim file", "actionType": "navigate", "payload": _claim_route(claim)},
+            {"label": "Show claims summary", "actionType": "submit", "payload": "Show the claims dashboard"},
+        ],
+    }
+
+
+def _suggested_referral_reasons(claim: dict) -> list[str]:
+    """The reasons that actually apply to THIS claim, so the chips are a real
+    recommendation rather than the full menu every time."""
+    reasons: list[str] = []
+    if claim.get("is_contestable"):
+        reasons.append(CLAIM_REFERRAL_REASONS[0])
+        if _claim_doc_count(claim):
+            reasons.append(CLAIM_REFERRAL_REASONS[1])
+    amount = float(claim.get("submitted_amount") or 0)
+    if amount > CLAIM_MANAGER_THRESHOLD:
+        reasons.append(CLAIM_REFERRAL_REASONS[2])
+    if amount > CLAIM_RETENTION_LIMIT or claim.get("reinsurance_referral_id"):
+        reasons.append(CLAIM_REFERRAL_REASONS[3])
+    return reasons or [CLAIM_REFERRAL_REASONS[0]]
+
+
+@handles("refer_claim_to_underwriting")
+async def _refer_claim_to_underwriting(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    reason = (args.get("referral_reason") or "").strip()
+    if not reason:
+        suggested = _suggested_referral_reasons(claim)
+        return {
+            "success": False,
+            "error": (
+                f"Why is `{claim.get('claim_number')}` going back to underwriting? "
+                "Based on the file, these apply:"
+            ),
+            "quick_actions": [
+                {"label": r.split(" (")[0], "actionType": "submit",
+                 "payload": f"Refer claim {_claim_ref(claim)} to underwriting for {r}"}
+                for r in suggested[:3]
+            ] + [
+                {"label": "All applicable reasons", "actionType": "submit",
+                 "payload": f"Refer claim {_claim_ref(claim)} to underwriting for {'; '.join(suggested)}"},
+            ],
+        }
+
+    body: dict[str, Any] = {"referral_reason": reason}
+    if args.get("notes"):
+        body["notes"] = args["notes"]
+    res = await ctx.client.post(_claims(ctx, f"/{claim['id']}/re-underwrite"), json=body)
+    res.raise_for_status()
+    updated = {**claim, **res.json()}
+
+    return {
+        "success": True,
+        "message": (
+            f"`{claim.get('claim_number')}` referred to underwriting — **Re-Underwriting Required**.\n"
+            f"Trigger: {reason}\n\nUnderwriting now decides whether the risk stands as written."
+        ),
+        "claim": updated,
+        "last_action": _action("refer_claim_to_underwriting", "claim", str(claim.get("id", "")),
+                               _claim_route(claim), f"{claim.get('claim_number')} referred to underwriting"),
+        "quick_actions": _claim_actions(updated),
+    }
+
+
+_UW_RESOLUTION_LABELS = {
+    "APPROVE_CONTINUE": "the risk stands as written — claim returns to investigation",
+    "APPROVE_WITH_EXCLUSION": "approved with a condition-exclusion rider attached",
+    "APPROVE_WITH_LOADING": "approved with an extra-mortality loading applied",
+    "DECLINE_NON_DISCLOSURE": "**declined for material non-disclosure**",
+}
+
+_UW_DEFAULT_NOTES = {
+    "APPROVE_CONTINUE": "Technical re-underwriting audit found no material non-disclosure; original terms stand and the claim returns to investigation.",
+    "APPROVE_WITH_EXCLUSION": "Re-underwriting confirms an undisclosed condition; current claim admitted and a specific-condition exclusion rider is endorsed onto the policy.",
+    "APPROVE_WITH_LOADING": "Re-underwriting establishes a higher risk class than originally rated; claim admitted with a retrospective extra-mortality loading applied.",
+    "DECLINE_NON_DISCLOSURE": "Re-underwriting establishes material non-disclosure at proposal stage within the contestability window; the claim is declined and the contract voided ab initio.",
+}
+
+
+@handles("resolve_claim_underwriting")
+async def _resolve_claim_underwriting(args: dict, ctx: Ctx) -> dict:
+    claim = await _resolve_claim(args, ctx)
+    if _claim_status(claim) != "Re-Underwriting Required":
+        return {
+            "success": False,
+            "error": (
+                f"`{claim.get('claim_number')}` is **{_claim_status(claim)}** — there is no open "
+                "re-underwriting referral to resolve."
+            ),
+            "quick_actions": _claim_actions(claim),
+        }
+
+    decision = (args.get("decision") or "").strip().upper()
+    if decision not in _UW_RESOLUTION_LABELS:
+        return {
+            "success": False,
+            "error": f"What is underwriting's verdict on `{claim.get('claim_number')}`?",
+            "quick_actions": _claim_actions(claim),
+        }
+
+    notes = (args.get("decision_notes") or "").strip() or _UW_DEFAULT_NOTES[decision]
+    res = await ctx.client.post(
+        _claims(ctx, f"/{claim['id']}/resolve-underwriting"),
+        json={"decision": decision, "decision_notes": notes},
+    )
+    res.raise_for_status()
+    updated = {**claim, **res.json()}
+
+    return {
+        "success": True,
+        "message": (
+            f"Underwriting resolved `{claim.get('claim_number')}` — {_UW_RESOLUTION_LABELS[decision]}.\n"
+            f"> {notes}\n\n" + _claim_summary(updated)
+        ),
+        "claim": updated,
+        "last_action": _action("resolve_claim_underwriting", "claim", str(claim.get("id", "")),
+                               _claim_route(claim), f"{claim.get('claim_number')} underwriting resolved"),
+        "quick_actions": _claim_actions(updated),
+    }
+
+
+@handles("upload_claim_document")
+async def _upload_claim_document(args: dict, ctx: Ctx) -> dict:
+    """Resolve the claim server-side, then hand the actual upload to the
+    browser — it is the only place holding the File object."""
+    claim = await _resolve_claim(args, ctx)
+    return {
+        "__client_execute__": True,
+        "kind": "client_execute",
+        "tool_call": {
+            "name": "upload_claim_document",
+            "args": {
+                "claim_id": str(claim.get("id") or ""),
+                "claim_number": claim.get("claim_number") or "",
+                "document_type": args.get("document_type") or "Hospital Bill",
+            },
+        },
+    }
