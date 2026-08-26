@@ -85,6 +85,19 @@ def _claim_dict(claim: Claim, policy: Optional[Policy] = None, customer: Optiona
             if days_since <= 730:  # 2-year contestability window
                 is_contestable_calc = True
 
+    c_name = getattr(claim, "claimant_name", None) or (customer.name if customer else "Unknown")
+    c_type = getattr(claim, "claimant_type", "SELF") or "SELF"
+    c_cnic = getattr(claim, "claimant_cnic", None) or (customer.cnic if customer else None)
+    c_rel = getattr(claim, "claimant_relationship", "Self") or "Self"
+    c_phone = getattr(claim, "claimant_phone", None)
+    nom_name = policy.nominee_name if policy else None
+    nom_rel = policy.nominee_relationship if policy else None
+    
+    # Check if nominee matches claimant for beneficiary claims
+    nom_match = True
+    if nom_name and c_name and c_type in ("NOMINEE_BENEFICIARY", "LEGAL_HEIR"):
+        nom_match = nom_name.strip().lower() in c_name.strip().lower() or c_name.strip().lower() in nom_name.strip().lower()
+
     return {
         "id": str(claim.id),
         "tenant_id": str(claim.tenant_id),
@@ -114,8 +127,16 @@ def _claim_dict(claim: Claim, policy: Optional[Policy] = None, customer: Optiona
         "policy_number": policy.policy_number if policy else None,
         "policy_type": policy.product_name if policy else None,
         "coverage_amount": policy.coverage_amount if policy else 0.0,
-        "claimant_name": customer.name if customer else "Unknown",
         "customer_id": str(customer.id) if customer else None,
+        "customer_name": customer.name if customer else "Unknown",
+        "claimant_type": c_type,
+        "claimant_name": c_name,
+        "claimant_cnic": c_cnic,
+        "claimant_relationship": c_rel,
+        "claimant_phone": c_phone,
+        "nominee_name": nom_name,
+        "nominee_relationship": nom_rel,
+        "nominee_match": nom_match,
         "artifacts_count": artifacts_count,
     }
 
@@ -124,10 +145,15 @@ def _claim_dict(claim: Claim, policy: Optional[Policy] = None, customer: Optiona
 
 class ClaimCreate(BaseModel):
     policy_id: UUID
-    claim_type: str  # Hospitalization, Surgery, Death Claim, Reimbursement
+    claim_type: str  # Hospitalization, Surgery, Death Claim, Reimbursement, etc.
     submitted_amount: float = PydanticField(gt=0)
     incident_date: Optional[date] = None
     notes: Optional[str] = None
+    claimant_type: Optional[str] = "SELF"
+    claimant_name: Optional[str] = None
+    claimant_cnic: Optional[str] = None
+    claimant_relationship: Optional[str] = None
+    claimant_phone: Optional[str] = None
 
 
 class ClaimStatusUpdate(BaseModel):
@@ -203,6 +229,10 @@ async def create_claim(
     session.add(case)
     await session.flush()
 
+    c_name = body.claimant_name if body.claimant_name and body.claimant_name.strip() else (customer.name if customer else "Unknown")
+    c_type = body.claimant_type if body.claimant_type else ("NOMINEE_BENEFICIARY" if body.claim_type == "Death Claim" else "SELF")
+    c_rel = body.claimant_relationship if body.claimant_relationship else ("Nominee" if c_type == "NOMINEE_BENEFICIARY" else "Self")
+
     claim = Claim(
         tenant_id=tenant_id,
         policy_id=policy.id,
@@ -218,6 +248,11 @@ async def create_claim(
         incident_date=body.incident_date or date.today(),
         reported_date=date.today(),
         assigned_adjuster_id=current_user.id,
+        claimant_type=c_type,
+        claimant_name=c_name,
+        claimant_cnic=body.claimant_cnic,
+        claimant_relationship=c_rel,
+        claimant_phone=body.claimant_phone,
     )
     session.add(claim)
     await session.flush()

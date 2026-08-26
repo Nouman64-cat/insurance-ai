@@ -3,7 +3,87 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { listClaims, createClaim, Claim, CreateClaimRequest } from "@/app/services/claims";
-import { listPolicies, PolicyListItem } from "@/app/services/policies";
+import { listPolicies, getPolicyDetail, PolicyListItem, PolicyDetail } from "@/app/services/policies";
+import { formatCnic } from "@/lib/cnic";
+
+function getEligibleClaimTypes(policy?: PolicyListItem): string[] {
+  if (!policy) {
+    return ["Hospitalization", "Surgery", "Death Claim", "OPD Reimbursement"];
+  }
+
+  const pType = (policy.insurance_type || "").toUpperCase();
+  const pName = (policy.product_name || "").toLowerCase();
+
+  if (
+    pType.includes("LIFE") ||
+    pType.includes("ENDOWMENT") ||
+    pType.includes("SAVINGS") ||
+    pType.includes("SINGLE_PREMIUM") ||
+    pName.includes("life") ||
+    pName.includes("term") ||
+    pName.includes("endowment")
+  ) {
+    return [
+      "Death Claim",
+      "Accidental Death Benefit",
+      "Total & Permanent Disability (TPD)",
+      "Terminal Illness Benefit",
+      "Maturity Claim",
+    ];
+  }
+
+  if (
+    pType.includes("HEALTH") ||
+    pType.includes("FLOATER") ||
+    pName.includes("health") ||
+    pName.includes("floater") ||
+    pName.includes("medical") ||
+    pName.includes("care")
+  ) {
+    return [
+      "Hospitalization",
+      "Surgery",
+      "OPD Reimbursement",
+      "Maternity Benefit",
+      "Critical Illness Benefit",
+    ];
+  }
+
+  if (
+    pName.includes("salary") ||
+    pName.includes("income") ||
+    pName.includes("disability") ||
+    pName.includes("protection")
+  ) {
+    return [
+      "Total Permanent Disability (TPD)",
+      "Temporary Total Disability / Salary Protection",
+      "Critical Illness Lump Sum",
+      "Death Claim",
+    ];
+  }
+
+  if (
+    pType.includes("CHILD") ||
+    pName.includes("education") ||
+    pName.includes("child") ||
+    pName.includes("marriage")
+  ) {
+    return [
+      "Payer Death / Premium Waiver Claim",
+      "Education Benefit Drawdown",
+      "Milestone Maturity Benefit",
+    ];
+  }
+
+  return [
+    "Hospitalization",
+    "Surgery",
+    "Death Claim",
+    "OPD Reimbursement",
+    "Total & Permanent Disability (TPD)",
+  ];
+}
 
 const STATUS_STYLE: Record<string, string> = {
   "New": "bg-slate-100 text-slate-700",
@@ -45,6 +125,7 @@ export default function ClaimsPage() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [riskFilter, setRiskFilter] = useState("ALL");
@@ -70,6 +151,39 @@ export default function ClaimsPage() {
     incident_date: new Date().toISOString().split("T")[0],
     notes: "",
   });
+
+  const [selectedPolicyDetail, setSelectedPolicyDetail] = useState<PolicyDetail | null>(null);
+  const [claimantType, setClaimantType] = useState<"SELF" | "NOMINEE_BENEFICIARY" | "LEGAL_HEIR" | "GUARDIAN">("SELF");
+  const [claimantName, setClaimantName] = useState("");
+  const [claimantCnic, setClaimantCnic] = useState("");
+  const [claimantRelationship, setClaimantRelationship] = useState("Spouse");
+  const [claimantPhone, setClaimantPhone] = useState("");
+
+  const selectPolicy = async (p: PolicyListItem) => {
+    const options = getEligibleClaimTypes(p);
+    const nextClaimType = options.includes(form.claim_type) ? form.claim_type : options[0];
+    setForm({ ...form, policy_id: p.id, claim_type: nextClaimType });
+    setPolicyDropdownOpen(false);
+
+    if (nextClaimType.includes("Death")) {
+      setClaimantType("NOMINEE_BENEFICIARY");
+    } else {
+      setClaimantType("SELF");
+    }
+
+    try {
+      const detail = await getPolicyDetail(p.id);
+      setSelectedPolicyDetail(detail);
+      if (detail.nominee_name) {
+        if (nextClaimType.includes("Death") || claimantType === "NOMINEE_BENEFICIARY") {
+          setClaimantName(detail.nominee_name);
+          setClaimantRelationship(detail.nominee_relationship || "Spouse");
+        }
+      }
+    } catch {
+      setSelectedPolicyDetail(null);
+    }
+  };
 
   useEffect(() => {
     if (!policyDropdownOpen) return;
@@ -178,18 +292,48 @@ export default function ClaimsPage() {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.policy_id) { setErrorMsg("Please select an active policy."); return; }
+
+    const selectedP = policies.find(p => p.id === form.policy_id);
+    if (claimantType !== "SELF" && !claimantName.trim()) {
+      setErrorMsg("Claimant / Beneficiary Name is required for Death or Representative claims.");
+      return;
+    }
+
     setSubmitting(true); setErrorMsg("");
     try {
-      await createClaim(form);
+      const finalClaimantName = claimantType === "SELF"
+        ? (selectedP?.customer_name || "Self")
+        : claimantName.trim();
+
+      const created = await createClaim({
+        ...form,
+        claimant_type: claimantType,
+        claimant_name: finalClaimantName,
+        claimant_cnic: claimantCnic.trim() || undefined,
+        claimant_relationship: claimantType === "SELF" ? "Self" : claimantRelationship,
+        claimant_phone: claimantPhone.trim() || undefined,
+      });
+
+      if (created?.id) {
+        setHighlightId(created.id);
+        setTimeout(() => {
+          setHighlightId(null);
+        }, 2500);
+      }
+
       setShowModal(false); setStep(1);
       setForm({ policy_id: "", claim_type: "Hospitalization", submitted_amount: 50000, incident_date: new Date().toISOString().split("T")[0], notes: "" });
+      setClaimantType("SELF"); setClaimantName(""); setClaimantCnic(""); setClaimantRelationship("Spouse"); setClaimantPhone(""); setSelectedPolicyDetail(null);
       fetchData();
     } catch (err: any) {
       setErrorMsg(err.response?.data?.detail || "Failed to submit claim FNOL.");
     } finally { setSubmitting(false); }
   };
 
-  const openModal = () => { setShowModal(true); setStep(1); setErrorMsg(""); };
+  const openModal = () => {
+    setShowModal(true); setStep(1); setErrorMsg("");
+    setSelectedPolicyDetail(null); setClaimantType("SELF"); setClaimantName(""); setClaimantCnic(""); setClaimantRelationship("Spouse"); setClaimantPhone("");
+  };
 
   // KPIs
   const total = claims.length;
@@ -227,7 +371,7 @@ export default function ClaimsPage() {
 
           <button
             onClick={openModal}
-            className="text-xs font-semibold px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
+            className="text-xs font-semibold px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-xs transition-colors flex items-center gap-1.5"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -345,8 +489,8 @@ export default function ClaimsPage() {
                 type="button"
                 onClick={() => setShowAdvancedDate(!showAdvancedDate)}
                 className={`h-9 text-xs px-3 rounded-lg border transition-all flex items-center gap-1.5 font-medium cursor-pointer shadow-2xs ${showAdvancedDate || startDate || endDate
-                    ? "border-slate-900 bg-slate-900 text-white"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
                   }`}
               >
                 <svg className="w-3.5 h-3.5 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -360,7 +504,7 @@ export default function ClaimsPage() {
 
               <button
                 onClick={fetchData}
-                className="h-9 text-xs font-semibold px-4 bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                className="h-9 text-xs font-semibold px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
               >
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -493,7 +637,8 @@ export default function ClaimsPage() {
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
               <tr>
                 <th className="px-5 py-3 font-semibold">Claim Ref</th>
-                <th className="px-5 py-3 font-semibold">Claimant</th>
+                <th className="px-5 py-3 font-semibold">Policyholder</th>
+                <th className="px-5 py-3 font-semibold text-center">Claimant</th>
                 <th className="px-5 py-3 font-semibold">Policy #</th>
                 <th className="px-5 py-3 font-semibold">Type</th>
                 <th className="px-5 py-3 font-semibold">Incident Date</th>
@@ -507,23 +652,51 @@ export default function ClaimsPage() {
             <tbody className="divide-y divide-slate-50">
               {loading ? (
                 <tr>
-                  <td colSpan={10} className="px-5 py-8 text-center text-slate-400 text-xs">
+                  <td colSpan={11} className="px-5 py-8 text-center text-slate-400 text-xs">
                     Loading claims register...
                   </td>
                 </tr>
               ) : claims.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-5 py-8 text-center text-slate-400 text-xs">
+                  <td colSpan={11} className="px-5 py-8 text-center text-slate-400 text-xs">
                     No claims found matching applied filters.
                   </td>
                 </tr>
               ) : (
                 claims.map(c => (
-                  <tr key={c.id} className="hover:bg-slate-50/50 transition-colors">
+                  <tr
+                    key={c.id}
+                    className={`transition-colors duration-1000 ${highlightId === c.id || highlightId === c.claim_number
+                        ? "bg-blue-100/90 font-semibold text-blue-950 shadow-inner"
+                        : "hover:bg-slate-50/50"
+                      }`}
+                  >
                     <td className="px-5 py-3">
                       <div className="font-medium text-slate-900">{c.claim_number}</div>
                     </td>
-                    <td className="px-5 py-3 text-xs font-medium text-slate-800">{c.claimant_name}</td>
+                    <td className="px-5 py-3">
+                      <div className="font-bold text-slate-900">{c.customer_name || "—"}</div>
+                    </td>
+                    <td className="px-5 py-3 text-center">
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        {c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name ? (
+                          <>
+                            <span className="text-xs font-medium text-slate-800">
+                              {c.claimant_name}
+                            </span>
+                            {c.claimant_relationship && (
+                              <span className="text-[9.5px] font-bold text-slate-500 bg-slate-100 border border-slate-200/50 px-1.5 py-0.5 rounded tracking-wide uppercase">
+                                {c.claimant_relationship}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="text-xs text-slate-400">
+                            Self
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-5 py-3 text-xs font-mono text-slate-500">{c.policy_number ?? "—"}</td>
                     <td className="px-5 py-3 text-xs text-slate-600">{c.claim_type}</td>
                     <td className="px-5 py-3 text-xs text-slate-600 font-mono">{c.incident_date ?? "—"}</td>
@@ -542,9 +715,12 @@ export default function ClaimsPage() {
                     <td className="px-5 py-3 text-center">
                       <Link
                         href={`/claims/${c.id}`}
-                        className="text-xs font-semibold text-slate-700 hover:text-slate-900 underline"
+                        className="text-[11.5px] font-bold text-blue-600 hover:text-blue-800 underline flex items-center justify-center gap-1"
                       >
-                        Workbench
+                        Review
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
                       </Link>
                     </td>
                   </tr>
@@ -557,122 +733,105 @@ export default function ClaimsPage() {
 
       {/* Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-lg relative">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-xl">
-              <h3 className="text-sm font-bold text-slate-900">File First Notice of Loss (FNOL)</h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">&times;</button>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col relative my-auto">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/90 rounded-t-2xl shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">File First Notice of Loss (FNOL)</h3>
+                <p className="text-[11px] text-slate-500">Step {step} of 2 — {step === 1 ? "Select Policy" : "Claim & Beneficiary Details"}</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
             </div>
 
-            <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {errorMsg && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs">
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">
                   {errorMsg}
                 </div>
               )}
 
               {step === 1 && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="block font-semibold text-slate-700">Select Policy</label>
-
-                    {/* Custom Searchable Dropdown */}
-                    <div ref={policyDropdownRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setPolicyDropdownOpen(!policyDropdownOpen)}
-                        className={`w-full text-xs px-3 py-2.5 rounded-lg border bg-white flex items-center justify-between transition-all focus:outline-hidden ${
-                          policyDropdownOpen ? "border-blue-400 ring-2 ring-blue-500/20 shadow-sm" : "border-slate-200 hover:border-slate-300 shadow-2xs"
-                        }`}
-                      >
-                        <span className={selectedPolicy ? "font-semibold text-slate-800" : "text-slate-500 font-normal"}>
-                          {selectedPolicy
-                            ? `${selectedPolicy.policy_number ?? selectedPolicy.id.slice(0, 8)} - ${selectedPolicy.customer_name} (${selectedPolicy.product_name})`
-                            : `-- Choose Policy (${policies.length} available) --`}
-                        </span>
-                        <svg
-                          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${policyDropdownOpen ? "rotate-180 text-blue-600" : ""}`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                      </button>
-
-                      {/* Dropdown Options Popup */}
-                      {policyDropdownOpen && (
-                        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in duration-150">
-                          {/* Search Bar Pinned Inside Dropdown Menu */}
-                          <div className="p-2 border-b border-slate-100 bg-slate-50/90">
-                            <div className="relative">
-                              <input
-                                type="text"
-                                autoFocus
-                                placeholder="Type policy #, customer name, or product..."
-                                value={policySearch}
-                                onChange={(e) => setPolicySearch(e.target.value)}
-                                className="w-full text-xs px-3 py-1.5 pl-8 pr-7 rounded-md border border-slate-200 focus:outline-hidden focus:border-blue-400 focus:bg-white bg-white text-slate-800 placeholder-slate-400"
-                              />
-                              <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                              </svg>
-                              {policySearch && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPolicySearch("")}
-                                  className="absolute right-2 top-1 text-slate-400 hover:text-slate-600 text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-200"
-                                >
-                                  &times;
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Scrollable Policy List */}
-                          <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-                            {filteredPolicies.length === 0 ? (
-                              <div className="p-4 text-center text-slate-400 text-xs font-medium">
-                                No policies found matching &quot;{policySearch}&quot;
-                              </div>
-                            ) : (
-                              filteredPolicies.map((p) => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setForm({ ...form, policy_id: p.id });
-                                    setPolicyDropdownOpen(false);
-                                  }}
-                                  className={`w-full text-left px-3.5 py-2 text-xs transition-colors flex items-center justify-between ${
-                                    form.policy_id === p.id ? "bg-blue-50/80 text-blue-700 font-semibold" : "hover:bg-slate-50 text-slate-700"
-                                  }`}
-                                >
-                                  <div className="flex flex-col min-w-0 pr-2">
-                                    <span className="font-semibold text-slate-800 truncate">
-                                      {p.policy_number ?? p.id.slice(0, 8)} - {p.customer_name}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 truncate">
-                                      {p.product_name}
-                                    </span>
-                                  </div>
-                                  {form.policy_id === p.id && (
-                                    <svg className="w-4 h-4 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <polyline points="20 6 9 17 4 12" />
-                                    </svg>
-                                  )}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Select Policy ({policies.length} Available)
+                    </label>
+                    {selectedPolicy && (
+                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80">
+                        Selected: {selectedPolicy.customer_name}
+                      </span>
+                    )}
                   </div>
 
-                  {selectedPolicy && (
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
-                      <span className="font-semibold">Selected:</span> {selectedPolicy.customer_name} ({selectedPolicy.product_name})
+                  {/* Direct Search Bar Pinned at Top of Modal */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Type customer name, policy #, or product to filter..."
+                      value={policySearch}
+                      onChange={(e) => setPolicySearch(e.target.value)}
+                      className="w-full text-xs px-3.5 py-2.5 pl-9 pr-8 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 bg-white font-medium text-slate-800 placeholder-slate-400 shadow-2xs"
+                    />
+                    <svg className="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {policySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setPolicySearch("")}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-100"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Scrollable Policy List positioned higher up — displays 6-8 records at first glance */}
+                  <div className="max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200/90 rounded-xl bg-white shadow-2xs">
+                    {filteredPolicies.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 text-xs font-medium">
+                        No policies found matching &quot;{policySearch}&quot;
+                      </div>
+                    ) : (
+                      filteredPolicies.map((p) => {
+                        const isSelected = form.policy_id === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => selectPolicy(p)}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center justify-between ${isSelected ? "bg-blue-50/90 text-blue-800 font-semibold" : "hover:bg-slate-50 text-slate-700"
+                              }`}
+                          >
+                            <div className="flex flex-col min-w-0 pr-2 space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900">{p.customer_name}</span>
+                                <span className="font-mono text-slate-400 text-[11px]">({p.policy_number ?? p.id.slice(0, 8)})</span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 truncate">
+                                {p.product_name} • {p.insurance_type || "Standard"} • PKR {(p.coverage_amount || 0).toLocaleString()}
+                              </span>
+                            </div>
+                            {isSelected ? (
+                              <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-600 text-white shrink-0 shadow-2xs">
+                                Selected ✓
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 font-medium shrink-0">
+                                Select &rarr;
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+
+                  {selectedPolicyDetail?.nominee_name && (
+                    <div className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-lg text-[11px] text-slate-600 flex items-center justify-between">
+                      <span className="font-medium">Nominee on file: <strong className="text-slate-800">{selectedPolicyDetail.nominee_name}</strong> ({selectedPolicyDetail.nominee_relationship || "Nominee"})</span>
+                      <span className="text-slate-400 text-[10px]">Auto-populates in Step 2</span>
                     </div>
                   )}
 
@@ -680,7 +839,7 @@ export default function ClaimsPage() {
                     <button
                       type="button"
                       onClick={() => setShowModal(false)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium"
+                      className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                     >
                       Cancel
                     </button>
@@ -690,84 +849,269 @@ export default function ClaimsPage() {
                         if (!form.policy_id) { setErrorMsg("Please select a policy first."); return; }
                         setErrorMsg(""); setStep(2);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800"
+                      className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
                     >
-                      Next Step
+                      Next Step &rarr;
                     </button>
                   </div>
                 </div>
               )}
 
-              {step === 2 && (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Claim Type</label>
-                      <select
-                        value={form.claim_type}
-                        onChange={e => setForm({ ...form, claim_type: e.target.value })}
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white"
+              {step === 2 && (() => {
+                const eligibleClaimTypes = getEligibleClaimTypes(selectedPolicy);
+                const isDeathClaim = form.claim_type.includes("Death");
+
+                return (
+                  <div className="space-y-4 animate-in fade-in zoom-in-95 duration-200">
+                    {/* Distinct Policy Banner */}
+                    <div className="p-4 bg-gradient-to-r from-blue-100/70 to-blue-50/40 border border-blue-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-sm relative overflow-hidden">
+                      <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+
+                      <div className="space-y-1.5 min-w-0 pl-2">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="font-extrabold text-blue-950 text-[14px] tracking-tight drop-shadow-xs">{selectedPolicy?.customer_name}</span>
+                          <span className="px-2.5 py-0.5 rounded-full bg-white border border-blue-200 text-blue-800 font-bold shadow-xs">
+                            {selectedPolicy?.product_name}
+                          </span>
+                          <span className="font-bold text-blue-800 uppercase tracking-widest text-[10px] bg-blue-100/80 px-2 py-0.5 rounded">
+                            {selectedPolicy?.insurance_type.replace("_", " ")}
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-blue-900/80 font-medium">
+                          <span>Policy #: <strong className="text-blue-950 font-mono tracking-wide">{selectedPolicy?.policy_number}</strong></span>
+                          <span className="hidden sm:inline text-blue-300 font-bold">•</span>
+                          <span>Coverage Limit: <strong className="text-blue-950 font-bold">PKR {selectedPolicy?.coverage_amount.toLocaleString()}</strong></span>
+                        </div>
+                      </div>
+
+                      <div className="shrink-0 relative z-10 pl-2">
+                        <span className="flex items-center gap-1.5 bg-emerald-500 text-white px-3.5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider shadow-xs shadow-emerald-500/20">
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                          </svg>
+                          Verified
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Claim Type & Amount Grid */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Eligible Claim Type <span className="text-slate-400 font-normal">({eligibleClaimTypes.length} available)</span>
+                        </label>
+                        <select
+                          value={form.claim_type}
+                          onChange={e => {
+                            const newType = e.target.value;
+                            setForm({ ...form, claim_type: newType });
+                            if (newType.includes("Death")) {
+                              setClaimantType("NOMINEE_BENEFICIARY");
+                              if (selectedPolicyDetail?.nominee_name && !claimantName) {
+                                setClaimantName(selectedPolicyDetail.nominee_name);
+                                setClaimantRelationship(selectedPolicyDetail.nominee_relationship || "Spouse");
+                              }
+                            } else {
+                              setClaimantType("SELF");
+                            }
+                          }}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white font-semibold text-slate-800"
+                        >
+                          {eligibleClaimTypes.map(opt => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Claim Amount (PKR)
+                        </label>
+                        <input
+                          type="number"
+                          required
+                          min="1"
+                          max={selectedPolicy?.coverage_amount}
+                          value={form.submitted_amount || ""}
+                          onChange={e => setForm({ ...form, submitted_amount: parseInt(e.target.value) || 0 })}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 font-medium"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Claimant & Beneficiary Intake Box */}
+                    <div className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-xl space-y-3">
+                      {/* <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          Claimant & Beneficiary Intake
+                        </label>
+                        {isDeathClaim && (
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-200">
+                            DEATH CLAIM MANDATE
+                          </span>
+                        )}
+                      </div> */}
+
+                      {/* Claimant Role Selection */}
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <button
+                          type="button"
+                          disabled={isDeathClaim}
+                          onClick={() => setClaimantType("SELF")}
+                          className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all ${claimantType === "SELF"
+                              ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold shadow-xs"
+                              : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
+                            } ${isDeathClaim ? "opacity-40 cursor-not-allowed bg-slate-100/50" : ""}`}
+                        >
+                          <span>Self (Policyholder)</span>
+                          {claimantType === "SELF" && <span className="text-blue-600 font-bold text-xs">✓</span>}
+                        </button>
+
+                        <button
+                          type="button"
+                          disabled={!isDeathClaim}
+                          onClick={() => {
+                            setClaimantType("NOMINEE_BENEFICIARY");
+                            if (selectedPolicyDetail?.nominee_name && !claimantName) {
+                              setClaimantName(selectedPolicyDetail.nominee_name);
+                              setClaimantRelationship(selectedPolicyDetail.nominee_relationship || "Spouse");
+                            }
+                          }}
+                          className={`p-2 rounded-lg border text-left flex items-center justify-between transition-all ${claimantType !== "SELF"
+                              ? "bg-blue-50 border-blue-300 text-blue-900 font-semibold shadow-xs"
+                              : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
+                            } ${!isDeathClaim ? "opacity-40 cursor-not-allowed bg-slate-100/50" : ""}`}
+                        >
+                          <span>Nominee / Beneficiary / Heir</span>
+                          {claimantType !== "SELF" && <span className="text-blue-600 font-bold text-xs">✓</span>}
+                        </button>
+                      </div>
+
+                      {/* Beneficiary Inputs if Filing as Nominee/Representative */}
+                      {claimantType !== "SELF" && (
+                        <div className="p-3.5 bg-white border border-slate-200 shadow-2xs rounded-lg space-y-3 mt-2 animate-in fade-in slide-in-from-top-2 duration-300">
+                          {selectedPolicyDetail?.nominee_name && (
+                            <div className="flex items-center justify-between p-2 bg-white border border-slate-200 rounded-lg text-xs">
+                              <div>
+                                <span className="text-slate-400 text-[10px] uppercase font-bold">Policy Recorded Nominee:</span>
+                                <div className="font-semibold text-slate-900">{selectedPolicyDetail.nominee_name} ({selectedPolicyDetail.nominee_relationship || "Nominee"})</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setClaimantName(selectedPolicyDetail.nominee_name || "");
+                                  setClaimantRelationship(selectedPolicyDetail.nominee_relationship || "Spouse");
+                                }}
+                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-semibold rounded"
+                              >
+                                Pre-fill
+                              </button>
+                            </div>
+                          )}
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Claimant Full Name *</label>
+                              <input
+                                type="text"
+                                required
+                                placeholder="e.g. Fatima Ahmed"
+                                value={claimantName}
+                                onChange={e => setClaimantName(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Relationship to Insured</label>
+                              <select
+                                value={claimantRelationship}
+                                onChange={e => setClaimantRelationship(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white"
+                              >
+                                <option value="Spouse">Spouse</option>
+                                <option value="Child">Child</option>
+                                <option value="Parent">Parent</option>
+                                <option value="Legal Heir">Legal Heir</option>
+                                <option value="Executor">Executor / Legal Representative</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Claimant CNIC / Govt ID</label>
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                maxLength={15}
+                                placeholder="42101-1234567-1"
+                                value={claimantCnic}
+                                onChange={e => setClaimantCnic(formatCnic(e.target.value))}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200 font-mono"
+                              />
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-700 mb-0.5">Claimant Phone Number</label>
+                              <input
+                                type="text"
+                                placeholder="+92 300 XXXXXXX"
+                                value={claimantPhone}
+                                onChange={e => setClaimantPhone(e.target.value)}
+                                className="w-full text-xs px-2.5 py-1.5 rounded-lg border border-slate-200"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Incident Date & Description */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">Incident Date</label>
+                        <input
+                          type="date"
+                          value={form.incident_date}
+                          onChange={e => setForm({ ...form, incident_date: e.target.value })}
+                          className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block font-semibold text-slate-700 mb-1">
+                          Description / Intake Notes <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder="Describe the claim event (optional)..."
+                          value={form.notes}
+                          onChange={e => setForm({ ...form, notes: e.target.value })}
+                          className="w-full text-xs p-2 rounded-lg border border-slate-200"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
+                        className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium"
                       >
-                        <option value="Hospitalization">Hospitalization</option>
-                        <option value="Surgery">Surgery</option>
-                        <option value="Death Claim">Death Claim</option>
-                        <option value="Reimbursement">Reimbursement</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Submitted Amount (PKR)</label>
-                      <input
-                        type="number"
-                        min="1000"
-                        step="1000"
-                        required
-                        value={form.submitted_amount}
-                        onChange={e => setForm({ ...form, submitted_amount: parseFloat(e.target.value) || 0 })}
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200"
-                      />
+                        Back
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {submitting ? "Submitting FNOL..." : "Submit Claim FNOL"}
+                      </button>
                     </div>
                   </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Incident Date</label>
-                    <input
-                      type="date"
-                      value={form.incident_date}
-                      onChange={e => setForm({ ...form, incident_date: e.target.value })}
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Description / Notes</label>
-                    <textarea
-                      rows={3}
-                      placeholder="Describe the claim event..."
-                      value={form.notes}
-                      onChange={e => setForm({ ...form, notes: e.target.value })}
-                      className="w-full text-xs p-2 rounded-lg border border-slate-200"
-                    />
-                  </div>
-
-                  <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setStep(1)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium"
-                    >
-                      Back
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50"
-                    >
-                      {submitting ? "Submitting..." : "Submit Claim"}
-                    </button>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
             </form>
           </div>
         </div>

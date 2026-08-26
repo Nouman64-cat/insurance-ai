@@ -64,6 +64,7 @@ export default function ClaimsDashboardPage() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -127,7 +128,13 @@ export default function ClaimsDashboardPage() {
     setSubmitting(true);
     setErrorMsg("");
     try {
-      await createClaim(form);
+      const created = await createClaim(form);
+      if (created?.id) {
+        setHighlightId(created.id);
+        setTimeout(() => {
+          setHighlightId(null);
+        }, 2500);
+      }
       setShowModal(false);
       setStep(1);
       setForm({
@@ -203,7 +210,7 @@ export default function ClaimsDashboardPage() {
 
           {/* <button
             onClick={() => setShowModal(true)}
-            className="px-4 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold transition-all shadow-xs flex items-center gap-2"
+            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-all shadow-xs flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -410,13 +417,22 @@ export default function ClaimsDashboardPage() {
                 .map((c) => (
                   <div
                     key={c.id}
-                    className="p-3.5 rounded-lg border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs"
+                    className={`p-3.5 rounded-lg border transition-colors duration-1000 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs ${
+                      highlightId === c.id || highlightId === c.claim_number
+                        ? "bg-blue-100/90 border-blue-300 shadow-sm"
+                        : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
+                    }`}
                   >
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-900">{c.claim_number}</span>
                         <span className="text-slate-400">•</span>
-                        <span className="font-semibold text-slate-700">{c.claimant_name}</span>
+                        <span className="font-semibold text-slate-700">
+                          {c.customer_name || c.claimant_name || "—"}
+                          {c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name && (
+                            <span className="text-slate-500 font-normal"> / {c.claimant_name} (Claimant)</span>
+                          )}
+                        </span>
                         <RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} />
                       </div>
                       <div className="text-[11px] text-slate-500 flex items-center gap-3">
@@ -430,9 +446,12 @@ export default function ClaimsDashboardPage() {
                       <StatusBadge status={c.status} />
                       <Link
                         href={`/claims/${c.id}`}
-                        className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-semibold text-[11px] hover:bg-slate-800 transition-colors whitespace-nowrap"
+                        className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold text-[11px] hover:bg-blue-700 transition-colors whitespace-nowrap flex items-center gap-1.5 shadow-xs"
                       >
-                        Workbench &rarr;
+                        Review Claim
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
                       </Link>
                     </div>
                   </div>
@@ -485,132 +504,110 @@ export default function ClaimsDashboardPage() {
         </div>
       </div>
 
-      {/* FNOL Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-lg border border-slate-200 w-full max-w-lg relative">
-            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50 rounded-t-xl">
-              <h3 className="text-sm font-bold text-slate-900">File First Notice of Loss (FNOL)</h3>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg">&times;</button>
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col relative my-auto">
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/90 rounded-t-2xl shrink-0">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">File First Notice of Loss (FNOL)</h3>
+                <p className="text-[11px] text-slate-500">Step {step} of 2 — {step === 1 ? "Select Policy" : "Claim Details"}</p>
+              </div>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">&times;</button>
             </div>
 
-            <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs">
+            <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {errorMsg && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs">
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">
                   {errorMsg}
                 </div>
               )}
 
               {step === 1 && (
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <label className="block font-semibold text-slate-700">Select Policy</label>
-                    
-                    {/* Custom Searchable Dropdown */}
-                    <div ref={policyDropdownRef} className="relative">
-                      <button
-                        type="button"
-                        onClick={() => setPolicyDropdownOpen(!policyDropdownOpen)}
-                        className={`w-full text-xs px-3 py-2.5 rounded-lg border bg-white flex items-center justify-between transition-all focus:outline-hidden ${
-                          policyDropdownOpen ? "border-blue-400 ring-2 ring-blue-500/20 shadow-sm" : "border-slate-200 hover:border-slate-300 shadow-2xs"
-                        }`}
-                      >
-                        <span className={selectedPolicy ? "font-semibold text-slate-800" : "text-slate-500 font-normal"}>
-                          {selectedPolicy
-                            ? `${selectedPolicy.policy_number ?? selectedPolicy.id.slice(0, 8)} - ${selectedPolicy.customer_name} (${selectedPolicy.product_name})`
-                            : `-- Choose Policy (${policies.length} available) --`}
-                        </span>
-                        <svg
-                          className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${policyDropdownOpen ? "rotate-180 text-blue-600" : ""}`}
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <polyline points="6 9 12 15 18 9" />
-                        </svg>
-                      </button>
-
-                      {/* Dropdown Options Popup */}
-                      {policyDropdownOpen && (
-                        <div className="absolute top-full left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden animate-in fade-in duration-150">
-                          {/* Search Bar Pinned Inside Dropdown Menu */}
-                          <div className="p-2 border-b border-slate-100 bg-slate-50/90">
-                            <div className="relative">
-                              <input
-                                type="text"
-                                autoFocus
-                                placeholder="Type policy #, customer name, or product..."
-                                value={policySearch}
-                                onChange={(e) => setPolicySearch(e.target.value)}
-                                className="w-full text-xs px-3 py-1.5 pl-8 pr-7 rounded-md border border-slate-200 focus:outline-hidden focus:border-blue-400 focus:bg-white bg-white text-slate-800 placeholder-slate-400"
-                              />
-                              <svg className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                              </svg>
-                              {policySearch && (
-                                <button
-                                  type="button"
-                                  onClick={() => setPolicySearch("")}
-                                  className="absolute right-2 top-1 text-slate-400 hover:text-slate-600 text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-200"
-                                >
-                                  &times;
-                                </button>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Scrollable Policy List */}
-                          <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
-                            {filteredPolicies.length === 0 ? (
-                              <div className="p-4 text-center text-slate-400 text-xs font-medium">
-                                No policies found matching &quot;{policySearch}&quot;
-                              </div>
-                            ) : (
-                              filteredPolicies.map((p) => (
-                                <button
-                                  key={p.id}
-                                  type="button"
-                                  onClick={() => {
-                                    setForm({ ...form, policy_id: p.id });
-                                    setPolicyDropdownOpen(false);
-                                  }}
-                                  className={`w-full text-left px-3.5 py-2 text-xs transition-colors flex items-center justify-between ${
-                                    form.policy_id === p.id ? "bg-blue-50/80 text-blue-700 font-semibold" : "hover:bg-slate-50 text-slate-700"
-                                  }`}
-                                >
-                                  <div className="flex flex-col min-w-0 pr-2">
-                                    <span className="font-semibold text-slate-800 truncate">
-                                      {p.policy_number ?? p.id.slice(0, 8)} - {p.customer_name}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 truncate">
-                                      {p.product_name}
-                                    </span>
-                                  </div>
-                                  {form.policy_id === p.id && (
-                                    <svg className="w-4 h-4 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <polyline points="20 6 9 17 4 12" />
-                                    </svg>
-                                  )}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-800 uppercase tracking-wider">
+                      Select Policy ({policies.length} Available)
+                    </label>
+                    {selectedPolicy && (
+                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200/80">
+                        Selected: {selectedPolicy.customer_name}
+                      </span>
+                    )}
                   </div>
 
-                  {selectedPolicy && (
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-700">
-                      <span className="font-semibold">Selected:</span> {selectedPolicy.customer_name} ({selectedPolicy.product_name})
-                    </div>
-                  )}
+                  {/* Direct Search Bar Pinned at Top of Modal */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Type customer name, policy #, or product to filter..."
+                      value={policySearch}
+                      onChange={(e) => setPolicySearch(e.target.value)}
+                      className="w-full text-xs px-3.5 py-2.5 pl-9 pr-8 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 bg-white font-medium text-slate-800 placeholder-slate-400 shadow-2xs"
+                    />
+                    <svg className="w-4 h-4 text-slate-400 absolute left-3 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    {policySearch && (
+                      <button
+                        type="button"
+                        onClick={() => setPolicySearch("")}
+                        className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold w-4 h-4 flex items-center justify-center rounded-full hover:bg-slate-100"
+                      >
+                        &times;
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Scrollable Policy List positioned higher up — displays 6-8 records at first glance */}
+                  <div className="max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200/90 rounded-xl bg-white shadow-2xs">
+                    {filteredPolicies.length === 0 ? (
+                      <div className="p-6 text-center text-slate-400 text-xs font-medium">
+                        No policies found matching &quot;{policySearch}&quot;
+                      </div>
+                    ) : (
+                      filteredPolicies.map((p) => {
+                        const isSelected = form.policy_id === p.id;
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setForm({ ...form, policy_id: p.id });
+                            }}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center justify-between ${
+                              isSelected ? "bg-blue-50/90 text-blue-800 font-semibold" : "hover:bg-slate-50 text-slate-700"
+                            }`}
+                          >
+                            <div className="flex flex-col min-w-0 pr-2 space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold text-slate-900">{p.customer_name}</span>
+                                <span className="font-mono text-slate-400 text-[11px]">({p.policy_number ?? p.id.slice(0, 8)})</span>
+                              </div>
+                              <span className="text-[10px] text-slate-500 truncate">
+                                {p.product_name}
+                              </span>
+                            </div>
+                            {isSelected ? (
+                              <span className="px-2.5 py-1 rounded-md text-[10px] font-bold bg-blue-600 text-white shrink-0 shadow-2xs">
+                                Selected ✓
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 font-medium shrink-0">
+                                Select &rarr;
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
 
                   <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
                     <button
                       type="button"
                       onClick={() => setShowModal(false)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium"
+                      className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                     >
                       Cancel
                     </button>
@@ -624,9 +621,9 @@ export default function ClaimsDashboardPage() {
                         setErrorMsg("");
                         setStep(2);
                       }}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800"
+                      className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
                     >
-                      Next Step
+                      Next Step &rarr;
                     </button>
                   </div>
                 </div>
@@ -634,13 +631,46 @@ export default function ClaimsDashboardPage() {
 
               {step === 2 && (
                 <div className="space-y-3">
+                  {/* Distinct Policy Banner */}
+                  <div className="p-4 bg-gradient-to-r from-blue-100/70 to-blue-50/40 border border-blue-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-sm relative overflow-hidden">
+                    <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
+                    
+                    <div className="space-y-1.5 min-w-0 pl-2">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="font-extrabold text-blue-950 text-[14px] tracking-tight drop-shadow-xs">{selectedPolicy?.customer_name}</span>
+                        <span className="font-bold text-blue-800 bg-white px-2.5 py-0.5 rounded-md border border-blue-200/80 shadow-2xs">
+                          {selectedPolicy?.product_name}
+                        </span>
+                        {selectedPolicy?.insurance_type && (
+                          <span className="text-[10px] font-extrabold text-blue-600/80 uppercase tracking-widest">
+                            {selectedPolicy.insurance_type}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11.5px] text-blue-900/80 flex items-center gap-2.5 flex-wrap">
+                        <span>Policy #: <strong className="font-mono font-bold text-blue-950">{selectedPolicy?.policy_number || selectedPolicy?.id.slice(0, 8)}</strong></span>
+                        <span className="text-blue-300">•</span>
+                        <span>Coverage Limit: <strong className="font-bold text-blue-950">PKR {(selectedPolicy?.coverage_amount || 0).toLocaleString()}</strong></span>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0">
+                      <span className="px-3 py-1.5 rounded-lg text-[10px] font-extrabold bg-emerald-500 text-white shadow-xs flex items-center gap-1.5 uppercase tracking-widest">
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                        Verified
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block font-semibold text-slate-700 mb-1">Claim Type</label>
                       <select
                         value={form.claim_type}
                         onChange={(e) => setForm({ ...form, claim_type: e.target.value })}
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white"
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white font-semibold text-slate-800"
                       >
                         <option value="Hospitalization">Hospitalization</option>
                         <option value="Surgery">Surgery</option>
@@ -658,7 +688,7 @@ export default function ClaimsDashboardPage() {
                         required
                         value={form.submitted_amount}
                         onChange={(e) => setForm({ ...form, submitted_amount: parseFloat(e.target.value) || 0 })}
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200"
+                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 font-semibold"
                       />
                     </div>
                   </div>
@@ -674,13 +704,15 @@ export default function ClaimsDashboardPage() {
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Description / Notes</label>
+                    <label className="block font-semibold text-slate-700 mb-1">
+                      Description / Notes <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
+                    </label>
                     <textarea
                       rows={3}
-                      placeholder="Describe the claim event..."
+                      placeholder="Describe the claim event (optional)..."
                       value={form.notes}
                       onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                      className="w-full text-xs p-2 rounded-lg border border-slate-200"
+                      className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white"
                     />
                   </div>
 
@@ -695,7 +727,7 @@ export default function ClaimsDashboardPage() {
                     <button
                       type="submit"
                       disabled={submitting}
-                      className="px-3 py-1.5 rounded-lg bg-slate-900 text-white font-medium hover:bg-slate-800 disabled:opacity-50"
+                      className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
                     >
                       {submitting ? "Submitting..." : "Submit Claim"}
                     </button>
