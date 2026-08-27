@@ -1146,55 +1146,6 @@ async def permission_gate(state: ChatState) -> Command:
                     update["last_action"] = result["last_action"]
                 return back_to_agent(update)
 
-    # ── Rules engine: standalone create_rule_category and create_rule_subcategory ──
-    if name == "create_rule_category" and not args.get("name"):
-        suggestions = [
-            ("Claims Governance", "Claims Governance"),
-            ("Retention & Treaty", "Retention & Treaty"),
-            ("Distribution Compliance", "Distribution Compliance"),
-            ("Product Eligibility", "Product Eligibility")
-        ]
-        answer = _ask_choice(
-            name, args,
-            "What should the new category be called? Pick one of these, or type your own name.",
-            suggestions,
-        )
-        resolved_name = _match_choice(answer, suggestions) or answer
-        args["name"] = str(resolved_name)
-        if not args.get("code"):
-            args["code"] = _slugify(str(resolved_name))
-        result = await execute_tool(name, args, ctx)
-        update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
-        return back_to_agent(update)
-
-    if name == "create_rule_subcategory" and not args.get("name"):
-        if not args.get("category_code"):
-            cats = await _catalogue_tree(ctx)
-            category = await _ensure_category(name, args, ctx, cats)
-            if not category:
-                result = {"success": False, "error": "A category is required."}
-                return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
-            args["category_code"] = category.get("code")
-
-        suggestions = [
-            ("Non-Medical Limits", "Non-Medical Limits"),
-            ("Death Benefit", "Death Benefit"),
-            ("Eligibility Gates", "Eligibility Gates")
-        ]
-        answer = _ask_choice(
-            name, args,
-            "What should the new subcategory be called? Pick one of these, or type your own name.",
-            suggestions,
-        )
-        resolved_name = _match_choice(answer, suggestions) or answer
-        args["name"] = str(resolved_name)
-        if not args.get("code"):
-            args["code"] = _slugify(str(resolved_name))
-        
-        result = await execute_tool(name, args, ctx)
-        update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
-        return back_to_agent(update)
-
     # ── Rules engine: create a rule set without making the user type codes ──
     #
     # A rule set needs a category, a subcategory, sometimes a channel, a code
@@ -1274,56 +1225,9 @@ async def permission_gate(state: ChatState) -> Command:
                     args["name"] = str(_match_choice(answer, suggestions) or answer)
 
                 result = await execute_tool(name, args, ctx)
-                if not result.get("success"):
-                    update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
-                    return back_to_agent(update)
-
-                # ── Continuous Journey: rule set -> draft -> rule -> deploy ──
-                code = args["code"]
-                await execute_tool("create_rule_version", {"rule_set_code": code}, ctx)
-
-                field, operator, value = await _ask_condition(name, {"rule_set_code": code}, context=f"**`{code}`** created. Let's add its first rule.")
-                outcome, outcome_data = await _ask_outcome(name, {"rule_set_code": code})
-                rule_code, rule_name = _derive_rule_naming(field, operator, value, outcome)
-
-                rule_args = {
-                    "rule_set_code": code,
-                    "rule_code": rule_code,
-                    "name": rule_name,
-                    "priority": 100,
-                    "conditions_json": _condition_json(field, operator, value),
-                    "action_outcome": outcome,
-                }
-                if outcome_data:
-                    rule_args["outcome_json"] = json.dumps(outcome_data)
-
-                rule_result = await execute_tool("add_rule_to_version", rule_args, ctx)
-                if not rule_result.get("success"):
-                    update: dict = {"messages": [_tool_result_message(name, call_id, rule_result)]}
-                    return back_to_agent(update)
-
-                deploy_choices = [("Deploy now (make active)", "YES"), ("Leave as DRAFT for now", "NO")]
-                deploy_answer = _ask_choice(
-                    name, {"rule_set_code": code},
-                    f"Rule **`{rule_code}`** added to the draft. Do you want to deploy `{code}` so it takes effect immediately?",
-                    deploy_choices
-                )
-                
-                final_action = result.get("last_action")
-                if _match_choice(deploy_answer, deploy_choices) == "YES":
-                    deploy_result = await execute_tool("deploy_rule_version", {"rule_set_code": code}, ctx)
-                    final_msg = f"Rule set `{code}` created, first rule added, and successfully deployed! It is now ACTIVE."
-                    if deploy_result.get("last_action"):
-                        final_action = deploy_result["last_action"]
-                else:
-                    final_msg = f"Rule set `{code}` created and first rule added. It remains in DRAFT state."
-                    if rule_result.get("last_action"):
-                        final_action = rule_result["last_action"]
-
-                final_result = {"success": True, "message": final_msg}
-                update = {"messages": [_tool_result_message(name, call_id, final_result)]}
-                if final_action:
-                    update["last_action"] = final_action
+                update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
+                if result.get("last_action"):
+                    update["last_action"] = result["last_action"]
                 return back_to_agent(update)
 
     # ── Rules engine: pick the rule set from the live list, never by memory ──
@@ -1333,142 +1237,64 @@ async def permission_gate(state: ChatState) -> Command:
     # which asks the user to recall "medical.nml_grid" — so intercept first and
     # show the actual rule sets instead.
     if name in _RULE_SET_CODE_TOOLS and not args.get("rule_set_code"):
-        cats = await _catalogue_tree(ctx)
-        category = await _ensure_category(name, args, ctx, cats)
-        if category:
-            subcategory = await _ensure_subcategory(name, args, ctx, category)
-            if subcategory:
-                try:
-                    listed = await execute_tool("list_rule_sets", {"category": category.get("code")}, ctx)
-                    rule_sets = listed.get("rule_sets") or []
-                except Exception:
-                    rule_sets = []
-                
-                filtered_rule_sets = [r for r in rule_sets if r.get("subcategory_code") == subcategory.get("code")]
-                
-                if filtered_rule_sets:
-                    choices = [
-                        (f"{r.get('name')} ({r.get('rule_code') or r.get('code')})", r.get("rule_code") or r.get("code"))
-                        for r in filtered_rule_sets
-                    ]
-                    answer = _ask_choice(
-                        name, args,
-                        f"Which rule set in **{subcategory.get('name')}** should I {name.replace('_', ' ').replace('rule version', 'a draft of')}?",
-                        choices,
-                        select_label="Rule set",
-                        placeholder="Pick a rule set…",
-                        extra_actions=[{"label": "Create a new rule set", "actionType": "submit", "payload": "Create a new rule set"}],
-                    )
-                    resolved = _match_choice(answer, choices)
-                    if resolved:
-                        args["rule_set_code"] = resolved
-                    elif _is(answer, "Create a new rule set"):
-                        result = {
-                            "success": False,
-                            "error": "User opted to create a new rule set instead. Please start the rule set creation process."
-                        }
-                        return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
-                elif name != "create_rule_set":
-                    result = {
-                        "success": False,
-                        "error": f"There are no rule sets under {subcategory.get('name')} yet.",
-                        "quick_actions": [
-                            {"label": "Create the first rule set", "actionType": "submit",
-                             "payload": "Create a new rule set"},
-                            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
-                        ],
-                    }
-                    return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
+        try:
+            listed = await execute_tool("list_rule_sets", {}, ctx)
+            rule_sets = listed.get("rule_sets") or []
+        except Exception:
+            rule_sets = []
+        if rule_sets:
+            choices = [
+                (f"{r.get('name')} ({r.get('rule_code') or r.get('code')})", r.get("rule_code") or r.get("code"))
+                for r in rule_sets
+            ]
+            answer = _ask_choice(
+                name, args,
+                f"Which rule set should I {name.replace('_', ' ').replace('rule version', 'a draft of')}?",
+                choices,
+                select_label="Rule set",
+                placeholder="Pick a rule set…",
+            )
+            resolved = _match_choice(answer, choices)
+            if resolved:
+                args["rule_set_code"] = resolved
+        elif name != "create_rule_set":
+            result = {
+                "success": False,
+                "error": "There are no rule sets yet.",
+                "quick_actions": [
+                    {"label": "Create the first rule set", "actionType": "submit",
+                     "payload": "Create a new rule set"},
+                    {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+                ],
+            }
+            return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
-    # ── Rules engine: NLP Full Bypass Macro ──────────────────────────────────
-    if name == "parse_and_create_full_rule":
-        # 1. Category
-        cats = await _catalogue_tree(ctx)
-        cat_code = _slugify(args["category_name"])
-        cat = next((c for c in cats if c.get("code") == cat_code), None)
-        if not cat:
-            cat_res = await execute_tool("create_rule_category", {"code": cat_code, "name": args["category_name"]}, ctx)
-            if not cat_res.get("success"):
-                return back_to_agent({"messages": [_tool_result_message(name, call_id, cat_res)]})
-            cat = cat_res.get("category")
-        
-        # 2. Subcategory
-        subs = cat.get("subcategories") or []
-        sub_code = _slugify(args["subcategory_name"])
-        sub = next((s for s in subs if s.get("code") == sub_code), None)
-        if not sub:
-            sub_res = await execute_tool("create_rule_subcategory", {"category_code": cat.get("code"), "code": sub_code, "name": args["subcategory_name"]}, ctx)
-            if not sub_res.get("success"):
-                return back_to_agent({"messages": [_tool_result_message(name, call_id, sub_res)]})
-            sub = sub_res.get("subcategory")
-            
-        # 3. Rule Set
-        rs_code = _slugify(args["rule_set_name"])
-        rs_res = await execute_tool("get_rule_set", {"rule_set_code": rs_code}, ctx)
-        if not rs_res.get("success"):
-            rs_res = await execute_tool("create_rule_set", {
-                "code": rs_code, "name": args["rule_set_name"], 
-                "category_code": cat.get("code"), "subcategory_code": sub.get("code")
-            }, ctx)
-            if not rs_res.get("success"):
-                return back_to_agent({"messages": [_tool_result_message(name, call_id, rs_res)]})
-        
-        # 4. Draft Version
-        await execute_tool("create_rule_version", {"rule_set_code": rs_code}, ctx)
-        
-        # 5. Add Rule
-        rule_args = {
-            "rule_set_code": rs_code,
-            "conditions_json": args["conditions_json"],
-            "action_outcome": args["action_outcome"]
-        }
-        if args.get("outcome_json"):
-            rule_args["outcome_json"] = args["outcome_json"]
-            
-        add_res = await execute_tool("add_rule_to_version", rule_args, ctx)
-        if not add_res.get("success"):
-            return back_to_agent({"messages": [_tool_result_message(name, call_id, add_res)]})
-            
-        # 6. Deploy
-        if args.get("deploy_now", True):
-            deploy_res = await execute_tool("deploy_rule_version", {"rule_set_code": rs_code}, ctx)
-            if not deploy_res.get("success"):
-                return back_to_agent({"messages": [_tool_result_message(name, call_id, deploy_res)]})
-                
-        final_msg = f"Rule successfully parsed and deployed under {args['category_name']} -> {args['subcategory_name']} -> {args['rule_set_name']}."
-        final_result = {"success": True, "message": final_msg, "last_action": add_res.get("last_action")}
-        return back_to_agent({"messages": [_tool_result_message(name, call_id, final_result)], "last_action": final_result["last_action"]})
-
-    # ── Rules engine: visual rule builder ────────────────────────────────────
+    # ── Rules engine: what should a brand-new rule actually check? ──────────
+    #
+    # rule_set_code is resolved by the block above. rule_code, conditions and
+    # action_outcome are business logic no picker can invent by itself, but
+    # they ARE structured — field, comparison, value, outcome — so this walks
+    # the same field/operator/value picker the portal's CriteriaGroupBuilder
+    # uses (see _ask_condition), rather than either a raw JSON field-dump or a
+    # single free-text description the model has to reverse-engineer.
     if name == "add_rule_to_version" and args.get("rule_set_code") and not (
         args.get("conditions_json") and args.get("action_outcome")
     ):
         code = args["rule_set_code"]
-        result = interrupt({
-            "kind": "client_execute",
-            "tool_call": {
-                "name": "build_rule_ui",
-                "args": {
-                    "rule_set_code": code,
-                    "mode": "add"
-                }
-            }
-        })
-        if isinstance(result, dict) and result.get("success"):
-            args["conditions_json"] = json.dumps(result.get("conditions", []))
-            impact = result.get("impact", {})
-            args["action_outcome"] = impact.get("type", "REQUIRE_MEDICAL_EXAM")
-            
-            # Remove type from impact data for outcome_json
-            impact_data = {k: v for k, v in impact.items() if k != "type"}
-            args["outcome_json"] = json.dumps(impact_data)
-            
-            args.setdefault("priority", result.get("priority", 100))
-            args.setdefault("name", result.get("name") or "New Rule")
-            if result.get("rule_code"):
-                args["rule_code"] = result.get("rule_code")
-        else:
-            return back_to_agent({"messages": [_tool_result_message(name, call_id, {"success": False, "error": "Rule building cancelled by user."})]})
+        field, operator, value = await _ask_condition(name, args, context=f"Adding a rule to `{code}`.")
+        outcome, outcome_data = await _ask_outcome(name, args)
+        rule_code, rule_name = _derive_rule_naming(field, operator, value, outcome)
+
+        args["conditions_json"] = _condition_json(field, operator, value)
+        args["action_outcome"] = outcome
+        args.setdefault("rule_code", rule_code)
+        args.setdefault("name", rule_name)
+        args.setdefault("priority", 100)
+        if outcome_data:
+            args["outcome_json"] = json.dumps(outcome_data)
+        # Falls through to the normal missing_args/validate/confirm sequence
+        # below — every required field is now filled, so that path renders the
+        # ordinary "Ready to add rule to version for X — proceed?" confirmation.
 
     # ── Rules engine: editing a rule's condition or outcome ──────────────────
     #
@@ -1523,6 +1349,9 @@ async def permission_gate(state: ChatState) -> Command:
         args.get("conditions_json") or args.get("action_outcome") or args.get("priority") is not None
         or args.get("is_active") is not None or args.get("name")
     ):
+        # rule_code is known but nothing about the change is — reload the
+        # rule so the picker can show what it currently checks and offer a
+        # "keep the current outcome" shortcut instead of re-asking everything.
         code = args["rule_set_code"]
         try:
             detail_res = await execute_tool("get_rule_set", {"rule_set_code": code}, ctx)
@@ -1534,33 +1363,33 @@ async def permission_gate(state: ChatState) -> Command:
             (r for r in (draft.get("rules") or []) if r.get("rule_code") == args["rule_code"]), None
         ) if draft else None
 
-        result = interrupt({
-            "kind": "client_execute",
-            "tool_call": {
-                "name": "build_rule_ui",
-                "args": {
-                    "rule_set_code": code,
-                    "rule_code": args["rule_code"],
-                    "mode": "edit",
-                    "initial_rule": current_rule
-                }
-            }
-        })
-        if isinstance(result, dict) and result.get("success"):
-            args["conditions_json"] = json.dumps(result.get("conditions", []))
-            impact = result.get("impact", {})
-            args["action_outcome"] = impact.get("type", "REQUIRE_MEDICAL_EXAM")
-            
-            # Remove type from impact data for outcome_json
-            impact_data = {k: v for k, v in impact.items() if k != "type"}
-            args["outcome_json"] = json.dumps(impact_data)
-            
-            if "priority" in result:
-                args["priority"] = result["priority"]
-            if "name" in result and result["name"]:
-                args["name"] = result["name"]
-        else:
-            return back_to_agent({"messages": [_tool_result_message(name, call_id, {"success": False, "error": "Rule editing cancelled by user."})]})
+        current_summary = ""
+        current_outcome_label = None
+        if current_rule:
+            crit = (current_rule.get("criteria") or [None])[0] or {}
+            cur_field = crit.get("field_name") or "?"
+            cur_op = crit.get("operator") or "eq"
+            cur_val = (
+                crit.get("value_numeric") if crit.get("value_numeric") is not None else
+                crit.get("value_string") if crit.get("value_string") is not None else
+                f"{crit.get('value_range_min')}–{crit.get('value_range_max')}" if crit.get("value_range_min") is not None else
+                crit.get("value_list")
+            )
+            cur_field_label = FIELD_LABELS.get(cur_field, cur_field)
+            current_summary = f"Currently: **{cur_field_label}** {_OP_WORDS.get(cur_op, cur_op)} **{cur_val}** → **{current_rule.get('action_outcome')}**."
+            current_outcome_label = current_rule.get("action_outcome")
+
+        field, operator, value = await _ask_condition(
+            name, args, context=f"Editing `{args['rule_code']}` on `{code}`. {current_summary}".strip()
+        )
+        outcome, outcome_data = await _ask_outcome(name, args, keep_label=current_outcome_label)
+
+        args["conditions_json"] = _condition_json(field, operator, value)
+        if outcome != "__KEEP__":
+            args["action_outcome"] = outcome
+            if outcome_data:
+                args["outcome_json"] = json.dumps(outcome_data)
+        # Falls through to the normal confirm sequence, same as create above.
 
     # ── Claims: resolve the policy, type and amount as clicks ───────────────
     #

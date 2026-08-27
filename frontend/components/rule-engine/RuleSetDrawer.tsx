@@ -18,7 +18,7 @@ interface Props {
   isDeploying?: boolean;
   onAddRule: () => void;
   onEditRule: (rule: RuleDetail) => void;
-  onDeleteRule: (id: string, name: string) => void;
+  onDeleteRule: (id: string) => void;
   onReorderRules?: (orderedIds: string[]) => void;
   // Edit mode
   isEditMode: boolean;
@@ -239,7 +239,7 @@ export default function RuleSetDrawer({
                     allRules={rules}
                     isLocked={isLocked}
                     onEdit={() => onEditRule(rule)}
-                    onDelete={() => onDeleteRule(rule.id, rule.name)}
+                    onDelete={() => onDeleteRule(rule.id)}
                   />
                 ))}
               </div>

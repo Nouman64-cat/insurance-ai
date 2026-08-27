@@ -17,7 +17,6 @@ import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { IssuanceModal, SuccessModal, PaymentModal } from "./policy/IssuanceModals";
 import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/policies";
 import { ACRModal } from "./entities/ACRModal";
-import RuleBuilderModal from "./rule-engine/RuleBuilderModal";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -421,7 +420,6 @@ export function CopilotInterface() {
   const [successModalResult, setSuccessModalResult] = useState<{ result: IssuanceResult | PaymentConfirmResult, policyName: string, caseNumber: string, isPayment?: boolean } | null>(null);
   const [paymentModalPolicy, setPaymentModalPolicy] = useState<any | null>(null);
   const [acrModalCase, setAcrModalCase] = useState<{ caseId: string; caseNumber: string } | null>(null);
-  const [ruleBuilderModalArgs, setRuleBuilderModalArgs] = useState<any | null>(null);
 
   useEffect(() => {
     if (selectedFile && selectedFile.type.startsWith("image/")) {
@@ -861,8 +859,6 @@ export function CopilotInterface() {
         caseId: pendingInterrupt.toolCall.args.case_id,
         caseNumber: pendingInterrupt.toolCall.args.case_number,
       });
-    } else if (pendingInterrupt.toolCall.name === "build_rule_ui") {
-      setRuleBuilderModalArgs(pendingInterrupt.toolCall.args);
     }
   }, [pendingInterrupt]);
 
@@ -1226,22 +1222,6 @@ export function CopilotInterface() {
                     { label: "Check Gate Status", actionType: "submit", payload: `Check pre-underwriting status for case ${caseNum}` },
                   ],
                 });
-              }}
-            />
-          )}
-          {ruleBuilderModalArgs && (
-            <RuleBuilderModal
-              mode={ruleBuilderModalArgs.mode}
-              ruleSetCode={ruleBuilderModalArgs.rule_set_code}
-              ruleCode={ruleBuilderModalArgs.rule_code}
-              initialRule={ruleBuilderModalArgs.initial_rule}
-              onClose={() => {
-                setRuleBuilderModalArgs(null);
-                resolveInterrupt({ success: false, error: "Rule building cancelled." });
-              }}
-              onSave={(data) => {
-                setRuleBuilderModalArgs(null);
-                resolveInterrupt(data);
               }}
             />
           )}

@@ -814,12 +814,11 @@ def get_rule_evaluation_logs(**kwargs) -> str:
 
 
 class CreateRuleSetArgs(BaseModel):
-    intent: str = Field(description="What the user wants to do, e.g. 'Create a new rule set'")
-    code: Optional[str] = Field(default=None, description="Dotted lowercase code, e.g. claims.death_benefit.")
-    name: Optional[str] = None
+    code: str = Field(description="Dotted lowercase code, e.g. claims.death_benefit.")
+    name: str
     description: Optional[str] = None
-    category_code: Optional[str] = Field(default=None, description="Existing category code to file it under.")
-    subcategory_code: Optional[str] = None
+    category_code: str = Field(description="Existing category code to file it under.")
+    subcategory_code: str
     channel_code: Optional[str] = None
 
 
@@ -839,15 +838,14 @@ def create_rule_version(**kwargs) -> str:
 
 
 class AddRuleArgs(BaseModel):
-    intent: str = Field(description="What the user wants to do, e.g. 'Add rule'")
-    rule_set_code: Optional[str] = None
-    rule_code: Optional[str] = Field(default=None, description="Short uppercase code, e.g. MED-NML-07.")
-    name: Optional[str] = None
-    priority: Optional[int] = Field(default=None, description="Lower number runs first.")
-    conditions_json: Optional[str] = Field(
-        default=None, description='JSON array of criteria, e.g. [{"field":"age","operator":"gte","value":61}].'
+    rule_set_code: str
+    rule_code: str = Field(description="Short uppercase code, e.g. MED-NML-07.")
+    name: str
+    priority: int = Field(description="Lower number runs first.")
+    conditions_json: str = Field(
+        description='JSON array of criteria, e.g. [{"field":"age","operator":"gte","value":61}].'
     )
-    action_outcome: Optional[str] = Field(default=None, description="e.g. REQUIRE_MEDICAL_EXAM, APPLY_COMMISSION_RATE, DECLINE.")
+    action_outcome: str = Field(description="e.g. REQUIRE_MEDICAL_EXAM, APPLY_COMMISSION_RATE, DECLINE.")
     outcome_json: Optional[str] = Field(default=None, description="JSON impact payload for the outcome.")
 
 
@@ -859,9 +857,8 @@ def add_rule_to_version(**kwargs) -> str:
 
 
 class UpdateRuleArgs(BaseModel):
-    intent: str = Field(description="What the user wants to do, e.g. 'Update rule'")
-    rule_set_code: Optional[str] = None
-    rule_code: Optional[str] = None
+    rule_set_code: str
+    rule_code: str
     name: Optional[str] = None
     priority: Optional[int] = None
     is_active: Optional[bool] = None
@@ -877,9 +874,8 @@ def update_rule(**kwargs) -> str:
 
 
 class DeleteRuleArgs(BaseModel):
-    intent: str = Field(description="What the user wants to do, e.g. 'Delete rule'")
-    rule_set_code: Optional[str] = None
-    rule_code: Optional[str] = None
+    rule_set_code: str
+    rule_code: str
 
 
 @tool(args_schema=DeleteRuleArgs)
@@ -902,21 +898,6 @@ def archive_rule_version(**kwargs) -> str:
     return "{}"
 
 
-class ParseAndCreateFullRuleArgs(BaseModel):
-    category_name: str = Field(description="Name of the category to create or find")
-    subcategory_name: str = Field(description="Name of the subcategory to create or find")
-    rule_set_name: str = Field(description="Name of the rule set to create or find")
-    conditions_json: str = Field(description='JSON array of Criteria. Example: [{"group_id": 1, "field_name": "age", "operator": "gt", "value_numeric": 50}]')
-    action_outcome: str = Field(description="Impact type, e.g., REQUIRE_MEDICAL, AUTO_APPROVE, DECLINE")
-    outcome_json: Optional[str] = Field(default=None, description='JSON object of outcome parameters. Example: {"is_terminal": true, "medical_profile_codes": ["MER"]}')
-    deploy_now: bool = Field(default=True, description="Whether to automatically deploy the rule set after adding the rule")
-
-@tool(args_schema=ParseAndCreateFullRuleArgs)
-def parse_and_create_full_rule(**kwargs) -> str:
-    """Use this tool ONLY when the user provides all rule details in text (e.g. category, subcategory, rule set, conditions, and impacts). This will parse the text and fully create/deploy the rule hierarchy silently."""
-    return "{}"
-
-
 # ═══════════════════════════════════════════════════════════════════════════
 # Rules catalogue authoring — Category -> SubCategory -> EligibilityProfile
 #
@@ -927,9 +908,8 @@ def parse_and_create_full_rule(**kwargs) -> str:
 # ═══════════════════════════════════════════════════════════════════════════
 
 class CreateRuleCategoryArgs(BaseModel):
-    intent: str = Field(description="What the user wants to do, e.g. 'Create category'")
-    code: Optional[str] = Field(default=None, description="UPPER_SNAKE code, e.g. CLAIMS_GOVERNANCE.")
-    name: Optional[str] = Field(default=None, description="Human-readable name, e.g. Claims Governance.")
+    code: str = Field(description="UPPER_SNAKE code, e.g. CLAIMS_GOVERNANCE.")
+    name: str = Field(description="Human-readable name, e.g. Claims Governance.")
     description: Optional[str] = None
 
 
@@ -941,10 +921,9 @@ def create_rule_category(**kwargs) -> str:
 
 
 class CreateRuleSubcategoryArgs(BaseModel):
-    intent: str = Field(description="What the user wants to do, e.g. 'Create subcategory'")
-    category_code: Optional[str] = Field(default=None, description="Existing category code to nest under.")
-    code: Optional[str] = Field(default=None, description="UPPER_SNAKE code, e.g. DEATH_BENEFIT.")
-    name: Optional[str] = None
+    category_code: str = Field(description="Existing category code to nest under.")
+    code: str = Field(description="UPPER_SNAKE code, e.g. DEATH_BENEFIT.")
+    name: str
 
 
 @tool(args_schema=CreateRuleSubcategoryArgs)
@@ -955,13 +934,13 @@ def create_rule_subcategory(**kwargs) -> str:
 
 
 class CreateEligibilityProfileArgs(BaseModel):
-    category_code: Optional[str] = None
-    subcategory_code: Optional[str] = None
-    channel_code: Optional[str] = Field(default=None, description="e.g. AGENCY_DIRECT, BANCA_MCB, WINDOW_TAKAFUL.")
-    min_entry_age: Optional[int] = 18
-    max_entry_age: Optional[int] = 65
-    max_maturity_age: Optional[int] = 75
-    min_sum_assured: Optional[float] = 500000.0
+    category_code: str
+    subcategory_code: str
+    channel_code: str = Field(description="e.g. AGENCY_DIRECT, BANCA_MCB, WINDOW_TAKAFUL.")
+    min_entry_age: int = 18
+    max_entry_age: int = 65
+    max_maturity_age: int = 75
+    min_sum_assured: float = 500000.0
 
 
 @tool(args_schema=CreateEligibilityProfileArgs)
