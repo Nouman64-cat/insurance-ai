@@ -1190,6 +1190,24 @@ async def delete_subcategory(tenant_id: UUID, subcategory_id: UUID, session: Asy
     return None
 
 
+@router.delete("/sets/{rule_set_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a RuleSet")
+async def delete_rule_set(tenant_id: UUID, rule_set_id: UUID, session: AsyncSession = Depends(get_session)):
+    rule_set = await session.get(RuleSet, rule_set_id)
+    if rule_set:
+        versions = (await session.exec(select(RuleVersion).where(RuleVersion.rule_set_id == rule_set.id))).all()
+        for version in versions:
+            rules = (await session.exec(select(ActualRule).where(ActualRule.version_id == version.id))).all()
+            for rule in rules:
+                criteria = (await session.exec(select(RuleCriteria).where(RuleCriteria.rule_id == rule.id))).all()
+                for c in criteria:
+                    await session.delete(c)
+                await session.delete(rule)
+            await session.delete(version)
+        await session.delete(rule_set)
+        await session.commit()
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # RuleSet / RuleVersion / ActualRule endpoints
 # ─────────────────────────────────────────────────────────────────────────────

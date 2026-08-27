@@ -54,7 +54,6 @@ export default function RuleCard({
   rule, allRules, isLocked = false, isDraft = false, authoredBy, onEdit, onDelete, onDragStart, onDragOver, onDrop,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const editable = !isLocked;
   const impactCfg = IMPACT_TYPE_CONFIG[rule.impact_type] || IMPACT_TYPE_CONFIG.AUTO_APPROVE;
@@ -242,44 +241,24 @@ export default function RuleCard({
           {/* Actions */}
           {editable && (
             <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
-              {confirmDelete ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-700 font-medium">Delete rule?</span>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }}
-                    className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-lg shadow-sm"
-                  >
-                    Confirm
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
-                    className="px-3 py-1 text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg hover:bg-slate-50"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              ) : (
-                <>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
-                    className="flex items-center gap-1 px-3 py-1 text-xs font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg transition"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                    Delete
-                  </button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); onEdit(rule); }}
-                    className="flex items-center gap-1 px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition"
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
-                    Edit Rule
-                  </button>
-                </>
-              )}
+              <button
+                onClick={(e) => { e.stopPropagation(); onDelete(rule.id); }}
+                className="flex items-center gap-1 px-3 py-1 text-xs font-semibold text-slate-600 hover:text-red-600 hover:bg-red-50 border border-slate-200 hover:border-red-200 rounded-lg transition"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+                Delete
+              </button>
+              <button
+                onClick={(e) => { e.stopPropagation(); onEdit(rule); }}
+                className="flex items-center gap-1 px-3 py-1 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+                Edit Rule
+              </button>
             </div>
           )}
         </div>
