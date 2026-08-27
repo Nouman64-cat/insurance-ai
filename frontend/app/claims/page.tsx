@@ -217,14 +217,17 @@ export default function ClaimsPage() {
         search: search.trim() || undefined,
       });
       setClaims(data);
-    } catch { /* silent */ } finally {
+    } catch (err) {
+      console.error("Failed to fetch claims:", err);
+      setClaims([]);
+    } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
-  }, [statusFilter, typeFilter, riskFilter, amountFilter, datePreset, startDate, endDate, dateField]);
+  }, [statusFilter, typeFilter, riskFilter, amountFilter, datePreset, startDate, endDate, dateField, search]);
 
   useEffect(() => { listPolicies().then(setPolicies).catch(() => { }); }, []);
 

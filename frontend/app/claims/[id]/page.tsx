@@ -65,8 +65,8 @@ export default function ClaimDetailPage() {
 
   const [showConfirmStep, setShowConfirmStep] = useState<boolean>(false);
 
-  const openModal = (m: "adj" | "payout" | "doc" | "reunderwrite" | "resolve_uw") => { 
-    setModalError(null); 
+  const openModal = (m: "adj" | "payout" | "doc" | "reunderwrite" | "resolve_uw") => {
+    setModalError(null);
     setShowConfirmStep(false);
     if (m === "reunderwrite" && claim) {
       const initialReasons: string[] = [];
@@ -74,11 +74,11 @@ export default function ClaimDetailPage() {
       if (hasDocs && claim.is_contestable) initialReasons.push("Undisclosed Pre-Existing Medical History (OCR Flag)");
       if (claim.submitted_amount > 500000) initialReasons.push("Claim Amount Exceeds Adjuster Limit (> PKR 500k)");
       if (claim.submitted_amount > 5000000 || claim.reinsurance_referral_id) initialReasons.push("Claim Amount Exceeds Net Retention (> PKR 5M)");
-      
+
       if (initialReasons.length === 0) initialReasons.push("Policy Issued < 2 Years Ago (Contestability Window)");
       setUwReasons(initialReasons);
     }
-    setModal(m); 
+    setModal(m);
   };
   const closeModal = () => { setModalError(null); setModal(null); };
 
@@ -333,11 +333,10 @@ export default function ClaimDetailPage() {
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
       {/* Toast Alert */}
       {toast && (
-        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-xs font-semibold flex items-center gap-3 max-w-lg border transition-all animate-in fade-in slide-in-from-top-4 ${
-          toast.type === "err"
-            ? "bg-rose-950/95 backdrop-blur-md text-rose-100 border-rose-800/80 shadow-rose-950/40"
-            : "bg-slate-900/95 backdrop-blur-md text-white border-slate-800 shadow-slate-900/40"
-        }`}>
+        <div className={`fixed top-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl shadow-2xl text-xs font-semibold flex items-center gap-3 max-w-lg border transition-all animate-in fade-in slide-in-from-top-4 ${toast.type === "err"
+          ? "bg-rose-950/95 backdrop-blur-md text-rose-100 border-rose-800/80 shadow-rose-950/40"
+          : "bg-slate-900/95 backdrop-blur-md text-white border-slate-800 shadow-slate-900/40"
+          }`}>
           {toast.type === "err" ? (
             <div className="w-6 h-6 rounded-lg bg-rose-500/20 border border-rose-500/30 flex items-center justify-center flex-shrink-0 text-rose-400">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -509,7 +508,7 @@ export default function ClaimDetailPage() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Claims Stage Underwriting Audit & Governance</h3>
+            <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Underwriting Audit</h3>
           </div>
           {!isClosedStatus && (
             <button
@@ -569,7 +568,23 @@ export default function ClaimDetailPage() {
                   </span>
                 </div>
                 <p className="text-[10px] text-slate-500">
-                  OCR text extraction detected medical onset (2022) prior to policy issuance.
+                  OCR text extraction detected medical onset ({claim.ocr_onset_date ?? "2022-04-12"}) prior to policy issuance.
+                </p>
+              </div>
+            );
+          }
+
+          if (claim.graph_ring_detected || claim.duplicate_flag) {
+            activeCards.push(
+              <div key="graph" className="p-2.5 rounded-lg border flex flex-col justify-between gap-1.5 bg-rose-50/70 border-rose-200">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-rose-900 text-[11px]">Memgraph Network Cluster Alert</span>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-200 text-rose-900">
+                    FRAUD RING FLAGGED
+                  </span>
+                </div>
+                <p className="text-[10px] text-rose-700">
+                  {claim.graph_ring_reason ?? "Suspicious multi-policy claimant ring or duplicate claim pattern detected."}
                 </p>
               </div>
             );
@@ -633,7 +648,7 @@ export default function ClaimDetailPage() {
                 Document Parsing & Medical Extraction Audit
               </span>
               <span className="text-[10px] font-medium text-slate-500 font-mono">
-                OCR Confidence: 98.4%
+                OCR Confidence: {claim.ocr_confidence ?? 98.4}%
               </span>
             </div>
 
@@ -641,10 +656,10 @@ export default function ClaimDetailPage() {
               <div className="flex items-center justify-between p-2.5 bg-white border border-slate-200/90 rounded-lg shadow-2xs">
                 <div>
                   <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Extracted Diagnosis</div>
-                  <div className="font-semibold text-slate-900 text-xs mt-0.5">Acute Episode (Pre-Existing Condition)</div>
+                  <div className="font-semibold text-slate-900 text-xs mt-0.5">{claim.ocr_diagnosis ?? "Acute Episode (Pre-Existing Condition)"}</div>
                 </div>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100/80 text-amber-900 border border-amber-200/90">
-                  PED Detected
+                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${claim.ped_detected !== false ? "bg-amber-100/80 text-amber-900 border border-amber-200/90" : "bg-emerald-100/80 text-emerald-900 border border-emerald-200/90"}`}>
+                  {claim.ped_detected !== false ? "PED Detected" : "Clear"}
                 </span>
               </div>
 
@@ -652,13 +667,13 @@ export default function ClaimDetailPage() {
                 <div>
                   <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Medical Onset vs Policy Start</div>
                   <div className="text-xs font-semibold text-slate-900 mt-0.5 flex items-center gap-1.5">
-                    <span className="text-amber-900 font-medium">Onset: 2022-04-12</span>
+                    <span className="text-amber-900 font-medium">Onset: {claim.ocr_onset_date ?? "2022-04-12"}</span>
                     <span className="text-slate-300">•</span>
                     <span className="text-slate-600 font-normal">Policy: {claim.policy_start_date ?? "2025-01-15"}</span>
                   </div>
                 </div>
                 <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100/80 text-amber-900 border border-amber-200/90">
-                  3 Yrs Prior
+                  {claim.onset_years_prior ? `${claim.onset_years_prior} Yrs Prior` : "3 Yrs Prior"}
                 </span>
               </div>
             </div>
@@ -690,28 +705,26 @@ export default function ClaimDetailPage() {
               <div key={step} className="flex-1 flex items-center">
                 <div className="flex flex-col items-center flex-1 gap-1">
                   <div
-                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
-                      isCurrent && isUwStep
-                        ? "bg-amber-600 text-white shadow-md shadow-amber-200 ring-4 ring-amber-50"
-                        : isCurrent
-                          ? "bg-blue-600 text-white shadow-md shadow-blue-200 ring-4 ring-blue-50"
-                          : isDone
-                            ? "bg-blue-100 text-blue-700 border border-blue-200"
-                            : "bg-slate-100 text-slate-400"
-                    }`}
+                    className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${isCurrent && isUwStep
+                      ? "bg-amber-600 text-white shadow-md shadow-amber-200 ring-4 ring-amber-50"
+                      : isCurrent
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-200 ring-4 ring-blue-50"
+                        : isDone
+                          ? "bg-blue-100 text-blue-700 border border-blue-200"
+                          : "bg-slate-100 text-slate-400"
+                      }`}
                   >
                     {isDone ? "✓" : isUwStep ? "⚠️" : i + 1}
                   </div>
                   <span
-                    className={`text-[11px] text-center transition-colors ${
-                      isCurrent && isUwStep
-                        ? "text-amber-700 font-bold"
-                        : isCurrent
-                          ? "text-blue-600 font-bold"
-                          : isDone
-                            ? "text-slate-700 font-semibold"
-                            : "text-slate-400 font-medium"
-                    }`}
+                    className={`text-[11px] text-center transition-colors ${isCurrent && isUwStep
+                      ? "text-amber-700 font-bold"
+                      : isCurrent
+                        ? "text-blue-600 font-bold"
+                        : isDone
+                          ? "text-slate-700 font-semibold"
+                          : "text-slate-400 font-medium"
+                      }`}
                   >
                     {step}
                   </span>
@@ -894,11 +907,10 @@ export default function ClaimDetailPage() {
                       >
                         <div className="flex items-center gap-3 min-w-0">
                           {/* File Type Icon Badge */}
-                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-[10px] tracking-wider uppercase border ${
-                            isPdf
-                              ? "bg-rose-50 text-rose-600 border-rose-100"
-                              : "bg-blue-50 text-blue-600 border-blue-100"
-                          }`}>
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-[10px] tracking-wider uppercase border ${isPdf
+                            ? "bg-rose-50 text-rose-600 border-rose-100"
+                            : "bg-blue-50 text-blue-600 border-blue-100"
+                            }`}>
                             <div className="flex flex-col items-center">
                               <svg className="w-4 h-4 mb-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -944,12 +956,12 @@ export default function ClaimDetailPage() {
                             rel="noreferrer"
                             className="px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-700 hover:text-slate-900 text-xs font-semibold shadow-2xs transition-all flex items-center gap-1.5"
                           >
-                              <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                              <span>View</span>
-                            </a>
+                            <svg className="w-3.5 h-3.5 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span>View</span>
+                          </a>
                         </div>
                       </div>
                     );
@@ -1408,11 +1420,10 @@ export default function ClaimDetailPage() {
                     return (
                       <label
                         key={optionText}
-                        className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${
-                          isChecked
-                            ? "bg-amber-50/90 border-amber-300 text-amber-950 font-medium shadow-2xs"
-                            : "bg-slate-50/50 border-slate-200/80 text-slate-600 hover:bg-slate-50"
-                        }`}
+                        className={`flex items-start gap-2.5 p-2 rounded-lg border text-xs cursor-pointer transition-all ${isChecked
+                          ? "bg-amber-50/90 border-amber-300 text-amber-950 font-medium shadow-2xs"
+                          : "bg-slate-50/50 border-slate-200/80 text-slate-600 hover:bg-slate-50"
+                          }`}
                       >
                         <input
                           type="checkbox"

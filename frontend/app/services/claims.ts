@@ -89,6 +89,14 @@ export interface Claim {
   nominee_relationship?: string | null;
   nominee_match?: boolean;
   artifacts_count?: number;
+  ocr_diagnosis?: string;
+  ocr_onset_date?: string;
+  ped_detected?: boolean;
+  ocr_confidence?: number;
+  onset_years_prior?: number;
+  policy_start_date?: string;
+  graph_ring_detected?: boolean;
+  graph_ring_reason?: string | null;
   status_history?: ClaimStatusHistoryItem[];
   payouts?: ClaimPayoutItem[];
   artifacts?: ClaimArtifact[];

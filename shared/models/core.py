@@ -3,7 +3,7 @@ from enum import Enum
 from typing import Any, List, Optional
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, Integer, JSON, String, Text, UniqueConstraint
+from sqlalchemy import Column, Enum as SQLEnum, Integer, JSON, String, Text, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 import os
@@ -903,7 +903,10 @@ class Claim(SQLModel, table=True):
     claim_type: str = Field(max_length=100)         # e.g. 'Hospitalization', 'Surgery', 'Death Claim', 'Reimbursement'
     submitted_amount: float = Field(ge=0)
     approved_amount: float = Field(default=0, ge=0)
-    status: ClaimStatusEnum = Field(default=ClaimStatusEnum.NEW, max_length=50)
+    status: ClaimStatusEnum = Field(
+        default=ClaimStatusEnum.NEW,
+        sa_column=Column(SQLEnum(ClaimStatusEnum, native_enum=False), nullable=False, default=ClaimStatusEnum.NEW),
+    )
     fraud_probability: float = Field(default=0.0, ge=0.0, le=1.0)
     duplicate_flag: bool = Field(default=False)
     ai_recommendation: Optional[str] = Field(default=None, max_length=500)
@@ -1002,6 +1005,7 @@ class Artifact(SQLModel, table=True):
     storage_url: Optional[str] = Field(default=None, sa_column=Column(String(1000), nullable=True))
     ocr_result: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
     ocr_confidence_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    extracted_metadata: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
     authenticity_score: float = Field(default=1.0, ge=0.0, le=1.0)
     quality_score: float = Field(default=1.0, ge=0.0, le=1.0)
     tampered_flag: bool = Field(default=False)
