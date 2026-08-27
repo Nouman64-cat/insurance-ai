@@ -19,7 +19,6 @@ interface Props {
   allowGlobalOption?: boolean;
   depthLevel?: 1 | 2 | 3;
   searchQuery?: string;
-  searchQuery?: string;
   onAction?: (type: 'category' | 'subcategory' | 'ruleset', action: 'rename' | 'delete', id: string, name: string) => void;
 }
 
@@ -83,7 +82,6 @@ export default function HierarchyTree({
   onSelectRuleSet,
   selectedRuleSetId,
   depthLevel = 1,
-  searchQuery = "",
   searchQuery = "",
   onAction,
 }: Props) {
