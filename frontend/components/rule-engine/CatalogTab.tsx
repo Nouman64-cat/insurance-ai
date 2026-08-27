@@ -42,8 +42,6 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
     newSubName, setNewSubName,
     openCreateSubCategoryModal,
     handleCreateSubCategory,
-    deletePrompt, setDeletePrompt,
-    handleDeleteCategory, handleDeleteSubCategory, handleDeleteRuleSet,
   } = useRuleSets(tenantId);
 
   const { notify } = useNotify();
@@ -173,13 +171,6 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
             selectedRuleSetId={selectedRuleSetId}
             depthLevel={depthLevel}
             searchQuery={navSearch}
-            onAction={(type, action, id, name) => {
-              if (action === 'delete') {
-                setDeletePrompt({ type, id, name });
-              } else if (action === 'rename') {
-                alert("Rename functionality is coming soon!");
-              }
-            }}
           />
         </div>
 
@@ -236,7 +227,7 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
           isDeploying={isDeploying}
           onAddRule={openAddRule}
           onEditRule={openEditRule}
-          onDeleteRule={(id, name) => setDeletePrompt({ type: 'rule', id, name })}
+          onDeleteRule={handleDeleteRule}
           onReorderRules={handleReorderRules}
           isEditMode={isEditMode}
           editingRule={editingRule}
@@ -542,53 +533,6 @@ export default function CatalogTab({ tenantId }: { tenantId: string }) {
               </button>
             </div>
           </form>
-        </div>
-      )}
-
-      {/* Delete Confirmation Modal */}
-      {deletePrompt && (
-        <div
-          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
-          onClick={() => setDeletePrompt(null)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white w-full max-w-sm rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
-          >
-            <div className="px-6 py-5 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">Confirm Deletion</h2>
-              <p className="text-xs text-slate-500 mt-2">
-                Are you sure you want to delete the {deletePrompt.type} <strong>{deletePrompt.name}</strong>?
-                {deletePrompt.type === 'ruleset' && " All associated versions and rules will also be deleted."}
-                {deletePrompt.type === 'category' && " Make sure it has no subcategories."}
-                {deletePrompt.type === 'subcategory' && " Make sure it has no rule sets."}
-              </p>
-              <p className="text-xs text-red-500 mt-1 font-semibold">This action cannot be undone.</p>
-            </div>
-            <div className="px-6 py-4 flex justify-end gap-2 bg-slate-50/60">
-              <button
-                type="button"
-                onClick={() => setDeletePrompt(null)}
-                className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (deletePrompt.type === 'category') handleDeleteCategory(deletePrompt.id);
-                  else if (deletePrompt.type === 'subcategory') handleDeleteSubCategory(deletePrompt.id);
-                  else if (deletePrompt.type === 'ruleset') handleDeleteRuleSet(deletePrompt.id);
-                  else if (deletePrompt.type === 'rule') handleDeleteRule(deletePrompt.id);
-                }}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg shadow-sm transition"
-              >
-                Delete {deletePrompt.type}
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </>

@@ -19,8 +19,6 @@ interface Props {
   allowGlobalOption?: boolean;
   depthLevel?: 1 | 2 | 3;
   searchQuery?: string;
-  searchQuery?: string;
-  onAction?: (type: 'category' | 'subcategory' | 'ruleset', action: 'rename' | 'delete', id: string, name: string) => void;
 }
 
 // ── SVG Icons ─────────────────────────────────────────────────────────────────
@@ -59,12 +57,6 @@ const IconChevron = ({ open }: { open: boolean }) => (
   </svg>
 );
 
-const IconDots = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-  </svg>
-);
-
 // ── Count badge ────────────────────────────────────────────────────────────────
 const CountBadge = ({ count, active }: { count: number; active: boolean }) =>
   count > 0 ? (
@@ -84,19 +76,9 @@ export default function HierarchyTree({
   selectedRuleSetId,
   depthLevel = 1,
   searchQuery = "",
-  searchQuery = "",
-  onAction,
 }: Props) {
   const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
   const [openSubcategories, setOpenSubcategories] = useState<Set<string>>(new Set());
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    const handleClick = () => setActiveMenuId(null);
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, []);
 
   // Search filtering logic
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -222,7 +204,7 @@ export default function HierarchyTree({
   }
 
   return (
-    <div className="flex flex-col flex-1 overflow-y-auto rounded-xl border border-slate-200 bg-white select-none shadow-sm">
+    <div className="flex flex-col overflow-hidden rounded-xl border border-slate-200 bg-white select-none shadow-sm">
       {filteredCategories.map((cat, catIdx) => {
         const isCatOpen = openCategories.has(cat.code);
         const isCatSelected = value.categoryCode === cat.code;
@@ -238,7 +220,7 @@ export default function HierarchyTree({
                 toggleCategory(cat.code);
                 onChange({ categoryCode: cat.code, subcategoryCode: null, channelCode: null });
               }}
-              className={`group w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors cursor-pointer ${
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 text-left transition-colors cursor-pointer ${
                 isCatSelected && !value.subcategoryCode
                   ? "bg-blue-50/90 text-blue-900 border-l-2 border-l-blue-600 pl-[12px]"
                   : "hover:bg-slate-50 text-slate-800"
@@ -257,43 +239,6 @@ export default function HierarchyTree({
               }`}>
                 {cat.name}
               </span>
-
-              {onAction && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveMenuId(activeMenuId === cat.id ? null : cat.id);
-                    }}
-                    onContextMenu={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setActiveMenuId(activeMenuId === cat.id ? null : cat.id);
-                    }}
-                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors hidden group-hover:block"
-                    title="Options"
-                  >
-                    <IconDots />
-                  </button>
-                  {activeMenuId === cat.id && (
-                    <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded shadow-lg z-[60] overflow-hidden">
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 transition"
-                        onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'rename', cat.id, cat.name); }}
-                      >
-                        Rename
-                      </button>
-                      <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 transition border-t border-slate-100"
-                        onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'delete', cat.id, cat.name); }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
 
               <CountBadge count={catCount} active={isCatSelected} />
             </button>
@@ -319,7 +264,7 @@ export default function HierarchyTree({
                         toggleSubcat(sub.code);
                         onChange({ categoryCode: cat.code, subcategoryCode: sub.code, channelCode: null });
                       }}
-                      className={`group flex-1 flex items-center gap-2.5 pl-9 pr-3 py-2 text-left transition-colors cursor-pointer ${
+                      className={`flex-1 flex items-center gap-2.5 pl-9 pr-3 py-2 text-left transition-colors cursor-pointer ${
                         isSubSelected && !selectedRuleSetId
                           ? "bg-indigo-50/90 border-l-2 border-l-indigo-600 pl-[34px]"
                           : "hover:bg-slate-100/60"
@@ -341,43 +286,6 @@ export default function HierarchyTree({
                         {sub.name}
                       </span>
 
-                      {onAction && (
-                        <div className="relative">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveMenuId(activeMenuId === sub.id ? null : sub.id);
-                            }}
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              setActiveMenuId(activeMenuId === sub.id ? null : sub.id);
-                            }}
-                            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors hidden group-hover:block"
-                            title="Options"
-                          >
-                            <IconDots />
-                          </button>
-                          {activeMenuId === sub.id && (
-                            <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded shadow-lg z-[60] overflow-hidden">
-                              <button
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 transition"
-                                onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'rename', sub.id, sub.name); }}
-                              >
-                                Rename
-                              </button>
-                              <button
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 transition border-t border-slate-100"
-                                onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'delete', sub.id, sub.name); }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
                       <CountBadge count={subCount} active={isSubSelected && !selectedRuleSetId} />
                     </button>
                   </div>
@@ -395,7 +303,7 @@ export default function HierarchyTree({
                         <button
                           type="button"
                           onClick={() => onSelectRuleSet?.(rs.id)}
-                          className={`group flex-1 flex items-center gap-2 pl-14 pr-3 py-2 text-left transition-colors cursor-pointer ${
+                          className={`flex-1 flex items-center gap-2 pl-14 pr-3 py-2 text-left transition-colors cursor-pointer ${
                             isRsSelected
                               ? "bg-blue-50 border-l-2 border-l-blue-600 pl-[54px]"
                               : "hover:bg-slate-50"
@@ -412,43 +320,6 @@ export default function HierarchyTree({
                           }`} title={rs.name}>
                             {rs.name}
                           </span>
-
-                          {onAction && (
-                            <div className="relative">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setActiveMenuId(activeMenuId === rs.id ? null : rs.id);
-                                }}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  setActiveMenuId(activeMenuId === rs.id ? null : rs.id);
-                                }}
-                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors hidden group-hover:block"
-                                title="Options"
-                              >
-                                <IconDots />
-                              </button>
-                              {activeMenuId === rs.id && (
-                                <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded shadow-lg z-[60] overflow-hidden">
-                                  <button
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 transition"
-                                    onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'rename', rs.id, rs.name); }}
-                                  >
-                                    Rename
-                                  </button>
-                                  <button
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 transition border-t border-slate-100"
-                                    onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'delete', rs.id, rs.name); }}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          )}
 
                           <span className={`text-xs font-bold shrink-0 px-1.5 py-0.5 rounded ${
                             isRsSelected ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-600"
