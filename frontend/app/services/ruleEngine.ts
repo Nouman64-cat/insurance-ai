@@ -214,6 +214,18 @@ export async function deleteRule(tenantId: string, ruleId: string) {
   await api.delete(`/tenants/${tenantId}/rules/rules/${ruleId}`);
 }
 
+export async function deleteCategory(tenantId: string, categoryId: string) {
+  await api.delete(`/tenants/${tenantId}/rules/categories/${categoryId}`);
+}
+
+export async function deleteSubCategory(tenantId: string, subcategoryId: string) {
+  await api.delete(`/tenants/${tenantId}/rules/subcategories/${subcategoryId}`);
+}
+
+export async function deleteRuleSet(tenantId: string, ruleSetId: string) {
+  await api.delete(`/tenants/${tenantId}/rules/sets/${ruleSetId}`);
+}
+
 // ── Evaluation ────────────────────────────────────────────────────────────
 
 export interface EvaluationResult {
