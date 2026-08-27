@@ -6,12 +6,20 @@ import {
   Category, RuleSetSummary, RuleSetDetail, RuleDetail, RuleDraft, ScopeType,
   listCategories, createCategory, createSubCategory, listRuleSets, createRuleSet, getRuleSetDetail, createRuleVersion,
   updateVersionStatus, addRuleToVersion, updateRule, deleteRule,
+  deleteCategory, deleteSubCategory, deleteRuleSet,
   DEFAULT_IMPACT_DATA, ImpactType,
 } from "@/app/services/ruleEngine";
 import { HierarchySelection } from "./HierarchyTree";
 
 export interface RuleFormState extends RuleDraft {
   // nothing extra — kept separate so callers can widen if needed
+}
+
+export type DeletePromptType = 'category' | 'subcategory' | 'ruleset' | 'rule';
+export interface DeletePromptState {
+  type: DeletePromptType;
+  id: string;
+  name: string;
 }
 
 const EMPTY_RULE_DRAFT = (): RuleFormState => ({
@@ -51,6 +59,9 @@ export function useRuleSets(tenantId: string) {
   const [editingRule, setEditingRule] = useState<RuleDetail | null>(null);
   const [ruleDraft, setRuleDraft] = useState<RuleFormState>(EMPTY_RULE_DRAFT());
   const [isEditMode, setIsEditMode] = useState(false);
+
+  // ── Delete confirmation modal state ────────────────────────────────────
+  const [deletePrompt, setDeletePrompt] = useState<DeletePromptState | null>(null);
 
   // ── Create rule-set modal state ────────────────────────────────────────
   const [showCreateSet, setShowCreateSet] = useState(false);
@@ -318,12 +329,57 @@ export function useRuleSets(tenantId: string) {
     [tenantId, selectedVersionId, editingRule, notify, refreshDetail]
   );
 
+  // ── Delete actions ──────────────────────────────────────────────────────
+  const handleDeleteCategory = useCallback(
+    async (categoryId: string) => {
+      try {
+        await deleteCategory(tenantId, categoryId);
+        notify("Category deleted.", true);
+        setDeletePrompt(null);
+        load();
+      } catch (err: any) {
+        notify(err.response?.data?.detail || err.message || "Failed to delete Category.", false);
+      }
+    },
+    [tenantId, notify, load]
+  );
+
+  const handleDeleteSubCategory = useCallback(
+    async (subcategoryId: string) => {
+      try {
+        await deleteSubCategory(tenantId, subcategoryId);
+        notify("SubCategory deleted.", true);
+        setDeletePrompt(null);
+        load();
+      } catch (err: any) {
+        notify(err.response?.data?.detail || err.message || "Failed to delete SubCategory.", false);
+      }
+    },
+    [tenantId, notify, load]
+  );
+
+  const handleDeleteRuleSet = useCallback(
+    async (ruleSetId: string) => {
+      try {
+        await deleteRuleSet(tenantId, ruleSetId);
+        notify("Rule Set deleted.", true);
+        setDeletePrompt(null);
+        if (selectedRuleSetId === ruleSetId) closeDetail();
+        load();
+      } catch (err: any) {
+        notify(err.response?.data?.detail || err.message || "Failed to delete Rule Set.", false);
+      }
+    },
+    [tenantId, notify, load, selectedRuleSetId, closeDetail]
+  );
+
   // ── Delete rule ────────────────────────────────────────────────────────
   const handleDeleteRule = useCallback(
     async (ruleId: string) => {
       try {
         await deleteRule(tenantId, ruleId);
         notify("Rule deleted.", true);
+        setDeletePrompt(null);
         await refreshDetail(selectedVersionId || undefined);
       } catch (err: any) {
         notify(err.message || "Failed to delete rule.", false);
@@ -474,5 +530,8 @@ export function useRuleSets(tenantId: string) {
     newSubName, setNewSubName,
     openCreateSubCategoryModal,
     handleCreateSubCategory,
+    // Delete handlers & state
+    deletePrompt, setDeletePrompt,
+    handleDeleteCategory, handleDeleteSubCategory, handleDeleteRuleSet,
   };
 }
