@@ -3405,15 +3405,14 @@ _OUTCOME_TO_IMPACT_TYPE = {
 
 
 async def _draft_for(ctx: Ctx, code: str) -> tuple[dict, dict, str]:
-    """Resolve (rule_set, draft_version, code) or explain why there is no draft."""
+    """Resolve (rule_set, draft_version, code) or automatically open a draft if none exists."""
     rs, detail = await _rule_set_detail(ctx, code)
     real_code = detail.get("rule_code") or detail.get("code")
     draft = _version_with_status(detail, "DRAFT")
     if not draft:
-        raise LookupError(
-            f"`{real_code}` has no DRAFT version. Rules can only be changed in a draft — "
-            f"open one first, then make the change."
-        )
+        res = await ctx.client.post(_rules(ctx, f"/sets/{rs['id']}/versions"))
+        res.raise_for_status()
+        draft = res.json()
     return rs, draft, real_code
 
 
@@ -3622,6 +3621,16 @@ _COMMISSION_CLIENT_TOOLS = {
     "get_commission_summary",
     "create_payout_run",
     "approve_payout_run",
+    "list_commission_rules",
+    "create_commission_rule",
+    "update_commission_rule",
+    "delete_commission_rule",
+    "toggle_commission_rule_active",
+    "list_incentive_schemes",
+    "create_incentive_scheme",
+    "update_incentive_scheme",
+    "delete_incentive_scheme",
+    "toggle_incentive_scheme_active",
 }
 
 
@@ -3743,6 +3752,57 @@ async def _create_payout_run(args: dict, ctx: Ctx) -> dict:
 @handles("approve_payout_run")
 async def _approve_payout_run(args: dict, ctx: Ctx) -> dict:
     return _commission_client_call("approve_payout_run", args)
+
+
+@handles("list_commission_rules")
+async def _list_commission_rules(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("list_commission_rules", args)
+
+
+@handles("create_commission_rule")
+async def _create_commission_rule(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("create_commission_rule", args)
+
+
+@handles("update_commission_rule")
+async def _update_commission_rule(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("update_commission_rule", args)
+
+
+@handles("delete_commission_rule")
+async def _delete_commission_rule(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("delete_commission_rule", args)
+
+
+@handles("toggle_commission_rule_active")
+async def _toggle_commission_rule_active(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("toggle_commission_rule_active", args)
+
+
+@handles("list_incentive_schemes")
+async def _list_incentive_schemes(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("list_incentive_schemes", args)
+
+
+@handles("create_incentive_scheme")
+async def _create_incentive_scheme(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("create_incentive_scheme", args)
+
+
+@handles("update_incentive_scheme")
+async def _update_incentive_scheme(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("update_incentive_scheme", args)
+
+
+@handles("delete_incentive_scheme")
+async def _delete_incentive_scheme(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("delete_incentive_scheme", args)
+
+
+@handles("toggle_incentive_scheme_active")
+async def _toggle_incentive_scheme_active(args: dict, ctx: Ctx) -> dict:
+    return _commission_client_call("toggle_incentive_scheme_active", args)
+
 
 
 # ═══════════════════════════════════════════════════════════════════════════

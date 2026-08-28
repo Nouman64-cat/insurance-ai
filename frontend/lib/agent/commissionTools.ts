@@ -14,18 +14,28 @@
  * When routers/commissions.py exists this file goes away and the handlers move
  * server-side. The tool names and result shape are chosen so that swap needs no
  * change in the agent or the UI.
- */
-
-import {
+ */import {
   listPayees,
   listCommissionLedger,
   listPayoutRuns,
   createPayoutRun,
   approvePayoutRun,
   computeCommissionWaterfall,
+  listCommissionRules,
+  createCommissionRule,
+  updateCommissionRule,
+  deleteCommissionRule,
+  toggleCommissionRuleActive,
+  listIncentiveSchemes,
+  createIncentiveScheme,
+  updateIncentiveScheme,
+  deleteIncentiveScheme,
+  toggleIncentiveSchemeActive,
   PAYEE_TYPE_LABELS,
   type CommissionPayee,
   type CommissionLedgerEntry,
+  type CommissionRule,
+  type IncentiveScheme,
 } from "@/app/services/commissions";
 import { listPolicies } from "@/app/services/policies";
 
@@ -58,6 +68,8 @@ function matchPayee(payees: CommissionPayee[], needle?: string | null): Commissi
 const OPEN_LEDGER = { label: "Open Ledger", actionType: "navigate" as const, payload: "commission-ops/ledger" };
 const OPEN_PAYEES = { label: "Open Payees", actionType: "navigate" as const, payload: "commissions/payees" };
 const OPEN_RUNS = { label: "Open Payout Runs", actionType: "navigate" as const, payload: "treasury/runs" };
+const OPEN_TYPES = { label: "Open Rate Cards", actionType: "navigate" as const, payload: "commissions/types" };
+const OPEN_BONUSES = { label: "Open Performance Bonuses", actionType: "navigate" as const, payload: "commissions/bonuses" };
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -292,9 +304,6 @@ async function summaryTool(): Promise<ToolResult> {
 
 async function createRunTool(args: ToolResult): Promise<ToolResult> {
   const period = args.period || currentPeriod();
-  // Attributed to the human, not the bot, and with the SAME string the
-  // approve path uses — so if they try to approve their own run, the
-  // segregation-of-duties check in approvePayoutRun correctly refuses.
   const run = await createPayoutRun({ period, channel: args.channel ?? "ALL", createdBy: actor() });
 
   if (!run || run.stageCount === 0) {
@@ -351,8 +360,6 @@ async function approveRunTool(args: ToolResult): Promise<ToolResult> {
   try {
     approved = await approvePayoutRun(run.id, actor());
   } catch (err: any) {
-    // Most likely segregation of duties — the signed-in user created this run.
-    // Surface that as guidance rather than a failure the user can't act on.
     return {
       success: false,
       message:
@@ -382,6 +389,190 @@ async function approveRunTool(args: ToolResult): Promise<ToolResult> {
   };
 }
 
+async function listRulesTool(args: ToolResult): Promise<ToolResult> {
+  let rules = await listCommissionRules();
+  if (args.channel) rules = rules.filter((r) => r.channel === args.channel);
+  if (args.segment) rules = rules.filter((r) => r.segment === args.segment);
+  if (args.payee_type) rules = rules.filter((r) => r.payeeType === args.payee_type);
+  if (args.search) {
+    const s = String(args.search).toLowerCase();
+    rules = rules.filter((r) => r.id.toLowerCase().includes(s) || (r.description && r.description.toLowerCase().includes(s)));
+  }
+
+  if (rules.length === 0) {
+    return { success: true, message: "No commission rules match your query.", rules: [], quick_actions: [OPEN_TYPES] };
+  }
+
+  const lines = rules
+    .slice(0, 15)
+    .map((r) => `- **\`${r.id}\`** (${r.channel} / ${r.payeeType}) — Year ${r.policyYear}: **${r.ratePct}%** ${r.active ? "✅ Active" : "⏸️ Inactive"}`)
+    .join("\n");
+
+  return {
+    success: true,
+    message: `Found ${rules.length} commission rate card rule(s):\n\n${lines}`,
+    rules,
+    quick_actions: [
+      OPEN_TYPES,
+      { label: "+ Add Rule", actionType: "submit", payload: "Create a new commission rate card rule" },
+    ],
+  };
+}
+
+async function createRuleTool(args: ToolResult): Promise<ToolResult> {
+  const rule = await createCommissionRule({
+    id: args.id,
+    channel: args.channel || "DIRECT_AGENCY",
+    payeeType: args.target_role || "AGENT",
+    segment: args.policy_segment || "individual",
+    premiumType: args.premium_type || "FIRST_YEAR",
+    policyYear: Number(args.policy_year) || 1,
+    ratePct: Number(args.commission_rate) || 10,
+    basis: "PREMIUM",
+
+
+    description: args.description || "Commission rule created via AI Copilot",
+    secpRef: args.secp_ref || "SECP-2017",
+    refStatus: args.ref_status || "STATUTORY",
+    effectiveFrom: new Date().toISOString().slice(0, 10),
+    effectiveTo: null,
+    active: true,
+  });
+
+  return {
+    success: true,
+    message: `Created commission rule **\`${rule.id}\`**:\n- Channel: ${rule.channel}\n- Target Role: ${rule.payeeType}\n- Policy Year: ${rule.policyYear}\n- **Commission Rate: ${rule.ratePct}%**`,
+    rule,
+    quick_actions: [OPEN_TYPES],
+  };
+}
+
+async function updateRuleTool(args: ToolResult): Promise<ToolResult> {
+  const patch: Partial<CommissionRule> = {};
+  if (args.commission_rate !== undefined) patch.ratePct = Number(args.commission_rate);
+  if (args.description !== undefined) patch.description = args.description;
+  if (args.is_active !== undefined) patch.active = Boolean(args.is_active);
+
+  const updated = await updateCommissionRule(args.rule_id, patch);
+  return {
+    success: true,
+    message: `Updated commission rule **\`${updated.id}\`** — Rate: **${updated.ratePct}%**, Status: **${updated.active ? "Active" : "Inactive"}**.`,
+    rule: updated,
+    quick_actions: [OPEN_TYPES],
+  };
+}
+
+async function deleteRuleTool(args: ToolResult): Promise<ToolResult> {
+  const ok = await deleteCommissionRule(args.rule_id);
+  return {
+    success: ok,
+    message: ok ? `Deleted commission rule **\`${args.rule_id}\`**.` : `Failed to delete rule **\`${args.rule_id}\`**.`,
+    quick_actions: [OPEN_TYPES],
+  };
+}
+
+async function toggleRuleTool(args: ToolResult): Promise<ToolResult> {
+  const updated = await toggleCommissionRuleActive(args.rule_id);
+  return {
+    success: true,
+    message: `Toggled commission rule **\`${updated.id}\`** — now **${updated.active ? "ACTIVE" : "INACTIVE"}**.`,
+    rule: updated,
+    quick_actions: [OPEN_TYPES],
+  };
+}
+
+async function listSchemesTool(args: ToolResult): Promise<ToolResult> {
+  let schemes = await listIncentiveSchemes();
+  if (args.kind) schemes = schemes.filter((s) => s.kind === args.kind);
+  if (args.search) {
+    const term = String(args.search).toLowerCase();
+    schemes = schemes.filter((s) => s.name.toLowerCase().includes(term) || s.code.toLowerCase().includes(term));
+  }
+
+  if (schemes.length === 0) {
+    return { success: true, message: "No performance bonus plans match your criteria.", schemes: [], quick_actions: [OPEN_BONUSES] };
+  }
+
+  const lines = schemes
+    .map((s) => {
+      const reward = s.rewardPct ? `${s.rewardPct}% of FYE` : s.rewardAmount ? money(s.rewardAmount) : "Award";
+      return `- **${s.name}** (\`${s.code}\`) — ${s.metric} (${s.thresholdLabel}) ➔ **${reward}** [${s.active ? "Active" : "Inactive"}]`;
+    })
+    .join("\n");
+
+  return {
+    success: true,
+    message: `Found ${schemes.length} performance bonus plan(s):\n\n${lines}`,
+    schemes,
+    quick_actions: [
+      OPEN_BONUSES,
+      { label: "+ Add Bonus Plan", actionType: "submit", payload: "Create a new performance bonus plan" },
+    ],
+  };
+}
+
+async function createSchemeTool(args: ToolResult): Promise<ToolResult> {
+  const scheme = await createIncentiveScheme({
+    id: args.id,
+    code: args.code || "BONUS-NEW",
+    name: args.name || "New Incentive Plan",
+    kind: args.kind || "PRODUCTION_BONUS",
+    metric: args.metric || "Annualized Premium",
+    thresholdLabel: args.threshold_label || "≥ PKR 1,000,000",
+    threshold: Number(args.threshold) || 1000000,
+    rewardPct: args.reward_pct !== undefined ? Number(args.reward_pct) : null,
+    rewardAmount: args.reward_amount !== undefined ? Number(args.reward_amount) : null,
+    measuredAt: args.measured_at || "End of Year",
+    active: true,
+    payeeTypes: ["AGENT"],
+    description: args.description || "Created via AI Copilot",
+  });
+
+  return {
+    success: true,
+    message: `Created bonus plan **${scheme.name}** (\`${scheme.code}\`) — Target: **${scheme.thresholdLabel}**.`,
+    scheme,
+    quick_actions: [OPEN_BONUSES],
+  };
+}
+
+
+async function updateSchemeTool(args: ToolResult): Promise<ToolResult> {
+  const patch: Partial<IncentiveScheme> = {};
+  if (args.name) patch.name = args.name;
+  if (args.threshold !== undefined) patch.threshold = Number(args.threshold);
+  if (args.reward_pct !== undefined) patch.rewardPct = Number(args.reward_pct);
+  if (args.reward_amount !== undefined) patch.rewardAmount = Number(args.reward_amount);
+  if (args.is_active !== undefined) patch.active = Boolean(args.is_active);
+
+  const updated = await updateIncentiveScheme(args.scheme_id, patch);
+  return {
+    success: true,
+    message: `Updated bonus plan **${updated.name}** (\`${updated.code}\`).`,
+    scheme: updated,
+    quick_actions: [OPEN_BONUSES],
+  };
+}
+
+async function deleteSchemeTool(args: ToolResult): Promise<ToolResult> {
+  const ok = await deleteIncentiveScheme(args.scheme_id);
+  return {
+    success: ok,
+    message: ok ? `Deleted bonus plan **\`${args.scheme_id}\`**.` : `Failed to delete scheme **\`${args.scheme_id}\`**.`,
+    quick_actions: [OPEN_BONUSES],
+  };
+}
+
+async function toggleSchemeTool(args: ToolResult): Promise<ToolResult> {
+  const updated = await toggleIncentiveSchemeActive(args.scheme_id);
+  return {
+    success: true,
+    message: `Toggled bonus plan **${updated.name}** — now **${updated.active ? "ACTIVE" : "INACTIVE"}**.`,
+    scheme: updated,
+    quick_actions: [OPEN_BONUSES],
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const HANDLERS: Record<string, (args: ToolResult) => Promise<ToolResult>> = {
@@ -392,6 +583,16 @@ const HANDLERS: Record<string, (args: ToolResult) => Promise<ToolResult>> = {
   get_commission_summary: summaryTool,
   create_payout_run: createRunTool,
   approve_payout_run: approveRunTool,
+  list_commission_rules: listRulesTool,
+  create_commission_rule: createRuleTool,
+  update_commission_rule: updateRuleTool,
+  delete_commission_rule: deleteRuleTool,
+  toggle_commission_rule_active: toggleRuleTool,
+  list_incentive_schemes: listSchemesTool,
+  create_incentive_scheme: createSchemeTool,
+  update_incentive_scheme: updateSchemeTool,
+  delete_incentive_scheme: deleteSchemeTool,
+  toggle_incentive_scheme_active: toggleSchemeTool,
 };
 
 export const COMMISSION_CLIENT_TOOLS = new Set(Object.keys(HANDLERS));
@@ -411,3 +612,5 @@ export async function runCommissionTool(name: string, args: ToolResult): Promise
     return { success: false, error: err?.message || "That commission calculation failed." };
   }
 }
+
+

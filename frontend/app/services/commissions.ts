@@ -284,6 +284,66 @@ export function findRule(args: {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Rate card CRUD functions
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function listCommissionRules(): Promise<CommissionRule[]> {
+  return [...COMMISSION_RATE_CARD];
+}
+
+export async function createCommissionRule(
+  input: Omit<CommissionRule, "id"> & { id?: string },
+): Promise<CommissionRule> {
+  const id = input.id && input.id.trim() ? input.id.trim() : `COM-${Date.now().toString(36).toUpperCase()}`;
+  if (COMMISSION_RATE_CARD.some((r) => r.id === id)) {
+    throw new Error(`Commission rule with ID '${id}' already exists.`);
+  }
+  const newRule: CommissionRule = {
+    ...input,
+    id,
+    active: input.active ?? true,
+    effectiveFrom: input.effectiveFrom || new Date().toISOString().slice(0, 10),
+    effectiveTo: input.effectiveTo || null,
+  };
+  COMMISSION_RATE_CARD.push(newRule);
+  resetLedgerCache();
+  return newRule;
+}
+
+export async function updateCommissionRule(
+  id: string,
+  patch: Partial<CommissionRule>,
+): Promise<CommissionRule> {
+  const index = COMMISSION_RATE_CARD.findIndex((r) => r.id === id);
+  if (index === -1) {
+    throw new Error(`Commission rule '${id}' not found.`);
+  }
+  const updated = { ...COMMISSION_RATE_CARD[index], ...patch };
+  COMMISSION_RATE_CARD[index] = updated;
+  resetLedgerCache();
+  return updated;
+}
+
+export async function deleteCommissionRule(id: string): Promise<boolean> {
+  const index = COMMISSION_RATE_CARD.findIndex((r) => r.id === id);
+  if (index === -1) {
+    throw new Error(`Commission rule '${id}' not found.`);
+  }
+  COMMISSION_RATE_CARD.splice(index, 1);
+  resetLedgerCache();
+  return true;
+}
+
+export async function toggleCommissionRuleActive(id: string): Promise<CommissionRule> {
+  const rule = COMMISSION_RATE_CARD.find((r) => r.id === id);
+  if (!rule) {
+    throw new Error(`Commission rule '${id}' not found.`);
+  }
+  return updateCommissionRule(id, { active: !rule.active });
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Payee registry
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1572,6 +1632,57 @@ export const INCENTIVE_SCHEMES: IncentiveScheme[] = [
   },
 ];
 
+export async function listIncentiveSchemes(): Promise<IncentiveScheme[]> {
+  return [...INCENTIVE_SCHEMES];
+}
+
+export async function createIncentiveScheme(
+  input: Omit<IncentiveScheme, "id"> & { id?: string },
+): Promise<IncentiveScheme> {
+  const id = input.id && input.id.trim() ? input.id.trim() : `INC-${Date.now().toString(36).toUpperCase()}`;
+  if (INCENTIVE_SCHEMES.some((s) => s.id === id)) {
+    throw new Error(`Incentive scheme with ID '${id}' already exists.`);
+  }
+  const newScheme: IncentiveScheme = {
+    ...input,
+    id,
+    active: input.active ?? true,
+  };
+  INCENTIVE_SCHEMES.push(newScheme);
+  return newScheme;
+}
+
+export async function updateIncentiveScheme(
+  id: string,
+  patch: Partial<IncentiveScheme>,
+): Promise<IncentiveScheme> {
+  const index = INCENTIVE_SCHEMES.findIndex((s) => s.id === id);
+  if (index === -1) {
+    throw new Error(`Incentive scheme '${id}' not found.`);
+  }
+  const updated = { ...INCENTIVE_SCHEMES[index], ...patch };
+  INCENTIVE_SCHEMES[index] = updated;
+  return updated;
+}
+
+export async function deleteIncentiveScheme(id: string): Promise<boolean> {
+  const index = INCENTIVE_SCHEMES.findIndex((s) => s.id === id);
+  if (index === -1) {
+    throw new Error(`Incentive scheme '${id}' not found.`);
+  }
+  INCENTIVE_SCHEMES.splice(index, 1);
+  return true;
+}
+
+export async function toggleIncentiveSchemeActive(id: string): Promise<IncentiveScheme> {
+  const scheme = INCENTIVE_SCHEMES.find((s) => s.id === id);
+  if (!scheme) {
+    throw new Error(`Incentive scheme '${id}' not found.`);
+  }
+  return updateIncentiveScheme(id, { active: !scheme.active });
+}
+
+
 export interface IncentiveQualification {
   payee: CommissionPayee;
   scheme: IncentiveScheme;
@@ -1868,9 +1979,74 @@ export function groupLedgerByPolicy(ledger: CommissionLedgerEntry[]) {
   });
 }
 
+/** Pure computation — call with any pre-filtered ledger slice. */
+export function computeCommissionStats(ledger: CommissionLedgerEntry[]): CommissionSummaryStats {
+  const live = ledger.filter((l) => !l.isClawback);
+
+  const sumBy = <K extends string>(keyOf: (e: CommissionLedgerEntry) => K) => {
+    const map = new Map<K, { gross: number; net: number; entries: number }>();
+    for (const e of live) {
+      const key = keyOf(e);
+      const cur = map.get(key) ?? { gross: 0, net: 0, entries: 0 };
+      cur.gross += e.grossCommission;
+      cur.net += e.netCommission;
+      cur.entries += 1;
+      map.set(key, cur);
+    }
+    return map;
+  };
+
+  const byChannelMap = sumBy((e) => e.channel);
+  const byPayeeTypeMap = sumBy((e) => e.payeeType);
+
+  const stageMap = new Map<ReleaseStageCode, { dueNet: number; pendingNet: number; releasedNet: number; stages: number }>();
+  for (const entry of live) {
+    for (const stage of entry.stages) {
+      const cur = stageMap.get(stage.code) ?? { dueNet: 0, pendingNet: 0, releasedNet: 0, stages: 0 };
+      if (stage.status === "DUE" || stage.status === "IN_RUN") cur.dueNet += stage.netAmount;
+      else if (stage.status === "RELEASED") cur.releasedNet += stage.netAmount;
+      else if (stage.status !== "REVERSED") cur.pendingNet += stage.netAmount;
+      cur.stages += 1;
+      stageMap.set(stage.code, cur);
+    }
+  }
+  const stageOrder: ReleaseStageCode[] = [
+    "LEAD_GENERATION", "POLICY_ISSUANCE", "PREMIUM_COLLECTION", "RENEWAL_COLLECTION", "FREE_LOOK_EXPIRY", "PERSISTENCY_13M",
+  ];
+
+  return {
+    totalGrossCommission: live.reduce((s, l) => s + l.grossCommission, 0),
+    totalAccruedLiability: live.reduce((s, l) => s + l.dueNet + l.inRunNet + l.pendingNet, 0),
+    totalDueNow: live.reduce((s, l) => s + l.dueNet, 0),
+    totalInRun: live.reduce((s, l) => s + l.inRunNet, 0),
+    totalNotYetDue: live.reduce((s, l) => s + l.pendingNet, 0),
+    totalDisbursed: live.reduce((s, l) => s + l.releasedNet, 0),
+    totalClawbacks: ledger
+      .filter((l) => l.isClawback || l.status === "CLAWED_BACK")
+      .reduce((s, l) => s + Math.abs(l.clawbackAmount ?? l.netCommission), 0),
+    totalWithheldTax: live.reduce((s, l) => s + l.deductions.reduce((d, x) => d + x.amount, 0), 0),
+    firstYearCommissionTotal: live.filter((l) => l.premiumType === "FIRST_YEAR").reduce((s, l) => s + l.netCommission, 0),
+    renewalCommissionTotal: live.filter((l) => l.premiumType === "RENEWAL").reduce((s, l) => s + l.netCommission, 0),
+    singlePremiumCommissionTotal: live.filter((l) => l.premiumType === "SINGLE_PREMIUM").reduce((s, l) => s + l.netCommission, 0),
+    firstYearPremiumTotal: groupLedgerByPolicy(live).filter((p) => p.premiumType === "FIRST_YEAR").reduce((s, p) => s + p.collectedPremium, 0),
+    renewalPremiumTotal: groupLedgerByPolicy(live).filter((p) => p.premiumType === "RENEWAL").reduce((s, p) => s + p.collectedPremium, 0),
+    singlePremiumTotal: groupLedgerByPolicy(live).filter((p) => p.premiumType === "SINGLE_PREMIUM").reduce((s, p) => s + p.collectedPremium, 0),
+    overrideTotal: live.filter((l) => l.entryKind === "OVERRIDE").reduce((s, l) => s + l.netCommission, 0),
+    bonusTotal: live.filter((l) => l.entryKind === "BONUS").reduce((s, l) => s + l.netCommission, 0),
+    activePayeesCount: new Set(live.map((l) => l.payeeId)).size,
+    gatedCount: ledger.filter((l) => l.status === "ACCRUED" || l.status === "HELD").length,
+    byChannel: Array.from(byChannelMap.entries()).map(([channel, v]) => ({ channel, ...v })).sort((a, b) => b.gross - a.gross),
+    byPayeeType: Array.from(byPayeeTypeMap.entries()).map(([payeeType, v]) => ({ payeeType, ...v })).sort((a, b) => b.gross - a.gross),
+    byStage: Array.from(stageMap.entries())
+      .map(([code, v]) => ({ code, ...v }))
+      .sort((a, b) => stageOrder.indexOf(a.code) - stageOrder.indexOf(b.code)),
+  };
+}
+
 export async function getCommissionStats(): Promise<CommissionSummaryStats> {
   const ledger = await listCommissionLedger();
   const live = ledger.filter((l) => !l.isClawback);
+
 
   const sumBy = <K extends string>(keyOf: (e: CommissionLedgerEntry) => K) => {
     const map = new Map<K, { gross: number; net: number; entries: number }>();

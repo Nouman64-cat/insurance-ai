@@ -144,7 +144,18 @@ DOMAIN_TOOLS: dict[str, set[str]] = {
         "create_payout_run",
         "approve_payout_run",
         "get_commission_summary",
+        "list_commission_rules",
+        "create_commission_rule",
+        "update_commission_rule",
+        "delete_commission_rule",
+        "toggle_commission_rule_active",
+        "list_incentive_schemes",
+        "create_incentive_scheme",
+        "update_incentive_scheme",
+        "delete_incentive_scheme",
+        "toggle_incentive_scheme_active",
     },
+
 }
 
 # Words that put a conversation into a domain. Generous on purpose — a false
@@ -167,7 +178,6 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "sum assured limit", "coverage ceiling",
         "reinsurance rule", "retention rule", "treaty capacity", "treaty rule",
         "facultative", "self-retention",
-        "commission rate rule", "secp rate", "rate card rule", "statutory rate",
         "claim rule", "claims rule", "death benefit rule",
         "occupation loading", "occupational hazard", "hazard loading",
         "bmi loading", "smoker loading", "smoking surcharge", "risk loading",
@@ -177,6 +187,7 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "rbac rule", "authorization rule", "role rule", "action role",
         "insurance history rule", "history score", "hlv ceiling",
     ),
+
     "claims": (
         "claim", "claims", "fnol", "first notice of loss", "notice of loss",
         "claimant", "adjuster", "adjudicate", "adjudication", "settle", "settlement",
@@ -194,8 +205,11 @@ DOMAIN_KEYWORDS: dict[str, tuple[str, ...]] = {
         "clawback", "ledger", "statement", "incentive", "bonus", "waterfall",
         "producer", "agent earning", "earnings", "settlement", "treasury",
         "withholding", "wht", "tax deduction", "disburse",
+        "commission type", "commission rule", "commission rate", "rate card rule",
+        "bonus plan", "incentive scheme", "persistency bonus", "production bonus",
     ),
 }
+
 
 
 def select_domains(texts: Iterable[str], sticky: Iterable[str] = ()) -> set[str]:

@@ -89,6 +89,10 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
         case "token":
           if (evt.content) {
             setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last && last.role === "assistant" && last.text === evt.content) {
+                return prev;
+              }
               const copy = [...prev];
               // Move the assessment from any previous message in this turn to the final token bubble
               if (pendingAssessmentRef.current || pendingQuickActionsRef.current) {
@@ -135,7 +139,15 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
               ? { kind: "confirm", question, options: evt.options, toolCall }
               : { kind: "clarify", question, options: evt.options, toolCall }
           );
-          setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: question, quickActions }]);
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === "assistant" && last.text === question) {
+              const copy = [...prev];
+              copy[copy.length - 1] = { ...last, quickActions: quickActions || last.quickActions };
+              return copy;
+            }
+            return [...prev, { id: newId(), role: "assistant", text: question, quickActions }];
+          });
           break;
         }
 
