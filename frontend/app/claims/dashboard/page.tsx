@@ -9,6 +9,7 @@ import {
   CreateClaimRequest,
 } from "@/app/services/claims";
 import { listPolicies, PolicyListItem } from "@/app/services/policies";
+import { DateRangeFilter, filterLedgerByDate, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
 
 function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
   if (flag) {
@@ -69,6 +70,16 @@ export default function ClaimsDashboardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [step, setStep] = useState(1);
+
+  // ── Date Range Filter ─────────────────────────────────────────────────
+  const [datePreset, setDatePreset] = useState<DatePreset>("ytd");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("ytd"));
+
+  // Filter claims by created_at (always populated); incident_date may be null
+  const filteredClaims = filterLedgerByDate(
+    claims.map(c => ({ ...c, accruedAt: c.created_at })),
+    dateRange
+  );
 
   const [policySearch, setPolicySearch] = useState("");
   const [policyDropdownOpen, setPolicyDropdownOpen] = useState(false);
@@ -152,30 +163,30 @@ export default function ClaimsDashboardPage() {
     }
   };
 
-  // Metrics Calculations
-  const totalClaimsCount = claims.length;
-  const inProgressCount = claims.filter((c) =>
+  // Metrics Calculations (all from filteredClaims)
+  const totalClaimsCount = filteredClaims.length;
+  const inProgressCount = filteredClaims.filter((c) =>
     ["New", "Triaged", "Under Investigation", "Pending Documents", "Referred to Manager"].includes(c.status)
   ).length;
-  const totalApprovedSum = claims.reduce((acc, c) => acc + (c.approved_amount || 0), 0);
-  const totalSubmittedSum = claims.reduce((acc, c) => acc + (c.submitted_amount || 0), 0);
-  const highRiskCount = claims.filter((c) => c.fraud_probability >= 0.7 || c.duplicate_flag).length;
-  const mediumRiskCount = claims.filter((c) => c.fraud_probability >= 0.3 && c.fraud_probability < 0.7 && !c.duplicate_flag).length;
-  const lowRiskCount = claims.filter((c) => c.fraud_probability < 0.3 && !c.duplicate_flag).length;
+  const totalApprovedSum = filteredClaims.reduce((acc, c) => acc + (c.approved_amount || 0), 0);
+  const totalSubmittedSum = filteredClaims.reduce((acc, c) => acc + (c.submitted_amount || 0), 0);
+  const highRiskCount = filteredClaims.filter((c) => c.fraud_probability >= 0.7 || c.duplicate_flag).length;
+  const mediumRiskCount = filteredClaims.filter((c) => c.fraud_probability >= 0.3 && c.fraud_probability < 0.7 && !c.duplicate_flag).length;
+  const lowRiskCount = filteredClaims.filter((c) => c.fraud_probability < 0.3 && !c.duplicate_flag).length;
 
-  const approvedCount = claims.filter((c) => ["Approved", "Partial Approval", "Settled"].includes(c.status)).length;
-  const closedCount = claims.filter((c) => ["Approved", "Partial Approval", "Declined", "Settled", "Closed"].includes(c.status)).length;
+  const approvedCount = filteredClaims.filter((c) => ["Approved", "Partial Approval", "Settled"].includes(c.status)).length;
+  const closedCount = filteredClaims.filter((c) => ["Approved", "Partial Approval", "Declined", "Settled", "Closed"].includes(c.status)).length;
   const approvalRate = closedCount > 0 ? ((approvedCount / closedCount) * 100).toFixed(1) : "85.0";
 
   // Status breakdown
   const statusCounts: Record<string, number> = {};
-  claims.forEach((c) => {
+  filteredClaims.forEach((c) => {
     statusCounts[c.status] = (statusCounts[c.status] || 0) + 1;
   });
 
   // Type breakdown
   const typeCounts: Record<string, number> = {};
-  claims.forEach((c) => {
+  filteredClaims.forEach((c) => {
     typeCounts[c.claim_type] = (typeCounts[c.claim_type] || 0) + 1;
   });
 
@@ -198,6 +209,12 @@ export default function ClaimsDashboardPage() {
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Date Range Filter */}
+          <DateRangeFilter
+            preset={datePreset}
+            range={dateRange}
+            onPresetChange={(p, r) => { setDatePreset(p); setDateRange(r); }}
+          />
           <Link
             href="/claims/register"
             className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-all shadow-2xs flex items-center gap-2"
@@ -220,8 +237,15 @@ export default function ClaimsDashboardPage() {
         </div>
       </div>
 
-      {/* Primary KPI Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {/* Primary KPI Stats Grid */}
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Showing</span>
+          <span className="px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold">
+            {dateRange.from} – {dateRange.to}
+          </span>
+          <span className="text-[10px] text-slate-400">{filteredClaims.length} claims</span>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-2 relative overflow-hidden">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Claims Volume</span>
@@ -406,12 +430,12 @@ export default function ClaimsDashboardPage() {
           </div>
 
           <div className="space-y-3">
-            {claims.filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag).length === 0 ? (
+            {filteredClaims.filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag).length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-400">
                 No high risk or duplicate claims detected in the active queue.
               </div>
             ) : (
-              claims
+              filteredClaims
                 .filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag)
                 .slice(0, 5)
                 .map((c) => (

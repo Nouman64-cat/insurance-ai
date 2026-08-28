@@ -71,9 +71,17 @@ MUTATING_TOOLS = {
     # start_underwriting_journey does. (continue_claim_journey is deliberately
     # NOT here — the journey was already consented to at start.)
     "start_claim_journey",
-    # Commission — payout runs move money.
+    # Commission — payout runs move money; rules & schemes govern payout structure.
     "create_payout_run",
     "approve_payout_run",
+    "create_commission_rule",
+    "update_commission_rule",
+    "delete_commission_rule",
+    "toggle_commission_rule_active",
+    "create_incentive_scheme",
+    "update_incentive_scheme",
+    "delete_incentive_scheme",
+    "toggle_incentive_scheme_active",
 }
 
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
@@ -122,11 +130,14 @@ SAFE_TOOLS = {
     "get_commission_ledger",
     "get_agent_statement",
     "get_commission_summary",
+    "list_commission_rules",
+    "list_incentive_schemes",
 }
 
 # Destructive enough that the confirmation prompt names the record explicitly
 # rather than the generic "Ready to <tool name> — proceed?".
-DESTRUCTIVE_TOOLS = {"delete_customer", "delete_user", "delete_case", "delete_rule"}
+DESTRUCTIVE_TOOLS = {"delete_customer", "delete_user", "delete_case", "delete_rule", "delete_commission_rule", "delete_incentive_scheme"}
+
 
 ADMIN_ROLES = {"SuperAdmin", "Admin"}
 
@@ -287,7 +298,18 @@ STEP_LABELS: dict[str, str] = {
     "get_commission_summary": "Loading commission summary",
     "create_payout_run": "Assembling payout run",
     "approve_payout_run": "Approving payout run",
+    "list_commission_rules": "Fetching commission rate card rules",
+    "create_commission_rule": "Creating commission rate card rule",
+    "update_commission_rule": "Updating commission rule",
+    "delete_commission_rule": "Deleting commission rule",
+    "toggle_commission_rule_active": "Toggling commission rule status",
+    "list_incentive_schemes": "Fetching performance bonus plans",
+    "create_incentive_scheme": "Creating performance bonus plan",
+    "update_incentive_scheme": "Updating bonus plan",
+    "delete_incentive_scheme": "Deleting bonus plan",
+    "toggle_incentive_scheme_active": "Toggling bonus plan status",
 }
+
 
 
 def step_label(tool_name: str) -> str:

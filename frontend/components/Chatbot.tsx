@@ -143,7 +143,9 @@ export function Chatbot() {
 
   const handleQuickAction = useCallback((action: QuickAction) => {
     if (action.actionType === "navigate") {
-      router.push(`/${action.payload}`);
+      const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
+      const sep = path.includes('?') ? '&' : '?';
+      window.open(`${window.location.origin}${path}${sep}_portal=1`, "_blank");
     } else if (action.actionType === "confirm") {
       resolveInterrupt(action.payload === "Yes");
     } else if (action.actionType === "upload") {

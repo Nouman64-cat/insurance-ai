@@ -11,7 +11,8 @@ import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
 import { QuickActionSelect } from "./agent/QuickActionSelect";
-import type { AgentMessage, QuickAction } from "@/lib/agent/types";
+import type { AgentMessage, QuickAction, ProcessStep } from "@/lib/agent/types";
+
 import { useCopilot } from "./CopilotContext";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { IssuanceModal, SuccessModal, PaymentModal } from "./policy/IssuanceModals";
@@ -66,14 +67,22 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
     return [
       { label: "Add a new customer", actionType: "submit", payload: "Add a new customer" },
       { label: "Start underwriting", actionType: "submit", payload: "Start underwriting journey for a customer" },
+      { label: "Add a new rule ⚡", actionType: "submit", payload: "Add a new rule" },
+      { label: "Commission Summary ⚡", actionType: "submit", payload: "Show commission position and summary" },
+      { label: "Add new commission type ⚡", actionType: "submit", payload: "Add a new commission type in the commission engine" },
+
+      { label: "Add new bonuses ⚡", actionType: "submit", payload: "Create a new performance bonus plan" },
+      { label: "Rate Cards & Bonuses ⚡", actionType: "submit", payload: "List commission rate card rules and performance bonus plans" },
       { label: "Register a claim (FNOL)", actionType: "submit", payload: "Register a new claim" },
-      { label: "Claims dashboard", actionType: "submit", payload: "Show the claims dashboard" },
+      { label: "Get claims info 📋", actionType: "submit", payload: "Show claims dashboard and summary" },
       { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
       { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
       { label: "Calculate Commission", actionType: "submit", payload: "Calculate commission for active policy" },
       { label: "Check pending cases", actionType: "submit", payload: "Show me all pending cases" },
     ];
   }
+
+
 
   const text = (lastMessage.text || "").toLowerCase();
 
@@ -238,23 +247,46 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
   // ── Rule engine: generic context ─────────────────────────────────────────
   if (text.includes("rule") || text.includes("catalog") || text.includes("category")) {
     return [
+      { label: "Add a new rule ⚡", actionType: "submit", payload: "Add a new rule" },
       { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
-      { label: "Simulate NML rules", actionType: "submit", payload: "Simulate rule set RS-MED-001 for a 45 year old with 5000000 sum assured" },
+      { label: "Simulate rules", actionType: "submit", payload: "Simulate rules for a 45 year old with 5000000 sum assured" },
       { label: "Show all rule sets", actionType: "submit", payload: "List all rule sets" },
       { label: "View audit log", actionType: "submit", payload: "Show the rule evaluation logs" },
     ];
   }
 
 
+  // ── Commission engine: Rate cards & Commission Rules ────────────────────
+  if (text.includes("rate card") || text.includes("commission rule") || text.includes("types")) {
+    return [
+      { label: "List Rate Cards ⚡", actionType: "submit", payload: "List commission rate card rules" },
+      { label: "+ Add Rate Card Rule", actionType: "submit", payload: "Create a new commission rate card rule" },
+      { label: "Open Rate Cards", actionType: "navigate", payload: "commissions/types" },
+      { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
+    ];
+  }
+
+  // ── Commission engine: Performance Bonus Plans & Incentives ──────────────
+  if (text.includes("bonus") || text.includes("incentive") || text.includes("persistency")) {
+    return [
+      { label: "List Bonus Plans ⚡", actionType: "submit", payload: "List performance bonus plans" },
+      { label: "+ Add Bonus Plan", actionType: "submit", payload: "Create a new performance bonus plan" },
+      { label: "Open Bonuses Dashboard", actionType: "navigate", payload: "commissions/bonuses" },
+      { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
+    ];
+  }
+
   if (text.includes("commission") || text.includes("payee") || text.includes("ledger") || text.includes("payout") || text.includes("waterfall")) {
     return [
-      { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
+      { label: "Open Rate Cards ⚡", actionType: "navigate", payload: "commissions/types" },
+      { label: "Open Bonus Plans ⚡", actionType: "navigate", payload: "commissions/bonuses" },
       { label: "View Commission Ledger", actionType: "navigate", payload: "commission-ops/ledger" },
       { label: "Calculate Commission", actionType: "submit", payload: "Calculate commission for active policy" },
       { label: "Create Payout Run", actionType: "submit", payload: "Create a payout run for this month" },
       { label: "Open Statements", actionType: "navigate", payload: "commission-ops/statements" },
     ];
   }
+
 
   if (text.includes("token") || text.includes("cost") || text.includes("finops") || text.includes("llm") || text.includes("quota")) {
     return [
@@ -389,12 +421,15 @@ export function CopilotInterface() {
   const handleAgentNavigate = useCallback(
     (route: string, entityId: string, highlight: boolean) => {
       if (highlight && entityId) {
-        requestHighlight(entityId); // consumed by the watcher after navigation
-        triggerHighlight(entityId); // covers the already-on-that-page case, where push() is a no-op
+        requestHighlight(entityId);
+        triggerHighlight(entityId);
       }
-      router.push(`/${route}`);
+      const path = route.startsWith('/') ? route : `/${route}`;
+      const sep = path.includes('?') ? '&' : '?';
+      const targetUrl = `${window.location.origin}${path}${sep}_portal=1`;
+      window.open(targetUrl, "_blank");
     },
-    [router]
+    []
   );
 
   const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions } = useAgentChat({
@@ -919,7 +954,9 @@ export function CopilotInterface() {
         requestHighlight(entityId);
         triggerHighlight(entityId); // same-URL pushes don't re-fire the nav watcher
       }
-      router.push(`/${action.payload}`);
+      const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
+      const sep = path.includes('?') ? '&' : '?';
+      window.open(`${window.location.origin}${path}${sep}_portal=1`, "_blank");
     } else if (action.actionType === "upload") {
       const data = JSON.parse(action.payload);
       pendingUploadRef.current = data;
@@ -1000,7 +1037,7 @@ export function CopilotInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, messages]);
 
-  const [sessions, setSessions] = useState<{id: string, date: number, title: string, messages: any[], actions: any[]}[]>(() => {
+  const [sessions, setSessions] = useState<{id: string, date: number, title: string, messages: any[], actions: any[], pinned?: boolean}[]>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem(STORAGE_KEY + "_sessions");
@@ -1010,6 +1047,20 @@ export function CopilotInterface() {
     return [];
   });
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState<string>("");
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuSessionId(null);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -1019,16 +1070,19 @@ export function CopilotInterface() {
 
   const saveCurrentSession = () => {
     if (messages.length <= 1) return;
-    const title = messages.find(m => m.role === 'user')?.text || "New Conversation";
+    const userMsgTitle = messages.find(m => m.role === 'user')?.text || "New Conversation";
+    const defaultTitle = userMsgTitle.length > 35 ? userMsgTitle.slice(0, 35) + "..." : userMsgTitle;
     const sessionId = activeSessionId || Date.now().toString();
     setSessions(prev => {
+      const existing = prev.find(s => s.id === sessionId);
       const filtered = prev.filter(s => s.id !== sessionId);
       return [{
         id: sessionId,
         date: Date.now(),
-        title: title.length > 35 ? title.slice(0, 35) + "..." : title,
+        title: existing?.title || defaultTitle,
         messages: [...messages],
-        actions: [...turnActions]
+        actions: [...turnActions],
+        pinned: existing?.pinned || false
       }, ...filtered];
     });
   };
@@ -1054,6 +1108,30 @@ export function CopilotInterface() {
       handleClearChat();
     }
   };
+
+  const handleTogglePinSession = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, pinned: !s.pinned } : s));
+    setOpenMenuSessionId(null);
+  };
+
+  const handleStartRename = (session: { id: string, title: string }, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingSessionId(session.id);
+    setEditingTitle(session.title);
+    setOpenMenuSessionId(null);
+  };
+
+  const handleSaveRename = (id: string, e?: React.FormEvent | React.FocusEvent | React.KeyboardEvent) => {
+    if (e) e.stopPropagation();
+    if (editingTitle.trim()) {
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, title: editingTitle.trim() } : s));
+    }
+    setEditingSessionId(null);
+  };
+
+  const [chatSearch, setChatSearch] = useState("");
+
 
 
   const startRecording = async () => {
@@ -1312,36 +1390,155 @@ export function CopilotInterface() {
              </div>
              <span className="tracking-wide">Rizviz<span className="text-blue-400">.ai</span></span>
           </div>
-          <div className="px-4 pb-4 mt-2 relative z-10">
+          <div className="px-4 pb-3 mt-2 relative z-10 space-y-2">
             <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-200 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 shadow-sm">
               <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
               New chat
             </button>
+            {/* Search input */}
+            <div className="relative">
+              <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+              </svg>
+              <input
+                type="text"
+                value={chatSearch}
+                onChange={e => setChatSearch(e.target.value)}
+                placeholder="Search chats…"
+                className="w-full pl-8 pr-3 py-2 text-xs bg-white/5 border border-white/10 rounded-xl text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/8 transition-all"
+              />
+              {chatSearch && (
+                <button onClick={() => setChatSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
-            {sessions.length > 0 && (
-              <div className="space-y-1">
-                {sessions.map(session => (
-                  <button
-                    key={session.id}
-                    onClick={() => handleLoadSession(session)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl transition-colors group flex items-center justify-between ${activeSessionId === session.id ? 'bg-white/10' : 'hover:bg-white/5'}`}
-                  >
-                    <div className="flex-1 min-w-0 pr-2">
-                      <div className="text-[13px] font-medium text-slate-300 truncate group-hover:text-white transition-colors">
-                        {session.title}
+            {sessions.length > 0 && (() => {
+              const filtered = [...sessions]
+                .sort((a, b) => {
+                  if (a.pinned && !b.pinned) return -1;
+                  if (!a.pinned && b.pinned) return 1;
+                  return b.date - a.date;
+                })
+                .filter(s => !chatSearch.trim() || s.title.toLowerCase().includes(chatSearch.trim().toLowerCase()));
+              if (filtered.length === 0) return (
+                <div className="text-center py-8 text-slate-600 text-xs">
+                  No chats match &ldquo;{chatSearch}&rdquo;
+                </div>
+              );
+              return (
+                <div className="space-y-1">
+                  {filtered.map(session => (
+                    <div
+                      key={session.id}
+                      className="relative group"
+                    >
+                      <div
+                        onClick={() => handleLoadSession(session)}
+                        className={`w-full text-left px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
+                          activeSessionId === session.id
+                            ? 'bg-white/10 border-white/10 text-white shadow-sm'
+                            : 'border-transparent hover:bg-white/5 text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0 pr-2">
+                          {editingSessionId === session.id ? (
+                            <input
+                              type="text"
+                              value={editingTitle}
+                              onChange={(e) => setEditingTitle(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") handleSaveRename(session.id, e);
+                                if (e.key === "Escape") setEditingSessionId(null);
+                              }}
+                              onBlur={(e) => handleSaveRename(session.id, e)}
+                              autoFocus
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-full bg-slate-800 text-white text-[13px] px-2 py-0.5 rounded border border-blue-500/80 outline-none"
+                            />
+                          ) : (
+                            <div className="flex items-center gap-1.5 text-[13px] font-medium truncate">
+                              {session.pinned && (
+                                <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                                </svg>
+                              )}
+                              <span className="truncate">{session.title}</span>
+                            </div>
+                          )}
+                          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                            <span>{new Date(session.date).toLocaleDateString()}</span>
+                            {session.pinned && <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">Pinned</span>}
+                          </div>
+                        </div>
+
+                        {/* 3-dots Menu Toggle Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenMenuSessionId(openMenuSessionId === session.id ? null : session.id);
+                          }}
+                          className={`p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all ${
+                            openMenuSessionId === session.id ? "opacity-100 bg-white/10 text-white" : "opacity-0 group-hover:opacity-100"
+                          }`}
+                          title="Chat options"
+                        >
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+                          </svg>
+                        </button>
                       </div>
-                      <div className="text-[11px] text-slate-500 mt-0.5">
-                        {new Date(session.date).toLocaleDateString()}
-                      </div>
+
+                      {/* Dropdown Menu (Claude style) */}
+                      {openMenuSessionId === session.id && (
+                        <div
+                          ref={menuRef}
+                          className="absolute right-2 top-10 w-44 bg-[#181b21] border border-white/15 rounded-xl shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs backdrop-blur-xl"
+                        >
+                          <button
+                            onClick={(e) => handleTogglePinSession(session.id, e)}
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-slate-300 hover:text-white hover:bg-white/10 transition-colors font-medium text-left"
+                          >
+                            <svg className="w-3.5 h-3.5 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
+                            </svg>
+                            {session.pinned ? "Unpin chat" : "Pin chat"}
+                          </button>
+
+                          <button
+                            onClick={(e) => handleStartRename(session, e)}
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-slate-300 hover:text-white hover:bg-white/10 transition-colors font-medium text-left"
+                          >
+                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                            </svg>
+                            Rename
+                          </button>
+
+                          <div className="my-1 border-t border-white/10" />
+
+                          <button
+                            onClick={(e) => {
+                              setOpenMenuSessionId(null);
+                              handleDeleteSession(session.id, e);
+                            }}
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors font-medium text-left"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                            Delete chat
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <button onClick={(e) => handleDeleteSession(session.id, e)} className="text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all p-1">
-                       <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-                    </button>
-                  </button>
-                ))}
+                  ))}
               </div>
-            )}
+              );
+            })()}
+
           </div>
           <div className="p-4 mt-auto border-t border-white/5 bg-black/20 relative z-10">
             <button onClick={() => setAutomationMode(false)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
@@ -1454,7 +1651,7 @@ export function CopilotInterface() {
                        {(turnActions.length > 0
                          ? turnActions
                          : getRecommendedActions(undefined)
-                       ).slice(0, 8).map((action, idx) => action.actionType === "select" ? (
+                       ).slice(0, 10).map((action, idx) => action.actionType === "select" ? (
                          <QuickActionSelect
                            key={idx}
                            action={action}

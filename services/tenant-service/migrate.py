@@ -1059,7 +1059,32 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v46e-enum — add PORTAL to sourcechannelenum",
         "ALTER TYPE sourcechannelenum ADD VALUE IF NOT EXISTS 'PORTAL'",
     ),
+    (
+        "v47a — add claimant_type to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS claimant_type VARCHAR(50) DEFAULT 'SELF'",
+    ),
+    (
+        "v47b — add claimant_name to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS claimant_name VARCHAR(255)",
+    ),
+    (
+        "v47c — add claimant_cnic to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS claimant_cnic VARCHAR(20)",
+    ),
+    (
+        "v47d — add claimant_relationship to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS claimant_relationship VARCHAR(50)",
+    ),
+    (
+        "v47e — add claimant_phone to claims",
+        "ALTER TABLE claims ADD COLUMN IF NOT EXISTS claimant_phone VARCHAR(50)",
+    ),
+    (
+        "v47f — add extracted_metadata to artifacts",
+        "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS extracted_metadata JSON",
+    ),
 ]
+
 
 
 # ── Post-data-migration list ───────────────────────────────────────────────────

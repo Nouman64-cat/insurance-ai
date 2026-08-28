@@ -1301,6 +1301,143 @@ def approve_payout_run(**kwargs) -> str:
     return "{}"
 
 
+# ── Commission Types & Rate Card Rules ─────────────────────────────────────
+
+class ListCommissionRulesArgs(BaseModel):
+    channel: Optional[str] = Field(default=None, description="DIRECT_AGENCY, BANCASSURANCE, BROKER, CORPORATE_AGENT, DIGITAL_DIRECT or REFERRAL.")
+    segment: Optional[str] = Field(default=None, description="individual, group, family.")
+    payee_type: Optional[str] = Field(default=None, description="AGENT, SALES_MANAGER, BRANCH_MANAGER, AGENCY, BROKER, BANK_PARTNER, BANK_SALES_OFFICER, REFERRAL_PARTNER.")
+    search: Optional[str] = Field(default=None, description="Search term for rule ID, name or description.")
+
+
+@tool(args_schema=ListCommissionRulesArgs)
+def list_commission_rules(**kwargs) -> str:
+    """List commission rate card rules — channel rates, policy year bands, SECP statutory caps and payee roles."""
+    return "{}"
+
+
+class CreateCommissionRuleArgs(BaseModel):
+    id: Optional[str] = Field(default=None, description="Unique rule ID, e.g. COM-AG-IND-Y1.")
+    channel: str = Field(description="Distribution channel code, e.g. DIRECT_AGENCY.")
+    target_role: str = Field(description="Target payee role, e.g. AGENT, SALES_MANAGER.")
+    policy_segment: str = Field(description="Policy segment: individual, group, family.")
+    premium_type: str = Field(description="FIRST_YEAR, RENEWAL, SINGLE_PREMIUM.")
+    policy_year: int = Field(default=1, description="Policy year band (1 = 1st year).")
+    commission_rate: float = Field(description="Commission rate percentage, e.g. 45.0 for 45%.")
+    description: Optional[str] = Field(default=None, description="Rule description.")
+    secp_ref: Optional[str] = Field(default=None, description="SECP circular reference.")
+    ref_status: Optional[str] = Field(default="STATUTORY", description="STATUTORY or CONTRACTUAL.")
+
+
+@tool(args_schema=CreateCommissionRuleArgs)
+def create_commission_rule(**kwargs) -> str:
+    """Create a new commission type / rate card rule in the commission engine. Use this tool whenever the user asks to add or create a new commission type, commission rate card, or commission rule."""
+    return "{}"
+
+
+
+class UpdateCommissionRuleArgs(BaseModel):
+    rule_id: str = Field(description="The ID of the commission rule to update, e.g. COM-AG-IND-Y1.")
+    commission_rate: Optional[float] = Field(default=None, description="Updated commission rate percentage.")
+    description: Optional[str] = Field(default=None, description="Updated description.")
+    is_active: Optional[bool] = Field(default=None, description="Set active status.")
+
+
+@tool(args_schema=UpdateCommissionRuleArgs)
+def update_commission_rule(**kwargs) -> str:
+    """Update an existing commission rate card rule in the engine."""
+    return "{}"
+
+
+class DeleteCommissionRuleArgs(BaseModel):
+    rule_id: str = Field(description="The ID of the commission rule to delete.")
+
+
+@tool(args_schema=DeleteCommissionRuleArgs)
+def delete_commission_rule(**kwargs) -> str:
+    """Delete a commission rate card rule from the engine."""
+    return "{}"
+
+
+class ToggleCommissionRuleActiveArgs(BaseModel):
+    rule_id: str = Field(description="The ID of the commission rule to toggle active/inactive.")
+
+
+@tool(args_schema=ToggleCommissionRuleActiveArgs)
+def toggle_commission_rule_active(**kwargs) -> str:
+    """Toggle the active status of a commission rate card rule."""
+    return "{}"
+
+
+# ── Performance Bonus Plans & Incentives ───────────────────────────────────
+
+class ListIncentiveSchemesArgs(BaseModel):
+    kind: Optional[str] = Field(default=None, description="PERSISTENCY_BONUS, PRODUCTION_BONUS, CLUB_QUALIFICATION.")
+    search: Optional[str] = Field(default=None, description="Search by plan name, code or metric.")
+
+
+@tool(args_schema=ListIncentiveSchemesArgs)
+def list_incentive_schemes(**kwargs) -> str:
+    """List performance bonus plans, policy retention rewards and club qualifications."""
+    return "{}"
+
+
+class CreateIncentiveSchemeArgs(BaseModel):
+    id: Optional[str] = Field(default=None, description="Optional scheme ID, e.g. INC-5.")
+    code: str = Field(description="Scheme code, e.g. BONUS-RET-13M.")
+    name: str = Field(description="Scheme name, e.g. 1-Year Policy Retention Bonus.")
+    kind: str = Field(description="PERSISTENCY_BONUS, PRODUCTION_BONUS, CLUB_QUALIFICATION.")
+    metric: str = Field(description="Evaluation metric, e.g. 1-Year Policy Retention or Quarterly Sales Target.")
+    threshold_label: str = Field(description="Human readable goal, e.g. ≥ 85% Active or ≥ PKR 5,000,000.")
+    threshold: float = Field(description="Numeric goal value, e.g. 85 or 5000000.")
+    reward_pct: Optional[float] = Field(default=None, description="Reward percentage of 1st-year earnings.")
+    reward_amount: Optional[float] = Field(default=None, description="Flat reward cash amount in PKR.")
+    measured_at: Optional[str] = Field(default=None, description="Evaluation period, e.g. End of Quarter, After 13 Months.")
+    description: Optional[str] = Field(default=None, description="Scheme details and qualifications.")
+
+
+@tool(args_schema=CreateIncentiveSchemeArgs)
+def create_incentive_scheme(**kwargs) -> str:
+    """Create a new performance bonus plan, incentive scheme, or bonus rule in the commission engine. Use this tool whenever the user asks to add new bonuses, create a bonus plan, or set up a performance incentive."""
+    return "{}"
+
+
+
+class UpdateIncentiveSchemeArgs(BaseModel):
+    scheme_id: str = Field(description="Scheme ID to update, e.g. INC-1.")
+    name: Optional[str] = Field(default=None, description="Updated scheme name.")
+    threshold: Optional[float] = Field(default=None, description="Updated threshold value.")
+    reward_pct: Optional[float] = Field(default=None, description="Updated reward percentage.")
+    reward_amount: Optional[float] = Field(default=None, description="Updated reward flat cash amount.")
+    is_active: Optional[bool] = Field(default=None, description="Updated active status.")
+
+
+@tool(args_schema=UpdateIncentiveSchemeArgs)
+def update_incentive_scheme(**kwargs) -> str:
+    """Update an existing performance bonus plan or retention incentive scheme."""
+    return "{}"
+
+
+class DeleteIncentiveSchemeArgs(BaseModel):
+    scheme_id: str = Field(description="Scheme ID to delete, e.g. INC-1.")
+
+
+@tool(args_schema=DeleteIncentiveSchemeArgs)
+def delete_incentive_scheme(**kwargs) -> str:
+    """Delete a performance bonus plan or incentive scheme."""
+    return "{}"
+
+
+class ToggleIncentiveSchemeActiveArgs(BaseModel):
+    scheme_id: str = Field(description="Scheme ID to toggle active/inactive.")
+
+
+@tool(args_schema=ToggleIncentiveSchemeActiveArgs)
+def toggle_incentive_scheme_active(**kwargs) -> str:
+    """Toggle the active status of a performance bonus plan."""
+    return "{}"
+
+
 ALL_TOOLS = [
     # navigation & discovery
     navigate_to_page,
@@ -1322,11 +1459,6 @@ ALL_TOOLS = [
     # customers
     add_customer,
     update_customer,
-    # delete_customer is deliberately NOT bound. The handler refuses
-    # unconditionally (records are retained for audit), so binding it only
-    # spent schema tokens on every call and walked the user through a
-    # "permanently deletes X" confirmation for something that never happens.
-    # The system prompt already tells the model to answer the request directly.
     bulk_add_customers,
     # users / orgs / families
     add_user,
@@ -1406,4 +1538,15 @@ ALL_TOOLS = [
     get_commission_summary,
     create_payout_run,
     approve_payout_run,
+    list_commission_rules,
+    create_commission_rule,
+    update_commission_rule,
+    delete_commission_rule,
+    toggle_commission_rule_active,
+    list_incentive_schemes,
+    create_incentive_scheme,
+    update_incentive_scheme,
+    delete_incentive_scheme,
+    toggle_incentive_scheme_active,
 ]
+

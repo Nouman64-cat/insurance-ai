@@ -230,8 +230,7 @@ export default function HierarchyTree({
           <div key={cat.id} className={catIdx > 0 ? "border-t border-slate-100" : ""}>
 
             {/* ═══ CATEGORY ROW ══════════════════════════════════════════ */}
-            <button
-              type="button"
+            <div
               onClick={() => {
                 toggleCategory(cat.code);
                 onChange({ categoryCode: cat.code, subcategoryCode: null, channelCode: null });
@@ -257,10 +256,11 @@ export default function HierarchyTree({
               </span>
 
               {onAction && (
-                <div className="relative">
+                <div className="relative" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
                     onClick={(e) => {
+                      e.preventDefault();
                       e.stopPropagation();
                       setActiveMenuId(activeMenuId === cat.id ? null : cat.id);
                     }}
@@ -269,21 +269,25 @@ export default function HierarchyTree({
                       e.stopPropagation();
                       setActiveMenuId(activeMenuId === cat.id ? null : cat.id);
                     }}
-                    className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors hidden group-hover:block"
+                    className={`p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors ${
+                      activeMenuId === cat.id ? "block text-slate-700 bg-slate-200" : "hidden group-hover:block"
+                    }`}
                     title="Options"
                   >
                     <IconDots />
                   </button>
                   {activeMenuId === cat.id && (
-                    <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded shadow-lg z-[60] overflow-hidden">
+                    <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[60] overflow-hidden py-1">
                       <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 transition"
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
                         onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'rename', cat.id, cat.name); }}
                       >
                         Rename
                       </button>
                       <button
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 transition border-t border-slate-100"
+                        type="button"
+                        className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
                         onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('category', 'delete', cat.id, cat.name); }}
                       >
                         Delete
@@ -294,7 +298,7 @@ export default function HierarchyTree({
               )}
 
               <CountBadge count={catCount} active={isCatSelected} />
-            </button>
+            </div>
 
             {/* ═══ SUBCATEGORIES ═════════════════════════════════════════ */}
             {isCatOpen && cat.subcategories.map((sub) => {
@@ -311,8 +315,7 @@ export default function HierarchyTree({
                   <div className="relative flex">
                     <div className="absolute left-[24px] top-0 bottom-0 w-px bg-slate-200" />
 
-                    <button
-                      type="button"
+                    <div
                       onClick={() => {
                         toggleSubcat(sub.code);
                         onChange({ categoryCode: cat.code, subcategoryCode: sub.code, channelCode: null });
@@ -340,10 +343,11 @@ export default function HierarchyTree({
                       </span>
 
                       {onAction && (
-                        <div className="relative">
+                        <div className="relative" onClick={(e) => e.stopPropagation()}>
                           <button
                             type="button"
                             onClick={(e) => {
+                              e.preventDefault();
                               e.stopPropagation();
                               setActiveMenuId(activeMenuId === sub.id ? null : sub.id);
                             }}
@@ -352,21 +356,25 @@ export default function HierarchyTree({
                               e.stopPropagation();
                               setActiveMenuId(activeMenuId === sub.id ? null : sub.id);
                             }}
-                            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors hidden group-hover:block"
+                            className={`p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors ${
+                              activeMenuId === sub.id ? "block text-slate-700 bg-slate-200" : "hidden group-hover:block"
+                            }`}
                             title="Options"
                           >
                             <IconDots />
                           </button>
                           {activeMenuId === sub.id && (
-                            <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded shadow-lg z-[60] overflow-hidden">
+                            <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[60] overflow-hidden py-1">
                               <button
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 transition"
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
                                 onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'rename', sub.id, sub.name); }}
                               >
                                 Rename
                               </button>
                               <button
-                                className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 transition border-t border-slate-100"
+                                type="button"
+                                className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
                                 onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('subcategory', 'delete', sub.id, sub.name); }}
                               >
                                 Delete
@@ -377,7 +385,7 @@ export default function HierarchyTree({
                       )}
 
                       <CountBadge count={subCount} active={isSubSelected && !selectedRuleSetId} />
-                    </button>
+                    </div>
                   </div>
 
                   {/* ─── RULE SETS ───────────────────────────────────── */}
@@ -390,8 +398,7 @@ export default function HierarchyTree({
                         <div className={`absolute left-[24px] w-px bg-slate-200 ${isLast ? "top-0 h-1/2" : "top-0 bottom-0"}`} />
                         <div className={`absolute left-[40px] w-px bg-slate-200 ${isLast ? "top-0 h-1/2" : "top-0 bottom-0"}`} />
 
-                        <button
-                          type="button"
+                        <div
                           onClick={() => onSelectRuleSet?.(rs.id)}
                           className={`group flex-1 flex items-center gap-2 pl-14 pr-3 py-2 text-left transition-colors cursor-pointer ${
                             isRsSelected
@@ -412,10 +419,11 @@ export default function HierarchyTree({
                           </span>
 
                           {onAction && (
-                            <div className="relative">
+                            <div className="relative" onClick={(e) => e.stopPropagation()}>
                               <button
                                 type="button"
                                 onClick={(e) => {
+                                  e.preventDefault();
                                   e.stopPropagation();
                                   setActiveMenuId(activeMenuId === rs.id ? null : rs.id);
                                 }}
@@ -424,21 +432,25 @@ export default function HierarchyTree({
                                   e.stopPropagation();
                                   setActiveMenuId(activeMenuId === rs.id ? null : rs.id);
                                 }}
-                                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors hidden group-hover:block"
+                                className={`p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition-colors ${
+                                  activeMenuId === rs.id ? "block text-slate-700 bg-slate-200" : "hidden group-hover:block"
+                                }`}
                                 title="Options"
                               >
                                 <IconDots />
                               </button>
                               {activeMenuId === rs.id && (
-                                <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded shadow-lg z-[60] overflow-hidden">
+                                <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-xl z-[60] overflow-hidden py-1">
                                   <button
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 text-slate-700 transition"
+                                    type="button"
+                                    className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-slate-50 text-slate-700 transition"
                                     onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'rename', rs.id, rs.name); }}
                                   >
                                     Rename
                                   </button>
                                   <button
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-red-50 text-red-600 transition border-t border-slate-100"
+                                    type="button"
+                                    className="w-full text-left px-3 py-2 text-xs font-medium hover:bg-red-50 text-red-600 transition border-t border-slate-100"
                                     onClick={(e) => { e.stopPropagation(); setActiveMenuId(null); onAction('ruleset', 'delete', rs.id, rs.name); }}
                                   >
                                     Delete
@@ -453,7 +465,7 @@ export default function HierarchyTree({
                           }`}>
                             {rs.rule_count}
                           </span>
-                        </button>
+                        </div>
                       </div>
                     );
                   })}

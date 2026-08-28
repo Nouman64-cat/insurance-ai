@@ -194,13 +194,7 @@ seeded rule sets — use these codes directly when calling tools.
 A RULE lives inside a RULE SET's draft version; a RULE SET lives inside a
 category/subcategory. "Add a rule", "create a new rule", "I want a new rule" —
 singular, no mention of a category — means **add_rule_to_version** on an
-EXISTING rule set. Call it immediately with no arguments. Do NOT first call
-list_rule_categories and narrate the category tree in prose while asking the
-user to choose a category/subcategory — that is the create_rule_set flow, for
-when the user is opening a brand-new rule SET, not adding one rule to a set
-that already exists. Only walk the category tree when the user explicitly asks
-to create a new rule set, or when add_rule_to_version's own picker reports that
-no rule sets exist at all.
+EXISTING rule set. (NOTE: If the user asks to add or create a "commission type", "commission rate card", or "commission rule", DO NOT call `add_rule_to_version` — use `create_commission_rule` in the Commission Engine instead.)
 
 ### Never ask for a code in plain text — call the tool
 `get_rule_set`, `evaluate_rule_set`, `create_rule_version`, `add_rule_to_version`,
@@ -287,15 +281,24 @@ DOMAIN_PROMPTS["commission"] = """
 
 ## COMMISSION ENGINE
 
-**get_commission_rate_card** reads the SECP statutory rates out of the rule engine. \
-**calculate_commission** previews the full waterfall for a policy — producer \
-commission, hierarchy overrides, partner and referral fees, tax withholding. \
-**get_commission_ledger** and **get_agent_statement** report what is owed and to \
-whom; **get_commission_summary** is the portfolio-level view.
+### CRITICAL: Commission Types / Rate Cards vs Underwriting Business Rules
+- "Commission Type", "Commission Rate Card", "Commission Rule", or "Add Rate Card Rule" refers strictly to **Commission Rate Card Rules** in the Commission Engine (page `/commissions/types`). Call **create_commission_rule**, **list_commission_rules**, **update_commission_rule**, **toggle_commission_rule_active**, or **delete_commission_rule**.
+- "Add Bonus", "Add Bonus Plan", "Performance Bonus", or "Incentive Scheme" refers strictly to **Performance Bonus Plans** in the Commission Engine (page `/commissions/bonuses`). Call **create_incentive_scheme**, **list_incentive_schemes**, **update_incentive_scheme**, **toggle_incentive_scheme_active**, or **delete_incentive_scheme**.
+- **NEVER** call `add_rule_to_version` or `create_rule_set` when the user asks to add or edit a commission type, commission rate card, or bonus plan. The Rule Engine (`/admin/rule-engine`) is ONLY for underwriting risk and eligibility rules (like NML, AML, loadings).
 
-Payouts are maker–checker: **create_payout_run** assembles due tranches, \
-**approve_payout_run** releases them, and the approver must not be the maker. \
-Always name the period and the total before creating or approving a run."""
+### Commission Rate Cards & Incentive Plans Management
+- **list_commission_rules**: List or search commission rate card rules by channel, segment, or payee role.
+- **create_commission_rule**: Create a new commission rate card rule (rate %, channel, payee role, policy year, statutory vs contractual).
+- **update_commission_rule** / **toggle_commission_rule_active** / **delete_commission_rule**: Manage existing rate card rules.
+- **list_incentive_schemes**: List performance bonus plans.
+- **create_incentive_scheme**: Create a performance bonus plan / retention incentive scheme (kind, metric, threshold, reward % or amount).
+- **update_incentive_scheme** / **toggle_incentive_scheme_active** / **delete_incentive_scheme**: Manage existing bonus plans.
+
+### Waterfall & Ledger Calculations
+**calculate_commission** previews the full waterfall for a policy — producer commission, hierarchy overrides, partner and referral fees, tax withholding. **get_commission_ledger** and **get_agent_statement** report what is owed and to whom; **get_commission_summary** is the portfolio-level view.
+
+Payouts are maker–checker: **create_payout_run** assembles due tranches, **approve_payout_run** releases them, and the approver must not be the maker. Always name the period and the total before creating or approving a run."""
+
 
 AGENT_ROLE_RESTRICTION_TEMPLATE = (
     "\n\nCRITICAL ROLE & AUTHORIZATION INSTRUCTION: The current active user's role is 'Agent'. "
@@ -566,33 +569,16 @@ def _ask_choice(
     select_label: str = "Select",
     placeholder: str = "Choose one…",
     extra_actions: list | None = None,
+    force_select: bool = False,
 ) -> str:
-    """Interrupt with a pickable list and return the user's answer verbatim.
-
-    `choices` is [(display, value)]. The display string is what comes back from
-    both render paths — a chip sends its own label, a dropdown sends the option
-    it showed — so callers resolve the answer through `_match_choice` and never
-    have to care which was rendered.
-
-    `extra_actions` are chips shown alongside the list (always chips, never
-    folded into the dropdown): they are the escape hatches — "create a new
-    one", "none of these" — and burying an escape hatch inside the list of
-    things it escapes from is how a user gets stuck.
-    """
     extras = list(extra_actions or [])
     payload: dict = {
         "kind": "clarify",
         "tool_call": {"name": name, "args": args},
         "question": question,
     }
-    if len(choices) <= _CHIP_LIMIT and not extras:
-        payload["options"] = [display for display, _ in choices]
-    elif len(choices) <= _CHIP_LIMIT:
-        payload["custom_actions"] = [
-            {"label": display, "actionType": "submit", "payload": display}
-            for display, _ in choices
-        ] + extras
-    else:
+    use_select = force_select or len(choices) > _CHIP_LIMIT or (select_label and select_label != "Select")
+    if use_select:
         payload["custom_actions"] = [
             {
                 "label": select_label,
@@ -603,6 +589,13 @@ def _ask_choice(
             },
             *extras,
         ]
+    elif not extras:
+        payload["options"] = [display for display, _ in choices]
+    else:
+        payload["custom_actions"] = [
+            {"label": display, "actionType": "submit", "payload": display}
+            for display, _ in choices
+        ] + extras
     return str(interrupt(payload)).strip()
 
 
@@ -1333,52 +1326,49 @@ async def permission_gate(state: ChatState) -> Command:
     # which asks the user to recall "medical.nml_grid" — so intercept first and
     # show the actual rule sets instead.
     if name in _RULE_SET_CODE_TOOLS and not args.get("rule_set_code"):
-        cats = await _catalogue_tree(ctx)
-        category = await _ensure_category(name, args, ctx, cats)
-        if category:
-            subcategory = await _ensure_subcategory(name, args, ctx, category)
-            if subcategory:
-                try:
-                    listed = await execute_tool("list_rule_sets", {"category": category.get("code")}, ctx)
-                    rule_sets = listed.get("rule_sets") or []
-                except Exception:
-                    rule_sets = []
-                
-                filtered_rule_sets = [r for r in rule_sets if r.get("subcategory_code") == subcategory.get("code")]
-                
-                if filtered_rule_sets:
-                    choices = [
-                        (f"{r.get('name')} ({r.get('rule_code') or r.get('code')})", r.get("rule_code") or r.get("code"))
-                        for r in filtered_rule_sets
-                    ]
-                    answer = _ask_choice(
-                        name, args,
-                        f"Which rule set in **{subcategory.get('name')}** should I {name.replace('_', ' ').replace('rule version', 'a draft of')}?",
-                        choices,
-                        select_label="Rule set",
-                        placeholder="Pick a rule set…",
-                        extra_actions=[{"label": "Create a new rule set", "actionType": "submit", "payload": "Create a new rule set"}],
-                    )
-                    resolved = _match_choice(answer, choices)
-                    if resolved:
-                        args["rule_set_code"] = resolved
-                    elif _is(answer, "Create a new rule set"):
-                        result = {
-                            "success": False,
-                            "error": "User opted to create a new rule set instead. Please start the rule set creation process."
-                        }
-                        return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
-                elif name != "create_rule_set":
-                    result = {
-                        "success": False,
-                        "error": f"There are no rule sets under {subcategory.get('name')} yet.",
-                        "quick_actions": [
-                            {"label": "Create the first rule set", "actionType": "submit",
-                             "payload": "Create a new rule set"},
-                            {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
-                        ],
-                    }
-                    return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
+        try:
+            listed = await execute_tool("list_rule_sets", {}, ctx)
+            rule_sets = listed.get("rule_sets") or []
+        except Exception:
+            rule_sets = []
+
+        if rule_sets:
+            choices = [
+                (f"{r.get('name')} ({r.get('rule_code') or r.get('code')})", r.get("rule_code") or r.get("code"))
+                for r in rule_sets
+            ]
+            action_desc = name.replace("_", " ").replace("add rule to version", "add a rule to").replace("create rule version", "open a draft for")
+            answer = _ask_choice(
+                name, args,
+                f"Which **rule set** would you like to {action_desc}?",
+                choices,
+                select_label="Rule set",
+                placeholder="Pick a rule set…",
+                extra_actions=[{"label": "➕ Create a new rule set", "actionType": "submit", "payload": "Create a new rule set"}],
+            )
+            resolved = _match_choice(answer, choices)
+            if resolved:
+                args["rule_set_code"] = resolved
+            elif _is(answer, "Create a new rule set") or _is(answer, "➕ Create a new rule set"):
+                cats = await _catalogue_tree(ctx)
+                category = await _ensure_category("create_rule_set", args, ctx, cats)
+                if category:
+                    subcategory = await _ensure_subcategory("create_rule_set", args, ctx, category)
+                    if subcategory:
+                        args["category_code"] = category.get("code")
+                        args["subcategory_code"] = subcategory.get("code")
+                        name = "create_rule_set"
+                        tool_call["name"] = "create_rule_set"
+        else:
+            result = {
+                "success": False,
+                "error": "No rule sets exist in the catalogue yet. Please create a rule set first.",
+                "quick_actions": [
+                    {"label": "Create the first rule set", "actionType": "submit", "payload": "Create a new rule set"},
+                    {"label": "Open Rule Engine", "actionType": "navigate", "payload": "admin/rule-engine"},
+                ],
+            }
+            return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
     # ── Rules engine: NLP Full Bypass Macro ──────────────────────────────────
     if name == "parse_and_create_full_rule":

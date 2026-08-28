@@ -16,6 +16,7 @@ import {
   PolicyLifecycleEvent,
   RELEASE_STAGE_LABELS,
   ReleaseStageCode,
+  computeCommissionStats,
   disburseCommission,
   evaluateIncentives,
   getCommissionStats,
@@ -32,6 +33,7 @@ import CalculatorTab from "../../components/commissions/CalculatorTab";
 import IncentivesTab from "../../components/commissions/IncentivesTab";
 import PayeesTab from "../../components/commissions/PayeesTab";
 import RateCardTab from "../../components/commissions/RateCardTab";
+import { DateRangeFilter, filterLedgerByDate, resolvePreset, type DatePreset, type DateRange } from "../../components/commissions/DateRangeFilter";
 import { MetricCard } from "@/components/MetricCard";
 import { PillarCard, RingGauge, Bar, Stat, Divider } from "@/components/dashboard/shared";
 import {
@@ -90,6 +92,14 @@ export default function CommissionsPage() {
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
+  // ── Date Range Filter ──────────────────────────────────────────────────────
+  const [datePreset, setDatePreset] = useState<DatePreset>("ytd");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("ytd"));
+
+  const filteredLedger = filterLedgerByDate(ledger, dateRange);
+  const filteredStats = filteredLedger.length > 0 ? computeCommissionStats(filteredLedger) : stats;
+  const filteredQualifications = evaluateIncentives(payees, filteredLedger);
+
   const notify = useCallback((msg: string, ok = true) => {
     setNotification({ msg, type: ok ? "success" : "error" });
     setTimeout(() => setNotification(null), 4500);
@@ -136,42 +146,36 @@ export default function CommissionsPage() {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Commissions Admin</h1>
-            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">
-              Governance &amp; Setup
-            </span> */}
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            {/* Manage commission types, rate cards, payee hierarchies, channel splits, performance incentives &amp; rate calculator */}
-          </p>
         </div>
         <div className="flex items-center gap-2">
-
-          {/* <button
-            onClick={() => refresh(true)}
-            className="px-3 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors"
-          >
-            Recompute Engine
-          </button> */}
-          {/* <button
-            onClick={() => setActiveTab("calculator")}
-            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-medium transition-colors"
-          >
-            New calculation
-          </button> */}
+          {/* Date Range Filter */}
+          <DateRangeFilter
+            preset={datePreset}
+            range={dateRange}
+            onPresetChange={(p, r) => { setDatePreset(p); setDateRange(r); }}
+          />
         </div>
       </div>
 
-      {stats && (
+      {filteredStats && (
         <div className="space-y-4">
-          {/* Executive KPI cards strip */}
+          {/* Date range badge */}
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Showing data for</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold">
+              {dateRange.from} – {dateRange.to}
+            </span>
+            <span className="text-[10px] text-slate-400">{filteredLedger.length} entries</span>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4">
             <MetricCard
               title="Active Payees"
-              value={`${stats.activePayeesCount} / ${payees.length}`}
+              value={`${filteredStats.activePayeesCount} / ${payees.length}`}
               subtitle="Producers, managers &amp; partners"
               accent="blue"
               trend={{ value: "Configured", direction: "up" }}
@@ -184,7 +188,7 @@ export default function CommissionsPage() {
             />
             <MetricCard
               title="Team Overrides"
-              value={fmtPKRCompact(stats.overrideTotal)}
+              value={fmtPKRCompact(filteredStats.overrideTotal)}
               subtitle="Manager &amp; agency overrides"
               accent="amber"
               trend={{ value: "Active Rules", direction: "neutral" }}
@@ -197,7 +201,7 @@ export default function CommissionsPage() {
             />
             <MetricCard
               title="Performance Bonuses"
-              value={fmtPKRCompact(stats.bonusTotal)}
+              value={fmtPKRCompact(filteredStats.bonusTotal)}
               subtitle="Volume &amp; persistency bonuses"
               accent="emerald"
               trend={{ value: "Qualified", direction: "up" }}
@@ -210,7 +214,7 @@ export default function CommissionsPage() {
             />
             <MetricCard
               title="Total Gross Calculated"
-              value={fmtPKRCompact(stats.totalGrossCommission)}
+              value={fmtPKRCompact(filteredStats.totalGrossCommission)}
               subtitle="Gross production across all rules"
               accent="violet"
               trend={{ value: "+18.4% MTD", direction: "up" }}
@@ -223,7 +227,7 @@ export default function CommissionsPage() {
             />
             <MetricCard
               title="Pending Liability"
-              value={fmtPKRCompact(stats.totalAccruedLiability)}
+              value={fmtPKRCompact(filteredStats.totalAccruedLiability)}
               subtitle="Accrued but not paid"
               accent="slate"
               trend={{ value: "Pending", direction: "neutral" }}
@@ -236,7 +240,7 @@ export default function CommissionsPage() {
             />
             <MetricCard
               title="Processing Payments"
-              value={fmtPKRCompact(stats.totalInRun)}
+              value={fmtPKRCompact(filteredStats.totalInRun)}
               subtitle="Currently in payout runs"
               accent="blue"
               trend={{ value: "In Progress", direction: "neutral" }}
@@ -249,7 +253,7 @@ export default function CommissionsPage() {
             />
             <MetricCard
               title="Tax Deductions"
-              value={fmtPKRCompact(stats.totalWithheldTax)}
+              value={fmtPKRCompact(filteredStats.totalWithheldTax)}
               subtitle="Total tax withheld"
               accent="amber"
               trend={{ value: "Withheld", direction: "neutral" }}
@@ -262,10 +266,10 @@ export default function CommissionsPage() {
             />
             <MetricCard
               title="Reversals"
-              value={fmtPKRCompact(stats.totalClawbacks)}
+              value={fmtPKRCompact(filteredStats.totalClawbacks)}
               subtitle="Clawbacks and reversals"
               accent="red"
-              trend={{ value: "Recovered", direction: stats.totalClawbacks > 0 ? "down" : "neutral" }}
+              trend={{ value: "Recovered", direction: filteredStats.totalClawbacks > 0 ? "down" : "neutral" }}
               size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -298,11 +302,11 @@ export default function CommissionsPage() {
         </Card>
       ) : (
         <>
-          {activeTab === "overview" && stats && <OverviewTab stats={stats} ledger={ledger} />}
+          {activeTab === "overview" && filteredStats && <OverviewTab stats={filteredStats} ledger={filteredLedger} />}
           {activeTab === "types" && <RateCardTab notify={notify} />}
           {activeTab === "payees" && <PayeesTab payees={payees} onChanged={() => refresh(true)} notify={notify} />}
           {activeTab === "incentives" && (
-            <IncentivesTab qualifications={qualifications} onChanged={() => refresh()} notify={notify} />
+            <IncentivesTab qualifications={filteredQualifications} onChanged={() => refresh()} notify={notify} />
           )}
           {activeTab === "calculator" && (
             <CalculatorTab
