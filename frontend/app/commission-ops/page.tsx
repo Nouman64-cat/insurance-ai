@@ -39,6 +39,13 @@ import {
   fmtPKRCompact,
   selectClass,
 } from "../../components/commissions/shared";
+import {
+  DateRangeFilter,
+  filterLedgerByDate,
+  resolvePreset,
+  type DatePreset,
+  type DateRange,
+} from "../../components/commissions/DateRangeFilter";
 
 function SummaryStat({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" | "muted" }) {
   const valueClass = {
@@ -66,6 +73,8 @@ const CLAWBACK_REASONS = [
 ];
 
 export default function CommissionOpsPage() {
+  const [datePreset, setDatePreset] = useState<DatePreset>("30d");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("30d"));
 
   const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [payees, setPayees] = useState<CommissionPayee[]>([]);
@@ -74,6 +83,23 @@ export default function CommissionOpsPage() {
   const [stats, setStats] = useState<CommissionSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+
+  const filteredLedger = filterLedgerByDate(ledger, dateRange);
+
+  const effectiveStats: CommissionSummaryStats | null = stats
+    ? {
+        ...stats,
+        totalDueNow: filteredLedger.reduce((sum, item) => sum + item.dueNet, 0),
+        totalNotYetDue: filteredLedger.reduce((sum, item) => sum + item.pendingNet, 0),
+        totalDisbursed: filteredLedger.reduce((sum, item) => sum + item.releasedNet, 0),
+        totalAccruedLiability: filteredLedger.reduce((sum, item) => sum + item.netCommission, 0),
+        totalInRun: filteredLedger.reduce((sum, item) => sum + item.inRunNet, 0),
+        totalWithheldTax: filteredLedger.reduce((sum, item) => sum + item.deductions.reduce((s, d) => s + d.amount, 0), 0),
+        totalClawbacks: filteredLedger
+          .filter((item) => item.entryKind === "CLAWBACK" || item.status === "CLAWED_BACK")
+          .reduce((sum, item) => sum + Math.abs(item.netCommission), 0),
+      }
+    : null;
 
   const [clawbackTarget, setClawbackTarget] = useState<CommissionLedgerEntry | null>(null);
   const [clawbackReason, setClawbackReason] = useState(CLAWBACK_REASONS[0]);
@@ -174,40 +200,32 @@ export default function CommissionOpsPage() {
         </div>
       )}
 
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Commission Ops</h1>
-            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-              Operations &amp; Execution
-            </span> */}
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            {/* Execute disburse &amp; hold workflows, track policy stack ledgers, trigger payout runs, and issue payee stubs */}
+            Operational Overview &amp; Execution
           </p>
         </div>
-        {/* <div className="flex items-center gap-2">
-          <Link
-            href="/commissions"
-            className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg text-xs font-bold transition-all shadow-xs flex items-center gap-1.5"
-          >
-            <span>← Go to Commission Admin</span>
-          </Link>
-          <button
-            onClick={() => refresh(true)}
-            className="px-3 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg text-xs font-medium transition-colors"
-          >
-            Recompute Ledger
-          </button>
-        </div> */}
+        <DateRangeFilter
+          preset={datePreset}
+          range={dateRange}
+          onPresetChange={(p, r) => {
+            setDatePreset(p);
+            setDateRange(r);
+          }}
+          align="right"
+        />
       </div>
 
-      {stats && (
+      {effectiveStats && (
         <div className="space-y-4">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <MetricCard
               title="Ready to Pay (Actionable)"
-              value={fmtPKRCompact(stats.totalDueNow)}
+              value={fmtPKRCompact(effectiveStats.totalDueNow)}
               subtitle="Vested, ready for payout run"
               accent="blue"
               trend={{ value: "Releasable Now", direction: "up" }}
@@ -220,7 +238,7 @@ export default function CommissionOpsPage() {
             />
             <MetricCard
               title="Upcoming Pipeline"
-              value={fmtPKRCompact(stats.totalNotYetDue)}
+              value={fmtPKRCompact(effectiveStats.totalNotYetDue)}
               subtitle="Earned, vesting at future events"
               accent="amber"
               trend={{ value: "In Pipeline", direction: "neutral" }}
@@ -233,7 +251,7 @@ export default function CommissionOpsPage() {
             />
             <MetricCard
               title="Total Paid Out"
-              value={fmtPKRCompact(stats.totalDisbursed)}
+              value={fmtPKRCompact(effectiveStats.totalDisbursed)}
               subtitle="Paid out net of tax and recovery"
               accent="emerald"
               trend={{ value: "Settled", direction: "up" }}
@@ -246,8 +264,8 @@ export default function CommissionOpsPage() {
             />
             <MetricCard
               title="Total Pending Net"
-              value={fmtPKRCompact(stats.totalAccruedLiability)}
-              subtitle={`Across ${ledger.length} ledger entries`}
+              value={fmtPKRCompact(effectiveStats.totalAccruedLiability)}
+              subtitle={`Across ${filteredLedger.length} ledger entries`}
               accent="violet"
               trend={{ value: "Active Ledger", direction: "up" }}
               size="compact"
@@ -259,7 +277,7 @@ export default function CommissionOpsPage() {
             />
             <MetricCard
               title="Processing Payments"
-              value={fmtPKRCompact(stats.totalInRun)}
+              value={fmtPKRCompact(effectiveStats.totalInRun)}
               subtitle="Currently in payout runs"
               accent="blue"
               trend={{ value: "In Progress", direction: "neutral" }}
@@ -272,7 +290,7 @@ export default function CommissionOpsPage() {
             />
             <MetricCard
               title="Tax Withheld"
-              value={fmtPKRCompact(stats.totalWithheldTax)}
+              value={fmtPKRCompact(effectiveStats.totalWithheldTax)}
               subtitle="Total tax withheld"
               accent="amber"
               trend={{ value: "Withheld", direction: "neutral" }}
@@ -285,10 +303,10 @@ export default function CommissionOpsPage() {
             />
             <MetricCard
               title="Policy Reversals"
-              value={fmtPKRCompact(stats.totalClawbacks)}
+              value={fmtPKRCompact(effectiveStats.totalClawbacks)}
               subtitle="Clawbacks and reversals"
               accent="red"
-              trend={{ value: "Recovered", direction: stats.totalClawbacks > 0 ? "down" : "neutral" }}
+              trend={{ value: "Recovered", direction: effectiveStats.totalClawbacks > 0 ? "down" : "neutral" }}
               size="compact"
               icon={
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -305,7 +323,7 @@ export default function CommissionOpsPage() {
           <div className="px-5 py-12 text-center text-xs text-slate-400">Loading commission operational ledger…</div>
         </Card>
       ) : (
-        stats && <OpsOverviewTab stats={stats} ledger={ledger} />
+        effectiveStats && <OpsOverviewTab stats={effectiveStats} ledger={filteredLedger} />
       )}
 
       {clawbackTarget && (

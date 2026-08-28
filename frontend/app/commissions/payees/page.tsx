@@ -2,11 +2,14 @@
 import React, { useState, useCallback, useEffect } from "react";
 import PayeesTab from "../../../components/commissions/PayeesTab";
 import { CommissionPayee, listPayees } from "../../services/commissions";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "../../../components/commissions/DateRangeFilter";
 
 export default function PayeesPage() {
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [payees, setPayees] = useState<CommissionPayee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("all"));
 
   const notify = useCallback((msg: string, ok = true) => {
     setNotification({ msg, type: ok ? "success" : "error" });
@@ -37,18 +40,38 @@ export default function PayeesPage() {
           <span>{notification.msg}</span>
         </div>
       )}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Roles</h1>
-            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Payees & Hierarchy</span> */}
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200">Payees &amp; Hierarchy</span>
           </div>
         </div>
+
+        <DateRangeFilter
+          preset={datePreset}
+          range={dateRange}
+          onPresetChange={(p, r) => {
+            setDatePreset(p);
+            setDateRange(r);
+          }}
+          align="right"
+        />
       </div>
       {loading && payees.length === 0 ? (
         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading payees...</div>
       ) : (
-        <PayeesTab payees={payees} onChanged={refresh} notify={notify} />
+        <PayeesTab
+          payees={payees}
+          datePreset={datePreset}
+          dateRange={dateRange}
+          onDateChange={(p, r) => {
+            setDatePreset(p);
+            setDateRange(r);
+          }}
+          onChanged={refresh}
+          notify={notify}
+        />
       )}
     </div>
   );

@@ -7,8 +7,16 @@ import {
   disburseCommission,
   recordPolicyEvent
 } from "../../services/commissions";
+import {
+  DateRangeFilter,
+  resolvePreset,
+  type DatePreset,
+  type DateRange,
+} from "../../../components/commissions/DateRangeFilter";
 
 export default function LedgerPage() {
+  const [datePreset, setDatePreset] = useState<DatePreset>("30d");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("30d"));
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,19 +48,36 @@ export default function LedgerPage() {
           <span>{notification.msg}</span>
         </div>
       )}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Accrual Feed</h1>
-            {/* <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">Commission Ledger</span> */}
           </div>
+          <p className="text-xs text-slate-500 mt-1">
+            Real-time ledger of policy accruals, status changes, and disburse triggers
+          </p>
         </div>
+        <DateRangeFilter
+          preset={datePreset}
+          range={dateRange}
+          onPresetChange={(p, r) => {
+            setDatePreset(p);
+            setDateRange(r);
+          }}
+          align="right"
+        />
       </div>
       {loading && ledger.length === 0 ? (
          <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-sm border border-slate-200">Loading ledger...</div>
       ) : (
          <LedgerTab
            ledger={ledger}
+           datePreset={datePreset}
+           dateRange={dateRange}
+           onDateChange={(p, r) => {
+             setDatePreset(p);
+             setDateRange(r);
+           }}
            onDisburse={async (id, stage) => { await disburseCommission(id, stage); refresh(); }}
            onHold={(entry) => console.log("Hold initiated", entry)}
            onClawback={(entry) => console.log("Clawback initiated", entry)}

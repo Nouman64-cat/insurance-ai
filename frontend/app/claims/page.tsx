@@ -5,6 +5,7 @@ import Link from "next/link";
 import { listClaims, createClaim, Claim, CreateClaimRequest } from "@/app/services/claims";
 import { listPolicies, getPolicyDetail, PolicyListItem, PolicyDetail } from "@/app/services/policies";
 import { formatCnic } from "@/lib/cnic";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
 
 function getEligibleClaimTypes(policy?: PolicyListItem): string[] {
   if (!policy) {
@@ -130,12 +131,10 @@ export default function ClaimsPage() {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [riskFilter, setRiskFilter] = useState("ALL");
   const [amountFilter, setAmountFilter] = useState("ALL");
-  const [datePreset, setDatePreset] = useState("ALL");
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("all"));
   const [dateField, setDateField] = useState("incident_date");
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
   const [search, setSearch] = useState("");
-  const [showAdvancedDate, setShowAdvancedDate] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -211,8 +210,8 @@ export default function ClaimsPage() {
         risk_level: riskFilter !== "ALL" ? riskFilter : undefined,
         min_amount,
         max_amount,
-        start_date: startDate || undefined,
-        end_date: endDate || undefined,
+        start_date: dateRange.from || undefined,
+        end_date: dateRange.to || undefined,
         date_field: dateField,
         search: search.trim() || undefined,
       });
@@ -227,7 +226,7 @@ export default function ClaimsPage() {
 
   useEffect(() => {
     fetchData();
-  }, [statusFilter, typeFilter, riskFilter, amountFilter, datePreset, startDate, endDate, dateField, search]);
+  }, [statusFilter, typeFilter, riskFilter, amountFilter, datePreset, dateRange, dateField, search]);
 
   useEffect(() => { listPolicies().then(setPolicies).catch(() => { }); }, []);
 
@@ -240,46 +239,15 @@ export default function ClaimsPage() {
     return num.includes(q) || name.includes(q) || prod.includes(q);
   });
 
-  const handlePresetChange = (preset: string) => {
-    setDatePreset(preset);
-    const today = new Date();
-    if (preset === "ALL") {
-      setStartDate("");
-      setEndDate("");
-    } else if (preset === "TODAY") {
-      const dStr = today.toISOString().split("T")[0];
-      setStartDate(dStr);
-      setEndDate(dStr);
-    } else if (preset === "7DAYS") {
-      const past = new Date(today);
-      past.setDate(past.getDate() - 7);
-      setStartDate(past.toISOString().split("T")[0]);
-      setEndDate(today.toISOString().split("T")[0]);
-    } else if (preset === "30DAYS") {
-      const past = new Date(today);
-      past.setDate(past.getDate() - 30);
-      setStartDate(past.toISOString().split("T")[0]);
-      setEndDate(today.toISOString().split("T")[0]);
-    } else if (preset === "THIS_MONTH") {
-      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-      setStartDate(firstDay.toISOString().split("T")[0]);
-      setEndDate(today.toISOString().split("T")[0]);
-    } else if (preset === "CUSTOM") {
-      setShowAdvancedDate(true);
-    }
-  };
-
   const handleResetFilters = () => {
     setStatusFilter("ALL");
     setTypeFilter("ALL");
     setRiskFilter("ALL");
     setAmountFilter("ALL");
-    setDatePreset("ALL");
+    setDatePreset("all");
+    setDateRange(resolvePreset("all"));
     setDateField("incident_date");
-    setStartDate("");
-    setEndDate("");
     setSearch("");
-    setShowAdvancedDate(false);
   };
 
   const isFiltered =
@@ -287,9 +255,9 @@ export default function ClaimsPage() {
     typeFilter !== "ALL" ||
     riskFilter !== "ALL" ||
     amountFilter !== "ALL" ||
-    datePreset !== "ALL" ||
-    startDate !== "" ||
-    endDate !== "" ||
+    datePreset !== "all" ||
+    dateRange.from !== "" ||
+    dateRange.to !== "" ||
     search.trim() !== "";
 
   const handleCreate = async (e: React.FormEvent) => {
@@ -385,8 +353,8 @@ export default function ClaimsPage() {
       </div>
 
       {/* Register & Filters Card */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50 space-y-3">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-visible relative">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 space-y-3 rounded-t-xl">
           {/* Primary Filter Control Bar */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             {/* Search Input */}
@@ -416,19 +384,17 @@ export default function ClaimsPage() {
 
             {/* Filter Dropdowns & Buttons */}
             <div className="flex flex-wrap items-center gap-2">
-              {/* Date Preset */}
-              <select
-                value={datePreset}
-                onChange={e => handlePresetChange(e.target.value)}
-                className="h-9 text-xs px-3 rounded-lg border border-slate-200 bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-slate-900/5 hover:border-slate-300 transition-all shadow-2xs cursor-pointer"
-              >
-                <option value="ALL">Incident Date: All Time</option>
-                <option value="TODAY">Today</option>
-                <option value="7DAYS">Last 7 Days</option>
-                <option value="30DAYS">Last 30 Days</option>
-                <option value="THIS_MONTH">This Month</option>
-                <option value="CUSTOM">Custom Range...</option>
-              </select>
+              {/* Date Range Filter */}
+              <DateRangeFilter
+                preset={datePreset}
+                range={dateRange}
+                onPresetChange={(p, r) => {
+                  setDatePreset(p);
+                  setDateRange(r);
+                }}
+                size="sm"
+                align="left"
+              />
 
               {/* Status */}
               <select
@@ -487,24 +453,6 @@ export default function ClaimsPage() {
                 <option value="OVER_200K">&gt; PKR 200,000</option>
               </select>
 
-              {/* Custom Date Range Toggle */}
-              <button
-                type="button"
-                onClick={() => setShowAdvancedDate(!showAdvancedDate)}
-                className={`h-9 text-xs px-3 rounded-lg border transition-all flex items-center gap-1.5 font-medium cursor-pointer shadow-2xs ${showAdvancedDate || startDate || endDate
-                  ? "border-slate-900 bg-slate-900 text-white"
-                  : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
-                  }`}
-              >
-                <svg className="w-3.5 h-3.5 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <span>Custom Date</span>
-                {(startDate || endDate) && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
-                )}
-              </button>
-
               <button
                 onClick={fetchData}
                 className="h-9 text-xs font-semibold px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
@@ -516,63 +464,6 @@ export default function ClaimsPage() {
               </button>
             </div>
           </div>
-
-          {/* Custom Date Range Panel */}
-          {(showAdvancedDate || datePreset === "CUSTOM" || startDate || endDate) && (
-            <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-slate-50/80 p-3 rounded-lg border border-slate-200/80">
-              <div className="flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-1.5 text-slate-700 font-semibold">
-                  <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  <span>Incident Date Range:</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 font-medium">From</span>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={e => {
-                      setStartDate(e.target.value);
-                      if (datePreset !== "CUSTOM") setDatePreset("CUSTOM");
-                    }}
-                    className="h-8 text-xs px-2.5 rounded-md border border-slate-200 bg-white font-medium text-slate-800 shadow-2xs focus:outline-none focus:border-slate-400"
-                  />
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500 font-medium">To</span>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={e => {
-                      setEndDate(e.target.value);
-                      if (datePreset !== "CUSTOM") setDatePreset("CUSTOM");
-                    }}
-                    className="h-8 text-xs px-2.5 rounded-md border border-slate-200 bg-white font-medium text-slate-800 shadow-2xs focus:outline-none focus:border-slate-400"
-                  />
-                </div>
-              </div>
-
-              {(startDate || endDate) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStartDate("");
-                    setEndDate("");
-                    setDatePreset("ALL");
-                  }}
-                  className="text-xs font-semibold text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  Clear Date Filter
-                </button>
-              )}
-            </div>
-          )}
 
           {/* Active Filter Badges */}
           {isFiltered && (
@@ -614,10 +505,10 @@ export default function ClaimsPage() {
                     <button onClick={() => setAmountFilter("ALL")} className="text-emerald-500 hover:text-emerald-800 font-bold">&times;</button>
                   </span>
                 )}
-                {(startDate || endDate) && (
+                {(dateRange.from || dateRange.to) && (
                   <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-medium flex items-center gap-1.5 border border-indigo-200/80 text-[11px] shadow-2xs">
-                    Incident Date: {startDate || "Start"} to {endDate || "Today"}
-                    <button onClick={() => { setStartDate(""); setEndDate(""); setDatePreset("ALL"); }} className="text-indigo-400 hover:text-indigo-700 font-bold">&times;</button>
+                    Incident Date: {dateRange.from || "Start"} to {dateRange.to || "Today"}
+                    <button onClick={() => { setDatePreset("all"); setDateRange(resolvePreset("all")); }} className="text-indigo-400 hover:text-indigo-700 font-bold">&times;</button>
                   </span>
                 )}
               </div>
@@ -635,7 +526,7 @@ export default function ClaimsPage() {
           )}
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto rounded-b-xl">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-500 border-b border-slate-100 text-xs">
               <tr>

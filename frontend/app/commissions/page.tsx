@@ -158,6 +158,7 @@ export default function CommissionsPage() {
             preset={datePreset}
             range={dateRange}
             onPresetChange={(p, r) => { setDatePreset(p); setDateRange(r); }}
+            align="right"
           />
         </div>
       </div>
@@ -303,10 +304,33 @@ export default function CommissionsPage() {
       ) : (
         <>
           {activeTab === "overview" && filteredStats && <OverviewTab stats={filteredStats} ledger={filteredLedger} />}
-          {activeTab === "types" && <RateCardTab notify={notify} />}
-          {activeTab === "payees" && <PayeesTab payees={payees} onChanged={() => refresh(true)} notify={notify} />}
+          {activeTab === "types" && (
+            <RateCardTab
+              datePreset={datePreset}
+              dateRange={dateRange}
+              onDateChange={(p, r) => { setDatePreset(p); setDateRange(r); }}
+              notify={notify}
+            />
+          )}
+          {activeTab === "payees" && (
+            <PayeesTab
+              payees={payees}
+              datePreset={datePreset}
+              dateRange={dateRange}
+              onDateChange={(p, r) => { setDatePreset(p); setDateRange(r); }}
+              onChanged={() => refresh(true)}
+              notify={notify}
+            />
+          )}
           {activeTab === "incentives" && (
-            <IncentivesTab qualifications={filteredQualifications} onChanged={() => refresh()} notify={notify} />
+            <IncentivesTab
+              qualifications={filteredQualifications}
+              datePreset={datePreset}
+              dateRange={dateRange}
+              onDateChange={(p, r) => { setDatePreset(p); setDateRange(r); }}
+              onChanged={() => refresh()}
+              notify={notify}
+            />
           )}
           {activeTab === "calculator" && (
             <CalculatorTab

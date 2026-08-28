@@ -214,6 +214,7 @@ export default function ClaimsDashboardPage() {
             preset={datePreset}
             range={dateRange}
             onPresetChange={(p, r) => { setDatePreset(p); setDateRange(r); }}
+            align="right"
           />
           <Link
             href="/claims/register"

@@ -10,12 +10,15 @@ import {
   listPayees,
 } from "../../services/commissions";
 import { fmtPKR } from "../../../components/commissions/shared";
+import { DateRangeFilter, filterLedgerByDate, resolvePreset, type DatePreset, type DateRange } from "../../../components/commissions/DateRangeFilter";
 
 
 export default function BonusesPage() {
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
   const [qualifications, setQualifications] = useState<IncentiveQualification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [datePreset, setDatePreset] = useState<DatePreset>("ytd");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("ytd"));
 
   const notify = useCallback((msg: string, ok = true) => {
     setNotification({ msg, type: ok ? "success" : "error" });
@@ -26,13 +29,14 @@ export default function BonusesPage() {
     setLoading(true);
     try {
       const [payees, ledger] = await Promise.all([listPayees(), listCommissionLedger()]);
-      setQualifications(evaluateIncentives(payees, ledger));
+      const filteredLedger = filterLedgerByDate(ledger, dateRange);
+      setQualifications(evaluateIncentives(payees, filteredLedger));
     } catch (err) {
       notify("Could not load bonuses.", false);
     } finally {
       setLoading(false);
     }
-  }, [notify]);
+  }, [dateRange, notify]);
 
   useEffect(() => {
     refresh();
@@ -74,15 +78,34 @@ export default function BonusesPage() {
             </span>
           </div>
         </div>
-      </div>
 
+        <DateRangeFilter
+          preset={datePreset}
+          range={dateRange}
+          onPresetChange={(p, r) => {
+            setDatePreset(p);
+            setDateRange(r);
+          }}
+          align="right"
+        />
+      </div>
 
       {loading && qualifications.length === 0 ? (
         <div className="px-5 py-12 text-center text-xs text-slate-400 bg-white rounded-xl shadow-xs border border-slate-200">
           Loading performance incentives…
         </div>
       ) : (
-        <IncentivesTab qualifications={qualifications} onChanged={refresh} notify={notify} />
+        <IncentivesTab
+          qualifications={qualifications}
+          datePreset={datePreset}
+          dateRange={dateRange}
+          onDateChange={(p, r) => {
+            setDatePreset(p);
+            setDateRange(r);
+          }}
+          onChanged={refresh}
+          notify={notify}
+        />
       )}
     </div>
   );

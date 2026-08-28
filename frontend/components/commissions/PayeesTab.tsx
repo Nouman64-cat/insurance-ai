@@ -12,6 +12,7 @@ import {
   resolveWhtPct,
   updatePayee,
 } from "../../app/services/commissions";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "./DateRangeFilter";
 import {
   Card,
   ChannelBadge,
@@ -27,6 +28,15 @@ import {
 const PAYEE_TYPES = Object.keys(PAYEE_TYPE_LABELS) as PayeeType[];
 const CHANNELS = Object.keys(CHANNEL_LABELS) as DistributionChannel[];
 
+interface PayeesTabProps {
+  payees: CommissionPayee[];
+  datePreset?: DatePreset;
+  dateRange?: DateRange;
+  onDateChange?: (preset: DatePreset, range: DateRange) => void;
+  onChanged: () => void;
+  notify: (msg: string, ok?: boolean) => void;
+}
+
 /**
  * The payee registry: everyone who can be owed commission, the override chain
  * they sit in, and the two things that decide whether they can legally be paid —
@@ -34,13 +44,22 @@ const CHANNELS = Object.keys(CHANNEL_LABELS) as DistributionChannel[];
  */
 export default function PayeesTab({
   payees,
+  datePreset: propPreset,
+  dateRange: propRange,
+  onDateChange,
   onChanged,
   notify,
-}: {
-  payees: CommissionPayee[];
-  onChanged: () => void;
-  notify: (msg: string, ok?: boolean) => void;
-}) {
+}: PayeesTabProps) {
+  const [internalPreset, setInternalPreset] = useState<DatePreset>("all");
+  const [internalRange, setInternalRange] = useState<DateRange>(() => resolvePreset("all"));
+
+  const datePreset = propPreset ?? internalPreset;
+  const dateRange = propRange ?? internalRange;
+  const handleDateChange = onDateChange ?? ((p: DatePreset, r: DateRange) => {
+    setInternalPreset(p);
+    setInternalRange(r);
+  });
+
   const [typeFilter, setTypeFilter] = useState<PayeeType | "all">("all");
   const [channelFilter, setChannelFilter] = useState<DistributionChannel | "all">("all");
   const [search, setSearch] = useState("");
@@ -127,12 +146,19 @@ export default function PayeesTab({
           </>
         }
       >
-        <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap gap-2">
+        <div className="px-5 py-3 border-b border-slate-100 flex flex-wrap items-center gap-2">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search name, code, branch, or licence…"
             className="flex-1 min-w-[240px] bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs focus:outline-hidden focus:border-blue-500"
+          />
+          <DateRangeFilter
+            preset={datePreset}
+            range={dateRange}
+            onPresetChange={handleDateChange}
+            size="sm"
+            align="left"
           />
           <select
             value={channelFilter}

@@ -13,23 +13,41 @@ import {
   toggleIncentiveSchemeActive,
   updateIncentiveScheme,
 } from "../../app/services/commissions";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "./DateRangeFilter";
 import { Card, EmptyState, Field, PayeeTypeBadge, fmtPKR, inputClass, selectClass } from "./shared";
 
 type IncentiveSubTab = "schemes" | "qualified" | "shortfall";
 const PAYEE_TYPES = Object.keys(PAYEE_TYPE_LABELS) as PayeeType[];
+
+interface IncentivesTabProps {
+  qualifications: IncentiveQualification[];
+  datePreset?: DatePreset;
+  dateRange?: DateRange;
+  onDateChange?: (preset: DatePreset, range: DateRange) => void;
+  onChanged: () => void;
+  notify: (msg: string, ok?: boolean) => void;
+}
 
 /**
  * Performance bonuses & policy retention rewards evaluated on book volume
  */
 export default function IncentivesTab({
   qualifications,
+  datePreset: propPreset,
+  dateRange: propRange,
+  onDateChange,
   onChanged,
   notify,
-}: {
-  qualifications: IncentiveQualification[];
-  onChanged: () => void;
-  notify: (msg: string, ok?: boolean) => void;
-}) {
+}: IncentivesTabProps) {
+  const [internalPreset, setInternalPreset] = useState<DatePreset>("all");
+  const [internalRange, setInternalRange] = useState<DateRange>(() => resolvePreset("all"));
+
+  const datePreset = propPreset ?? internalPreset;
+  const dateRange = propRange ?? internalRange;
+  const handleDateChange = onDateChange ?? ((p: DatePreset, r: DateRange) => {
+    setInternalPreset(p);
+    setInternalRange(r);
+  });
   const [subTab, setSubTab] = useState<IncentiveSubTab>("schemes");
   const [search, setSearch] = useState("");
 
@@ -119,7 +137,7 @@ export default function IncentivesTab({
             ))}
           </div>
 
-          <div className="flex items-center gap-2 flex-1 max-w-md justify-end">
+          <div className="flex items-center gap-2 flex-1 max-w-lg justify-end">
             <div className="relative flex-1">
               <input
                 value={search}
@@ -136,6 +154,14 @@ export default function IncentivesTab({
                 </button>
               )}
             </div>
+
+            <DateRangeFilter
+              preset={datePreset}
+              range={dateRange}
+              onPresetChange={handleDateChange}
+              size="sm"
+              align="left"
+            />
 
             {subTab === "schemes" && (
               <button

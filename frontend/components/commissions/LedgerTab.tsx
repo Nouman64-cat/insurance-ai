@@ -16,6 +16,13 @@ import {
   groupLedgerByPolicy,
 } from "../../app/services/commissions";
 import {
+  DateRangeFilter,
+  filterLedgerByDate,
+  resolvePreset,
+  type DatePreset,
+  type DateRange,
+} from "./DateRangeFilter";
+import {
   BasisLabel,
   Card,
   ChannelBadge,
@@ -89,13 +96,33 @@ export default function LedgerTab({
   onHold,
   onClawback,
   onRecordEvent,
+  datePreset,
+  dateRange,
+  onDateChange,
 }: {
   ledger: CommissionLedgerEntry[];
   onDisburse: (id: string, stageCode?: ReleaseStageCode) => void;
   onHold: (entry: CommissionLedgerEntry) => void;
   onClawback: (entry: CommissionLedgerEntry) => void;
   onRecordEvent?: (policyId: string, event: PolicyLifecycleEvent) => void;
+  datePreset?: DatePreset;
+  dateRange?: DateRange;
+  onDateChange?: (preset: DatePreset, range: DateRange) => void;
 }) {
+  const [internalPreset, setInternalPreset] = useState<DatePreset>("all");
+  const [internalRange, setInternalRange] = useState<DateRange>(() => resolvePreset("all"));
+
+  const activePreset = datePreset ?? internalPreset;
+  const activeRange = dateRange ?? internalRange;
+
+  const handleDateChange = (p: DatePreset, r: DateRange) => {
+    if (onDateChange) onDateChange(p, r);
+    else {
+      setInternalPreset(p);
+      setInternalRange(r);
+    }
+  };
+
   const [view, setView] = useState<LedgerView>("stack");
   const [channel, setChannel] = useState<DistributionChannel | "all">("all");
   const [payeeType, setPayeeType] = useState<PayeeType | "all">("all");
@@ -106,7 +133,9 @@ export default function LedgerTab({
   const [search, setSearch] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const filtered = ledger.filter((l) => {
+  const dateFilteredLedger = filterLedgerByDate(ledger, activeRange);
+
+  const filtered = dateFilteredLedger.filter((l) => {
     if (channel !== "all" && l.channel !== channel) return false;
     if (payeeType !== "all" && l.payeeType !== payeeType) return false;
     if (kind !== "all" && l.entryKind !== kind) return false;
@@ -208,7 +237,9 @@ export default function LedgerTab({
         </div>
 
         {/* Filter Dropdowns */}
-        <div className="flex flex-wrap gap-2 pt-1 border-t border-slate-100 text-xs">
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100 text-xs">
+          <DateRangeFilter preset={activePreset} range={activeRange} onPresetChange={handleDateChange} size="sm" align="left" />
+
           <select value={channel} onChange={(e) => setChannel(e.target.value as DistributionChannel | "all")} className={filterClass}>
             <option value="all">All Channels</option>
             {(Object.keys(CHANNEL_LABELS) as DistributionChannel[]).map((c) => (

@@ -3,9 +3,12 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { COMMISSION_RATE_CARD } from "../../../app/services/commissions";
 import RateCardTab from "../../../components/commissions/RateCardTab";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "../../../components/commissions/DateRangeFilter";
 
 export default function TypesPage() {
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("all"));
   const [stats, setStats] = useState({
     total: 0,
     active: 0,
@@ -64,12 +67,28 @@ export default function TypesPage() {
               Rate Cards &amp; Engine Rules
             </span>
           </div>
- 
         </div>
+
+        <DateRangeFilter
+          preset={datePreset}
+          range={dateRange}
+          onPresetChange={(p, r) => {
+            setDatePreset(p);
+            setDateRange(r);
+          }}
+          align="right"
+        />
       </div>
 
-
-      <RateCardTab notify={notify} />
+      <RateCardTab
+        datePreset={datePreset}
+        dateRange={dateRange}
+        onDateChange={(p, r) => {
+          setDatePreset(p);
+          setDateRange(r);
+        }}
+        notify={notify}
+      />
     </div>
   );
 }

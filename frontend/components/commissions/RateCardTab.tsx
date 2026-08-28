@@ -20,6 +20,7 @@ import {
   updateCommissionConfig,
   updateCommissionRule,
 } from "../../app/services/commissions";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "./DateRangeFilter";
 import { Card, Field, PayeeTypeBadge, fmtPct, inputClass, selectClass } from "./shared";
 
 /** The event that makes a row payable — what the ledger is waiting on. */
@@ -47,12 +48,33 @@ function typeInfo(premiumType: PremiumType) {
   return { label: "Recurring", className: "bg-blue-50 text-blue-700 border-blue-200" };
 }
 
+interface RateCardTabProps {
+  datePreset?: DatePreset;
+  dateRange?: DateRange;
+  onDateChange?: (preset: DatePreset, range: DateRange) => void;
+  notify: (msg: string, ok?: boolean) => void;
+}
+
 const SEGMENTS: PolicySegment[] = ["individual", "group", "family"];
 const PREMIUM_TYPES: PremiumType[] = ["FIRST_YEAR", "RENEWAL", "SINGLE_PREMIUM"];
 const PAYEE_TYPES = Object.keys(PAYEE_TYPE_LABELS) as PayeeType[];
 const CHANNELS = Object.keys(CHANNEL_LABELS) as DistributionChannel[];
 
-export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boolean) => void }) {
+export default function RateCardTab({
+  datePreset: propPreset,
+  dateRange: propRange,
+  onDateChange,
+  notify,
+}: RateCardTabProps) {
+  const [internalPreset, setInternalPreset] = useState<DatePreset>("all");
+  const [internalRange, setInternalRange] = useState<DateRange>(() => resolvePreset("all"));
+
+  const datePreset = propPreset ?? internalPreset;
+  const dateRange = propRange ?? internalRange;
+  const handleDateChange = onDateChange ?? ((p: DatePreset, r: DateRange) => {
+    setInternalPreset(p);
+    setInternalRange(r);
+  });
   const [rules, setRules] = useState<CommissionRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -99,6 +121,9 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
     if (payeeFilter !== "all" && r.payeeType !== payeeFilter) return false;
     if (statusFilter === "active" && !r.active) return false;
     if (statusFilter === "inactive" && r.active) return false;
+
+    if (dateRange.from && r.effectiveFrom > dateRange.to) return false;
+    if (dateRange.to && r.effectiveTo && r.effectiveTo < dateRange.from) return false;
 
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -149,6 +174,13 @@ export default function RateCardTab({ notify }: { notify: (msg: string, ok?: boo
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by ID, description, or SECP citation…"
             className="flex-1 min-w-[220px] bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-blue-500"
+          />
+          <DateRangeFilter
+            preset={datePreset}
+            range={dateRange}
+            onPresetChange={handleDateChange}
+            size="sm"
+            align="left"
           />
           <select
             value={channelFilter}

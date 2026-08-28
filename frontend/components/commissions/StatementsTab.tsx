@@ -1,7 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import { PAYEE_TYPE_LABELS, PayeeStatement, PayeeType } from "../../app/services/commissions";
+import { PAYEE_TYPE_LABELS, PayeeStatement, PayeeType, StatutoryDeduction } from "../../app/services/commissions";
+import {
+  DateRangeFilter,
+  filterLedgerByDate,
+  resolvePreset,
+  type DatePreset,
+  type DateRange,
+} from "./DateRangeFilter";
 import {
   Card,
   ChannelBadge,
@@ -14,6 +21,38 @@ import {
   fmtPKR,
   fmtPKRSigned,
 } from "./shared";
+
+function filterStatementByDate(statement: PayeeStatement, range: DateRange): PayeeStatement {
+  if (!range.from || !range.to) return statement;
+  const filteredEntries = filterLedgerByDate(statement.entries, range);
+  const live = filteredEntries.filter((e) => e.entryKind !== "CLAWBACK" && !e.isClawback);
+
+  const byCode = new Map<string, StatutoryDeduction>();
+  for (const entry of live) {
+    for (const d of entry.deductions) {
+      const cur = byCode.get(d.code);
+      byCode.set(d.code, cur ? { ...cur, amount: cur.amount + d.amount } : { ...d });
+    }
+  }
+
+  return {
+    ...statement,
+    entries: filteredEntries,
+    grossCommission: live.filter((e) => e.entryKind === "COMMISSION" || e.entryKind === "PARTNER_FEE" || e.entryKind === "REFERRAL_FEE").reduce((s, e) => s + e.grossCommission, 0),
+    overrides: live.filter((e) => e.entryKind === "OVERRIDE").reduce((s, e) => s + e.grossCommission, 0),
+    bonuses: live.filter((e) => e.entryKind === "BONUS").reduce((s, e) => s + e.grossCommission, 0),
+    clawbacks: filteredEntries.filter((e) => e.entryKind === "CLAWBACK").reduce((s, e) => s + Math.abs(e.netCommission), 0),
+    deductions: Array.from(byCode.values()),
+    totalDeductions: live.reduce((s, e) => s + e.deductions.reduce((d, x) => d + x.amount, 0), 0),
+    recoveryApplied: live.reduce((s, e) => s + e.recoveryApplied, 0),
+    netPayable: live.reduce((s, e) => s + e.netCommission, 0),
+    disbursed: live.reduce((s, e) => s + e.releasedNet, 0),
+    pending: live.reduce((s, e) => s + e.dueNet + e.inRunNet + e.pendingNet, 0),
+    dueNow: live.reduce((s, e) => s + e.dueNet, 0),
+    inRun: live.reduce((s, e) => s + e.inRunNet, 0),
+    notYetDue: live.reduce((s, e) => s + e.pendingNet, 0),
+  };
+}
 
 /** Helper function to convert raw backend jargon into simple, plain English terms */
 function formatPlainEnglishText(str: string): string {
@@ -40,12 +79,38 @@ function getInitials(name: string): string {
  * Per-payee statements / pay stubs — individual producer view summarizing
  * gross earnings, statutory tax withheld, licence verification, and net payout.
  */
-export default function StatementsTab({ statements }: { statements: PayeeStatement[] }) {
-  const [selectedId, setSelectedId] = useState<string | null>(statements[0]?.payee.id ?? null);
+export default function StatementsTab({
+  statements,
+  datePreset,
+  dateRange,
+  onDateChange,
+}: {
+  statements: PayeeStatement[];
+  datePreset?: DatePreset;
+  dateRange?: DateRange;
+  onDateChange?: (preset: DatePreset, range: DateRange) => void;
+}) {
+  const [internalPreset, setInternalPreset] = useState<DatePreset>("all");
+  const [internalRange, setInternalRange] = useState<DateRange>(() => resolvePreset("all"));
+
+  const activePreset = datePreset ?? internalPreset;
+  const activeRange = dateRange ?? internalRange;
+
+  const handleDateChange = (p: DatePreset, r: DateRange) => {
+    if (onDateChange) onDateChange(p, r);
+    else {
+      setInternalPreset(p);
+      setInternalRange(r);
+    }
+  };
+
+  const dateFilteredStatements = statements.map((s) => filterStatementByDate(s, activeRange));
+
+  const [selectedId, setSelectedId] = useState<string | null>(dateFilteredStatements[0]?.payee.id ?? null);
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
 
-  const filteredStatements = statements.filter((s) => {
+  const filteredStatements = dateFilteredStatements.filter((s) => {
     const matchesSearch =
       !search.trim() ||
       s.payee.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -89,7 +154,8 @@ export default function StatementsTab({ statements }: { statements: PayeeStateme
           title="Payees"
           subtitle={`${filteredStatements.length} of ${statements.length} active`}
           actions={
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <DateRangeFilter preset={activePreset} range={activeRange} onPresetChange={handleDateChange} size="sm" align="left" />
               <div className="relative">
                 <input
                   value={search}
