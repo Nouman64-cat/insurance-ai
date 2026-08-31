@@ -1,4 +1,6 @@
 import { RingGauge, Bar, PillarCard, Divider } from "./shared";
+import type { CommissionPayee } from "@/app/services/commissions";
+import type { PolicyListItem, PolicyStats } from "@/app/services/policies";
 
 function UsersIcon() {
   return (
@@ -11,13 +13,43 @@ function UsersIcon() {
   );
 }
 
-const SEGMENTS = [
-  { label: "High Value (LTV > 5M)", pct: 28, color: "bg-blue-500" },
-  { label: "Standard (LTV 2–5M)",   pct: 54, color: "bg-blue-400"   },
-  { label: "Entry-Level (LTV < 2M)", pct: 18, color: "bg-slate-300" },
-] as const;
+const SEGMENT_LABELS: Record<string, string> = {
+  individual: "Individual",
+  family: "Family Takaful",
+  organization: "Corporate / Group",
+};
 
-export function CustomerCard() {
+interface CustomerCardProps {
+  policyStats: PolicyStats | null;
+  policies: PolicyListItem[];
+  payees: CommissionPayee[];
+}
+
+export function CustomerCard({ policyStats, policies, payees }: CustomerCardProps) {
+  const total = policies.length;
+  const segmentCounts: Record<string, number> = {};
+  policies.forEach((p) => {
+    const seg = p.segment || "individual";
+    segmentCounts[seg] = (segmentCounts[seg] || 0) + 1;
+  });
+  const SEGMENTS = Object.entries(segmentCounts).map(([seg, count], i) => ({
+    label: SEGMENT_LABELS[seg] || seg,
+    pct: total > 0 ? Math.round((count / total) * 100) : 0,
+    color: ["bg-blue-500", "bg-blue-400", "bg-slate-300"][i % 3],
+  }));
+
+  const agentPayees = payees.filter((p) => p.type === "AGENT" && p.persistency13m !== null);
+  const avgPersistency =
+    agentPayees.length > 0
+      ? Math.round((agentPayees.reduce((s, p) => s + (p.persistency13m || 0), 0) / agentPayees.length) * 10) / 10
+      : 0;
+
+  const avgCoverage = total > 0 ? policies.reduce((s, p) => s + (p.coverage_amount || 0), 0) / total : 0;
+  const fmtCompact = (v: number) => (v >= 1_000_000 ? `PKR ${(v / 1_000_000).toFixed(1)}M` : `PKR ${(v / 1_000).toFixed(0)}K`);
+
+  const atRisk = policyStats ? policyStats.grace_period + policyStats.lapsed : 0;
+  const renewalsDue = policyStats ? policyStats.expiring_30d : 0;
+
   return (
     <PillarCard
       icon={<UsersIcon />}
@@ -28,12 +60,14 @@ export function CustomerCard() {
     >
       {/* Persistency ring + segments */}
       <div className="flex items-start gap-4 mb-4">
-        <RingGauge value={84} max={100} strokeHex="#7c3aed" label="Persistency" sublabel="%" valueLabel="84.3%" size={82} />
+        <RingGauge value={avgPersistency} max={100} strokeHex="#7c3aed" label="Persistency" sublabel="%" valueLabel={`${avgPersistency}%`} size={82} />
         <div className="flex-1 space-y-2.5 pt-1">
           <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Portfolio Segments</p>
-          {SEGMENTS.map((s) => (
-            <Bar key={s.label} label={s.label} pct={s.pct} color={s.color} />
-          ))}
+          {SEGMENTS.length === 0 ? (
+            <p className="text-xs text-slate-400">No policies in the selected range.</p>
+          ) : (
+            SEGMENTS.map((s) => <Bar key={s.label} label={s.label} pct={s.pct} color={s.color} badge={`${s.pct}%`} />)
+          )}
         </div>
       </div>
 
@@ -42,18 +76,18 @@ export function CustomerCard() {
       {/* Key stats */}
       <div className="grid grid-cols-3 gap-3">
         <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Avg LTV</p>
-          <p className="text-lg font-extrabold text-blue-700 mt-0.5">PKR 2.8M</p>
-          <p className="text-[10px] text-slate-400">per customer</p>
+          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Avg Coverage</p>
+          <p className="text-lg font-extrabold text-blue-700 mt-0.5">{fmtCompact(avgCoverage)}</p>
+          <p className="text-[10px] text-slate-400">per policy</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">At-Risk</p>
-          <p className="text-lg font-extrabold text-red-600 mt-0.5">12</p>
-          <p className="text-[10px] text-slate-400">lapse predicted</p>
+          <p className="text-lg font-extrabold text-red-600 mt-0.5">{atRisk}</p>
+          <p className="text-[10px] text-slate-400">grace period + lapsed</p>
         </div>
         <div className="text-center">
           <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Renewals Due</p>
-          <p className="text-lg font-extrabold text-amber-600 mt-0.5">23</p>
+          <p className="text-lg font-extrabold text-amber-600 mt-0.5">{renewalsDue}</p>
           <p className="text-[10px] text-slate-400">next 30 days</p>
         </div>
       </div>

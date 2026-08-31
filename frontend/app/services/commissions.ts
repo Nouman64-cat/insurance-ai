@@ -392,49 +392,49 @@ const HOUSE_PAYEE: CommissionPayee = {
 const STATIC_PAYEES: CommissionPayee[] = [
   {
     id: "PAYEE-SM-01", code: "SM-1104", name: "Faisal Nadeem", type: "SALES_MANAGER",
-    channel: "DIRECT_AGENCY", parentPayeeId: "PAYEE-BM-01", status: "ACTIVE", branch: "Karachi — Clifton",
+    channel: "DIRECT_AGENCY", parentPayeeId: "PAYEE-BM-01", status: "ACTIVE", branch: "Karachi Head Office",
     licenceNo: null, licenceExpiry: null, isCorporate: false, taxFilerStatus: "FILER", taxId: "42101-8845120-3",
     bankName: "Meezan Bank", bankAccount: "PK36MEZN0000201045551", ytdCommission: 1_840_000, recoveryBalance: 0, persistency13m: 88,
   },
   {
     id: "PAYEE-SM-02", code: "SM-1108", name: "Sadia Bashir", type: "SALES_MANAGER",
-    channel: "DIRECT_AGENCY", parentPayeeId: "PAYEE-BM-01", status: "ACTIVE", branch: "Lahore — Gulberg",
+    channel: "DIRECT_AGENCY", parentPayeeId: "PAYEE-BM-01", status: "ACTIVE", branch: "Lahore Regional Office",
     licenceNo: null, licenceExpiry: null, isCorporate: false, taxFilerStatus: "FILER", taxId: "35202-1194780-6",
     bankName: "HBL", bankAccount: "PK24HABB0000271900112", ytdCommission: 1_260_000, recoveryBalance: 45_000, persistency13m: 81,
   },
   {
     id: "PAYEE-BM-01", code: "BM-2201", name: "Imran Sheikh", type: "BRANCH_MANAGER",
-    channel: "DIRECT_AGENCY", parentPayeeId: null, status: "ACTIVE", branch: "South Region",
+    channel: "DIRECT_AGENCY", parentPayeeId: null, status: "ACTIVE", branch: "Karachi Head Office",
     licenceNo: null, licenceExpiry: null, isCorporate: false, taxFilerStatus: "FILER", taxId: "42201-6650913-1",
     bankName: "UBL", bankAccount: "PK80UNIL0109000234871", ytdCommission: 2_970_000, recoveryBalance: 0, persistency13m: 86,
   },
   {
     id: "PAYEE-BANK-01", code: "BNC-HBL", name: "Habib Bank Limited — Bancassurance", type: "BANK_PARTNER",
-    channel: "BANCASSURANCE", parentPayeeId: null, status: "ACTIVE", branch: "National",
+    channel: "BANCASSURANCE", parentPayeeId: null, status: "ACTIVE", branch: "Karachi Head Office",
     licenceNo: "SECP-CIA-2021-0114", licenceExpiry: "2027-03-31", isCorporate: true, taxFilerStatus: "FILER", taxId: "0710106-2",
     bankName: "HBL", bankAccount: "PK24HABB0000100200300", ytdCommission: 41_500_000, recoveryBalance: 0, persistency13m: 79,
   },
   {
     id: "PAYEE-BSO-01", code: "ISO-4471", name: "Hina Qureshi (HBL Clifton)", type: "BANK_SALES_OFFICER",
-    channel: "BANCASSURANCE", parentPayeeId: "PAYEE-BANK-01", status: "ACTIVE", branch: "HBL Clifton Branch",
+    channel: "BANCASSURANCE", parentPayeeId: "PAYEE-BANK-01", status: "ACTIVE", branch: "Karachi Head Office",
     licenceNo: null, licenceExpiry: null, isCorporate: false, taxFilerStatus: "FILER", taxId: "42301-7781204-8",
     bankName: "HBL", bankAccount: "PK24HABB0000271455093", ytdCommission: 480_000, recoveryBalance: 0, persistency13m: 83,
   },
   {
     id: "PAYEE-BROKER-01", code: "BRK-0092", name: "Trident Insurance Brokers (Pvt) Ltd", type: "BROKER",
-    channel: "BROKER", parentPayeeId: null, status: "ACTIVE", branch: "Karachi",
+    channel: "BROKER", parentPayeeId: null, status: "ACTIVE", branch: "Karachi Head Office",
     licenceNo: "SECP-IB-2019-0092", licenceExpiry: "2026-06-30", isCorporate: true, taxFilerStatus: "FILER", taxId: "3811902-5",
     bankName: "Bank Alfalah", bankAccount: "PK11ALFH0021001784500", ytdCommission: 18_200_000, recoveryBalance: 0, persistency13m: null,
   },
   {
     id: "PAYEE-AGENCY-01", code: "CIA-0311", name: "Meridian Corporate Agency", type: "AGENCY",
-    channel: "CORPORATE_AGENT", parentPayeeId: null, status: "ACTIVE", branch: "Islamabad",
+    channel: "CORPORATE_AGENT", parentPayeeId: null, status: "ACTIVE", branch: "Islamabad Regional Office",
     licenceNo: "SECP-CIA-2020-0311", licenceExpiry: "2026-01-31", isCorporate: true, taxFilerStatus: "NON_FILER", taxId: "4420117-9",
     bankName: "Askari Bank", bankAccount: "PK67ASCM0000110045522", ytdCommission: 9_650_000, recoveryBalance: 120_000, persistency13m: 74,
   },
   {
     id: "PAYEE-REF-01", code: "REF-0507", name: "AutoLease Motors — Referral Desk", type: "REFERRAL_PARTNER",
-    channel: "REFERRAL", parentPayeeId: null, status: "ACTIVE", branch: "Karachi",
+    channel: "REFERRAL", parentPayeeId: null, status: "ACTIVE", branch: "Karachi Head Office",
     licenceNo: null, licenceExpiry: null, isCorporate: true, taxFilerStatus: "FILER", taxId: "5510338-1",
     bankName: "Faysal Bank", bankAccount: "PK55FAYS0031000988112", ytdCommission: 1_120_000, recoveryBalance: 0, persistency13m: null,
   },
@@ -456,6 +456,13 @@ export async function listPayees(): Promise<CommissionPayee[]> {
   const agentUsers = await listAgents(tid).catch(() => []);
 
   const managers = ["PAYEE-SM-01", "PAYEE-SM-02"];
+  const sampleBranches = [
+    "Karachi Head Office",
+    "Lahore Regional Office",
+    "Islamabad Regional Office",
+    "Peshawar Regional Office",
+    "Quetta Branch",
+  ];
   const agentPayees: CommissionPayee[] = agentUsers.map((a, i) => ({
     id: a.id,
     code: `AGT-${7820 + i}`,
@@ -464,7 +471,7 @@ export async function listPayees(): Promise<CommissionPayee[]> {
     channel: "DIRECT_AGENCY" as DistributionChannel,
     parentPayeeId: managers[i % managers.length],
     status: "ACTIVE" as const,
-    branch: i % 2 === 0 ? "Karachi — Clifton" : "Lahore — Gulberg",
+    branch: sampleBranches[i % sampleBranches.length],
     // Licences are staggered so the directory shows both valid and expired
     // producers — an expired licence must visibly block its payout.
     licenceNo: `SECP-IA-${2024 + (i % 2)}-${4100 + i}`,

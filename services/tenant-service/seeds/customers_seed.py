@@ -1137,6 +1137,11 @@ async def seed_customers(
     # spread of agents / brokers / banks) rather than everyone coming from one.
     sources = await get_or_seed_sources(session, tenant_id)
 
+    # Fetch branches for this tenant to associate customers with branches
+    branches_res = await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))
+    tenant_branches = list(branches_res.all())
+    branch_map_by_city = {b.city.lower(): b for b in tenant_branches if b.city}
+
     # Backfill: credit any pre-existing customer that has no source yet (rows
     # seeded before this feature existed) to a random source, so "who brought
     # the customer" is populated across the board — not only newly-added rows.
@@ -1165,6 +1170,12 @@ async def seed_customers(
         details = spec.get("details") or {}
         medical_history = details.get("medical_history") or {}
         lifestyle = details.get("lifestyle") or {}
+
+        city_str = details.get("address", {}).get("city", "") or ""
+        matched_branch = branch_map_by_city.get(city_str.lower()) if city_str else None
+        if not matched_branch and tenant_branches:
+            matched_branch = tenant_branches[len(created) % len(tenant_branches)]
+
         customer = Customer(
             tenant_id=tenant_id,
             cnic=cnic,
@@ -1178,6 +1189,9 @@ async def seed_customers(
             weight_kg=lifestyle.get("weight_kg", 70),
             details=details,
             acquisition_source_id=random.choice(sources).id if sources else None,
+            branch_id=matched_branch.id if matched_branch else None,
+            city=matched_branch.city if matched_branch else (city_str or None),
+            province=matched_branch.region if matched_branch else None,
         )
         session.add(customer)
         await session.flush()  # obtain customer.id before linking the policy

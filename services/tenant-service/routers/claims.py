@@ -16,6 +16,7 @@ from database import get_session
 from routers.auth import _get_current_user, _role_name, oauth2_scheme
 from shared.models.core import (
     Artifact,
+    Branch,
     Case,
     CasePriorityEnum,
     CaseStatusEnum,
@@ -95,6 +96,7 @@ def _claim_dict(
     adjuster: Optional[User] = None,
     artifacts_count: int = 0,
     artifacts: Optional[list] = None,
+    branch: Optional[Branch] = None,
 ) -> dict:
     is_contestable_calc = False
     ref_date_str = None
@@ -194,6 +196,9 @@ def _claim_dict(
         "coverage_amount": policy.coverage_amount if policy else 0.0,
         "customer_id": str(customer.id) if customer else None,
         "customer_name": customer.name if customer else "Unknown",
+        "branch_id": str(customer.branch_id) if customer and customer.branch_id else None,
+        "branch_name": branch.name if branch else None,
+        "region": branch.region if branch else None,
         "claimant_type": c_type,
         "claimant_name": c_name,
         "claimant_cnic": c_cnic,
@@ -358,6 +363,8 @@ async def list_claims(
     end_date: Optional[date] = Query(None, description="End date"),
     date_field: Optional[str] = Query("incident_date", description="Date field (incident_date or reported_date)"),
     search: Optional[str] = Query(None, description="Search claim_number or claimant name"),
+    region: Optional[str] = Query(None, description="Filter by the claimant's branch region"),
+    branch_id: Optional[UUID] = Query(None, description="Filter by the claimant's branch"),
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
@@ -401,11 +408,16 @@ async def list_claims(
 
     claims = list((await session.exec(stmt)).all())
 
+    branches_by_id = {
+        b.id: b for b in (await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))).all()
+    }
+
     results = []
     for c in claims:
         policy = await session.get(Policy, c.policy_id)
         customer = await session.get(Customer, policy.customer_id) if policy else None
         adjuster = await session.get(User, c.assigned_adjuster_id) if c.assigned_adjuster_id else None
+        branch = branches_by_id.get(customer.branch_id) if customer and customer.branch_id else None
 
         if search and search.strip():
             q = search.strip().lower()
@@ -416,8 +428,14 @@ async def list_claims(
             if not (ref_match or name_match or pol_match or claimant_match):
                 continue
 
+        if region and region != "ALL" and (not branch or branch.region != region):
+            continue
+
+        if branch_id and (not branch or branch.id != branch_id):
+            continue
+
         art_count = len((await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all())
-        results.append(_claim_dict(c, policy, customer, adjuster, art_count))
+        results.append(_claim_dict(c, policy, customer, adjuster, art_count, branch=branch))
 
     return results
 
