@@ -36,6 +36,7 @@ from shared.events.kafka_events import (
 from shared.models.core import (
     Beneficiary,
     BillingFrequencyEnum,
+    Branch,
     Claim,
     CounterOffer,
     CounterOfferStatusEnum,
@@ -540,10 +541,16 @@ async def list_policies(
     policies = list(result.all())
     if status:
         policies = [p for p in policies if _st(p) == status]
+
+    branches_by_id = {
+        b.id: b for b in (await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))).all()
+    }
+
     out = []
     for p in policies:
         cust = await session.get(Customer, p.customer_id)
-        
+        branch = branches_by_id.get(cust.branch_id) if cust and cust.branch_id else None
+
         segment = "individual"
         if getattr(p, "family_policy_id", None):
             segment = "family"
@@ -561,6 +568,9 @@ async def list_policies(
             "customer_id": str(p.customer_id),
             "customer_name": cust.name if cust else "—",
             "family_group_id": str(cust.family_group_id) if cust and cust.family_group_id else None,
+            "branch_id": str(cust.branch_id) if cust and cust.branch_id else None,
+            "branch_name": branch.name if branch else None,
+            "region": branch.region if branch else None,
             "product_name": p.product_name,
             "insurance_type": p.insurance_type.value if hasattr(p.insurance_type, "value") else str(p.insurance_type),
             "coverage_amount": p.coverage_amount,

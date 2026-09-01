@@ -80,6 +80,9 @@ export interface Claim {
   coverage_amount?: number;
   customer_id?: string | null;
   customer_name?: string | null;
+  branch_id?: string | null;
+  branch_name?: string | null;
+  region?: string | null;
   claimant_name: string;
   claimant_type?: string | null;
   claimant_cnic?: string | null;
@@ -140,6 +143,8 @@ export interface ListClaimsParams {
   risk_level?: string;
   min_amount?: number;
   max_amount?: number;
+  region?: string;
+  branch_id?: string;
 }
 
 export async function listClaims(params?: ListClaimsParams): Promise<Claim[]> {
@@ -154,6 +159,8 @@ export async function listClaims(params?: ListClaimsParams): Promise<Claim[]> {
   if (params?.risk_level) query.append("risk_level", params.risk_level);
   if (params?.min_amount !== undefined) query.append("min_amount", params.min_amount.toString());
   if (params?.max_amount !== undefined) query.append("max_amount", params.max_amount.toString());
+  if (params?.region) query.append("region", params.region);
+  if (params?.branch_id) query.append("branch_id", params.branch_id);
 
   const res = await api.get(`/tenants/${tid}/claims?${query.toString()}`);
   return res.data;

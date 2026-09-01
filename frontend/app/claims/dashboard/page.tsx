@@ -9,7 +9,13 @@ import {
   CreateClaimRequest,
 } from "@/app/services/claims";
 import { listPolicies, PolicyListItem } from "@/app/services/policies";
-import { DateRangeFilter, filterLedgerByDate, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
+import { listBranches, distinctRegions } from "@/app/services/branches";
+import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
+import { RegionFilter, ALL_REGIONS } from "@/components/RegionFilter";
+import { FilterDropdown, type FilterOption } from "@/components/FilterDropdown";
+import { InteractiveMapCard } from "@/components/dashboard/InteractiveMapCard";
+import { TimeTrendChartCard } from "@/components/dashboard/TimeTrendChartCard";
+import { listCommissionLedger, type CommissionLedgerEntry } from "@/app/services/commissions";
 
 function RiskBadge({ prob, flag }: { prob: number; flag: boolean }) {
   if (flag) {
@@ -61,10 +67,35 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+const CLAIM_TYPE_OPTIONS: FilterOption[] = [
+  { value: "ALL", label: "All Claim Types" },
+  { value: "Hospitalization", label: "Hospitalization" },
+  { value: "Surgery", label: "Surgery" },
+  { value: "Death Claim", label: "Death Claim" },
+  { value: "Reimbursement", label: "Reimbursement" },
+];
+
+const RISK_OPTIONS: FilterOption[] = [
+  { value: "ALL", label: "All Risk Levels" },
+  { value: "LOW", label: "Low Risk (< 30%)" },
+  { value: "MEDIUM", label: "Medium Risk (30–69%)" },
+  { value: "HIGH", label: "High Risk (≥ 70%)" },
+  { value: "DUPLICATE", label: "Duplicate" },
+];
+
+function riskLevelOf(c: Claim): "LOW" | "MEDIUM" | "HIGH" | "DUPLICATE" {
+  if (c.duplicate_flag) return "DUPLICATE";
+  if (c.fraud_probability >= 0.7) return "HIGH";
+  if (c.fraud_probability >= 0.3) return "MEDIUM";
+  return "LOW";
+}
+
 export default function ClaimsDashboardPage() {
   const [claims, setClaims] = useState<Claim[]>([]);
   const [policies, setPolicies] = useState<PolicyListItem[]>([]);
+  const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -75,11 +106,27 @@ export default function ClaimsDashboardPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("ytd");
   const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("ytd"));
 
-  // Filter claims by created_at (always populated); incident_date may be null
-  const filteredClaims = filterLedgerByDate(
-    claims.map(c => ({ ...c, accruedAt: c.created_at })),
-    dateRange
-  );
+  // ── Region / Claim Type / Risk Level Filters ────────────────────────────
+  const [regions, setRegions] = useState<string[]>([]);
+  const [regionFilter, setRegionFilter] = useState(ALL_REGIONS);
+  const [claimTypeFilter, setClaimTypeFilter] = useState("ALL");
+  const [riskFilter, setRiskFilter] = useState("ALL");
+
+  // Filter claims by created_at (always populated); incident_date may be null.
+  // Filters claims directly (rather than composing through filterLedgerByDate)
+  // so every downstream computation keeps the full Claim type.
+  const inSelectedDateRange = (dateStr: string): boolean => {
+    if (!dateRange.from || !dateRange.to) return true;
+    const d = dateStr.slice(0, 10);
+    return d >= dateRange.from && d <= dateRange.to;
+  };
+  const filteredClaims: Claim[] = claims.filter((c: Claim) => {
+    if (!inSelectedDateRange(c.created_at)) return false;
+    if (regionFilter !== ALL_REGIONS && c.region !== regionFilter) return false;
+    if (claimTypeFilter !== "ALL" && c.claim_type !== claimTypeFilter) return false;
+    if (riskFilter !== "ALL" && riskLevelOf(c) !== riskFilter) return false;
+    return true;
+  });
 
   const [policySearch, setPolicySearch] = useState("");
   const [policyDropdownOpen, setPolicyDropdownOpen] = useState(false);
@@ -106,11 +153,12 @@ export default function ClaimsDashboardPage() {
 
   const fetchData = async () => {
     setLoading(true);
+    setLoadError("");
     try {
       const data = await listClaims();
       setClaims(data);
     } catch {
-      /* silent */
+      setLoadError("Could not load claims. The data below may be incomplete or stale — try refreshing.");
     } finally {
       setLoading(false);
     }
@@ -119,6 +167,11 @@ export default function ClaimsDashboardPage() {
   useEffect(() => {
     fetchData();
     listPolicies().then(setPolicies).catch(() => { });
+    listCommissionLedger().then(setLedger).catch(() => { });
+    const tid = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+    if (tid) {
+      listBranches(tid).then((b) => setRegions(distinctRegions(b))).catch(() => { });
+    }
   }, []);
 
   const filteredPolicies = policies.filter((p) => {
@@ -176,7 +229,37 @@ export default function ClaimsDashboardPage() {
 
   const approvedCount = filteredClaims.filter((c) => ["Approved", "Partial Approval", "Settled"].includes(c.status)).length;
   const closedCount = filteredClaims.filter((c) => ["Approved", "Partial Approval", "Declined", "Settled", "Closed"].includes(c.status)).length;
-  const approvalRate = closedCount > 0 ? ((approvedCount / closedCount) * 100).toFixed(1) : "85.0";
+  const approvalRate = closedCount > 0 ? ((approvedCount / closedCount) * 100).toFixed(1) : null;
+
+  // ── SLA & Workload metrics — computed from real claim timestamps ────────
+  const terminalStatuses = ["Approved", "Partial Approval", "Declined", "Settled", "Closed"];
+  const resolvedClaims = filteredClaims.filter(
+    (c) => terminalStatuses.includes(c.status) && (c.settled_at || c.closed_at)
+  );
+  const avgAdjudicationHours =
+    resolvedClaims.length > 0
+      ? resolvedClaims.reduce((sum, c) => {
+          const end = new Date((c.settled_at || c.closed_at) as string).getTime();
+          const start = new Date(c.created_at).getTime();
+          return sum + Math.max(0, end - start) / 3_600_000;
+        }, 0) / resolvedClaims.length
+      : null;
+  const investigatedStatuses = ["Under Investigation", "Referred to Manager", "Pending Documents"];
+  const autoTriagedCount = filteredClaims.filter(
+    (c) =>
+      terminalStatuses.includes(c.status) &&
+      !(c.status_history || []).some((h) => investigatedStatuses.includes(h.to_status))
+  ).length;
+  const autoTriageRate = closedCount > 0 ? (autoTriagedCount / closedCount) * 100 : null;
+  const reinsuranceFlaggedCount = filteredClaims.filter((c) => !!c.reinsurance_referral_id).length;
+  const reinsuranceFlagRate = totalClaimsCount > 0 ? (reinsuranceFlaggedCount / totalClaimsCount) * 100 : null;
+  const SLA_TARGET_HOURS = 24;
+  const withinSlaCount = resolvedClaims.filter((c) => {
+    const end = new Date((c.settled_at || c.closed_at) as string).getTime();
+    const start = new Date(c.created_at).getTime();
+    return (end - start) / 3_600_000 <= SLA_TARGET_HOURS;
+  }).length;
+  const slaCompliancePct = resolvedClaims.length > 0 ? (withinSlaCount / resolvedClaims.length) * 100 : null;
 
   // Status breakdown
   const statusCounts: Record<string, number> = {};
@@ -208,7 +291,13 @@ export default function ClaimsDashboardPage() {
           </p> */}
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          {/* Region Filter */}
+          <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
+          {/* Claim Type Filter */}
+          <FilterDropdown value={claimTypeFilter} options={CLAIM_TYPE_OPTIONS} onChange={setClaimTypeFilter} />
+          {/* Risk Level Filter */}
+          <FilterDropdown value={riskFilter} options={RISK_OPTIONS} onChange={setRiskFilter} />
           {/* Date Range Filter */}
           <DateRangeFilter
             preset={datePreset}
@@ -237,6 +326,15 @@ export default function ClaimsDashboardPage() {
           </button> */}
         </div>
       </div>
+
+      {loadError && (
+        <div className="px-4 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center justify-between gap-3">
+          <span>{loadError}</span>
+          <button onClick={fetchData} className="px-2.5 py-1 rounded-md bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 shrink-0">
+            Retry
+          </button>
+        </div>
+      )}
 
         {/* Primary KPI Stats Grid */}
         <div className="flex items-center gap-2 mb-1">
@@ -293,7 +391,7 @@ export default function ClaimsDashboardPage() {
           </div>
           <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 text-slate-500">
             <span>Approval Rate:</span>
-            <span className="font-semibold text-emerald-700">{approvalRate}%</span>
+            <span className="font-semibold text-emerald-700">{approvalRate !== null ? `${approvalRate}%` : "—"}</span>
           </div>
         </div>
 
@@ -311,6 +409,26 @@ export default function ClaimsDashboardPage() {
             <span>Fraud Probability:</span>
             <span className="font-semibold text-rose-700">&gt; 70% or Duplicate</span>
           </div>
+        </div>
+      </div>
+
+      {/* ── HERO VISUAL ANALYTICS: Regional Map & Claims Temporal Trend ─────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="lg:col-span-6">
+          <InteractiveMapCard
+            policies={policies}
+            claims={filteredClaims}
+            ledger={ledger}
+            selectedRegion={regionFilter}
+            onSelectRegion={setRegionFilter}
+          />
+        </div>
+        <div className="lg:col-span-6">
+          <TimeTrendChartCard
+            policies={policies}
+            claims={filteredClaims}
+            ledger={ledger}
+          />
         </div>
       </div>
 
@@ -496,33 +614,42 @@ export default function ClaimsDashboardPage() {
             <div className="p-3.5 bg-blue-50/50 border border-blue-100 rounded-lg space-y-2">
               <div className="flex justify-between font-semibold text-slate-800">
                 <span>Avg Adjudication Time</span>
-                <span className="text-blue-700 font-bold">1.4 Hours</span>
+                <span className="text-blue-700 font-bold">
+                  {avgAdjudicationHours !== null
+                    ? avgAdjudicationHours >= 48
+                      ? `${(avgAdjudicationHours / 24).toFixed(1)} Days`
+                      : `${avgAdjudicationHours.toFixed(1)} Hours`
+                    : "—"}
+                </span>
               </div>
-              <div className="text-[11px] text-slate-500">Target SLA: &lt; 24.0 Hours (98% compliant)</div>
+              <div className="text-[11px] text-slate-500">
+                Target SLA: &lt; {SLA_TARGET_HOURS}.0 Hours
+                {slaCompliancePct !== null ? ` (${slaCompliancePct.toFixed(0)}% compliant)` : " (no resolved claims yet)"}
+              </div>
               <div className="h-1.5 w-full bg-blue-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-600 rounded-full" style={{ width: "98%" }}></div>
+                <div className="h-full bg-blue-600 rounded-full" style={{ width: `${slaCompliancePct ?? 0}%` }}></div>
               </div>
             </div>
 
             <div className="p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-lg space-y-2">
               <div className="flex justify-between font-semibold text-slate-800">
-                <span>Auto-Triage Rule Rate</span>
-                <span className="text-emerald-700 font-bold">72.5%</span>
+                <span>Auto-Triage Rate</span>
+                <span className="text-emerald-700 font-bold">{autoTriageRate !== null ? `${autoTriageRate.toFixed(1)}%` : "—"}</span>
               </div>
-              <div className="text-[11px] text-slate-500">Claims processed without manual escalation</div>
+              <div className="text-[11px] text-slate-500">Resolved claims that never hit manual investigation</div>
               <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-600 rounded-full" style={{ width: "72.5%" }}></div>
+                <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${autoTriageRate ?? 0}%` }}></div>
               </div>
             </div>
 
             <div className="p-3.5 bg-purple-50/50 border border-purple-100 rounded-lg space-y-2">
               <div className="flex justify-between font-semibold text-slate-800">
                 <span>Reinsurance Treaty Flag Rate</span>
-                <span className="text-purple-700 font-bold">4.8%</span>
+                <span className="text-purple-700 font-bold">{reinsuranceFlagRate !== null ? `${reinsuranceFlagRate.toFixed(1)}%` : "—"}</span>
               </div>
               <div className="text-[11px] text-slate-500">Escalated to facultative reinsurance desk</div>
               <div className="h-1.5 w-full bg-purple-100 rounded-full overflow-hidden">
-                <div className="h-full bg-purple-600 rounded-full" style={{ width: "15%" }}></div>
+                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${reinsuranceFlagRate ?? 0}%` }}></div>
               </div>
             </div>
           </div>

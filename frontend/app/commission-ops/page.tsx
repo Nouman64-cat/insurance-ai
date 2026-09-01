@@ -46,6 +46,13 @@ import {
   type DatePreset,
   type DateRange,
 } from "../../components/commissions/DateRangeFilter";
+import { listBranches, distinctRegions, resolvePayeeRegion, type Branch } from "@/app/services/branches";
+import { RegionFilter, ALL_REGIONS } from "@/components/RegionFilter";
+import { FilterDropdown, type FilterOption } from "@/components/FilterDropdown";
+import { InteractiveMapCard } from "@/components/dashboard/InteractiveMapCard";
+import { TimeTrendChartCard } from "@/components/dashboard/TimeTrendChartCard";
+import { listPolicies, type PolicyListItem } from "@/app/services/policies";
+import { listClaims, type Claim } from "@/app/services/claims";
 
 function SummaryStat({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "warn" | "muted" }) {
   const valueClass = {
@@ -78,13 +85,30 @@ export default function CommissionOpsPage() {
 
   const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [payees, setPayees] = useState<CommissionPayee[]>([]);
+  const [policies, setPolicies] = useState<PolicyListItem[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [runs, setRuns] = useState<PayoutRun[]>([]);
   const [statements, setStatements] = useState<PayeeStatement[]>([]);
   const [stats, setStats] = useState<CommissionSummaryStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [notification, setNotification] = useState<{ msg: string; type: "success" | "error" } | null>(null);
 
-  const filteredLedger = filterLedgerByDate(ledger, dateRange);
+  // ── Region / Branch Filter ───────────────────────────────────────────────
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [regionFilter, setRegionFilter] = useState(ALL_REGIONS);
+
+  useEffect(() => {
+    const tid = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+    if (tid) listBranches(tid).then(setBranches).catch(() => {});
+  }, []);
+
+  const regions = distinctRegions(branches);
+  const payeeRegionById = new Map(payees.map((p: CommissionPayee) => [p.id, resolvePayeeRegion(p.branch, branches)]));
+
+  const dateFilteredLedger: CommissionLedgerEntry[] = filterLedgerByDate(ledger, dateRange);
+  const filteredLedger = dateFilteredLedger.filter(
+    (entry: CommissionLedgerEntry) => regionFilter === ALL_REGIONS || payeeRegionById.get(entry.payeeId) === regionFilter
+  );
 
   const effectiveStats: CommissionSummaryStats | null = stats
     ? {
@@ -116,11 +140,19 @@ export default function CommissionOpsPage() {
     setLoading(true);
     try {
       if (rebuild) resetLedgerCache();
-      const [ledgerData, payeeData, runData] = await Promise.all([listCommissionLedger(), listPayees(), listPayoutRuns()]);
+      const [ledgerData, payeeData, runData, policiesData, claimsData] = await Promise.all([
+        listCommissionLedger(),
+        listPayees(),
+        listPayoutRuns(),
+        listPolicies().catch(() => []),
+        listClaims().catch(() => []),
+      ]);
       const [statsData, statementData] = await Promise.all([getCommissionStats(), listPayeeStatements()]);
       setLedger([...ledgerData]);
       setPayees([...payeeData]);
       setRuns([...runData]);
+      setPolicies([...policiesData]);
+      setClaims([...claimsData]);
       setStats(statsData);
       setStatements(statementData);
     } catch (err) {
@@ -209,15 +241,18 @@ export default function CommissionOpsPage() {
             Operational Overview &amp; Execution
           </p>
         </div>
-        <DateRangeFilter
-          preset={datePreset}
-          range={dateRange}
-          onPresetChange={(p, r) => {
-            setDatePreset(p);
-            setDateRange(r);
-          }}
-          align="right"
-        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
+          <DateRangeFilter
+            preset={datePreset}
+            range={dateRange}
+            onPresetChange={(p, r) => {
+              setDatePreset(p);
+              setDateRange(r);
+            }}
+            align="right"
+          />
+        </div>
       </div>
 
       {effectiveStats && (
@@ -314,6 +349,26 @@ export default function CommissionOpsPage() {
                 </svg>
               }
             />
+          </div>
+
+          {/* ── HERO VISUAL ANALYTICS: Regional Map & Ledger Temporal Trend ────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
+            <div className="lg:col-span-6">
+              <InteractiveMapCard
+                policies={policies}
+                claims={claims}
+                ledger={filteredLedger}
+                selectedRegion={regionFilter}
+                onSelectRegion={setRegionFilter}
+              />
+            </div>
+            <div className="lg:col-span-6">
+              <TimeTrendChartCard
+                policies={policies}
+                claims={claims}
+                ledger={filteredLedger}
+              />
+            </div>
           </div>
         </div>
       )}

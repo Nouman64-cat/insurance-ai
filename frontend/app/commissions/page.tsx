@@ -34,8 +34,15 @@ import IncentivesTab from "../../components/commissions/IncentivesTab";
 import PayeesTab from "../../components/commissions/PayeesTab";
 import RateCardTab from "../../components/commissions/RateCardTab";
 import { DateRangeFilter, filterLedgerByDate, resolvePreset, type DatePreset, type DateRange } from "../../components/commissions/DateRangeFilter";
+import { listBranches, distinctRegions, resolvePayeeRegion, type Branch } from "@/app/services/branches";
+import { RegionFilter, ALL_REGIONS } from "@/components/RegionFilter";
+import { FilterDropdown, type FilterOption } from "@/components/FilterDropdown";
 import { MetricCard } from "@/components/MetricCard";
 import { PillarCard, RingGauge, Bar, Stat, Divider } from "@/components/dashboard/shared";
+import { InteractiveMapCard } from "@/components/dashboard/InteractiveMapCard";
+import { TimeTrendChartCard } from "@/components/dashboard/TimeTrendChartCard";
+import { listPolicies, type PolicyListItem } from "@/app/services/policies";
+import { listClaims, type Claim } from "@/app/services/claims";
 import {
   Card,
   MetricTile,
@@ -85,6 +92,8 @@ export default function CommissionsPage() {
 
   const [ledger, setLedger] = useState<CommissionLedgerEntry[]>([]);
   const [payees, setPayees] = useState<CommissionPayee[]>([]);
+  const [policies, setPolicies] = useState<PolicyListItem[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [runs, setRuns] = useState<PayoutRun[]>([]);
   const [statements, setStatements] = useState<PayeeStatement[]>([]);
   const [qualifications, setQualifications] = useState<IncentiveQualification[]>([]);
@@ -96,9 +105,38 @@ export default function CommissionsPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("ytd");
   const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("ytd"));
 
-  const filteredLedger = filterLedgerByDate(ledger, dateRange);
+  // ── Region / Channel / Payee Type Filters ───────────────────────────────────
+  const [branches, setBranches] = useState<Branch[]>([]);
+  const [regionFilter, setRegionFilter] = useState(ALL_REGIONS);
+  const [channelFilter, setChannelFilter] = useState("ALL");
+  const [payeeTypeFilter, setPayeeTypeFilter] = useState("ALL");
+
+  useEffect(() => {
+    const tid = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
+    if (tid) listBranches(tid).then(setBranches).catch(() => {});
+  }, []);
+
+  const regions = distinctRegions(branches);
+  const payeeRegionById = new Map(payees.map((p) => [p.id, resolvePayeeRegion(p.branch, branches)]));
+
+  const dateFilteredLedger: CommissionLedgerEntry[] = filterLedgerByDate(ledger, dateRange);
+  const filteredLedger = dateFilteredLedger.filter((entry: CommissionLedgerEntry) => {
+    if (regionFilter !== ALL_REGIONS && payeeRegionById.get(entry.payeeId) !== regionFilter) return false;
+    if (channelFilter !== "ALL" && entry.channel !== channelFilter) return false;
+    if (payeeTypeFilter !== "ALL" && entry.payeeType !== payeeTypeFilter) return false;
+    return true;
+  });
   const filteredStats = filteredLedger.length > 0 ? computeCommissionStats(filteredLedger) : stats;
   const filteredQualifications = evaluateIncentives(payees, filteredLedger);
+
+  const channelOptions: FilterOption[] = [
+    { value: "ALL", label: "All Channels" },
+    ...Object.entries(CHANNEL_LABELS).map(([value, label]) => ({ value, label })),
+  ];
+  const payeeTypeOptions: FilterOption[] = [
+    { value: "ALL", label: "All Roles" },
+    ...Object.entries(PAYEE_TYPE_LABELS).map(([value, label]) => ({ value, label })),
+  ];
 
   const notify = useCallback((msg: string, ok = true) => {
     setNotification({ msg, type: ok ? "success" : "error" });
@@ -110,11 +148,19 @@ export default function CommissionsPage() {
     setLoading(true);
     try {
       if (rebuild) resetLedgerCache();
-      const [ledgerData, payeeData, runData] = await Promise.all([listCommissionLedger(), listPayees(), listPayoutRuns()]);
+      const [ledgerData, payeeData, runData, policiesData, claimsData] = await Promise.all([
+        listCommissionLedger(),
+        listPayees(),
+        listPayoutRuns(),
+        listPolicies().catch(() => []),
+        listClaims().catch(() => []),
+      ]);
       const [statsData, statementData] = await Promise.all([getCommissionStats(), listPayeeStatements()]);
       setLedger([...ledgerData]);
       setPayees([...payeeData]);
       setRuns([...runData]);
+      setPolicies([...policiesData]);
+      setClaims([...claimsData]);
       setStats(statsData);
       setStatements(statementData);
       setQualifications(evaluateIncentives(payeeData, ledgerData));
@@ -152,7 +198,13 @@ export default function CommissionsPage() {
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Commissions Admin</h1>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Region / Branch Filter */}
+          <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
+          {/* Channel Filter */}
+          <FilterDropdown value={channelFilter} options={channelOptions} onChange={setChannelFilter} />
+          {/* Payee Role Filter */}
+          <FilterDropdown value={payeeTypeFilter} options={payeeTypeOptions} onChange={setPayeeTypeFilter} />
           {/* Date Range Filter */}
           <DateRangeFilter
             preset={datePreset}
@@ -278,6 +330,26 @@ export default function CommissionsPage() {
                 </svg>
               }
             />
+          </div>
+
+          {/* ── HERO VISUAL ANALYTICS: Regional Map & Commission Temporal Trend ─── */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pt-2">
+            <div className="lg:col-span-6">
+              <InteractiveMapCard
+                policies={policies}
+                claims={claims}
+                ledger={filteredLedger}
+                selectedRegion={regionFilter}
+                onSelectRegion={setRegionFilter}
+              />
+            </div>
+            <div className="lg:col-span-6">
+              <TimeTrendChartCard
+                policies={policies}
+                claims={claims}
+                ledger={filteredLedger}
+              />
+            </div>
           </div>
         </div>
       )}

@@ -15,6 +15,9 @@ export interface PolicyListItem {
   status: string;
   segment?: string;
   family_group_id?: string | null;
+  branch_id?: string | null;
+  branch_name?: string | null;
+  region?: string | null;
   case_number?: string | null;
   case_status?: string | null;
   effective_date: string | null;

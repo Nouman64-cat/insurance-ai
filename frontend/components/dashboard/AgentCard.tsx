@@ -1,4 +1,5 @@
 import { Bar, PillarCard, Divider } from "./shared";
+import type { CommissionLedgerEntry, IncentiveQualification, CommissionPayee } from "@/app/services/commissions";
 
 function UserCheckIcon() {
   return (
@@ -10,19 +11,53 @@ function UserCheckIcon() {
   );
 }
 
-const TOP_AGENTS = [
-  { id: "A-0047", name: "Tariq Mahmood", score: 94, commission: "PKR 412K", cases: 31 },
-  { id: "A-0112", name: "Sana Khalid",   score: 91, commission: "PKR 378K", cases: 28 },
-  { id: "A-0023", name: "Bilal Raza",    score: 88, commission: "PKR 341K", cases: 26 },
-] as const;
+interface AgentCardProps {
+  payees: CommissionPayee[];
+  ledger: CommissionLedgerEntry[];
+  qualifications: IncentiveQualification[];
+}
 
-const QUALITY_METRICS = [
-  { label: "Sales Quality Score",  pct: 78.4, color: "bg-amber-500",   badge: "78.4 / 100" },
-  { label: "Policy Activation Rate", pct: 91, color: "bg-blue-500", badge: "91.0%"      },
-  { label: "Complaint Ratio",      pct: 2.1,  color: "bg-red-400",     badge: "2.1%"       },
-] as const;
+export function AgentCard({ payees, ledger, qualifications }: AgentCardProps) {
+  const activeAgents = payees.filter((p) => p.type === "AGENT" && p.status === "ACTIVE");
+  const agentLedger = ledger.filter((e) => e.payeeType === "AGENT");
+  const commissionEarned = agentLedger.reduce((s, e) => s + e.netCommission, 0);
+  const avgPerAgent = activeAgents.length > 0 ? commissionEarned / activeAgents.length : 0;
+  const casesPerAgent = activeAgents.length > 0 ? agentLedger.length / activeAgents.length : 0;
 
-export function AgentCard() {
+  const fmtCompact = (v: number) => (v >= 1_000_000 ? `PKR ${(v / 1_000_000).toFixed(1)}M` : `PKR ${(v / 1_000).toFixed(0)}K`);
+
+  const withPersistency = activeAgents.filter((p) => p.persistency13m !== null);
+  const avgPersistency = withPersistency.length > 0 ? withPersistency.reduce((s, p) => s + (p.persistency13m || 0), 0) / withPersistency.length : 0;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const licensed = activeAgents.filter((p) => p.licenceNo && p.licenceExpiry);
+  const compliant = licensed.filter((p) => (p.licenceExpiry as string) >= today);
+  const licenceCompliancePct = licensed.length > 0 ? (compliant.length / licensed.length) * 100 : 0;
+
+  const bonusQualifiedAgents = qualifications.filter((q) => q.qualifies && q.payee.type === "AGENT");
+  const uniqueBonusAgents = new Set(bonusQualifiedAgents.map((q) => q.payee.id));
+  const bonusRatePct = activeAgents.length > 0 ? (uniqueBonusAgents.size / activeAgents.length) * 100 : 0;
+
+  const QUALITY_METRICS = [
+    { label: "Avg 13-Month Persistency", pct: avgPersistency,       color: "bg-amber-500", badge: `${avgPersistency.toFixed(1)}%` },
+    { label: "Licence Compliance",       pct: licenceCompliancePct, color: "bg-blue-500",  badge: `${licenceCompliancePct.toFixed(0)}%` },
+    { label: "Bonus Qualification Rate", pct: bonusRatePct,         color: "bg-emerald-500", badge: `${bonusRatePct.toFixed(0)}%` },
+  ];
+
+  const agentCaseCounts = new Map<string, number>();
+  agentLedger.forEach((e) => agentCaseCounts.set(e.payeeId, (agentCaseCounts.get(e.payeeId) || 0) + 1));
+
+  const topAgents = [...activeAgents]
+    .sort((a, b) => b.ytdCommission - a.ytdCommission)
+    .slice(0, 3)
+    .map((a) => ({
+      id: a.id,
+      name: a.name,
+      score: a.persistency13m ?? 0,
+      commission: fmtCompact(a.ytdCommission),
+      cases: agentCaseCounts.get(a.id) || 0,
+    }));
+
   return (
     <PillarCard
       icon={<UserCheckIcon />}
@@ -37,20 +72,20 @@ export function AgentCard() {
         <div className="flex-1 space-y-4">
           {/* Commission headline */}
           <div className="bg-amber-50 border border-amber-100 rounded-lg p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">Commission Earned — MTD</p>
-            <p className="text-2xl font-extrabold text-amber-700 mt-0.5">PKR 4.2M</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-500">Commission Earned — Selected Range</p>
+            <p className="text-2xl font-extrabold text-amber-700 mt-0.5">{fmtCompact(commissionEarned)}</p>
             <div className="flex gap-4 mt-2">
               <div>
                 <p className="text-[10px] text-amber-400">Active Agents</p>
-                <p className="text-sm font-bold text-amber-700">234</p>
+                <p className="text-sm font-bold text-amber-700">{activeAgents.length}</p>
               </div>
               <div>
                 <p className="text-[10px] text-amber-400">Avg / Agent</p>
-                <p className="text-sm font-bold text-amber-700">PKR 17.9K</p>
+                <p className="text-sm font-bold text-amber-700">{fmtCompact(avgPerAgent)}</p>
               </div>
               <div>
                 <p className="text-[10px] text-amber-400">Cases / Agent</p>
-                <p className="text-sm font-bold text-amber-700">5.4</p>
+                <p className="text-sm font-bold text-amber-700">{casesPerAgent.toFixed(1)}</p>
               </div>
             </div>
           </div>
@@ -67,26 +102,30 @@ export function AgentCard() {
 
         {/* Right: Top performers */}
         <div className="sm:w-52 flex-shrink-0">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2.5">Top Performers</p>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2.5">Top Performers (YTD)</p>
           <div className="space-y-0">
-            {TOP_AGENTS.map((a, i) => (
-              <div key={a.id} className="flex items-center gap-2.5 py-2.5 border-b border-slate-100 last:border-0">
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-extrabold flex-shrink-0 ${
-                  i === 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"
-                }`}>
-                  {i + 1}
-                </span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-bold text-slate-800 truncate">{a.name}</p>
-                  <p className="text-[10px] text-slate-400">{a.cases} cases · {a.commission}</p>
+            {topAgents.length === 0 ? (
+              <p className="text-xs text-slate-400 py-2">No active agents yet.</p>
+            ) : (
+              topAgents.map((a, i) => (
+                <div key={a.id} className="flex items-center gap-2.5 py-2.5 border-b border-slate-100 last:border-0">
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-extrabold flex-shrink-0 ${
+                    i === 0 ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-500"
+                  }`}>
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-slate-800 truncate">{a.name}</p>
+                    <p className="text-[10px] text-slate-400">{a.cases} cases (range) · {a.commission} YTD</p>
+                  </div>
+                  <span className="text-xs font-extrabold text-amber-600">{a.score}</span>
                 </div>
-                <span className="text-xs font-extrabold text-amber-600">{a.score}</span>
-              </div>
-            ))}
+              ))
+            )}
           </div>
           <div className="mt-3 pt-3 border-t border-slate-100">
             <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Bonus Eligible</p>
-            <p className="text-base font-extrabold text-blue-600 mt-0.5">18 agents</p>
+            <p className="text-base font-extrabold text-blue-600 mt-0.5">{uniqueBonusAgents.size} agents</p>
           </div>
         </div>
       </div>

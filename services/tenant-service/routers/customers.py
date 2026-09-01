@@ -131,6 +131,22 @@ async def create_customer(
         else:
             status_val = ProfileStatusEnum.LEAD
 
+    # Resolve branch_id if not explicitly provided
+    resolved_branch_id = body.branch_id
+    if not resolved_branch_id:
+        from shared.models.core import Branch
+        b_query = select(Branch).where(Branch.tenant_id == tenant_id)
+        if body.city:
+            b_query = b_query.where(func.lower(Branch.city) == body.city.lower())
+        branches = (await session.exec(b_query)).all()
+        if branches:
+            resolved_branch_id = branches[0].id
+        else:
+            # Fallback to any branch for the tenant
+            all_b = (await session.exec(select(Branch).where(Branch.tenant_id == tenant_id))).all()
+            if all_b:
+                resolved_branch_id = all_b[0].id
+
     # 3. Persist — tenant_id is always taken from the path (JWT-scoped)
     customer = Customer(
         tenant_id       = tenant_id,
@@ -146,7 +162,7 @@ async def create_customer(
         weight_kg       = body.weight_kg if body.weight_kg is not None else 70.0,
         profile_status  = status_val,
         acquisition_source_id = body.acquisition_source_id,
-        branch_id       = body.branch_id,
+        branch_id       = resolved_branch_id,
         assigned_agent_id = body.assigned_agent_id,
         city            = body.city,
         province        = body.province,
