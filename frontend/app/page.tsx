@@ -161,13 +161,13 @@ export default function DashboardPage() {
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">Executive Insurance Command Center</h1>
+            <h1 className="text-lg font-bold tracking-tight text-slate-900">Executive Overview</h1>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live AI Suite Active
             </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-0.5">
-            Real-time Underwriting Governance, Financial Operations &amp; Geospatial Intelligence
+            Real-time Underwriting, Claims Performance &amp; Portfolio Analytics
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -259,7 +259,7 @@ export default function DashboardPage() {
         Metrics are computed live from claims, policies and commission data for the selected filters.
         {lastRefreshed && ` Last refreshed ${lastRefreshed.toLocaleTimeString()} · refreshes every 60 seconds.`}
         &nbsp;·&nbsp; Model suite: <span className="font-mono">insurance-ai v0.1.0-proto</span>
-        &nbsp;·&nbsp; Enterprise Command Center — Internal Use Only
+        &nbsp;·&nbsp; Executive Dashboard — Internal Use Only
       </p>
 
     </div>

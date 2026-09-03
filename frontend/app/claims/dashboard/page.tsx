@@ -13,6 +13,7 @@ import { listBranches, distinctRegions } from "@/app/services/branches";
 import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
 import { RegionFilter, ALL_REGIONS } from "@/components/RegionFilter";
 import { FilterDropdown, type FilterOption } from "@/components/FilterDropdown";
+import { MetricCard } from "@/components/MetricCard";
 import { InteractiveMapCard } from "@/components/dashboard/InteractiveMapCard";
 import { TimeTrendChartCard } from "@/components/dashboard/TimeTrendChartCard";
 import { listCommissionLedger, type CommissionLedgerEntry } from "@/app/services/commissions";
@@ -106,15 +107,12 @@ export default function ClaimsDashboardPage() {
   const [datePreset, setDatePreset] = useState<DatePreset>("ytd");
   const [dateRange, setDateRange] = useState<DateRange>(() => resolvePreset("ytd"));
 
-  // ── Region / Claim Type / Risk Level Filters ────────────────────────────
+  // ── Region / Claim Type / Risk Level Filters ────────────────────
   const [regions, setRegions] = useState<string[]>([]);
   const [regionFilter, setRegionFilter] = useState(ALL_REGIONS);
   const [claimTypeFilter, setClaimTypeFilter] = useState("ALL");
   const [riskFilter, setRiskFilter] = useState("ALL");
 
-  // Filter claims by created_at (always populated); incident_date may be null.
-  // Filters claims directly (rather than composing through filterLedgerByDate)
-  // so every downstream computation keeps the full Claim type.
   const inSelectedDateRange = (dateStr: string): boolean => {
     if (!dateRange.from || !dateRange.to) return true;
     const d = dateStr.slice(0, 10);
@@ -129,8 +127,6 @@ export default function ClaimsDashboardPage() {
   });
 
   const [policySearch, setPolicySearch] = useState("");
-  const [policyDropdownOpen, setPolicyDropdownOpen] = useState(false);
-  const policyDropdownRef = useRef<HTMLDivElement>(null);
 
   const [form, setForm] = useState<CreateClaimRequest>({
     policy_id: "",
@@ -140,17 +136,6 @@ export default function ClaimsDashboardPage() {
     notes: "",
   });
 
-  useEffect(() => {
-    if (!policyDropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (policyDropdownRef.current && !policyDropdownRef.current.contains(e.target as Node)) {
-        setPolicyDropdownOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [policyDropdownOpen]);
-
   const fetchData = async () => {
     setLoading(true);
     setLoadError("");
@@ -158,7 +143,7 @@ export default function ClaimsDashboardPage() {
       const data = await listClaims();
       setClaims(data);
     } catch {
-      setLoadError("Could not load claims. The data below may be incomplete or stale — try refreshing.");
+      setLoadError("Could not load claims. Data below may be cached or offline.");
     } finally {
       setLoading(false);
     }
@@ -216,7 +201,7 @@ export default function ClaimsDashboardPage() {
     }
   };
 
-  // Metrics Calculations (all from filteredClaims)
+  // Metrics Calculations
   const totalClaimsCount = filteredClaims.length;
   const inProgressCount = filteredClaims.filter((c) =>
     ["New", "Triaged", "Under Investigation", "Pending Documents", "Referred to Manager"].includes(c.status)
@@ -231,7 +216,7 @@ export default function ClaimsDashboardPage() {
   const closedCount = filteredClaims.filter((c) => ["Approved", "Partial Approval", "Declined", "Settled", "Closed"].includes(c.status)).length;
   const approvalRate = closedCount > 0 ? ((approvedCount / closedCount) * 100).toFixed(1) : null;
 
-  // ── SLA & Workload metrics — computed from real claim timestamps ────────
+  // SLA & Workload metrics
   const terminalStatuses = ["Approved", "Partial Approval", "Declined", "Settled", "Closed"];
   const resolvedClaims = filteredClaims.filter(
     (c) => terminalStatuses.includes(c.status) && (c.settled_at || c.closed_at)
@@ -275,30 +260,56 @@ export default function ClaimsDashboardPage() {
 
   const selectedPolicy = policies.find((p) => p.id === form.policy_id);
 
-  return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 font-sans">
-      {/* Header Bar */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 uppercase tracking-wider mb-1">
-            <span>Insurance Operations</span>
-            <span>/</span>
-            <span>Claims Management</span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Claims Analytics & Dashboard</h1>
-          {/* <p className="text-xs text-slate-500 mt-1">
-            Real-time portfolio metrics, AI risk exposure, and adjuster workflow throughput.
-          </p> */}
-        </div>
+  const fmtCompact = (v: number) =>
+    v >= 1_000_000 ? `PKR ${(v / 1_000_000).toFixed(2)}M` : v >= 1_000 ? `PKR ${(v / 1_000).toFixed(0)}K` : `PKR ${v.toFixed(0)}`;
 
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* Region Filter */}
+  const KPIs = [
+    {
+      title: "Total Claims Volume",
+      value: loading ? "—" : String(totalClaimsCount),
+      subtitle: `${fmtCompact(totalSubmittedSum)} submitted`,
+      accent: "blue" as const,
+    },
+    {
+      title: "In Progress Queue",
+      value: loading ? "—" : String(inProgressCount),
+      subtitle: "awaiting triage & review",
+      accent: "amber" as const,
+    },
+    {
+      title: "Approved Value",
+      value: loading ? "—" : fmtCompact(totalApprovedSum),
+      subtitle: approvalRate !== null ? `${approvalRate}% approval rate` : "no settled claims",
+      accent: "emerald" as const,
+    },
+    {
+      title: "AI Risk Flagged",
+      value: loading ? "—" : String(highRiskCount),
+      subtitle: "high risk (≥70%) or duplicate",
+      accent: "red" as const,
+    },
+  ];
+
+  return (
+    <div className="px-6 py-4 max-w-screen-2xl mx-auto w-full space-y-4 font-sans">
+      
+      {/* ── Executive Navigation Header Bar ───────────────────────────────── */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-lg font-bold tracking-tight text-slate-900">Claims Dashboard</h1>
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Claims AI Active
+            </span>
+          </div>
+          <p className="text-[11px] text-slate-500 mt-0.5">
+            Real-time claims volume, AI risk flags, and processing status
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
           <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
-          {/* Claim Type Filter */}
           <FilterDropdown value={claimTypeFilter} options={CLAIM_TYPE_OPTIONS} onChange={setClaimTypeFilter} />
-          {/* Risk Level Filter */}
           <FilterDropdown value={riskFilter} options={RISK_OPTIONS} onChange={setRiskFilter} />
-          {/* Date Range Filter */}
           <DateRangeFilter
             preset={datePreset}
             range={dateRange}
@@ -307,355 +318,358 @@ export default function ClaimsDashboardPage() {
           />
           <Link
             href="/claims/register"
-            className="px-4 py-2 rounded-lg border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-all shadow-2xs flex items-center gap-2"
+            className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white text-slate-700 text-xs font-semibold hover:bg-slate-50 transition-all shadow-2xs flex items-center gap-1.5"
           >
             <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
             </svg>
-            <span>Claims Register</span>
+            <span>Register</span>
           </Link>
-
-          {/* <button
+          <button
             onClick={() => setShowModal(true)}
-            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-all shadow-xs flex items-center gap-2"
+            className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            <span>File FNOL Claim</span>
-          </button> */}
+            <span>FNOL Claim</span>
+          </button>
         </div>
       </div>
 
       {loadError && (
-        <div className="px-4 py-2.5 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center justify-between gap-3">
+        <div className="px-4 py-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-semibold flex items-center justify-between gap-3">
           <span>{loadError}</span>
-          <button onClick={fetchData} className="px-2.5 py-1 rounded-md bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 shrink-0">
+          <button onClick={fetchData} className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 shrink-0">
             Retry
           </button>
         </div>
       )}
 
-        {/* Primary KPI Stats Grid */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Showing</span>
-          <span className="px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-[10px] font-bold">
-            {dateRange.from} – {dateRange.to}
-          </span>
-          <span className="text-[10px] text-slate-400">{filteredClaims.length} claims</span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-2 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Claims Volume</span>
-            <div className="p-2 rounded-lg bg-blue-50 text-blue-600">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-            </div>
-          </div>
-          <div className="text-3xl font-extrabold text-slate-900">{loading ? "—" : totalClaimsCount}</div>
-          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 text-slate-500">
-            <span>Submitted Value:</span>
-            <span className="font-semibold text-slate-800">PKR {(totalSubmittedSum / 1000000).toFixed(2)}M</span>
-          </div>
-        </div>
+      {/* ── Top 2-column layout (KPI + Row 1 + Row 2 alongside Sidebar cards) ─ */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
 
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-2 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">In Progress Queue</span>
-            <div className="p-2 rounded-lg bg-amber-50 text-amber-600">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-          <div className="text-3xl font-extrabold text-slate-900">{loading ? "—" : inProgressCount}</div>
-          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 text-slate-500">
-            <span>Awaiting Action:</span>
-            <span className="font-semibold text-amber-700">Triage & Investigation</span>
-          </div>
-        </div>
+        {/* ── LEFT: Main analytics column (75% width) ───────────────────── */}
+        <div className="xl:col-span-9 lg:col-span-8 flex flex-col justify-between gap-4">
 
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-2 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Approved Value</span>
-            <div className="p-2 rounded-lg bg-emerald-50 text-emerald-600">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            </div>
-          </div>
-          <div className="text-3xl font-extrabold text-slate-900">
-            PKR {loading ? "—" : (totalApprovedSum / 1000000).toFixed(2)}M
-          </div>
-          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 text-slate-500">
-            <span>Approval Rate:</span>
-            <span className="font-semibold text-emerald-700">{approvalRate !== null ? `${approvalRate}%` : "—"}</span>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-2 relative overflow-hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">AI Risk Flagged</span>
-            <div className="p-2 rounded-lg bg-rose-50 text-rose-600">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-          </div>
-          <div className="text-3xl font-extrabold text-slate-900">{loading ? "—" : highRiskCount}</div>
-          <div className="flex items-center justify-between text-xs pt-1 border-t border-slate-100 text-slate-500">
-            <span>Fraud Probability:</span>
-            <span className="font-semibold text-rose-700">&gt; 70% or Duplicate</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── HERO VISUAL ANALYTICS: Regional Map & Claims Temporal Trend ─────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-6">
-          <InteractiveMapCard
-            policies={policies}
-            claims={filteredClaims}
-            ledger={ledger}
-            selectedRegion={regionFilter}
-            onSelectRegion={setRegionFilter}
-          />
-        </div>
-        <div className="lg:col-span-6">
-          <TimeTrendChartCard
-            policies={policies}
-            claims={filteredClaims}
-            ledger={ledger}
-          />
-        </div>
-      </div>
-
-      {/* Analytics Breakdown Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Status Distribution */}
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-bold text-slate-900">Claim Status Distribution</h3>
-            <span className="text-xs font-semibold text-slate-400">Total: {totalClaimsCount}</span>
+          {/* KPI Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {KPIs.map((k) => (
+              <MetricCard
+                key={k.title}
+                title={k.title}
+                value={k.value}
+                subtitle={k.subtitle}
+                accent={k.accent}
+              />
+            ))}
           </div>
 
-          <div className="space-y-3 text-xs">
-            {[
-              { label: "New & Triaged", count: (statusCounts["New"] || 0) + (statusCounts["Triaged"] || 0), color: "bg-blue-500" },
-              { label: "Under Investigation", count: statusCounts["Under Investigation"] || 0, color: "bg-amber-500" },
-              { label: "Pending Documents", count: statusCounts["Pending Documents"] || 0, color: "bg-orange-400" },
-              { label: "Approved & Settled", count: (statusCounts["Approved"] || 0) + (statusCounts["Settled"] || 0) + (statusCounts["Partial Approval"] || 0), color: "bg-emerald-500" },
-              { label: "Declined", count: statusCounts["Declined"] || 0, color: "bg-rose-500" },
-              { label: "Referred to Manager", count: statusCounts["Referred to Manager"] || 0, color: "bg-purple-500" },
-            ].map((st) => {
-              const pct = totalClaimsCount > 0 ? (st.count / totalClaimsCount) * 100 : 0;
-              return (
-                <div key={st.label} className="space-y-1">
-                  <div className="flex justify-between font-medium text-slate-700">
-                    <span>{st.label}</span>
-                    <span className="font-bold text-slate-900">{st.count} ({pct.toFixed(0)}%)</span>
+          {/* Row 1: Map + Time Trend */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <InteractiveMapCard
+              policies={policies}
+              claims={filteredClaims}
+              ledger={ledger}
+              selectedRegion={regionFilter}
+              onSelectRegion={setRegionFilter}
+            />
+            <TimeTrendChartCard
+              policies={policies}
+              claims={filteredClaims}
+              ledger={ledger}
+            />
+          </div>
+
+          {/* Row 2: AI Risk Exposure + SLA Workload Performance */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            
+            {/* AI Fraud & Risk Exposure */}
+            <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col justify-between">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">AI Risk &amp; Fraud Exposure</h3>
+                  <p className="text-[11px] text-slate-500">Live AI fraud classification breakdown</p>
+                </div>
+                <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
+                  Live AI Monitor
+                </span>
+              </div>
+
+              <div className="space-y-2.5 my-auto py-2">
+                <div className="p-2.5 bg-emerald-50/50 border border-emerald-100 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-emerald-900 text-xs">Low Risk (&lt; 30%)</div>
+                    <div className="text-[10px] text-emerald-700">Auto-triage eligible claims</div>
                   </div>
-                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div className={`h-full ${st.color} rounded-full`} style={{ width: `${pct}%` }}></div>
+                  <div className="text-base font-extrabold text-emerald-700">{lowRiskCount}</div>
+                </div>
+
+                <div className="p-2.5 bg-amber-50/50 border border-amber-100 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-amber-900 text-xs">Medium Risk (30% - 69%)</div>
+                    <div className="text-[10px] text-amber-700">Requires manual document review</div>
+                  </div>
+                  <div className="text-base font-extrabold text-amber-700">{mediumRiskCount}</div>
+                </div>
+
+                <div className="p-2.5 bg-rose-50/50 border border-rose-100 rounded-xl flex items-center justify-between">
+                  <div>
+                    <div className="font-bold text-rose-900 text-xs">High Risk (&ge; 70%) / Duplicate</div>
+                    <div className="text-[10px] text-rose-700">Escalated for SIU fraud audit</div>
+                  </div>
+                  <div className="text-base font-extrabold text-rose-700">{highRiskCount}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* SLA & Workload Benchmarks */}
+            <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col justify-between">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">SLA &amp; Workload Performance</h3>
+                  <p className="text-[11px] text-slate-500">Adjudication throughput &amp; SLA compliance</p>
+                </div>
+                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                  SLA Target: 24h
+                </span>
+              </div>
+
+              <div className="space-y-2.5 my-auto py-2">
+                <div className="p-2.5 bg-blue-50/40 border border-blue-100 rounded-xl space-y-1">
+                  <div className="flex justify-between font-bold text-xs text-slate-800">
+                    <span>Avg Adjudication Time</span>
+                    <span className="text-blue-700">
+                      {avgAdjudicationHours !== null
+                        ? avgAdjudicationHours >= 48
+                          ? `${(avgAdjudicationHours / 24).toFixed(1)} Days`
+                          : `${avgAdjudicationHours.toFixed(1)} Hours`
+                        : "—"}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    Target SLA: &lt; {SLA_TARGET_HOURS}.0h {slaCompliancePct !== null ? `(${slaCompliancePct.toFixed(0)}% compliant)` : ""}
+                  </div>
+                  <div className="h-1.5 w-full bg-blue-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-600 rounded-full" style={{ width: `${slaCompliancePct ?? 0}%` }}></div>
                   </div>
                 </div>
-              );
-            })}
+
+                <div className="p-2.5 bg-emerald-50/40 border border-emerald-100 rounded-xl space-y-1">
+                  <div className="flex justify-between font-bold text-xs text-slate-800">
+                    <span>Auto-Triage Rate</span>
+                    <span className="text-emerald-700">{autoTriageRate !== null ? `${autoTriageRate.toFixed(1)}%` : "—"}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500">Resolved claims skipping manual investigation</div>
+                  <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${autoTriageRate ?? 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div className="p-2.5 bg-purple-50/40 border border-purple-100 rounded-xl space-y-1">
+                  <div className="flex justify-between font-bold text-xs text-slate-800">
+                    <span>Reinsurance Treaty Flag Rate</span>
+                    <span className="text-purple-700">{reinsuranceFlagRate !== null ? `${reinsuranceFlagRate.toFixed(1)}%` : "—"}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-500">Reinsurance desk referral rate</div>
+                  <div className="h-1.5 w-full bg-purple-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-purple-600 rounded-full" style={{ width: `${reinsuranceFlagRate ?? 0}%` }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
           </div>
+
         </div>
 
-        {/* AI Fraud & Risk Breakdown */}
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-bold text-slate-900">AI Risk & Fraud Exposure</h3>
-            <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md">Live AI Monitor</span>
-          </div>
-
-          <div className="space-y-4 text-xs">
-            <div className="p-3 bg-slate-50 border border-slate-200/80 rounded-lg flex items-center justify-between">
-              <div>
-                <div className="font-bold text-slate-800">Low Risk (&lt; 30%)</div>
-                <div className="text-[11px] text-slate-500">Auto-triage eligible claims</div>
-              </div>
-              <div className="text-lg font-extrabold text-emerald-600">{lowRiskCount}</div>
+        {/* ── RIGHT: Vertical sidebar — Operational Intelligence (25% width) */}
+        <div className="xl:col-span-3 lg:col-span-4 flex flex-col justify-between gap-2.5">
+          
+          {/* Claim Status Distribution */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex-1 flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Status Distribution</h3>
+              <span className="text-[10px] font-bold text-slate-400">Total: {totalClaimsCount}</span>
             </div>
 
-            <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-lg flex items-center justify-between">
-              <div>
-                <div className="font-bold text-amber-900">Medium Risk (30% - 69%)</div>
-                <div className="text-[11px] text-amber-700">Requires manual document review</div>
-              </div>
-              <div className="text-lg font-extrabold text-amber-600">{mediumRiskCount}</div>
-            </div>
-
-            <div className="p-3 bg-rose-50/60 border border-rose-200/80 rounded-lg flex items-center justify-between">
-              <div>
-                <div className="font-bold text-rose-900">High Risk (&ge; 70%) / Duplicate</div>
-                <div className="text-[11px] text-rose-700">Escalated for SIU fraud audit</div>
-              </div>
-              <div className="text-lg font-extrabold text-rose-600">{highRiskCount}</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Claim Type Portfolio */}
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <h3 className="text-sm font-bold text-slate-900">Claim Type Distribution</h3>
-            <span className="text-xs font-semibold text-slate-400">By Product</span>
-          </div>
-
-          <div className="space-y-3 text-xs">
-            {Object.keys(typeCounts).length === 0 ? (
-              <div className="text-slate-400 text-center py-6">No claim type data available</div>
-            ) : (
-              Object.entries(typeCounts).map(([type, count]) => {
-                const pct = totalClaimsCount > 0 ? (count / totalClaimsCount) * 100 : 0;
+            <div className="space-y-2 text-xs flex-1 flex flex-col justify-around">
+              {[
+                { label: "New & Triaged", count: (statusCounts["New"] || 0) + (statusCounts["Triaged"] || 0), color: "bg-blue-500" },
+                { label: "Under Investigation", count: statusCounts["Under Investigation"] || 0, color: "bg-amber-500" },
+                { label: "Pending Documents", count: statusCounts["Pending Documents"] || 0, color: "bg-orange-400" },
+                { label: "Approved & Settled", count: (statusCounts["Approved"] || 0) + (statusCounts["Settled"] || 0) + (statusCounts["Partial Approval"] || 0), color: "bg-emerald-500" },
+                { label: "Declined", count: statusCounts["Declined"] || 0, color: "bg-rose-500" },
+              ].map((st) => {
+                const pct = totalClaimsCount > 0 ? (st.count / totalClaimsCount) * 100 : 0;
                 return (
-                  <div key={type} className="p-3 bg-slate-50 border border-slate-100 rounded-lg space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <span className="font-bold text-slate-800">{type}</span>
-                      <span className="font-extrabold text-slate-900">{count} claims</span>
+                  <div key={st.label} className="space-y-0.5">
+                    <div className="flex justify-between text-[11px] font-semibold text-slate-700">
+                      <span>{st.label}</span>
+                      <span className="font-extrabold text-slate-900">{st.count} ({pct.toFixed(0)}%)</span>
                     </div>
-                    <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-slate-900 rounded-full" style={{ width: `${pct}%` }}></div>
+                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div className={`h-full ${st.color} rounded-full`} style={{ width: `${pct}%` }}></div>
                     </div>
                   </div>
                 );
-              })
-            )}
+              })}
+            </div>
           </div>
+
+          {/* Claim Type Distribution */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex-1 flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Claim Types</h3>
+              <span className="text-[10px] font-bold text-slate-400">By Product</span>
+            </div>
+
+            <div className="space-y-2 text-xs flex-1 flex flex-col justify-around">
+              {Object.keys(typeCounts).length === 0 ? (
+                <div className="text-slate-400 text-center py-4 text-[11px]">No claim type data available</div>
+              ) : (
+                Object.entries(typeCounts).slice(0, 4).map(([type, count]) => {
+                  const pct = totalClaimsCount > 0 ? (count / totalClaimsCount) * 100 : 0;
+                  return (
+                    <div key={type} className="p-2 bg-slate-50 border border-slate-100 rounded-xl space-y-1">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="font-bold text-slate-800 truncate">{type}</span>
+                        <span className="font-extrabold text-slate-900 shrink-0">{count} claims</span>
+                      </div>
+                      <div className="h-1 w-full bg-slate-200 rounded-full overflow-hidden">
+                        <div className="h-full bg-slate-900 rounded-full" style={{ width: `${pct}%` }}></div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* SIU Watchlist Quick Preview */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex-1 flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">SIU Risk Watchlist</h3>
+              <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                {highRiskCount} Flagged
+              </span>
+            </div>
+
+            <div className="space-y-2 flex-1 flex flex-col justify-around">
+              {filteredClaims.filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag).length === 0 ? (
+                <div className="text-slate-400 text-center py-4 text-[11px]">
+                  No risk flags detected in current range.
+                </div>
+              ) : (
+                filteredClaims
+                  .filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag)
+                  .slice(0, 3)
+                  .map((c) => (
+                    <div key={c.id} className="p-2 rounded-xl border border-slate-200/80 bg-slate-50/60 flex items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-slate-900 text-[11px] truncate">{c.claim_number}</span>
+                          <RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} />
+                        </div>
+                        <p className="text-[10px] text-slate-500 truncate">{c.customer_name || c.claimant_name || "—"}</p>
+                      </div>
+                      <Link
+                        href={`/claims/${c.id}`}
+                        className="px-2 py-1 rounded-lg bg-blue-600 text-white font-bold text-[10px] hover:bg-blue-700 shrink-0"
+                      >
+                        Review
+                      </Link>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+
         </div>
+
       </div>
 
-      {/* Triage Priority Queue (Recent Claims Table Preview) */}
-      {/* Executive Operational Intelligence Section (Replaces table) */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* High-Priority SIU & AI Risk Watchlist */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">SIU Fraud Watchlist & AI Risk Flags</h3>
-              <p className="text-xs text-slate-500">Claims automatically flagged for potential duplicate filing or high risk anomaly.</p>
-            </div>
+      {/* ── SIU Fraud Watchlist & Full Active Claims Stream ───────────────────── */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 mt-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">SIU Fraud Watchlist &amp; Active Claims Queue</h3>
+            <p className="text-xs text-slate-500">Live adjudication queue filtered by date, region, claim type, and AI risk level.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-semibold">{filteredClaims.length} records</span>
             <Link
               href="/claims/register"
               className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
             >
-              <span>Claims Register &rarr;</span>
+              <span>View Full Register &rarr;</span>
             </Link>
-          </div>
-
-          <div className="space-y-3">
-            {filteredClaims.filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag).length === 0 ? (
-              <div className="p-6 text-center text-xs text-slate-400">
-                No high risk or duplicate claims detected in the active queue.
-              </div>
-            ) : (
-              filteredClaims
-                .filter((c) => c.fraud_probability >= 0.3 || c.duplicate_flag)
-                .slice(0, 5)
-                .map((c) => (
-                  <div
-                    key={c.id}
-                    className={`p-3.5 rounded-lg border transition-colors duration-1000 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs ${
-                      highlightId === c.id || highlightId === c.claim_number
-                        ? "bg-blue-100/90 border-blue-300 shadow-sm"
-                        : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
-                    }`}
-                  >
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900">{c.claim_number}</span>
-                        <span className="text-slate-400">•</span>
-                        <span className="font-semibold text-slate-700">
-                          {c.customer_name || c.claimant_name || "—"}
-                          {c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name && (
-                            <span className="text-slate-500 font-normal"> / {c.claimant_name} (Claimant)</span>
-                          )}
-                        </span>
-                        <RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} />
-                      </div>
-                      <div className="text-[11px] text-slate-500 flex items-center gap-3">
-                        <span>Type: <strong>{c.claim_type}</strong></span>
-                        <span>Incident: <strong>{c.incident_date ?? "N/A"}</strong></span>
-                        <span>Claimed: <strong>PKR {c.submitted_amount.toLocaleString()}</strong></span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-3">
-                      <StatusBadge status={c.status} />
-                      <Link
-                        href={`/claims/${c.id}`}
-                        className="px-3 py-1.5 rounded-lg bg-blue-600 text-white font-bold text-[11px] hover:bg-blue-700 transition-colors whitespace-nowrap flex items-center gap-1.5 shadow-xs"
-                      >
-                        Review Claim
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                        </svg>
-                      </Link>
-                    </div>
-                  </div>
-                ))
-            )}
           </div>
         </div>
 
-        {/* Operational SLA & Throughput Benchmarks */}
-        <div className="bg-white rounded-xl shadow-xs border border-slate-200 p-5 space-y-4">
-          <div className="border-b border-slate-100 pb-3">
-            <h3 className="text-base font-bold text-slate-900">SLA & Workload Performance</h3>
-            <p className="text-xs text-slate-500">Adjudication throughput & operational benchmarks.</p>
-          </div>
-
-          <div className="space-y-4 text-xs">
-            <div className="p-3.5 bg-blue-50/50 border border-blue-100 rounded-lg space-y-2">
-              <div className="flex justify-between font-semibold text-slate-800">
-                <span>Avg Adjudication Time</span>
-                <span className="text-blue-700 font-bold">
-                  {avgAdjudicationHours !== null
-                    ? avgAdjudicationHours >= 48
-                      ? `${(avgAdjudicationHours / 24).toFixed(1)} Days`
-                      : `${avgAdjudicationHours.toFixed(1)} Hours`
-                    : "—"}
-                </span>
-              </div>
-              <div className="text-[11px] text-slate-500">
-                Target SLA: &lt; {SLA_TARGET_HOURS}.0 Hours
-                {slaCompliancePct !== null ? ` (${slaCompliancePct.toFixed(0)}% compliant)` : " (no resolved claims yet)"}
-              </div>
-              <div className="h-1.5 w-full bg-blue-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-600 rounded-full" style={{ width: `${slaCompliancePct ?? 0}%` }}></div>
-              </div>
+        <div className="space-y-2.5">
+          {filteredClaims.length === 0 ? (
+            <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+              No claims match the selected date range or filter criteria.
             </div>
+          ) : (
+            filteredClaims
+              .slice(0, 8)
+              .map((c) => (
+                <div
+                  key={c.id}
+                  className={`p-3.5 rounded-xl border transition-all duration-300 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs ${
+                    highlightId === c.id || highlightId === c.claim_number
+                      ? "bg-blue-100/90 border-blue-300 shadow-sm"
+                      : "border-slate-200/80 bg-slate-50/40 hover:bg-slate-50/90"
+                  }`}
+                >
+                  <div className="space-y-1 min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-slate-900">{c.claim_number}</span>
+                      <span className="text-slate-300">•</span>
+                      <span className="font-semibold text-slate-800 truncate">
+                        {c.customer_name || c.claimant_name || "—"}
+                        {c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name && (
+                          <span className="text-slate-500 font-normal"> / {c.claimant_name} (Claimant)</span>
+                        )}
+                      </span>
+                      <RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} />
+                    </div>
+                    <div className="text-[11px] text-slate-500 flex items-center gap-3 flex-wrap">
+                      <span>Type: <strong className="text-slate-700">{c.claim_type}</strong></span>
+                      <span>Incident: <strong className="text-slate-700">{c.incident_date ?? "N/A"}</strong></span>
+                      <span>Claimed: <strong className="text-slate-700">{fmtCompact(c.submitted_amount)}</strong></span>
+                      {c.region && <span>Region: <strong className="text-slate-700">{c.region}</strong></span>}
+                    </div>
+                  </div>
 
-            <div className="p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-lg space-y-2">
-              <div className="flex justify-between font-semibold text-slate-800">
-                <span>Auto-Triage Rate</span>
-                <span className="text-emerald-700 font-bold">{autoTriageRate !== null ? `${autoTriageRate.toFixed(1)}%` : "—"}</span>
-              </div>
-              <div className="text-[11px] text-slate-500">Resolved claims that never hit manual investigation</div>
-              <div className="h-1.5 w-full bg-emerald-100 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-600 rounded-full" style={{ width: `${autoTriageRate ?? 0}%` }}></div>
-              </div>
-            </div>
-
-            <div className="p-3.5 bg-purple-50/50 border border-purple-100 rounded-lg space-y-2">
-              <div className="flex justify-between font-semibold text-slate-800">
-                <span>Reinsurance Treaty Flag Rate</span>
-                <span className="text-purple-700 font-bold">{reinsuranceFlagRate !== null ? `${reinsuranceFlagRate.toFixed(1)}%` : "—"}</span>
-              </div>
-              <div className="text-[11px] text-slate-500">Escalated to facultative reinsurance desk</div>
-              <div className="h-1.5 w-full bg-purple-100 rounded-full overflow-hidden">
-                <div className="h-full bg-purple-600 rounded-full" style={{ width: `${reinsuranceFlagRate ?? 0}%` }}></div>
-              </div>
-            </div>
-          </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <StatusBadge status={c.status} />
+                    <Link
+                      href={`/claims/${c.id}`}
+                      className="px-3 py-1.5 rounded-xl bg-blue-600 text-white font-bold text-[11px] hover:bg-blue-700 transition-colors whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+                    >
+                      Review Claim
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </Link>
+                  </div>
+                </div>
+              ))
+          )}
         </div>
       </div>
 
+      {/* ── Footer Disclaimer ─────────────────────────────────────────────── */}
+      <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
+        Claims metrics are computed live from real-time adjudication datasets for the selected filters.
+        &nbsp;·&nbsp; Model suite: <span className="font-mono">insurance-ai v0.1.0-claims</span>
+        &nbsp;·&nbsp; Claims Dashboard — Internal Use Only
+      </p>
+
+      {/* ── FNOL Claim Modal ────────────────────────────────────────────────── */}
       {showModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl max-h-[90vh] flex flex-col relative my-auto">
@@ -669,7 +683,7 @@ export default function ClaimsDashboardPage() {
 
             <form onSubmit={handleCreate} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
               {errorMsg && (
-                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-lg text-xs font-medium">
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-xs font-medium">
                   {errorMsg}
                 </div>
               )}
@@ -687,7 +701,6 @@ export default function ClaimsDashboardPage() {
                     )}
                   </div>
 
-                  {/* Direct Search Bar Pinned at Top of Modal */}
                   <div className="relative">
                     <input
                       type="text"
@@ -711,7 +724,6 @@ export default function ClaimsDashboardPage() {
                     )}
                   </div>
 
-                  {/* Scrollable Policy List positioned higher up — displays 6-8 records at first glance */}
                   <div className="max-h-72 sm:max-h-80 overflow-y-auto divide-y divide-slate-100 border border-slate-200/90 rounded-xl bg-white shadow-2xs">
                     {filteredPolicies.length === 0 ? (
                       <div className="p-6 text-center text-slate-400 text-xs font-medium">
@@ -759,7 +771,7 @@ export default function ClaimsDashboardPage() {
                     <button
                       type="button"
                       onClick={() => setShowModal(false)}
-                      className="px-3.5 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
+                      className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                     >
                       Cancel
                     </button>
@@ -773,7 +785,7 @@ export default function ClaimsDashboardPage() {
                         setErrorMsg("");
                         setStep(2);
                       }}
-                      className="px-4 py-1.5 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700"
+                      className="px-4 py-1.5 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700"
                     >
                       Next Step &rarr;
                     </button>
@@ -783,7 +795,6 @@ export default function ClaimsDashboardPage() {
 
               {step === 2 && (
                 <div className="space-y-3">
-                  {/* Distinct Policy Banner */}
                   <div className="p-4 bg-gradient-to-r from-blue-100/70 to-blue-50/40 border border-blue-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-sm relative overflow-hidden">
                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
                     
@@ -793,36 +804,17 @@ export default function ClaimsDashboardPage() {
                         <span className="font-bold text-blue-800 bg-white px-2.5 py-0.5 rounded-md border border-blue-200/80 shadow-2xs">
                           {selectedPolicy?.product_name}
                         </span>
-                        {selectedPolicy?.insurance_type && (
-                          <span className="text-[10px] font-extrabold text-blue-600/80 uppercase tracking-widest">
-                            {selectedPolicy.insurance_type}
-                          </span>
-                        )}
                       </div>
-                      <div className="text-[11.5px] text-blue-900/80 flex items-center gap-2.5 flex-wrap">
-                        <span>Policy #: <strong className="font-mono font-bold text-blue-950">{selectedPolicy?.policy_number || selectedPolicy?.id.slice(0, 8)}</strong></span>
-                        <span className="text-blue-300">•</span>
-                        <span>Coverage Limit: <strong className="font-bold text-blue-950">PKR {(selectedPolicy?.coverage_amount || 0).toLocaleString()}</strong></span>
-                      </div>
-                    </div>
-
-                    <div className="shrink-0">
-                      <span className="px-3 py-1.5 rounded-lg text-[10px] font-extrabold bg-emerald-500 text-white shadow-xs flex items-center gap-1.5 uppercase tracking-widest">
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                        Verified
-                      </span>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Claim Type</label>
+                      <label className="block text-slate-700 font-bold mb-1">Claim Type</label>
                       <select
                         value={form.claim_type}
-                        onChange={(e) => setForm({ ...form, claim_type: e.target.value })}
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 bg-white font-semibold text-slate-800"
+                        onChange={(e) => setForm({ ...form, claim_type: e.target.value as any })}
+                        className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-white font-medium text-slate-800"
                       >
                         <option value="Hospitalization">Hospitalization</option>
                         <option value="Surgery">Surgery</option>
@@ -832,57 +824,61 @@ export default function ClaimsDashboardPage() {
                     </div>
 
                     <div>
-                      <label className="block font-semibold text-slate-700 mb-1">Submitted Amount (PKR)</label>
+                      <label className="block text-slate-700 font-bold mb-1">Incident Date</label>
                       <input
-                        type="number"
-                        min="1000"
-                        step="1000"
-                        required
-                        value={form.submitted_amount}
-                        onChange={(e) => setForm({ ...form, submitted_amount: parseFloat(e.target.value) || 0 })}
-                        className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 font-semibold"
+                        type="date"
+                        value={form.incident_date}
+                        onChange={(e) => setForm({ ...form, incident_date: e.target.value })}
+                        className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-white font-medium text-slate-800"
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">Incident Date</label>
+                    <label className="block text-slate-700 font-bold mb-1">Submitted Amount (PKR)</label>
                     <input
-                      type="date"
-                      value={form.incident_date}
-                      onChange={(e) => setForm({ ...form, incident_date: e.target.value })}
-                      className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200"
+                      type="number"
+                      value={form.submitted_amount}
+                      onChange={(e) => setForm({ ...form, submitted_amount: Number(e.target.value) })}
+                      className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-white font-medium text-slate-800"
                     />
                   </div>
 
                   <div>
-                    <label className="block font-semibold text-slate-700 mb-1">
-                      Description / Notes <span className="text-[10px] font-normal text-slate-400">(Optional)</span>
-                    </label>
+                    <label className="block text-slate-700 font-bold mb-1">Adjuster Notes / Description</label>
                     <textarea
                       rows={3}
-                      placeholder="Describe the claim event (optional)..."
                       value={form.notes}
                       onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                      className="w-full text-xs p-2 rounded-lg border border-slate-200 bg-white"
+                      placeholder="Brief details regarding FNOL submission..."
+                      className="w-full text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-hidden focus:border-blue-500 bg-white font-medium text-slate-800 placeholder-slate-400"
                     />
                   </div>
 
-                  <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                  <div className="pt-2 flex justify-between gap-2 border-t border-slate-100">
                     <button
                       type="button"
                       onClick={() => setStep(1)}
-                      className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 font-medium"
+                      className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
                     >
-                      Back
+                      &larr; Back
                     </button>
-                    <button
-                      type="submit"
-                      disabled={submitting}
-                      className="px-4 py-2 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {submitting ? "Submitting..." : "Submit Claim"}
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowModal(false)}
+                        className="px-3.5 py-1.5 rounded-xl border border-slate-200 text-slate-600 font-medium hover:bg-slate-50"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={submitting}
+                        className="px-4 py-1.5 rounded-xl bg-blue-600 text-white font-semibold hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {submitting ? "Submitting..." : "Submit Claim"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
@@ -890,6 +886,7 @@ export default function ClaimsDashboardPage() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
