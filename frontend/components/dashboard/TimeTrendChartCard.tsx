@@ -171,11 +171,11 @@ export function TimeTrendChartCard({ policies, claims, ledger }: TimeTrendChartC
 
   // SVG Chart Geometry Constants
   const width = 800;
-  const height = 230;
-  const padLeft = 60;
-  const padRight = 30;
-  const padTop = 25;
-  const padBottom = 40;
+  const height = 420;
+  const padLeft = 52;
+  const padRight = 24;
+  const padTop = 24;
+  const padBottom = 34;
 
   const chartW = width - padLeft - padRight;
   const chartH = height - padTop - padBottom;
@@ -238,114 +238,65 @@ export function TimeTrendChartCard({ policies, claims, ledger }: TimeTrendChartC
           <path strokeLinecap="round" strokeLinejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
         </svg>
       }
-      title="Financial & Volume Temporal Line Graph"
+      title="Financial Trends"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
-    >
-      <div className="space-y-4">
-        {/* Controls Bar */}
-        <div className="flex items-center justify-between gap-3 flex-wrap pb-2 border-b border-slate-100">
-          {/* Granularity Selector */}
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold">
+      hideLive={true}
+      className="h-full"
+      headerExtra={
+        <div className="flex items-center gap-2 flex-wrap ml-1">
+          {/* Granularity dropdown */}
+          <select
+            value={granularity}
+            onChange={(e) => setGranularity(e.target.value as Granularity)}
+            className="text-[10px] font-bold bg-slate-100/90 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-200 capitalize"
+          >
             {(["daily", "weekly", "monthly", "yearly"] as Granularity[]).map((g) => (
-              <button
-                key={g}
-                onClick={() => setGranularity(g)}
-                className={`px-3 py-1 rounded-lg transition-all capitalize ${
-                  granularity === g
-                    ? "bg-white text-blue-700 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                {g}
-              </button>
+              <option key={g} value={g} className="capitalize">{g.charAt(0).toUpperCase() + g.slice(1)}</option>
             ))}
-          </div>
+          </select>
 
-          {/* Metric & Style Toggles */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold">
-              <button
-                onClick={() => setChartStyle("line")}
-                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
-                  chartStyle === "line"
-                    ? "bg-white text-blue-700 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
-                Line Graph
-              </button>
-              <button
-                onClick={() => setChartStyle("area")}
-                className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
-                  chartStyle === "area"
-                    ? "bg-white text-blue-700 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 19l4-4 4 4 8-10v10H4z" />
-                </svg>
-                Area Fill
-              </button>
-            </div>
+          {/* View metric dropdown */}
+          <select
+            value={viewMetric}
+            onChange={(e) => setViewMetric(e.target.value as ViewMetric)}
+            className="text-[10px] font-bold bg-slate-100/90 border border-slate-200 rounded-lg px-2 py-1 text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-200"
+          >
+            <option value="financials">Financial Dynamics</option>
+            <option value="volume">Policy / Claim Volume</option>
+          </select>
 
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold">
-              <button
-                onClick={() => setViewMetric("financials")}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  viewMetric === "financials"
-                    ? "bg-white text-blue-700 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Financial Dynamics
-              </button>
-              <button
-                onClick={() => setViewMetric("volume")}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  viewMetric === "volume"
-                    ? "bg-white text-blue-700 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Policy/Claim Volume
-              </button>
-            </div>
+          {/* Chart style toggle */}
+          <div className="flex items-center gap-0.5 bg-slate-100/90 p-0.5 rounded-lg border border-slate-200">
+            <button
+              onClick={() => setChartStyle("line")}
+              title="Line Graph"
+              className={`p-1 rounded transition-all ${chartStyle === "line" ? "bg-white text-blue-700 shadow-xs" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 17l4-8 4 4 4-6 4 3" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setChartStyle("area")}
+              title="Area Fill"
+              className={`p-1 rounded transition-all ${chartStyle === "area" ? "bg-white text-blue-700 shadow-xs" : "text-slate-500 hover:text-slate-800"}`}
+            >
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 19l4-4 4 4 8-10v10H4z" />
+              </svg>
+            </button>
           </div>
         </div>
-
-        {/* Temporal Summary Strip */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200/80">
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Earned Premium</span>
-            <span className="text-base font-extrabold text-blue-800">{fmtPKR(totalPremiumPeriod)}</span>
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Incurred Claims</span>
-            <span className="text-base font-extrabold text-rose-700">{fmtPKR(totalClaimsPeriod)}</span>
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Commission Expense</span>
-            <span className="text-base font-extrabold text-amber-700">{fmtPKR(totalCommissionsPeriod)}</span>
-          </div>
-          <div>
-            <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Net Operating Margin</span>
-            <span className={`text-base font-extrabold ${netMarginPeriod >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-              {fmtPKR(netMarginPeriod)} ({overallLossRatio.toFixed(1)}% LR)
-            </span>
-          </div>
-        </div>
-
+      }
+    >
+      <div className="flex flex-col h-full space-y-2">
         {/* Executive SVG Line Chart Engine */}
-        <div className="relative pt-1">
-          {/* Legend */}
-          <div className="flex justify-between items-center text-[11px] mb-2 px-1">
-            <div className="flex items-center gap-5">
+        <div className="flex-1 flex flex-col relative pt-1 h-full min-h-0">
+          {/* Legend & Info Bar */}
+          <div className="flex justify-between items-center text-[11px] mb-2 px-1 flex-wrap gap-2 shrink-0">
+            <div className="flex items-center gap-4">
               {viewMetric === "financials" ? (
                 <>
                   <span className="flex items-center gap-1.5 font-bold text-slate-700">
@@ -369,14 +320,14 @@ export function TimeTrendChartCard({ policies, claims, ledger }: TimeTrendChartC
                 </>
               )}
             </div>
-            <span className="text-[10px] text-slate-400 italic">Hover node points for exact values</span>
+            <span className="text-[10px] text-slate-400 font-medium italic">Hover node points for detailed dynamics</span>
           </div>
 
           {/* SVG Canvas Box */}
-          <div className="bg-slate-900/5 rounded-2xl p-2 border border-slate-200/80 relative overflow-hidden">
+          <div className="flex-1 bg-slate-900/5 rounded-2xl p-2 border border-slate-200/80 relative overflow-hidden flex flex-col justify-center">
             <svg
               viewBox={`0 0 ${width} ${height}`}
-              className="w-full h-auto overflow-visible select-none"
+              className="w-full h-full min-h-[320px] overflow-visible select-none"
               onMouseLeave={() => setHoverIndex(null)}
             >
               <defs>

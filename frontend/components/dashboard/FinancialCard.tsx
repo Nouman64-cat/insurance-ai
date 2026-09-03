@@ -91,23 +91,25 @@ export function FinancialCard({ ledger, claims }: FinancialCardProps) {
       iconBg="bg-blue-50"
       iconColor="text-blue-700"
     >
-      <div className="flex flex-col sm:flex-row gap-5">
+      <div className="flex flex-col sm:flex-row gap-3">
 
         {/* Left: Premium trend + sparkline */}
-        <div className="flex-1 space-y-4">
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-blue-500">Collected Premium — This Month</p>
-            <p className="text-2xl font-extrabold text-blue-800 mt-0.5">PKR {thisMonthPremium.toFixed(1)}M</p>
-            <p className="text-[10px] text-blue-500 mt-0.5">{momChangePct >= 0 ? "↑" : "↓"} {Math.abs(momChangePct).toFixed(1)}% vs last month</p>
-            <div className="mt-3">
+        <div className="flex-1 space-y-2">
+          <div className="bg-blue-50/80 border border-blue-100/80 rounded-lg px-2.5 py-1.5">
+            <div className="flex items-center justify-between">
+              <p className="text-[9px] font-bold uppercase tracking-widest text-blue-500">Collected Premium — This Month</p>
+              <p className="text-[9px] font-bold text-blue-500">{momChangePct >= 0 ? "↑" : "↓"} {Math.abs(momChangePct).toFixed(1)}% vs last mo</p>
+            </div>
+            <p className="text-lg font-extrabold text-blue-800 mt-0.5 leading-tight">PKR {thisMonthPremium.toFixed(1)}M</p>
+            <div className="mt-1">
               <Sparkline points={premiumByMonth.map((m) => m.total)} color="#2563eb" />
-              <p className="text-[9px] text-slate-400 mt-1 text-right">6-month trend (PKR M)</p>
+              <p className="text-[8px] text-slate-400 mt-0.5 text-right">6-month trend (PKR M)</p>
             </div>
           </div>
 
           {/* Portfolio metrics */}
-          <div className="space-y-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Key Ratios</p>
+          <div className="space-y-1">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Key Ratios</p>
             {PORTFOLIO_METRICS.map((m) => (
               <Bar key={m.label} label={m.label} pct={m.pct} color={m.color} badge={m.badge} />
             ))}
@@ -117,27 +119,27 @@ export function FinancialCard({ ledger, claims }: FinancialCardProps) {
         <Divider className="sm:hidden" />
 
         {/* Right: Portfolio risk analysis */}
-        <div className="sm:w-48 flex-shrink-0 space-y-4">
+        <div className="sm:w-44 flex-shrink-0 space-y-2">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Claims Risk Bands</p>
-            <div className="space-y-2.5">
+            <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400 mb-1">Claims Risk Bands</p>
+            <div className="space-y-1">
               {RISK_BANDS.map((b) => (
                 <Bar key={b.label} label={b.label} pct={b.pct} color={b.color} badge={`${b.pct.toFixed(0)}%`} />
               ))}
             </div>
           </div>
 
-          <Divider />
+          <Divider className="my-1" />
 
-          <div className="space-y-3">
+          <div className="space-y-1.5">
             <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Gross Written Premium</p>
-              <p className="text-base font-extrabold text-slate-800 mt-0.5">{fmtCompact(totalPremium)}</p>
-              <p className="text-[10px] text-slate-400">selected range</p>
+              <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-widest">Gross Written Premium</p>
+              <p className="text-sm font-extrabold text-slate-800 mt-0.5">{fmtCompact(totalPremium)}</p>
+              <p className="text-[8px] text-slate-400">selected range</p>
             </div>
             <div>
-              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Portfolio Health</p>
-              <span className={`inline-flex items-center gap-1 mt-0.5 text-xs font-bold border px-2 py-0.5 rounded-full ${healthClass}`}>
+              <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-widest">Portfolio Health</p>
+              <span className={`inline-flex items-center gap-1 mt-0.5 text-[10px] font-bold border px-2 py-0.5 rounded-full ${healthClass}`}>
                 {healthLabel}
               </span>
             </div>

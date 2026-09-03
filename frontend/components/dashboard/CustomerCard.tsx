@@ -23,9 +23,10 @@ interface CustomerCardProps {
   policyStats: PolicyStats | null;
   policies: PolicyListItem[];
   payees: CommissionPayee[];
+  className?: string;
 }
 
-export function CustomerCard({ policyStats, policies, payees }: CustomerCardProps) {
+export function CustomerCard({ policyStats, policies, payees, className = "" }: CustomerCardProps) {
   const total = policies.length;
   const segmentCounts: Record<string, number> = {};
   policies.forEach((p) => {
@@ -57,38 +58,41 @@ export function CustomerCard({ policyStats, policies, payees }: CustomerCardProp
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
+      className={`h-full ${className}`}
     >
-      {/* Persistency ring + segments */}
-      <div className="flex items-start gap-4 mb-4">
-        <RingGauge value={avgPersistency} max={100} strokeHex="#7c3aed" label="Persistency" sublabel="%" valueLabel={`${avgPersistency}%`} size={82} />
-        <div className="flex-1 space-y-2.5 pt-1">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Portfolio Segments</p>
-          {SEGMENTS.length === 0 ? (
-            <p className="text-xs text-slate-400">No policies in the selected range.</p>
-          ) : (
-            SEGMENTS.map((s) => <Bar key={s.label} label={s.label} pct={s.pct} color={s.color} badge={`${s.pct}%`} />)
-          )}
+      <div className="flex-1 flex flex-col justify-between space-y-1">
+        {/* Persistency ring + segments */}
+        <div className="flex items-center gap-2.5">
+          <RingGauge value={avgPersistency} max={100} strokeHex="#7c3aed" label="Persistency" valueLabel={`${avgPersistency}%`} size={44} strokeW={5} />
+          <div className="flex-1 space-y-0.5 min-w-0">
+            <p className="text-[8px] font-bold uppercase tracking-wider text-slate-400">Segments</p>
+            {SEGMENTS.length === 0 ? (
+              <p className="text-xs text-slate-400">No policies in range.</p>
+            ) : (
+              SEGMENTS.map((s) => <Bar key={s.label} label={s.label} pct={s.pct} color={s.color} badge={`${s.pct}%`} />)
+            )}
+          </div>
         </div>
-      </div>
 
-      <Divider className="mb-3" />
+        <Divider className="my-1" />
 
-      {/* Key stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Avg Coverage</p>
-          <p className="text-lg font-extrabold text-blue-700 mt-0.5">{fmtCompact(avgCoverage)}</p>
-          <p className="text-[10px] text-slate-400">per policy</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">At-Risk</p>
-          <p className="text-lg font-extrabold text-red-600 mt-0.5">{atRisk}</p>
-          <p className="text-[10px] text-slate-400">grace period + lapsed</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Renewals Due</p>
-          <p className="text-lg font-extrabold text-amber-600 mt-0.5">{renewalsDue}</p>
-          <p className="text-[10px] text-slate-400">next 30 days</p>
+        {/* Key stats */}
+        <div className="grid grid-cols-3 gap-1">
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Avg Coverage</p>
+            <p className="text-xs font-extrabold text-blue-700 mt-0.5">{fmtCompact(avgCoverage)}</p>
+            <p className="text-[8px] text-slate-400 truncate">per policy</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">At-Risk</p>
+            <p className="text-xs font-extrabold text-red-600 mt-0.5">{atRisk}</p>
+            <p className="text-[8px] text-slate-400 truncate">lapse risk</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Renewals</p>
+            <p className="text-xs font-extrabold text-amber-600 mt-0.5">{renewalsDue}</p>
+            <p className="text-[8px] text-slate-400 truncate">due 30d</p>
+          </div>
         </div>
       </div>
     </PillarCard>

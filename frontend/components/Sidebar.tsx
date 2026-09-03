@@ -69,33 +69,52 @@ function ChevronIcon({ collapsed }: { collapsed: boolean }) {
 
 
 const NAV_ITEMS = [
+  // ── 1. DASHBOARD ─────────────────────────────────────────────────────────
   {
-
-    group: "Main",
-
+    group: "Dashboard",
     links: [
-
       {
-
         href: "/",
-
-        label: "Dashboard",
-
+        label: "Executive Overview",
         icon: (
-
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
             <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
-
             <rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" />
-
           </svg>
-
         ),
-
         badge: null,
-
       },
+      {
+        href: "/claims/dashboard",
+        label: "Claims Dashboard",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/commissions",
+        label: "Commission Dashboard",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
+
+  // ── 2. CUSTOMERS ─────────────────────────────────────────────────────────
+  {
+    group: "Customers",
+    links: [
       {
         href: "/admin/leads",
         label: "Leads",
@@ -111,13 +130,9 @@ const NAV_ITEMS = [
         adminOnly: true,
       },
       {
-
         href: "/proposal",
-
         label: "Proposal",
-
         icon: (
-
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
             <polyline points="14 2 14 8 20 8" />
@@ -125,27 +140,29 @@ const NAV_ITEMS = [
             <line x1="16" y1="17" x2="8" y2="17" />
             <polyline points="10 9 9 9 8 9" />
           </svg>
-
         ),
-
         badge: null,
-
       },
       {
-        href: "/underwriting",
-        label: "Underwriting",
+        href: "/admin/policyholders",
+        label: "Policy Holders",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            <path d="M9 12l2 2 4-4" />
           </svg>
         ),
         badge: null,
-        subLinks: [
-          { href: "/underwriting?tab=pre-underwriting", label: "Pre-Underwriting" },
-          { href: "/underwriting?tab=risk-engine", label: "Risk Engine & OCR OPS" },
-          { href: "/post-underwriting", label: "Post-Underwriting Verification" }
-        ]
+        adminOnly: true,
+      },
+      {
+        href: "/cases",
+        label: "Cases",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+          </svg>
+        ),
+        badge: "7",
       },
       {
         href: "/admin/acquisition-sources",
@@ -164,25 +181,27 @@ const NAV_ITEMS = [
       },
     ],
   },
+
+  // ── 3. OPERATIONS ─────────────────────────────────────────────────────────
   {
-    group: "Documents",
+    group: "Operations",
     links: [
       {
-        href: "/cases",
-        label: "Cases",
+        href: "/underwriting",
+        label: "Underwriting",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <path d="M9 12l2 2 4-4" />
           </svg>
         ),
-        badge: "7",
+        badge: null,
+        subLinks: [
+          { href: "/underwriting?tab=pre-underwriting", label: "Pre-Underwriting" },
+          { href: "/underwriting?tab=risk-engine", label: "Risk Engine & OCR OPS" },
+          { href: "/post-underwriting", label: "Post-Underwriting Verification" },
+        ],
       },
-    ],
-  },
-
-  {
-    group: "Policy Management",
-    links: [
       {
         href: "/policy-issuance",
         label: "Policy Issuance",
@@ -196,34 +215,11 @@ const NAV_ITEMS = [
         badge: null,
         subLinks: [
           { href: "/policy-issuance?tab=queue", label: "Pre-Issuance Queue" },
-          { href: "/policy-issuance?tab=active", label: "Post-Issuance Queue" }
-        ]
+          { href: "/policy-issuance?tab=active", label: "Post-Issuance Queue" },
+        ],
       },
-    ],
-  },
-  {
-    group: "Customer Management",
-    links: [
-
       {
-        href: "/admin/policyholders",
-        label: "Policy Holders",
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-          </svg>
-        ),
-        badge: null,
-        adminOnly: true,
-      },
-    ],
-  },
-
-  {
-    group: "Insurance Operations",
-    links: [
-      {
-        href: "/claims/dashboard",
+        href: "/claims/register",
         label: "Claims",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
@@ -235,9 +231,8 @@ const NAV_ITEMS = [
         ),
         badge: null,
         subLinks: [
-          { href: "/claims/dashboard", label: "Dashboard" },
           { href: "/claims/register", label: "Claims Register" },
-        ]
+        ],
       },
       {
         href: "/renewals",
@@ -250,15 +245,65 @@ const NAV_ITEMS = [
           </svg>
         ),
         badge: null,
-      }
+      },
+      {
+        href: "/live-evaluation",
+        label: "Live Evaluation",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/case-summarizer",
+        label: "Case Summarizer",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" />
+          </svg>
+        ),
+        badge: null,
+      },
+      {
+        href: "/assessments",
+        label: "Assessment History",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+          </svg>
+        ),
+        badge: null,
+      },
     ],
   },
+
+  // ── 4. ADMIN ──────────────────────────────────────────────────────────────
   {
-    group: "User",
+    group: "Admin",
     links: [
       {
+        href: "/admin/rule-engine",
+        label: "Rule Engine",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <rect x="3" y="3" width="6" height="6" rx="1" />
+            <rect x="15" y="3" width="6" height="6" rx="1" />
+            <rect x="9" y="15" width="6" height="6" rx="1" />
+            <path d="M6 9v3a2 2 0 0 0 2 2h4" />
+            <path d="M18 9v3a2 2 0 0 1-2 2h-4" />
+            <path d="M12 14v1" />
+          </svg>
+        ),
+        badge: "v1.0",
+        adminOnly: true,
+      },
+      {
         href: "/admin/users",
-        label: "User",
+        label: "User Management",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <circle cx="12" cy="12" r="3" />
@@ -268,34 +313,95 @@ const NAV_ITEMS = [
         badge: null,
         adminOnly: true,
       },
-    ],
-  },
-  {
-    group: "Financials",
-    links: [
       {
-        href: "#admin",
-        label: "Administration",
+        href: "/super-admin/tenants",
+        label: "Tenant Management",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <rect x="3" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="3" width="7" height="7" rx="1" />
-            <rect x="14" y="14" width="7" height="7" rx="1" />
-            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <path d="M12 2L2 7l10 5 10-5-10-5z" />
+            <path d="M2 17l10 5 10-5" />
+            <path d="M2 12l10 5 10-5" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
+        href: "/super-admin/admins",
+        label: "Admin Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
+            <path d="M18.5 3.5l1.5 1.5-3 3-1.5-1.5z" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
+        href: "/super-admin/branches",
+        label: "Branch Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M3 21h18" />
+            <path d="M5 21V7l7-4 7 4v14" />
+            <path d="M9 21v-6h6v6" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
+        href: "/super-admin/tokens",
+        label: "Token Economy",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4l3 3" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
+        href: "/profile",
+        label: "Profile",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        ),
+        badge: null,
+      },
+    ],
+  },
+
+  // ── 5. FINANCES ───────────────────────────────────────────────────────────
+  {
+    group: "Finances",
+    links: [
+      {
+        href: "#comm-admin",
+        label: "Commission Admin",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="14" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" />
           </svg>
         ),
         badge: null,
         subLinks: [
-          { href: "/commissions", label: "Admin Dashboard" },
           { href: "/commissions/types", label: "Commission Types" },
           { href: "/commissions/payees", label: "Roles" },
           { href: "/commissions/bonuses", label: "Bonuses" },
           { href: "/commissions/calculator", label: "Calculator" },
-        ]
+        ],
       },
       {
-        href: "#ops",
-        label: "Operations",
+        href: "#comm-ops",
+        label: "Commission Ops",
         icon: (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -306,7 +412,7 @@ const NAV_ITEMS = [
           { href: "/commission-ops", label: "Ops Dashboard" },
           { href: "/commission-ops/ledger", label: "Accrual Feed" },
           { href: "/commission-ops/statements", label: "Payee Statements" },
-        ]
+        ],
       },
       {
         href: "/treasury",
@@ -322,7 +428,7 @@ const NAV_ITEMS = [
           { href: "/treasury/runs", label: "Batch Payout Runs" },
           { href: "/treasury/settlement", label: "Payment Settlement" },
           { href: "/treasury/holdbacks", label: "Holdbacks & Lien" },
-        ]
+        ],
       },
       {
         href: "/risk",
@@ -339,439 +445,10 @@ const NAV_ITEMS = [
           { href: "/risk/clawbacks", label: "Clawback Engine" },
           { href: "/risk/tax", label: "FBR Tax Regimes" },
           { href: "/risk/secp", label: "SECP Expense Cap" },
-        ]
+        ],
       },
     ],
   },
-  {
-    group: "Intelligence",
-
-    links: [
-
-      /*
-
-            {
-
-              href: "/fraud",
-
-              label: "Fraud Detection",
-
-              icon: (
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-
-                  <line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" />
-
-                </svg>
-
-              ),
-
-              badge: "3",
-
-            },
-
-      */
-
-      // {
-
-      //   href: "/score-engine",
-
-      //   label: "Score Engine",
-
-      //   icon: (
-
-      //     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-      //       <circle cx="12" cy="12" r="10" />
-
-      //       <circle cx="12" cy="12" r="6" />
-
-      //       <circle cx="12" cy="12" r="2" />
-
-      //     </svg>
-
-      //   ),
-
-      //   badge: null,
-
-      // },
-
-
-
-      {
-
-        href: "/live-evaluation",
-
-        label: "Live Evaluation",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-      },
-
-      {
-
-        href: "/case-summarizer",
-
-        label: "Case Summarizer",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-
-            <polyline points="14 2 14 8 20 8" />
-
-            <line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-      },
-
-      {
-
-        href: "/assessments",
-
-        label: "Assessment History",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-      },
-
-    ],
-
-  },
-
-
-
-
-
-  {
-
-    // group: "Claims",
-
-    links: [
-
-      /*
-
-            {
-
-              href: "/claims",
-
-              label: "Claims",
-
-              icon: (
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-                  <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
-
-                </svg>
-
-              ),
-
-              badge: null,
-
-            },
-
-      */
-
-      /*
-
-            {
-
-              href: "/reimbursements",
-
-              label: "Reimbursements",
-
-              icon: (
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-                  <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z" />
-
-                  <line x1="9" y1="9" x2="15" y2="9" /><line x1="9" y1="13" x2="15" y2="13" />
-
-                </svg>
-
-              ),
-
-              badge: null,
-
-            },
-
-      */
-
-    ],
-
-  },
-
-  {
-
-    // group: "Agents & Finance",
-
-    links: [
-
-      /*
-
-            {
-
-              href: "/agents",
-
-              label: "Agents",
-
-              icon: (
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-                  <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" /><circle cx="9" cy="7" r="4" />
-
-                  <path d="M23 21v-2a4 4 0 00-3-3.87" /><path d="M16 3.13a4 4 0 010 7.75" />
-
-                </svg>
-
-              ),
-
-              badge: null,
-
-            },
-
-      */
-
-      /*
-
-            {
-
-              href: "/financial",
-
-              label: "Financial",
-
-              icon: (
-
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-                  <line x1="12" y1="1" x2="12" y2="23" />
-
-                  <path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
-
-                </svg>
-
-              ),
-
-              badge: null,
-
-            },
-
-      */
-
-    ],
-
-  },
-
-  {
-
-    group: "Administration",
-
-    links: [
-
-
-
-      {
-
-        href: "/super-admin/tenants",
-
-        label: "Tenant Management",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M12 2L2 7l10 5 10-5-10-5z" />
-
-            <path d="M2 17l10 5 10-5" />
-
-            <path d="M2 12l10 5 10-5" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-        superAdminOnly: true,
-
-      },
-
-      {
-
-        href: "/super-admin/admins",
-
-        label: "Admin Management",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <circle cx="12" cy="8" r="4" />
-
-            <path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
-
-            <path d="M18.5 3.5l1.5 1.5-3 3-1.5-1.5z" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-        superAdminOnly: true,
-
-      },
-
-      {
-
-        href: "/super-admin/branches",
-
-        label: "Branch Management",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M3 21h18" />
-
-            <path d="M5 21V7l7-4 7 4v14" />
-
-            <path d="M9 21v-6h6v6" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-        superAdminOnly: true,
-
-      },
-
-      {
-
-        href: "/super-admin/tokens",
-
-        label: "Token Economy",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 8v4l3 3" />
-          </svg>
-
-        ),
-
-        badge: null,
-
-        superAdminOnly: true,
-
-      },
-
-    ],
-
-  },
-
-
-
-  {
-
-    group: "Rule Engine",
-
-    links: [
-
-      {
-
-        href: "/admin/rule-engine",
-
-        label: "Rule Engine",
-
-        icon: (
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-            <rect x="3" y="3" width="6" height="6" rx="1" />
-            <rect x="15" y="3" width="6" height="6" rx="1" />
-            <rect x="9" y="15" width="6" height="6" rx="1" />
-            <path d="M6 9v3a2 2 0 0 0 2 2h4" />
-            <path d="M18 9v3a2 2 0 0 1-2 2h-4" />
-            <path d="M12 14v1" />
-          </svg>
-        ),
-
-        badge: "v1.0",
-
-        adminOnly: true,
-
-      },
-
-    ],
-
-  },
-
-  {
-
-    group: "Profile",
-
-    links: [
-
-      {
-
-        href: "/profile",
-
-        label: "Profile",
-
-        icon: (
-
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
-
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-
-            <circle cx="12" cy="7" r="4" />
-
-          </svg>
-
-        ),
-
-        badge: null,
-
-      },
-
-    ],
-
-  },
-
 ] as const;
 
 

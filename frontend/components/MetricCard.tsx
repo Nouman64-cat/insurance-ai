@@ -61,7 +61,7 @@ export function MetricCard({ title, value, subtitle, accent = "slate", trend, ic
       {/* Glossy top highlight */}
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/80 to-transparent" />
       
-      <div className={`relative ${isCompact ? 'px-3 py-2.5' : 'p-5'}`}>
+      <div className={`relative ${isCompact ? 'px-3 py-2.5' : 'px-4 py-3'}`}>
         <div className="flex items-start justify-between gap-2">
           <p className={`${isCompact ? 'text-[9px]' : 'text-[11px]'} font-bold uppercase tracking-widest text-slate-500/80 truncate`} title={title}>
             {title}
@@ -72,12 +72,12 @@ export function MetricCard({ title, value, subtitle, accent = "slate", trend, ic
             </span>
           )}
         </div>
-        <div className={isCompact ? 'mt-0.5' : 'mt-3'}>
-          <p className={`${isCompact ? 'text-xl' : 'text-[32px]'} leading-tight font-black tracking-tight ${ACCENT_TEXT[accent]} truncate`} title={String(value)}>
+        <div className={isCompact ? 'mt-0.5' : 'mt-1.5'}>
+          <p className={`${isCompact ? 'text-xl' : 'text-2xl'} leading-tight font-black tracking-tight ${ACCENT_TEXT[accent]} truncate`} title={String(value)}>
             {value}
           </p>
         </div>
-        <div className={`${isCompact ? 'mt-1.5' : 'mt-3'} flex items-center gap-1.5`}>
+        <div className={`${isCompact ? 'mt-1.5' : 'mt-1.5'} flex items-center gap-1.5`}>
           {trend && (
             <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold ${TREND_COLOR[trend.direction]} shrink-0`}>
               <span className="text-[10px] leading-none">{TREND_ARROW[trend.direction]}</span> <span className="truncate">{trend.value}</span>

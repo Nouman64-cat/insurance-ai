@@ -1,4 +1,4 @@
-import { RingGauge, Bar, Stat, PillarCard, Divider } from "./shared";
+import { RingGauge, Stat, PillarCard, Divider } from "./shared";
 import type { Claim } from "@/app/services/claims";
 import type { PolicyListItem, PolicyStats } from "@/app/services/policies";
 
@@ -59,32 +59,69 @@ export function UnderwritingCard({ policies, claims, policyStats, riskIndex }: U
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
+      className="h-full"
     >
-      {/* Top section: rings + decision bars */}
-      <div className="flex flex-col sm:flex-row gap-6">
+      <div className="flex-1 flex flex-col justify-between space-y-2">
+        {/* Top section: rings + vertical status bar chart */}
+        <div className="flex flex-col sm:flex-row gap-6">
 
-        {/* Gauges */}
-        <div className="flex gap-5 flex-shrink-0">
-          <RingGauge value={riskIndex} strokeHex="#1d4ed8" label="Portfolio Risk" sublabel="/ 100" size={84} strokeW={9} />
-          <RingGauge value={issuanceRatePct} strokeHex="#3b82f6" label="Issuance Rate" sublabel="%" valueLabel={`${issuanceRatePct}%`} size={84} strokeW={9} />
+          {/* Gauges */}
+          <div className="flex gap-4 flex-shrink-0">
+            <RingGauge value={riskIndex} strokeHex="#1d4ed8" label="Portfolio Risk" sublabel="/ 100" size={68} strokeW={8} />
+            <RingGauge value={issuanceRatePct} strokeHex="#3b82f6" label="Issuance Rate" sublabel="%" valueLabel={`${issuanceRatePct}%`} size={68} strokeW={8} />
+          </div>
+
+          {/* Policy Status Mix — Vertical Bar Chart */}
+          <div className="flex-1">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Policy Status Mix — Selected Range</p>
+
+            {/* Chart: fixed height container, bars bottom-aligned */}
+            <div className="grid grid-cols-4 gap-2 h-[76px] items-end">
+              {DECISIONS.map((d) => {
+                const barH = Math.min(Math.max(d.pct, d.pct > 0 ? 8 : 0), 100);
+                return (
+                  <div key={d.label} className="flex flex-col items-center h-full justify-end group">
+                    {/* Value label — always above the bar, never overlapping */}
+                    <span className="text-[10px] font-extrabold font-mono text-slate-700 mb-1 leading-none whitespace-nowrap group-hover:text-blue-600 transition-colors">
+                      {d.pct.toFixed(0)}%
+                    </span>
+                    {/* Bar track */}
+                    <div className="w-7 bg-slate-100 rounded-t-md flex-1 flex flex-col justify-end overflow-hidden">
+                      <div
+                        className={`w-full rounded-t-sm ${d.color} transition-all duration-500`}
+                        style={{ height: barH > 0 ? `${barH}%` : "3px", minHeight: "3px" }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Labels row — separated below the chart */}
+            <div className="grid grid-cols-4 gap-2 mt-2 pt-2 border-t border-slate-100">
+              {DECISIONS.map((d) => (
+                <div key={d.label} className="flex flex-col items-center gap-0.5">
+                  <span
+                    className="w-2 h-2 rounded-full flex-shrink-0"
+                    style={{ backgroundColor: d.color.includes("blue") ? "#3b82f6" : d.color.includes("amber") ? "#f59e0b" : d.color.includes("red") ? "#ef4444" : "#64748b" }}
+                  />
+                  <span className="text-[9px] font-semibold text-slate-500 text-center leading-tight">
+                    {d.label}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* Decision distribution */}
-        <div className="flex-1 space-y-2.5">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-3">Policy Status Mix — Selected Range</p>
-          {DECISIONS.map((d) => (
-            <Bar key={d.label} label={d.label} pct={d.pct} color={d.color} badge={`${d.pct.toFixed(0)}%`} />
+        <Divider className="my-2" />
+
+        {/* Quick stats row */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {QUICK_STATS.map((s) => (
+            <Stat key={s.label} label={s.label} value={s.value} sub={s.sub} />
           ))}
         </div>
-      </div>
-
-      <Divider className="my-4" />
-
-      {/* Quick stats row */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-        {QUICK_STATS.map((s) => (
-          <Stat key={s.label} label={s.label} value={s.value} sub={s.sub} />
-        ))}
       </div>
     </PillarCard>
   );

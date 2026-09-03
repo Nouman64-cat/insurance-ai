@@ -23,7 +23,7 @@ function isToday(dateStr: string): boolean {
  * per-document OCR/tamper score — this tenant's claims list doesn't expose
  * per-artifact review status yet, only a count and the parent claim's risk.
  */
-export function ArtifactCard({ claims }: { claims: Claim[] }) {
+export function ArtifactCard({ claims, className = "" }: { claims: Claim[]; className?: string }) {
   const withArtifacts = claims.filter((c) => (c.artifacts_count || 0) > 0);
   const processedToday = claims.filter((c) => isToday(c.created_at)).reduce((s, c) => s + (c.artifacts_count || 0), 0);
   const totalArtifacts = claims.reduce((s, c) => s + (c.artifacts_count || 0), 0);
@@ -46,34 +46,37 @@ export function ArtifactCard({ claims }: { claims: Claim[] }) {
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
       alertCount={flaggedClaims.length}
+      className={`h-full ${className}`}
     >
-      {/* Coverage ring + key rates */}
-      <div className="flex items-start gap-4 mb-4">
-        <RingGauge value={coveragePct} max={100} strokeHex="#4f46e5" label="Document Coverage" sublabel="%" valueLabel={`${coveragePct}%`} size={82} />
-        <div className="flex-1 space-y-2.5 pt-1">
-          <Bar label="Clean-Claim Documents"   pct={cleanRatePct}   color="bg-blue-500" badge={`${cleanRatePct.toFixed(1)}%`} />
-          <Bar label="Flagged-Claim Documents" pct={flaggedRatePct} color="bg-red-500"  badge={`${flaggedRatePct.toFixed(1)}%`} />
+      <div className="flex-1 flex flex-col justify-between space-y-1">
+        {/* Coverage ring + key rates */}
+        <div className="flex items-center gap-2.5">
+          <RingGauge value={coveragePct} max={100} strokeHex="#4f46e5" label="Coverage" valueLabel={`${coveragePct}%`} size={44} strokeW={5} />
+          <div className="flex-1 space-y-0.5 min-w-0">
+            <Bar label="Clean-Claim Docs"   pct={cleanRatePct}   color="bg-blue-500" badge={`${cleanRatePct.toFixed(0)}%`} />
+            <Bar label="Flagged-Claim Docs" pct={flaggedRatePct} color="bg-red-500"  badge={`${flaggedRatePct.toFixed(0)}%`} />
+          </div>
         </div>
-      </div>
 
-      <Divider className="mb-3" />
+        <Divider className="my-1" />
 
-      {/* Count stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Docs Today</p>
-          <p className="text-xl font-extrabold text-slate-800 mt-0.5">{processedToday}</p>
-          <p className="text-[10px] text-slate-400">attached to new claims</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Total Docs</p>
-          <p className="text-xl font-extrabold text-blue-600 mt-0.5">{totalArtifacts}</p>
-          <p className="text-[10px] text-slate-400">selected range</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Avg / Claim</p>
-          <p className="text-xl font-extrabold text-red-600 mt-0.5">{avgDocsPerClaim.toFixed(1)}</p>
-          <p className="text-[10px] text-slate-400">documents</p>
+        {/* Count stats */}
+        <div className="grid grid-cols-3 gap-1">
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Docs Today</p>
+            <p className="text-xs font-extrabold text-slate-800 mt-0.5">{processedToday}</p>
+            <p className="text-[8px] text-slate-400 truncate">new claims</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Total Docs</p>
+            <p className="text-xs font-extrabold text-blue-600 mt-0.5">{totalArtifacts}</p>
+            <p className="text-[8px] text-slate-400 truncate">in range</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Avg/Claim</p>
+            <p className="text-xs font-extrabold text-red-600 mt-0.5">{avgDocsPerClaim.toFixed(1)}</p>
+            <p className="text-[8px] text-slate-400 truncate">docs</p>
+          </div>
         </div>
       </div>
     </PillarCard>

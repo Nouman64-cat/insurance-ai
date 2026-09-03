@@ -152,194 +152,170 @@ export function InteractiveMapCard({
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
     >
-      <div className="space-y-4">
-        {/* Metric Selector Bar */}
-        <div className="flex items-center justify-between gap-2 flex-wrap pb-1 border-b border-slate-100">
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl text-[11px] font-semibold">
-            {(["gwp", "claims", "lossRatio", "policies"] as MapMetricMode[]).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setMetricMode(mode)}
-                className={`px-3 py-1 rounded-lg transition-all ${
-                  metricMode === mode
-                    ? "bg-white text-blue-700 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
+      <div className="space-y-3">
+        {/* Top Toolbar: Dropdown 1 (Metric) & Dropdown 2 (Region / Province) */}
+        <div className="flex items-center justify-between gap-3 flex-wrap pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Metric Dropdown */}
+            <div className="flex items-center gap-1.5 bg-slate-100/90 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Metric:</span>
+              <select
+                value={metricMode}
+                onChange={(e) => setMetricMode(e.target.value as MapMetricMode)}
+                className="bg-transparent font-bold text-blue-700 text-xs cursor-pointer focus:outline-none"
               >
-                {mode === "gwp" && "GWP (Premium)"}
-                {mode === "claims" && "Claims Paid"}
-                {mode === "lossRatio" && "Loss Ratio %"}
-                {mode === "policies" && "Policy Volume"}
-              </button>
-            ))}
+                <option value="gwp">GWP (Premium)</option>
+                <option value="claims">Claims Paid</option>
+                <option value="lossRatio">Loss Ratio %</option>
+                <option value="policies">Policy Volume</option>
+              </select>
+            </div>
+
+            {/* Province / Region Dropdown */}
+            <div className="flex items-center gap-1.5 bg-slate-100/90 border border-slate-200 rounded-xl px-2.5 py-1 text-xs">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Region:</span>
+              <select
+                value={selectedRegion}
+                onChange={(e) => onSelectRegion(e.target.value)}
+                className="bg-transparent font-bold text-slate-800 text-xs cursor-pointer focus:outline-none max-w-[170px] truncate"
+              >
+                <option value="ALL">All Provinces (5)</option>
+                {Object.values(regionStatsMap).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.name} ({fmtCompact(r.gwp)})
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 text-[10px] text-slate-500">
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-200 inline-block"></span> Low
-            </span>
-            <span className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-700 inline-block"></span> High
-            </span>
+          {/* Intensity Legend + Reset */}
+          <div className="flex items-center gap-3 text-[10px] text-slate-500">
+            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200/60">
+              <span className="text-slate-400 font-semibold">Intensity:</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-200 inline-block"></span>
+              <span className="text-[9px] font-medium text-slate-600">Low</span>
+              <span className="w-2.5 h-2.5 rounded-full bg-blue-700 inline-block ml-1"></span>
+              <span className="text-[9px] font-medium text-slate-600">High</span>
+            </div>
+
             {selectedRegion !== "ALL" && (
               <button
                 onClick={() => onSelectRegion("ALL")}
-                className="ml-2 text-blue-600 font-bold hover:underline"
+                className="text-xs font-bold text-blue-600 hover:text-blue-800 underline"
               >
-                Reset Region Filter (Showing {selectedRegion})
+                Reset Filter
               </button>
             )}
           </div>
         </div>
 
-        {/* Card Content Grid: Left Map Vector, Right Regional Breakdown */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
-          {/* Vector Map Container */}
-          <div className="md:col-span-7 relative flex justify-center items-center bg-slate-900/5 rounded-2xl p-4 border border-slate-200/60 min-h-[300px]">
-            <svg
-              viewBox="0 0 450 480"
-              className="w-full h-auto max-h-[340px] drop-shadow-md transition-all duration-300"
-            >
-              {PROVINCE_PATHS.map((p) => {
-                const isSelected = selectedRegion === p.id;
-                const isHovered = hoveredRegion === p.id;
-                const stats = regionStatsMap[p.id];
+        {/* Full-Width Map Canvas */}
+        <div className="relative flex justify-center items-center bg-slate-900/5 rounded-2xl p-4 border border-slate-200/60 min-h-[260px]">
+          <svg
+            viewBox="0 0 450 480"
+            className="w-full h-auto max-h-[300px] drop-shadow-md transition-all duration-300"
+          >
+            {PROVINCE_PATHS.map((p) => {
+              const isSelected = selectedRegion === p.id;
+              const isHovered = hoveredRegion === p.id;
+              const stats = regionStatsMap[p.id];
 
-                return (
-                  <g key={p.id} className="cursor-pointer group">
-                    <path
-                      d={p.d}
-                      fill={getRegionColor(p.id)}
-                      stroke={isSelected ? "#1e3a8a" : "#ffffff"}
-                      strokeWidth={isSelected ? "3" : "1.5"}
-                      className="transition-all duration-300 hover:opacity-90 hover:stroke-blue-900 hover:stroke-[2.5]"
-                      onMouseEnter={() => setHoveredRegion(p.id)}
-                      onMouseLeave={() => setHoveredRegion(null)}
-                      onClick={() => onSelectRegion(isSelected ? "ALL" : p.id)}
-                    />
+              return (
+                <g key={p.id} className="cursor-pointer group">
+                  <path
+                    d={p.d}
+                    fill={getRegionColor(p.id)}
+                    stroke={isSelected ? "#1e3a8a" : "#ffffff"}
+                    strokeWidth={isSelected ? "3" : "1.5"}
+                    className="transition-all duration-300 hover:opacity-90 hover:stroke-blue-900 hover:stroke-[2.5]"
+                    onMouseEnter={() => setHoveredRegion(p.id)}
+                    onMouseLeave={() => setHoveredRegion(null)}
+                    onClick={() => onSelectRegion(isSelected ? "ALL" : p.id)}
+                  />
+                  <text
+                    x={p.labelX}
+                    y={p.labelY}
+                    fill={isSelected || isHovered ? "#ffffff" : "#1e293b"}
+                    fontSize={p.id === "Islamabad Capital Territory" ? "10" : "12"}
+                    fontWeight="bold"
+                    textAnchor="middle"
+                    pointerEvents="none"
+                    className="drop-shadow-xs select-none"
+                  >
+                    {p.id === "Islamabad Capital Territory" ? "ICT" : p.id === "Khyber Pakhtunkhwa" ? "KP" : p.id}
+                  </text>
+                  {stats && (
                     <text
                       x={p.labelX}
-                      y={p.labelY}
-                      fill={isSelected || isHovered ? "#ffffff" : "#1e293b"}
-                      fontSize={p.id === "Islamabad Capital Territory" ? "10" : "12"}
-                      fontWeight="bold"
+                      y={p.labelY + 14}
+                      fill={isSelected || isHovered ? "#e0f2fe" : "#475569"}
+                      fontSize="9"
+                      fontWeight="600"
                       textAnchor="middle"
                       pointerEvents="none"
-                      className="drop-shadow-xs select-none"
+                      className="select-none"
                     >
-                      {p.id === "Islamabad Capital Territory" ? "ICT" : p.id === "Khyber Pakhtunkhwa" ? "KP" : p.id}
+                      {metricMode === "gwp"
+                        ? fmtCompact(stats.gwp)
+                        : metricMode === "claims"
+                        ? fmtCompact(stats.claimsPaid)
+                        : metricMode === "lossRatio"
+                        ? `${stats.lossRatio.toFixed(0)}%`
+                        : `${stats.policyCount} pols`}
                     </text>
-                    {stats && (
-                      <text
-                        x={p.labelX}
-                        y={p.labelY + 14}
-                        fill={isSelected || isHovered ? "#e0f2fe" : "#475569"}
-                        fontSize="9"
-                        fontWeight="600"
-                        textAnchor="middle"
-                        pointerEvents="none"
-                        className="select-none"
-                      >
-                        {metricMode === "gwp"
-                          ? fmtCompact(stats.gwp)
-                          : metricMode === "claims"
-                          ? fmtCompact(stats.claimsPaid)
-                          : metricMode === "lossRatio"
-                          ? `${stats.lossRatio.toFixed(0)}%`
-                          : `${stats.policyCount} pols`}
-                      </text>
-                    )}
-                  </g>
-                );
-              })}
-            </svg>
+                  )}
+                </g>
+              );
+            })}
+          </svg>
 
-            {/* Hover Tooltip Overlay */}
-            {hoveredRegion && regionStatsMap[hoveredRegion] && (
-              <div className="absolute top-3 left-3 bg-slate-900/90 text-white p-3 rounded-xl shadow-xl text-xs backdrop-blur-md border border-slate-700 pointer-events-none z-20 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                <p className="font-bold text-blue-300 text-sm">{hoveredRegion}</p>
-                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] pt-1 border-t border-slate-700">
-                  <span className="text-slate-400">GWP Premium:</span>
-                  <span className="font-mono font-bold text-right">{fmtCompact(regionStatsMap[hoveredRegion].gwp)}</span>
-                  <span className="text-slate-400">Claims Paid:</span>
-                  <span className="font-mono font-bold text-right">{fmtCompact(regionStatsMap[hoveredRegion].claimsPaid)}</span>
-                  <span className="text-slate-400">Loss Ratio:</span>
-                  <span className="font-mono font-bold text-right text-emerald-400">
-                    {regionStatsMap[hoveredRegion].lossRatio.toFixed(1)}%
-                  </span>
-                  <span className="text-slate-400">Active Policies:</span>
-                  <span className="font-mono font-bold text-right">{regionStatsMap[hoveredRegion].policyCount}</span>
-                </div>
-                <p className="text-[9px] text-blue-400 pt-1 italic">Click region to filter entire dashboard</p>
+          {/* Hover Tooltip Overlay */}
+          {hoveredRegion && regionStatsMap[hoveredRegion] && (
+            <div className="absolute top-3 left-3 bg-slate-900/90 text-white p-3 rounded-xl shadow-xl text-xs backdrop-blur-md border border-slate-700 pointer-events-none z-20 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+              <p className="font-bold text-blue-300 text-sm">{hoveredRegion}</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] pt-1 border-t border-slate-700">
+                <span className="text-slate-400">GWP Premium:</span>
+                <span className="font-mono font-bold text-right">{fmtCompact(regionStatsMap[hoveredRegion].gwp)}</span>
+                <span className="text-slate-400">Claims Paid:</span>
+                <span className="font-mono font-bold text-right">{fmtCompact(regionStatsMap[hoveredRegion].claimsPaid)}</span>
+                <span className="text-slate-400">Loss Ratio:</span>
+                <span className="font-mono font-bold text-right text-emerald-400">
+                  {regionStatsMap[hoveredRegion].lossRatio.toFixed(1)}%
+                </span>
+                <span className="text-slate-400">Active Policies:</span>
+                <span className="font-mono font-bold text-right">{regionStatsMap[hoveredRegion].policyCount}</span>
               </div>
-            )}
-          </div>
-
-          {/* Regional Performance Leaderboard Sidebar */}
-          <div className="md:col-span-5 space-y-3">
-            <div className="flex justify-between items-center">
-              <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Provincial Breakdown</h4>
-              <span className="text-[10px] text-slate-400 font-semibold">5 Provinces &amp; Territories</span>
+              <p className="text-[9px] text-blue-400 pt-1 italic">Click region to filter entire dashboard</p>
             </div>
+          )}
+        </div>
 
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
-              {Object.values(regionStatsMap)
-                .sort((a, b) => b.gwp - a.gwp)
-                .map((r) => {
-                  const isSelected = selectedRegion === r.id;
-                  const gwpShare = maxValues.gwp > 0 ? (r.gwp / Object.values(regionStatsMap).reduce((s, x) => s + x.gwp, 0)) * 100 : 0;
-
-                  return (
-                    <div
-                      key={r.id}
-                      onClick={() => onSelectRegion(isSelected ? "ALL" : r.id)}
-                      className={`p-2.5 rounded-xl border transition-all cursor-pointer ${
-                        isSelected
-                          ? "bg-blue-50/90 border-blue-300 ring-2 ring-blue-500/20"
-                          : "bg-slate-50/70 border-slate-200/80 hover:bg-slate-100 hover:border-slate-300"
-                      }`}
-                    >
-                      <div className="flex justify-between items-center mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`w-2.5 h-2.5 rounded-full ${
-                              isSelected ? "bg-blue-600 animate-pulse" : "bg-slate-400"
-                            }`}
-                          ></span>
-                          <span className="text-xs font-bold text-slate-800">{r.name}</span>
-                        </div>
-                        <span className="text-xs font-extrabold font-mono text-slate-900">{fmtCompact(r.gwp)}</span>
-                      </div>
-
-                      <div className="grid grid-cols-3 gap-2 text-[10px] text-slate-500 pt-1 border-t border-slate-200/60">
-                        <div>
-                          <span className="text-slate-400 block">Policies</span>
-                          <span className="font-bold text-slate-800">{r.policyCount}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block">Claims</span>
-                          <span className="font-bold text-slate-800">{r.claimsCount}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 block">Loss Ratio</span>
-                          <span className={`font-bold ${r.lossRatio > 75 ? "text-rose-600" : "text-emerald-700"}`}>
-                            {r.lossRatio.toFixed(1)}%
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Share Progress Bar */}
-                      <div className="mt-2 w-full bg-slate-200/80 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="bg-blue-600 h-full rounded-full transition-all duration-500"
-                          style={{ width: `${Math.min(gwpShare, 100)}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  );
-                })}
-            </div>
-          </div>
+        {/* 5-Column Horizontal Province Summary Strip */}
+        <div className="grid grid-cols-5 gap-2 pt-1">
+          {Object.values(regionStatsMap).map((r) => {
+            const isSelected = selectedRegion === r.id || hoveredRegion === r.id;
+            return (
+              <div
+                key={r.id}
+                onClick={() => onSelectRegion(selectedRegion === r.id ? "ALL" : r.id)}
+                onMouseEnter={() => setHoveredRegion(r.id)}
+                onMouseLeave={() => setHoveredRegion(null)}
+                className={`p-2 rounded-xl border transition-all cursor-pointer text-center ${
+                  isSelected
+                    ? "bg-blue-50 border-blue-300 ring-2 ring-blue-500/20"
+                    : "bg-slate-50/70 border-slate-200/60 hover:bg-slate-100"
+                }`}
+              >
+                <div className="flex items-center justify-center gap-1">
+                  <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? "bg-blue-600 animate-pulse" : "bg-slate-400"}`} />
+                  <p className="text-[10px] font-bold text-slate-700 truncate">{r.shortName}</p>
+                </div>
+                <p className="text-xs font-extrabold font-mono text-slate-900 mt-0.5">{fmtCompact(r.gwp)}</p>
+                <p className="text-[9px] text-slate-400 font-medium">LR: {r.lossRatio.toFixed(0)}%</p>
+              </div>
+            );
+          })}
         </div>
       </div>
     </PillarCard>

@@ -155,23 +155,21 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="px-6 py-6 space-y-6 max-w-screen-2xl mx-auto w-full">
+    <div className="px-6 py-4 max-w-screen-2xl mx-auto w-full space-y-4">
 
       {/* ── Executive Navigation Header Bar ───────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <div className="flex items-center gap-2.5">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">Executive Insurance Command Center</h1>
+            <h1 className="text-lg font-bold tracking-tight text-slate-900">Executive Insurance Command Center</h1>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live AI Suite Active
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
+          <p className="text-[11px] text-slate-500 mt-0.5">
             Real-time Underwriting Governance, Financial Operations &amp; Geospatial Intelligence
           </p>
         </div>
-
-        {/* Global Filter Bar */}
         <div className="flex items-center gap-2 flex-wrap">
           <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
           <DateRangeFilter
@@ -183,79 +181,77 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* ── KPI Strip ────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {KPIs.map((k) => (
-          <MetricCard
-            key={k.title}
-            title={k.title}
-            value={loading ? "—" : k.value}
-            subtitle={k.subtitle}
-            accent={k.accent}
-          />
-        ))}
+      {/* ── Top 2-column layout (KPI + Row 1 + Row 2 alongside 4 Sidebar cards) ─ */}
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
+
+        {/* ── LEFT: Main analytics column (75% width) ───────────────────── */}
+        <div className="xl:col-span-9 lg:col-span-8 flex flex-col justify-between gap-4">
+
+          {/* KPI Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {KPIs.map((k) => (
+              <MetricCard
+                key={k.title}
+                title={k.title}
+                value={loading ? "—" : k.value}
+                subtitle={k.subtitle}
+                accent={k.accent}
+              />
+            ))}
+          </div>
+
+          {/* Row 1: Map + Time Trend */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <InteractiveMapCard
+              policies={filteredPolicies}
+              claims={filteredClaims}
+              ledger={filteredLedger}
+              selectedRegion={regionFilter}
+              onSelectRegion={setRegionFilter}
+            />
+            <TimeTrendChartCard
+              policies={filteredPolicies}
+              claims={filteredClaims}
+              ledger={filteredLedger}
+            />
+          </div>
+
+          {/* Row 2: Underwriting + Fraud */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-7">
+              <UnderwritingCard
+                policies={filteredPolicies}
+                claims={filteredClaims}
+                policyStats={policyStats}
+                riskIndex={portfolioRiskIndex}
+              />
+            </div>
+            <div className="lg:col-span-5">
+              <FraudCard claims={filteredClaims} />
+            </div>
+          </div>
+
+        </div>
+
+        {/* ── RIGHT: Vertical sidebar — Operational Intelligence (25% width) */}
+        <div className="xl:col-span-3 lg:col-span-4 flex flex-col justify-between gap-2.5">
+          <ArtifactCard claims={filteredClaims} className="flex-1" />
+          <ClaimsCard claims={filteredClaims} className="flex-1" />
+          <CustomerCard policyStats={policyStats} policies={filteredPolicies} payees={payees} className="flex-1" />
+          <AgentCard payees={payees} ledger={filteredLedger} qualifications={filteredQualifications} className="flex-1" />
+        </div>
+
       </div>
 
-      {/* ── SECTION 1: HERO ANALYTICS (Geospatial Map + Temporal Time Trend) ─── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-6">
-          <InteractiveMapCard
-            policies={filteredPolicies}
-            claims={filteredClaims}
-            ledger={filteredLedger}
-            selectedRegion={regionFilter}
-            onSelectRegion={setRegionFilter}
-          />
-        </div>
-        <div className="lg:col-span-6">
-          <TimeTrendChartCard
-            policies={filteredPolicies}
-            claims={filteredClaims}
-            ledger={filteredLedger}
-          />
-        </div>
-      </div>
-
-      {/* ── SECTION 2: PORTFOLIO HEALTH & FINANCIAL INTELLIGENCE ──────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-6">
-          <PortfolioHealthCard
-            policies={filteredPolicies}
-            claims={filteredClaims}
-            ledger={filteredLedger}
-            policyStats={policyStats}
-          />
-        </div>
-        <div className="lg:col-span-6">
-          <FinancialCard ledger={filteredLedger} claims={filteredClaims} />
-        </div>
-      </div>
-
-      {/* ── SECTION 3: UNDERWRITING GOVERNANCE & AI FRAUD ENGINE ─────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7">
-          <UnderwritingCard
-            policies={filteredPolicies}
-            claims={filteredClaims}
-            policyStats={policyStats}
-            riskIndex={portfolioRiskIndex}
-          />
-        </div>
-        <div className="lg:col-span-5">
-          <FraudCard claims={filteredClaims} />
-        </div>
-      </div>
-
-      {/* ── SECTION 4: OPERATIONAL WORKBENCH (Claims, Documents, Customers) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <ArtifactCard claims={filteredClaims} />
-        <ClaimsCard claims={filteredClaims} />
-        <CustomerCard policyStats={policyStats} policies={filteredPolicies} payees={payees} />
-      </div>
-
-      {/* ── SECTION 5: SALES FORCE & DISTRIBUTION CHANNEL INTELLIGENCE ────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
-        <AgentCard payees={payees} ledger={filteredLedger} qualifications={filteredQualifications} />
+      {/* ── Row 3: Portfolio Health + Financial ──────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <PortfolioHealthCard
+          policies={filteredPolicies}
+          claims={filteredClaims}
+          ledger={filteredLedger}
+          policyStats={policyStats}
+        />
+        <FinancialCard ledger={filteredLedger} claims={filteredClaims} />
       </div>
 
       {/* ── Footer Disclaimer ─────────────────────────────────────────────── */}

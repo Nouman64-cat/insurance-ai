@@ -20,7 +20,7 @@ function isToday(dateStr: string): boolean {
   return dateStr.slice(0, 10) === new Date().toISOString().slice(0, 10);
 }
 
-export function ClaimsCard({ claims }: { claims: Claim[] }) {
+export function ClaimsCard({ claims, className = "" }: { claims: Claim[]; className?: string }) {
   const total = claims.length;
   const approvedPct = total > 0 ? (claims.filter((c) => APPROVED_LIKE.includes(c.status)).length / total) * 100 : 0;
   const rejectedPct = total > 0 ? (claims.filter((c) => c.status === "Declined").length / total) * 100 : 0;
@@ -54,35 +54,38 @@ export function ClaimsCard({ claims }: { claims: Claim[] }) {
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
+      className={`h-full ${className}`}
     >
-      {/* AI Confidence ring + status bars */}
-      <div className="flex items-start gap-4 mb-4">
-        <RingGauge value={aiConfidencePct} max={100} strokeHex="#2563eb" label="AI Confidence" sublabel="%" valueLabel={`${aiConfidencePct}%`} size={82} />
-        <div className="flex-1 space-y-2.5 pt-1">
-          <Bar label="Approval Rate"       pct={approvedPct}     color="bg-blue-500"  badge={`${approvedPct.toFixed(1)}%`} />
-          <Bar label="Rejection Rate"      pct={rejectedPct}     color="bg-red-500"   badge={`${rejectedPct.toFixed(1)}%`} />
-          <Bar label="Under Investigation" pct={investigatingPct} color="bg-amber-400" badge={`${investigatingPct.toFixed(1)}%`} />
+      <div className="flex-1 flex flex-col justify-between space-y-1">
+        {/* AI Confidence ring + status bars */}
+        <div className="flex items-center gap-2.5">
+          <RingGauge value={aiConfidencePct} max={100} strokeHex="#2563eb" label="AI Confidence" valueLabel={`${aiConfidencePct}%`} size={44} strokeW={5} />
+          <div className="flex-1 space-y-0.5 min-w-0">
+            <Bar label="Approval Rate"       pct={approvedPct}     color="bg-blue-500"  badge={`${approvedPct.toFixed(0)}%`} />
+            <Bar label="Rejection Rate"      pct={rejectedPct}     color="bg-red-500"   badge={`${rejectedPct.toFixed(0)}%`} />
+            <Bar label="Under Investigation" pct={investigatingPct} color="bg-amber-400" badge={`${investigatingPct.toFixed(0)}%`} />
+          </div>
         </div>
-      </div>
 
-      <Divider className="mb-3" />
+        <Divider className="my-1" />
 
-      {/* Key stats */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Claims Today</p>
-          <p className="text-xl font-extrabold text-slate-800 mt-0.5">{claimsToday}</p>
-          <p className="text-[10px] text-slate-400">new submissions</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Approved (period)</p>
-          <p className="text-xl font-extrabold text-blue-600 mt-0.5">{fmtCompact(approvedSum)}</p>
-          <p className="text-[10px] text-slate-400">total payout</p>
-        </div>
-        <div className="text-center">
-          <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-widest">Avg. Process</p>
-          <p className="text-xl font-extrabold text-blue-600 mt-0.5">{avgProcessDays !== null ? `${avgProcessDays.toFixed(1)}d` : "—"}</p>
-          <p className="text-[10px] text-slate-400">end-to-end</p>
+        {/* Key stats */}
+        <div className="grid grid-cols-3 gap-1">
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Claims Today</p>
+            <p className="text-xs font-extrabold text-slate-800 mt-0.5">{claimsToday}</p>
+            <p className="text-[8px] text-slate-400 truncate">new entries</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Approved</p>
+            <p className="text-xs font-extrabold text-blue-600 mt-0.5">{fmtCompact(approvedSum)}</p>
+            <p className="text-[8px] text-slate-400 truncate">payout</p>
+          </div>
+          <div className="text-center">
+            <p className="text-[8px] text-slate-400 font-semibold uppercase tracking-wider truncate">Avg Process</p>
+            <p className="text-xs font-extrabold text-blue-600 mt-0.5">{avgProcessDays !== null ? `${avgProcessDays.toFixed(1)}d` : "—"}</p>
+            <p className="text-[8px] text-slate-400 truncate">end-to-end</p>
+          </div>
         </div>
       </div>
     </PillarCard>
