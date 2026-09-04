@@ -41,7 +41,7 @@ export function ArtifactCard({ claims, className = "" }: { claims: Claim[]; clas
   return (
     <PillarCard
       icon={<FileCheckIcon />}
-      title="Artifact Intelligence"
+      title="Claim Documents"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"

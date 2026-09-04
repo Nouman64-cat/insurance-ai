@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { PillarCard } from "./shared";
+import { PROVINCE_SHAPES, MAP_VIEWBOX } from "@/lib/pakistanGeo";
 import type { PolicyListItem } from "@/app/services/policies";
 import type { Claim } from "@/app/services/claims";
 import type { CommissionLedgerEntry } from "@/app/services/commissions";
@@ -27,44 +28,60 @@ interface RegionStats {
   lossRatio: number;
 }
 
-// Map SVG Paths for Pakistan Provinces (Normalized ViewBox 0 0 500 500)
-const PROVINCE_PATHS: { id: string; name: string; d: string; labelX: number; labelY: number }[] = [
-  {
-    id: "Punjab",
-    name: "Punjab",
-    d: "M 270,160 L 320,170 L 370,190 L 380,240 L 350,290 L 300,320 L 260,300 L 240,260 L 240,210 L 270,160 Z",
-    labelX: 310,
-    labelY: 235,
+export const PROVINCE_COLOR_MAP: Record<
+  string,
+  { base: string; lightBg: string; border: string; text: string; rgb: [number, number, number] }
+> = {
+  Punjab: {
+    base: "#2563eb", // Royal Blue
+    lightBg: "bg-blue-50/90 border-blue-300 text-blue-900",
+    border: "#1d4ed8",
+    text: "text-blue-700",
+    rgb: [37, 99, 235],
   },
-  {
-    id: "Sindh",
-    name: "Sindh",
-    d: "M 230,305 L 290,325 L 310,380 L 290,440 L 220,440 L 190,410 L 200,350 L 230,305 Z",
-    labelX: 250,
-    labelY: 380,
+  Sindh: {
+    base: "#0d9488", // Teal / Emerald
+    lightBg: "bg-teal-50/90 border-teal-300 text-teal-900",
+    border: "#0f766e",
+    text: "text-teal-700",
+    rgb: [13, 148, 136],
   },
-  {
-    id: "Balochistan",
-    name: "Balochistan",
-    d: "M 80,250 L 225,255 L 220,300 L 190,345 L 180,405 L 80,390 L 50,330 L 60,280 Z",
-    labelX: 130,
-    labelY: 320,
+  Balochistan: {
+    base: "#d97706", // Amber / Gold
+    lightBg: "bg-amber-50/90 border-amber-300 text-amber-900",
+    border: "#b45309",
+    text: "text-amber-700",
+    rgb: [217, 119, 6],
   },
-  {
-    id: "Khyber Pakhtunkhwa",
-    name: "Khyber Pakhtunkhwa",
-    d: "M 200,100 L 250,90 L 265,155 L 235,205 L 210,245 L 160,240 L 180,170 Z",
-    labelX: 215,
-    labelY: 165,
+  "Khyber Pakhtunkhwa": {
+    base: "#7c3aed", // Violet / Purple
+    lightBg: "bg-violet-50/90 border-violet-300 text-violet-900",
+    border: "#6d28d9",
+    text: "text-violet-700",
+    rgb: [124, 58, 237],
   },
-  {
-    id: "Islamabad Capital Territory",
-    name: "Islamabad",
-    d: "M 268,142 L 285,145 L 282,158 L 265,155 Z",
-    labelX: 275,
-    labelY: 132,
+  "Gilgit-Baltistan": {
+    base: "#0284c7", // Sky Blue
+    lightBg: "bg-sky-50/90 border-sky-300 text-sky-900",
+    border: "#0369a1",
+    text: "text-sky-700",
+    rgb: [2, 132, 199],
   },
-];
+  "Azad Jammu & Kashmir": {
+    base: "#16a34a", // Forest Green
+    lightBg: "bg-emerald-50/90 border-emerald-300 text-emerald-900",
+    border: "#15803d",
+    text: "text-emerald-700",
+    rgb: [22, 163, 74],
+  },
+  "Islamabad Capital Territory": {
+    base: "#e11d48", // Crimson Rose
+    lightBg: "bg-rose-50/90 border-rose-300 text-rose-900",
+    border: "#be123c",
+    text: "text-rose-700",
+    rgb: [225, 29, 72],
+  },
+};
 
 export function InteractiveMapCard({
   policies,
@@ -76,24 +93,26 @@ export function InteractiveMapCard({
   const [metricMode, setMetricMode] = useState<MapMetricMode>("gwp");
   const [hoveredRegion, setHoveredRegion] = useState<string | null>(null);
 
-  // Compute per-region statistics
-  const regionNames = ["Punjab", "Sindh", "Balochistan", "Khyber Pakhtunkhwa", "Islamabad Capital Territory"];
-  
+  // Compute per-region statistics for all 7 provinces & territories in PROVINCE_SHAPES
   const regionStatsMap: Record<string, RegionStats> = {};
 
-  regionNames.forEach((rName) => {
+  PROVINCE_SHAPES.forEach((shape) => {
+    const rName = shape.name;
     const regPolicies = policies.filter((p) => p.region === rName);
     const regClaims = claims.filter((c) => c.region === rName);
     const regLedger = ledger.filter((l) => l.branch?.includes(rName) || l.payeeName?.includes(rName));
 
-    const gwp = regLedger.reduce((sum, e) => sum + e.collectedPremium, 0) || regPolicies.length * 145000;
+    const gwp =
+      regLedger.reduce((sum, e) => sum + e.collectedPremium, 0) ||
+      regPolicies.length * 145000 ||
+      (rName === "Gilgit-Baltistan" ? 850000 : rName === "Azad Jammu & Kashmir" ? 1100000 : 145000);
     const claimsPaid = regClaims.reduce((sum, c) => sum + (c.approved_amount || c.submitted_amount || 0), 0);
     const lossRatio = gwp > 0 ? (claimsPaid / gwp) * 100 : 0;
 
     regionStatsMap[rName] = {
       id: rName,
       name: rName,
-      shortName: rName === "Islamabad Capital Territory" ? "ICT" : rName === "Khyber Pakhtunkhwa" ? "KP" : rName,
+      shortName: shape.code,
       gwp,
       claimsPaid,
       claimsCount: regClaims.length,
@@ -111,9 +130,10 @@ export function InteractiveMapCard({
   };
 
   const getRegionColor = (regName: string) => {
+    const cfg = PROVINCE_COLOR_MAP[regName] || { base: "#64748b", rgb: [100, 116, 139] };
     const stats = regionStatsMap[regName];
-    if (!stats) return "#cbd5e1";
-    
+    if (!stats) return cfg.base;
+
     const isSelected = selectedRegion === regName;
     const isHovered = hoveredRegion === regName;
 
@@ -123,22 +143,17 @@ export function InteractiveMapCard({
     else if (metricMode === "lossRatio") ratio = Math.min(stats.lossRatio / 100, 1);
     else ratio = stats.policyCount / maxValues.policies;
 
-    // HSL Color Generation
-    if (metricMode === "lossRatio") {
-      // Red gradient for loss ratio
-      const lightness = 92 - Math.round(ratio * 45);
-      return isSelected || isHovered ? "#ef4444" : `hsl(0, 84%, ${lightness}%)`;
+    if (isSelected || isHovered) {
+      return cfg.base;
     }
-    
-    // Blue gradient for GWP and Volume
-    const lightness = 92 - Math.round(ratio * 50);
-    return isSelected || isHovered ? "#2563eb" : `hsl(217, 91%, ${lightness}%)`;
+
+    const [r, g, b] = cfg.rgb;
+    const alpha = 0.45 + Math.round(ratio * 0.5 * 100) / 100;
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
 
   const fmtCompact = (v: number) =>
     v >= 1_000_000 ? `PKR ${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `PKR ${(v / 1_000).toFixed(0)}K` : `PKR ${v.toFixed(0)}`;
-
-  const activeStats = hoveredRegion ? regionStatsMap[hoveredRegion] : selectedRegion !== "ALL" ? regionStatsMap[selectedRegion] : null;
 
   return (
     <PillarCard
@@ -147,7 +162,7 @@ export function InteractiveMapCard({
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.782V8.018a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
         </svg>
       }
-      title="Regional Geospatial Heatmap — Pakistan"
+      title="Regional Map"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -179,7 +194,7 @@ export function InteractiveMapCard({
                 onChange={(e) => onSelectRegion(e.target.value)}
                 className="bg-transparent font-bold text-slate-800 text-xs cursor-pointer focus:outline-none max-w-[170px] truncate"
               >
-                <option value="ALL">All Provinces (5)</option>
+                <option value="ALL">All Regions (7)</option>
                 {Object.values(regionStatsMap).map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.name} ({fmtCompact(r.gwp)})
@@ -189,69 +204,61 @@ export function InteractiveMapCard({
             </div>
           </div>
 
-          {/* Intensity Legend + Reset */}
-          <div className="flex items-center gap-3 text-[10px] text-slate-500">
-            <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200/60">
-              <span className="text-slate-400 font-semibold">Intensity:</span>
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-200 inline-block"></span>
-              <span className="text-[9px] font-medium text-slate-600">Low</span>
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-700 inline-block ml-1"></span>
-              <span className="text-[9px] font-medium text-slate-600">High</span>
-            </div>
-
-            {selectedRegion !== "ALL" && (
-              <button
-                onClick={() => onSelectRegion("ALL")}
-                className="text-xs font-bold text-blue-600 hover:text-blue-800 underline"
-              >
-                Reset Filter
-              </button>
-            )}
-          </div>
+          {/* Reset button if filtered */}
+          {selectedRegion !== "ALL" && (
+            <button
+              onClick={() => onSelectRegion("ALL")}
+              className="text-xs font-bold text-blue-600 hover:text-blue-800 underline"
+            >
+              Reset Filter
+            </button>
+          )}
         </div>
 
-        {/* Full-Width Map Canvas */}
-        <div className="relative flex justify-center items-center bg-slate-900/5 rounded-2xl p-4 border border-slate-200/60 min-h-[260px]">
+        {/* Full-Width Map Canvas - Authentic Geographic Boundaries */}
+        <div className="relative flex justify-center items-center bg-slate-900/5 rounded-2xl p-4 border border-slate-200/60 min-h-[300px]">
           <svg
-            viewBox="0 0 450 480"
-            className="w-full h-auto max-h-[300px] drop-shadow-md transition-all duration-300"
+            viewBox={`0 0 ${MAP_VIEWBOX.width} ${MAP_VIEWBOX.height}`}
+            className="w-full h-auto max-h-[320px] drop-shadow-lg transition-all duration-300"
           >
-            {PROVINCE_PATHS.map((p) => {
-              const isSelected = selectedRegion === p.id;
-              const isHovered = hoveredRegion === p.id;
-              const stats = regionStatsMap[p.id];
+            {PROVINCE_SHAPES.map((shape) => {
+              const isSelected = selectedRegion === shape.name;
+              const isHovered = hoveredRegion === shape.name;
+              const stats = regionStatsMap[shape.name];
 
               return (
-                <g key={p.id} className="cursor-pointer group">
+                <g key={shape.name} className="cursor-pointer group">
                   <path
-                    d={p.d}
-                    fill={getRegionColor(p.id)}
-                    stroke={isSelected ? "#1e3a8a" : "#ffffff"}
-                    strokeWidth={isSelected ? "3" : "1.5"}
-                    className="transition-all duration-300 hover:opacity-90 hover:stroke-blue-900 hover:stroke-[2.5]"
-                    onMouseEnter={() => setHoveredRegion(p.id)}
+                    d={shape.path}
+                    fill={getRegionColor(shape.name)}
+                    stroke={isSelected ? "#0f172a" : "#ffffff"}
+                    strokeWidth={isSelected ? "4" : "2"}
+                    strokeLinejoin="round"
+                    strokeLinecap="round"
+                    className="transition-all duration-300 hover:opacity-100 hover:stroke-slate-900 hover:stroke-[3]"
+                    onMouseEnter={() => setHoveredRegion(shape.name)}
                     onMouseLeave={() => setHoveredRegion(null)}
-                    onClick={() => onSelectRegion(isSelected ? "ALL" : p.id)}
+                    onClick={() => onSelectRegion(isSelected ? "ALL" : shape.name)}
                   />
                   <text
-                    x={p.labelX}
-                    y={p.labelY}
+                    x={shape.labelX}
+                    y={shape.labelY}
                     fill={isSelected || isHovered ? "#ffffff" : "#1e293b"}
-                    fontSize={p.id === "Islamabad Capital Territory" ? "10" : "12"}
-                    fontWeight="bold"
+                    fontSize={shape.code === "ICT" ? "18" : "22"}
+                    fontWeight="800"
                     textAnchor="middle"
                     pointerEvents="none"
-                    className="drop-shadow-xs select-none"
+                    className="drop-shadow-sm select-none"
                   >
-                    {p.id === "Islamabad Capital Territory" ? "ICT" : p.id === "Khyber Pakhtunkhwa" ? "KP" : p.id}
+                    {shape.code}
                   </text>
                   {stats && (
                     <text
-                      x={p.labelX}
-                      y={p.labelY + 14}
-                      fill={isSelected || isHovered ? "#e0f2fe" : "#475569"}
-                      fontSize="9"
-                      fontWeight="600"
+                      x={shape.labelX}
+                      y={shape.labelY + 22}
+                      fill={isSelected || isHovered ? "#ffffff" : "#334155"}
+                      fontSize="15"
+                      fontWeight="700"
                       textAnchor="middle"
                       pointerEvents="none"
                       className="select-none"
@@ -291,10 +298,11 @@ export function InteractiveMapCard({
           )}
         </div>
 
-        {/* 5-Column Horizontal Province Summary Strip */}
-        <div className="grid grid-cols-5 gap-2 pt-1">
+        {/* 7-Column Horizontal Region Summary Strip */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1.5 pt-1">
           {Object.values(regionStatsMap).map((r) => {
             const isSelected = selectedRegion === r.id || hoveredRegion === r.id;
+            const cfg = PROVINCE_COLOR_MAP[r.id] || { base: "#64748b", lightBg: "bg-slate-50 border-slate-200 text-slate-700", text: "text-slate-700" };
             return (
               <div
                 key={r.id}
@@ -303,16 +311,17 @@ export function InteractiveMapCard({
                 onMouseLeave={() => setHoveredRegion(null)}
                 className={`p-2 rounded-xl border transition-all cursor-pointer text-center ${
                   isSelected
-                    ? "bg-blue-50 border-blue-300 ring-2 ring-blue-500/20"
+                    ? `${cfg.lightBg} ring-2 ring-offset-1`
                     : "bg-slate-50/70 border-slate-200/60 hover:bg-slate-100"
                 }`}
+                style={isSelected ? ({ "--tw-ring-color": cfg.base } as React.CSSProperties) : undefined}
               >
                 <div className="flex items-center justify-center gap-1">
-                  <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? "bg-blue-600 animate-pulse" : "bg-slate-400"}`} />
-                  <p className="text-[10px] font-bold text-slate-700 truncate">{r.shortName}</p>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: cfg.base }} />
+                  <p className="text-[10px] font-bold text-slate-800 truncate">{r.shortName}</p>
                 </div>
-                <p className="text-xs font-extrabold font-mono text-slate-900 mt-0.5">{fmtCompact(r.gwp)}</p>
-                <p className="text-[9px] text-slate-400 font-medium">LR: {r.lossRatio.toFixed(0)}%</p>
+                <p className="text-[11px] font-extrabold font-mono text-slate-900 mt-0.5">{fmtCompact(r.gwp)}</p>
+                <p className="text-[9px] text-slate-500 font-semibold">LR: {r.lossRatio.toFixed(0)}%</p>
               </div>
             );
           })}

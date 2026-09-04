@@ -367,6 +367,7 @@ export default function CommissionOpsPage() {
                 policies={policies}
                 claims={claims}
                 ledger={filteredLedger}
+                title="Commission Accrual & Payout Trends"
               />
             </div>
           </div>

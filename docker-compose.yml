@@ -281,8 +281,8 @@ services:
       - /app/node_modules # prevent host node_modules from overwriting container's
       - /app/.next # preserve Next.js build cache between restarts
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8010 # browser-side; host port that maps to gateway container port 8000
-      NEXT_PUBLIC_OCR_URL: http://localhost:8014 # browser-side; host port mapping to ocr-engine
-      NEXT_PUBLIC_SUMMARIZER_URL: http://localhost:8015 # browser-side; host port mapping to text-summarizer
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8010} # browser-side; host port that maps to gateway container port 8000
+      NEXT_PUBLIC_OCR_URL: ${NEXT_PUBLIC_OCR_URL:-http://localhost:8014} # browser-side; host port mapping to ocr-engine
+      NEXT_PUBLIC_SUMMARIZER_URL: ${NEXT_PUBLIC_SUMMARIZER_URL:-http://localhost:8015} # browser-side; host port mapping to text-summarizer
       API_GATEWAY_INTERNAL_URL: http://api-gateway:8000 # server-side (Next.js API routes); internal docker network
       CHOKIDAR_USEPOLLING: "true" # macOS Docker Desktop: FSEvents don't reach chokidar via inotify

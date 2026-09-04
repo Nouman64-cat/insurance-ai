@@ -377,7 +377,7 @@ export function Density3DMapCardImpl({
           <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.782V8.018a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
         </svg>
       }
-      title="Regional Intelligence — Pakistan"
+      title="Regional Distribution"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"
@@ -482,7 +482,7 @@ export function Density3DMapCardImpl({
 
           {/* Map branding badge */}
           <div className="absolute bottom-2 right-2 bg-slate-950/60 text-slate-400 text-[8px] px-1.5 py-0.5 rounded backdrop-blur-sm pointer-events-none">
-            Pakistan · Regional Intelligence
+            Pakistan · Regional Distribution
           </div>
 
           {/* Live activity badge — only shown when there's something to point at */}

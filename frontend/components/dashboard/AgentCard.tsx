@@ -57,7 +57,7 @@ export function AgentCard({ payees, ledger, qualifications, className = "" }: Ag
   return (
     <PillarCard
       icon={<UserCheckIcon />}
-      title="Agent Intelligence"
+      title="Agent Performance"
       barClass="bg-amber-500"
       iconBg="bg-amber-50"
       iconColor="text-amber-600"

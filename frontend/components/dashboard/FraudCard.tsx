@@ -52,7 +52,7 @@ export function FraudCard({ claims }: { claims: Claim[] }) {
   return (
     <PillarCard
       icon={<AlertTriangleIcon />}
-      title="Fraud Intelligence"
+      title="Fraud Queue"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"

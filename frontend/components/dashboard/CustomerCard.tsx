@@ -54,7 +54,7 @@ export function CustomerCard({ policyStats, policies, payees, className = "" }: 
   return (
     <PillarCard
       icon={<UsersIcon />}
-      title="Customer Intelligence"
+      title="Customer Persistence"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"

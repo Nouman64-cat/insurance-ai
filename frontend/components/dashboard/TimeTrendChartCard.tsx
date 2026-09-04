@@ -10,6 +10,7 @@ interface TimeTrendChartCardProps {
   policies: PolicyListItem[];
   claims: Claim[];
   ledger: CommissionLedgerEntry[];
+  title?: string;
 }
 
 type Granularity = "daily" | "weekly" | "monthly" | "yearly";
@@ -27,7 +28,7 @@ interface DataPoint {
   claimCount: number;
 }
 
-export function TimeTrendChartCard({ policies, claims, ledger }: TimeTrendChartCardProps) {
+export function TimeTrendChartCard({ policies, claims, ledger, title }: TimeTrendChartCardProps) {
   const [granularity, setGranularity] = useState<Granularity>("monthly");
   const [viewMetric, setViewMetric] = useState<ViewMetric>("financials");
   const [chartStyle, setChartStyle] = useState<ChartStyle>("line");
@@ -238,7 +239,7 @@ export function TimeTrendChartCard({ policies, claims, ledger }: TimeTrendChartC
           <path strokeLinecap="round" strokeLinejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
         </svg>
       }
-      title="Financial Trends"
+      title={title || "Financial Dynamics & Trends"}
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"

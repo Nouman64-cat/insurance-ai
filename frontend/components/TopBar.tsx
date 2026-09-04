@@ -45,7 +45,7 @@ interface TopBarProps {
   subtitle?: string;
 }
 
-export function TopBar({ title = "Management Intelligence Dashboard", subtitle }: TopBarProps) {
+export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) {
   const { isAutomationMode, setAutomationMode } = useCopilot();
   const [tenantName, setTenantName] = useState("Adamjee Life");
 

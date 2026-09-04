@@ -224,10 +224,10 @@ export default function ClaimsDashboardPage() {
   const avgAdjudicationHours =
     resolvedClaims.length > 0
       ? resolvedClaims.reduce((sum, c) => {
-          const end = new Date((c.settled_at || c.closed_at) as string).getTime();
-          const start = new Date(c.created_at).getTime();
-          return sum + Math.max(0, end - start) / 3_600_000;
-        }, 0) / resolvedClaims.length
+        const end = new Date((c.settled_at || c.closed_at) as string).getTime();
+        const start = new Date(c.created_at).getTime();
+        return sum + Math.max(0, end - start) / 3_600_000;
+      }, 0) / resolvedClaims.length
       : null;
   const investigatedStatuses = ["Under Investigation", "Referred to Manager", "Pending Documents"];
   const autoTriagedCount = filteredClaims.filter(
@@ -292,19 +292,14 @@ export default function ClaimsDashboardPage() {
 
   return (
     <div className="px-6 py-4 max-w-screen-2xl mx-auto w-full space-y-4 font-sans">
-      
+
       {/* ── Executive Navigation Header Bar ───────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">Claims Dashboard</h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Claims AI Active
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Real-time claims volume, AI risk flags, and processing status
-          </p>
+      <div className="flex flex-row justify-between items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">Claims Dashboard</h1>
+          {/* <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Claims AI Active
+          </span> */}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
@@ -352,19 +347,6 @@ export default function ClaimsDashboardPage() {
         {/* ── LEFT: Main analytics column (75% width) ───────────────────── */}
         <div className="xl:col-span-9 lg:col-span-8 flex flex-col justify-between gap-4">
 
-          {/* KPI Strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {KPIs.map((k) => (
-              <MetricCard
-                key={k.title}
-                title={k.title}
-                value={k.value}
-                subtitle={k.subtitle}
-                accent={k.accent}
-              />
-            ))}
-          </div>
-
           {/* Row 1: Map + Time Trend */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <InteractiveMapCard
@@ -378,21 +360,22 @@ export default function ClaimsDashboardPage() {
               policies={policies}
               claims={filteredClaims}
               ledger={ledger}
+              title="Claims Outflow & Loss Trends"
             />
           </div>
 
           {/* Row 2: AI Risk Exposure + SLA Workload Performance */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            
+
             {/* AI Fraud & Risk Exposure */}
             <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">AI Risk &amp; Fraud Exposure</h3>
-                  <p className="text-[11px] text-slate-500">Live AI fraud classification breakdown</p>
+                  <h3 className="text-sm font-bold text-slate-900">Fraud Risk</h3>
+                  <p className="text-[11px] text-slate-500">Claims by risk score</p>
                 </div>
                 <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-200">
-                  Live AI Monitor
+                  Real-Time Monitor
                 </span>
               </div>
 
@@ -427,8 +410,8 @@ export default function ClaimsDashboardPage() {
             <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col justify-between">
               <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900">SLA &amp; Workload Performance</h3>
-                  <p className="text-[11px] text-slate-500">Adjudication throughput &amp; SLA compliance</p>
+                  <h3 className="text-sm font-bold text-slate-900">Processing Speed</h3>
+                  <p className="text-[11px] text-slate-500">Adjudication time &amp; triage</p>
                 </div>
                 <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
                   SLA Target: 24h
@@ -484,10 +467,10 @@ export default function ClaimsDashboardPage() {
         </div>
 
         {/* ── RIGHT: Vertical sidebar — Operational Intelligence (25% width) */}
-        <div className="xl:col-span-3 lg:col-span-4 flex flex-col justify-between gap-2.5">
-          
+        <div className="xl:col-span-3 lg:col-span-4 flex flex-col gap-4">
+
           {/* Claim Status Distribution */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex-1 flex flex-col justify-between space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Status Distribution</h3>
               <span className="text-[10px] font-bold text-slate-400">Total: {totalClaimsCount}</span>
@@ -518,7 +501,7 @@ export default function ClaimsDashboardPage() {
           </div>
 
           {/* Claim Type Distribution */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex-1 flex flex-col justify-between space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">Claim Types</h3>
               <span className="text-[10px] font-bold text-slate-400">By Product</span>
@@ -547,7 +530,7 @@ export default function ClaimsDashboardPage() {
           </div>
 
           {/* SIU Watchlist Quick Preview */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex-1 flex flex-col justify-between space-y-3">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 flex flex-col space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
               <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">SIU Risk Watchlist</h3>
               <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
@@ -589,78 +572,6 @@ export default function ClaimsDashboardPage() {
 
       </div>
 
-      {/* ── SIU Fraud Watchlist & Full Active Claims Stream ───────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 mt-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-100 pb-3">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">SIU Fraud Watchlist &amp; Active Claims Queue</h3>
-            <p className="text-xs text-slate-500">Live adjudication queue filtered by date, region, claim type, and AI risk level.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-400 font-semibold">{filteredClaims.length} records</span>
-            <Link
-              href="/claims/register"
-              className="text-xs font-bold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1"
-            >
-              <span>View Full Register &rarr;</span>
-            </Link>
-          </div>
-        </div>
-
-        <div className="space-y-2.5">
-          {filteredClaims.length === 0 ? (
-            <div className="p-8 text-center text-xs text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-              No claims match the selected date range or filter criteria.
-            </div>
-          ) : (
-            filteredClaims
-              .slice(0, 8)
-              .map((c) => (
-                <div
-                  key={c.id}
-                  className={`p-3.5 rounded-xl border transition-all duration-300 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs ${
-                    highlightId === c.id || highlightId === c.claim_number
-                      ? "bg-blue-100/90 border-blue-300 shadow-sm"
-                      : "border-slate-200/80 bg-slate-50/40 hover:bg-slate-50/90"
-                  }`}
-                >
-                  <div className="space-y-1 min-w-0 flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-slate-900">{c.claim_number}</span>
-                      <span className="text-slate-300">•</span>
-                      <span className="font-semibold text-slate-800 truncate">
-                        {c.customer_name || c.claimant_name || "—"}
-                        {c.claimant_name && c.customer_name && c.claimant_name !== c.customer_name && (
-                          <span className="text-slate-500 font-normal"> / {c.claimant_name} (Claimant)</span>
-                        )}
-                      </span>
-                      <RiskBadge prob={c.fraud_probability} flag={c.duplicate_flag} />
-                    </div>
-                    <div className="text-[11px] text-slate-500 flex items-center gap-3 flex-wrap">
-                      <span>Type: <strong className="text-slate-700">{c.claim_type}</strong></span>
-                      <span>Incident: <strong className="text-slate-700">{c.incident_date ?? "N/A"}</strong></span>
-                      <span>Claimed: <strong className="text-slate-700">{fmtCompact(c.submitted_amount)}</strong></span>
-                      {c.region && <span>Region: <strong className="text-slate-700">{c.region}</strong></span>}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0">
-                    <StatusBadge status={c.status} />
-                    <Link
-                      href={`/claims/${c.id}`}
-                      className="px-3 py-1.5 rounded-xl bg-blue-600 text-white font-bold text-[11px] hover:bg-blue-700 transition-colors whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
-                    >
-                      Review Claim
-                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </Link>
-                  </div>
-                </div>
-              ))
-          )}
-        </div>
-      </div>
 
       {/* ── Footer Disclaimer ─────────────────────────────────────────────── */}
       <p className="text-center text-[10px] text-slate-400 pb-2 leading-relaxed">
@@ -739,9 +650,8 @@ export default function ClaimsDashboardPage() {
                             onClick={() => {
                               setForm({ ...form, policy_id: p.id });
                             }}
-                            className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center justify-between ${
-                              isSelected ? "bg-blue-50/90 text-blue-800 font-semibold" : "hover:bg-slate-50 text-slate-700"
-                            }`}
+                            className={`w-full text-left px-3.5 py-2.5 text-xs transition-colors flex items-center justify-between ${isSelected ? "bg-blue-50/90 text-blue-800 font-semibold" : "hover:bg-slate-50 text-slate-700"
+                              }`}
                           >
                             <div className="flex flex-col min-w-0 pr-2 space-y-0.5">
                               <div className="flex items-center gap-2">
@@ -797,7 +707,7 @@ export default function ClaimsDashboardPage() {
                 <div className="space-y-3">
                   <div className="p-4 bg-gradient-to-r from-blue-100/70 to-blue-50/40 border border-blue-200/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs shadow-sm relative overflow-hidden">
                     <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-600" />
-                    
+
                     <div className="space-y-1.5 min-w-0 pl-2">
                       <div className="flex items-center gap-3 flex-wrap">
                         <span className="font-extrabold text-blue-950 text-[14px] tracking-tight drop-shadow-xs">{selectedPolicy?.customer_name}</span>
