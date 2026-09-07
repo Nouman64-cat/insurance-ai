@@ -90,7 +90,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -147,6 +147,17 @@ async def _proxy_to_tenant(request: Request, url: str) -> Response:
                 timeout=120.0,
             )
             resp_headers = dict(resp.headers)
+            # Strip CORS headers from upstream tenant-service to prevent duplicate CORS headers
+            for cors_key in [
+                "access-control-allow-origin",
+                "access-control-allow-credentials",
+                "access-control-allow-methods",
+                "access-control-allow-headers",
+                "access-control-expose-headers",
+                "content-length",
+                "transfer-encoding",
+            ]:
+                resp_headers.pop(cors_key, None)
             if "location" in resp_headers:
                 loc = resp_headers["location"]
                 loc = loc.replace("http://tenant-service:8001", "http://localhost:8010")

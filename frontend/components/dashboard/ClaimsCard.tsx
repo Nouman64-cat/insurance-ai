@@ -50,7 +50,7 @@ export function ClaimsCard({ claims, className = "" }: { claims: Claim[]; classN
   return (
     <PillarCard
       icon={<ClipboardIcon />}
-      title="Claims Intelligence"
+      title="Claims Status"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"

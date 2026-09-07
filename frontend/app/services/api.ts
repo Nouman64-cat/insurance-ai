@@ -6,7 +6,9 @@ export const SUMMARIZER_BASE_URL = process.env.NEXT_PUBLIC_SUMMARIZER_URL;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+  },
   timeout: 120_000,
 });
 
@@ -64,7 +66,9 @@ ocrApi.interceptors.response.use(
 
 export const summarizerApi = axios.create({
   baseURL: SUMMARIZER_BASE_URL,
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+  },
   timeout: 120_000,
 });
 

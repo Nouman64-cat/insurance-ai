@@ -86,7 +86,7 @@ export function FinancialCard({ ledger, claims }: FinancialCardProps) {
   return (
     <PillarCard
       icon={<TrendingUpIcon />}
-      title="Financial Intelligence"
+      title="Financial Summary"
       barClass="bg-blue-700"
       iconBg="bg-blue-50"
       iconColor="text-blue-700"

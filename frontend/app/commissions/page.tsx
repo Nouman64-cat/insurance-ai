@@ -118,7 +118,7 @@ export default function CommissionsPage() {
 
   useEffect(() => {
     const tid = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
-    if (tid) listBranches(tid).then(setBranches).catch(() => {});
+    if (tid) listBranches(tid).then(setBranches).catch(() => { });
   }, []);
 
   const regions = distinctRegions(branches);
@@ -205,11 +205,10 @@ export default function CommissionsPage() {
     <div className="px-6 py-4 max-w-screen-2xl mx-auto w-full space-y-4 font-sans text-slate-900">
       {notification && (
         <div
-          className={`fixed top-5 right-5 z-50 max-w-md px-4 py-3 rounded-xl shadow-lg border text-xs font-bold flex items-start gap-2 bg-white text-slate-800 ${
-            notification.type === "success"
-              ? "border-blue-200 text-blue-900"
-              : "border-rose-200 text-rose-800"
-          }`}
+          className={`fixed top-5 right-5 z-50 max-w-md px-4 py-3 rounded-xl shadow-lg border text-xs font-bold flex items-start gap-2 bg-white text-slate-800 ${notification.type === "success"
+            ? "border-blue-200 text-blue-900"
+            : "border-rose-200 text-rose-800"
+            }`}
         >
           <span className={notification.type === "success" ? "text-blue-600" : "text-rose-600"}>
             {notification.type === "success" ? "✓" : "✕"}
@@ -219,17 +218,12 @@ export default function CommissionsPage() {
       )}
 
       {/* ── Executive Header & Filter Bar ─────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">Commission Dashboard</h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Engine Active
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Real-time Producer Payables, Performance Bonuses &amp; Channel Analytics
-          </p>
+      <div className="flex flex-row justify-between items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">Commission Dashboard</h1>
+          {/* <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live Engine Active
+          </span> */}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
@@ -246,303 +240,240 @@ export default function CommissionsPage() {
 
       {filteredStats && (
         <div className="space-y-4">
-          
-          {/* ── 1. Top Headline KPI Cards ─────────────────────────────────────── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <MetricCard
-              title="Total Gross Calculated"
-              value={loading ? "—" : fmtPKRCompact(filteredStats.totalGrossCommission)}
-              subtitle="gross production across rules"
-              accent="blue"
-            />
-            <MetricCard
-              title="Active Payees"
-              value={loading ? "—" : `${filteredStats.activePayeesCount} / ${payees.length}`}
-              subtitle="producers, managers & partners"
-              accent="emerald"
-            />
-            <MetricCard
-              title="Pending Liability"
-              value={loading ? "—" : fmtPKRCompact(filteredStats.totalAccruedLiability)}
-              subtitle="accrued awaiting release"
-              accent="amber"
-            />
-            <MetricCard
-              title="Performance Bonuses"
-              value={loading ? "—" : fmtPKRCompact(filteredStats.bonusTotal)}
-              subtitle="volume & persistency qualified"
-              accent="purple"
-            />
-          </div>
 
-          {/* ── 2. Hero 75% / 25% Visual Analytics Split ────────────────────── */}
+          {/* ── ROW 1: Map, Trend & Commission Breakdown ────────────────────── */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
-
-            {/* ── LEFT: Main Column (75%) ──────────────────────────────────── */}
-            <div className="xl:col-span-8 lg:col-span-7 space-y-4">
-
-              {/* Row 1: Regional Heatmap & Time Trend Chart */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <InteractiveMapCard
-                  policies={policies}
-                  claims={claims}
-                  ledger={filteredLedger}
-                  selectedRegion={regionFilter}
-                  onSelectRegion={setRegionFilter}
-                />
-                <TimeTrendChartCard
-                  policies={policies}
-                  claims={claims}
-                  ledger={filteredLedger}
-                />
-              </div>
-
-              {/* Row 2: Milestone Timeline Card (Horizontal Representation) */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
-                      ⚡
-                    </div>
-                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                      Release Pipeline Lifecycle
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                      {stageTotals.tranches} Active Policies
-                    </span>
-                  </div>
-                </div>
-
-                {/* Horizontal Milestone Progress Strip */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-2 pt-1">
-                  {filteredStats.byStage.map((s) => {
-                    const stageName = RELEASE_STAGE_LABELS[s.code] || s.code;
-                    const totalStageNet = s.dueNet + s.releasedNet;
-                    return (
-                      <div key={s.code} className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5 flex flex-col justify-between">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-slate-600 truncate">{stageName}</span>
-                          <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-white rounded border border-slate-200 font-mono">
-                            {s.stages}
-                          </span>
-                        </div>
-                        <div className="text-sm font-extrabold text-slate-900 font-mono">
-                          {fmtPKRCompact(totalStageNet)}
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden flex">
-                          <div className="bg-emerald-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.releasedNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title="Paid" />
-                          <div className="bg-blue-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.dueNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title="Due Now" />
-                        </div>
-                        <div className="flex justify-between text-[9px] text-slate-500 font-medium">
-                          <span>Paid: {fmtPKRCompact(s.releasedNet)}</span>
-                          <span>Due: {fmtPKRCompact(s.dueNet)}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Radial Ratio Callouts */}
-                <div className="flex items-center justify-around bg-slate-50/70 border border-slate-100 rounded-xl p-3">
-                  <div className="flex items-center gap-3">
-                    <RingGauge
-                      value={vestedPct}
-                      strokeHex="#1d4ed8"
-                      label="Released Ratio"
-                      sublabel="Vested"
-                      valueLabel={`${vestedPct}%`}
-                      size={60}
-                      strokeW={6}
-                    />
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">Total Vested Ratio</div>
-                      <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.released)} released</div>
-                    </div>
-                  </div>
-                  <div className="h-8 w-px bg-slate-200" />
-                  <div className="flex items-center gap-3">
-                    <RingGauge
-                      value={duePct}
-                      strokeHex="#3b82f6"
-                      label="Ready to Pay"
-                      sublabel="Due"
-                      valueLabel={`${duePct}%`}
-                      size={60}
-                      strokeW={6}
-                    />
-                    <div>
-                      <div className="text-xs font-bold text-slate-800">Ready for Disbursement</div>
-                      <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.due)} payout ready</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 3: Sales Channel Distribution */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                    Distribution Channel Performance
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    {filteredStats.byChannel.length} Active Channels
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
-                  <div className="flex items-center justify-center p-3 bg-slate-50 border border-slate-100 rounded-xl gap-4">
-                    <RingGauge
-                      value={topChannelPct}
-                      strokeHex="#2563eb"
-                      label="Top Channel"
-                      sublabel="Mix"
-                      valueLabel={`${topChannelPct}%`}
-                      size={70}
-                      strokeW={7}
-                    />
-                    <div>
-                      <div className="text-[10px] font-bold uppercase text-slate-400">Dominant Channel</div>
-                      <div className="text-sm font-extrabold text-slate-900">
-                        {topChannel ? CHANNEL_LABELS[topChannel.channel] || topChannel.channel : "—"}
-                      </div>
-                      <div className="text-xs font-semibold text-blue-600 mt-0.5">
-                        {fmtPKRCompact(topChannel?.net || 0)} Total Net
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2 text-xs">
-                    {filteredStats.byChannel.slice(0, 4).map((c) => {
-                      const pct = channelTotalNet > 0 ? Math.round((c.net / channelTotalNet) * 100) : 0;
-                      const cfg = CHANNEL_CONFIG[c.channel] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-sky-500" };
-                      return (
-                        <div key={c.channel} className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-50/80 border border-slate-100">
-                          <div className={`w-5 h-5 rounded flex items-center justify-center shrink-0 ${cfg.iconBg} ${cfg.iconColor}`}>
-                            {cfg.icon}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex justify-between items-center text-[11px] mb-0.5">
-                              <span className="font-semibold text-slate-700 truncate">{CHANNEL_LABELS[c.channel] || c.channel}</span>
-                              <span className="font-mono font-bold text-slate-900">{fmtPKRCompact(c.net)} ({pct}%)</span>
-                            </div>
-                            <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                              <div className={`h-full ${cfg.barColor} rounded-full`} style={{ width: `${pct}%` }} />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
+            <div className="xl:col-span-8 grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <InteractiveMapCard
+                policies={policies}
+                claims={claims}
+                ledger={filteredLedger}
+                selectedRegion={regionFilter}
+                onSelectRegion={setRegionFilter}
+              />
+              <TimeTrendChartCard
+                policies={policies}
+                claims={claims}
+                ledger={filteredLedger}
+                title="Commission Expense & Payout Trends"
+              />
             </div>
 
-            {/* ── RIGHT: Sidebar (25%) ────────────────────────────────────── */}
-            <div className="xl:col-span-4 lg:col-span-5 space-y-4 flex flex-col justify-between">
+            {/* Payee Role Distribution Card */}
+            <div className="xl:col-span-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex flex-col justify-between">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  Commission Breakdown
+                </h3>
+                <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                  {filteredStats.byPayeeType.length} Roles
+                </span>
+              </div>
 
-              {/* Payee Role Distribution Card */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex-1">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <div className="space-y-2 text-xs flex-1 flex flex-col justify-center">
+                {filteredStats.byPayeeType.map((t) => {
+                  const pct = payeeTotalNet > 0 ? Math.round((t.net / payeeTotalNet) * 100) : 0;
+                  const cfg = PAYEE_CONFIG[t.payeeType] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-purple-500" };
+                  return (
+                    <div key={t.payeeType} className="p-2 bg-slate-50/90 border border-slate-100 rounded-xl space-y-1">
+                      <div className="flex justify-between items-center text-[11px]">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <span className={`w-4 h-4 rounded flex items-center justify-center shrink-0 text-[10px] ${cfg.iconBg} ${cfg.iconColor}`}>
+                            {cfg.icon}
+                          </span>
+                          <span className="font-bold text-slate-800 truncate">{PAYEE_TYPE_LABELS[t.payeeType] || t.payeeType}</span>
+                        </div>
+                        <span className="font-extrabold font-mono text-slate-900 shrink-0">{fmtPKRCompact(t.net)} · {pct}%</span>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                        <div className={`h-full ${cfg.barColor} rounded-full`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* ── ROW 2: Release Pipeline Lifecycle + Financial Reserves & Liabilities ────────────────────── */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-stretch">
+
+            {/* Release Pipeline Lifecycle (8 Cols) */}
+            <div className="xl:col-span-8 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex flex-col justify-between">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-6 h-6 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                    ⚡
+                  </div>
                   <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                    Payee Role Breakdown
+                    Release Pipeline Lifecycle
                   </h3>
-                  <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-                    {filteredStats.byPayeeType.length} Roles
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                    {stageTotals.tranches} Active Policies
                   </span>
                 </div>
+              </div>
 
-                <div className="space-y-2 text-xs">
-                  {filteredStats.byPayeeType.map((t) => {
-                    const pct = payeeTotalNet > 0 ? Math.round((t.net / payeeTotalNet) * 100) : 0;
-                    const cfg = PAYEE_CONFIG[t.payeeType] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-purple-500" };
-                    return (
-                      <div key={t.payeeType} className="p-2 bg-slate-50/90 border border-slate-100 rounded-xl space-y-1">
-                        <div className="flex justify-between items-center text-[11px]">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <span className={`w-4 h-4 rounded flex items-center justify-center shrink-0 text-[10px] ${cfg.iconBg} ${cfg.iconColor}`}>
-                              {cfg.icon}
-                            </span>
-                            <span className="font-bold text-slate-800 truncate">{PAYEE_TYPE_LABELS[t.payeeType] || t.payeeType}</span>
-                          </div>
-                          <span className="font-extrabold font-mono text-slate-900 shrink-0">{fmtPKRCompact(t.net)} · {pct}%</span>
+              {/* Horizontal Milestone Progress Strip */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2 pt-1">
+                {filteredStats.byStage.map((s) => {
+                  const stageName = RELEASE_STAGE_LABELS[s.code] || s.code;
+                  const totalStageNet = s.dueNet + s.releasedNet;
+                  return (
+                    <div key={s.code} className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5 flex flex-col justify-between">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-slate-600 truncate">{stageName}</span>
+                        <span className="text-[9px] font-extrabold px-1.5 py-0.2 bg-white rounded border border-slate-200 font-mono">
+                          {s.stages}
+                        </span>
+                      </div>
+                      <div className="text-sm font-extrabold text-slate-900 font-mono">
+                        {fmtPKRCompact(totalStageNet)}
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden flex">
+                        <div className="bg-emerald-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.releasedNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title="Paid" />
+                        <div className="bg-blue-500 h-full" style={{ width: `${s.dueNet + s.releasedNet > 0 ? (s.dueNet / (s.dueNet + s.releasedNet)) * 100 : 0}%` }} title="Due Now" />
+                      </div>
+                      <div className="flex justify-between text-[9px] text-slate-500 font-medium">
+                        <span>Paid: {fmtPKRCompact(s.releasedNet)}</span>
+                        <span>Due: {fmtPKRCompact(s.dueNet)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Radial Ratio Callouts */}
+              <div className="flex items-center justify-around bg-slate-50/70 border border-slate-100 rounded-xl p-3">
+                <div className="flex items-center gap-3">
+                  <RingGauge
+                    value={vestedPct}
+                    strokeHex="#1d4ed8"
+                    label="Released Ratio"
+                    sublabel="Vested"
+                    valueLabel={`${vestedPct}%`}
+                    size={60}
+                    strokeW={6}
+                  />
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">Total Vested Ratio</div>
+                    <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.released)} released</div>
+                  </div>
+                </div>
+                <div className="h-8 w-px bg-slate-200" />
+                <div className="flex items-center gap-3">
+                  <RingGauge
+                    value={duePct}
+                    strokeHex="#3b82f6"
+                    label="Ready to Pay"
+                    sublabel="Due"
+                    valueLabel={`${duePct}%`}
+                    size={60}
+                    strokeW={6}
+                  />
+                  <div>
+                    <div className="text-xs font-bold text-slate-800">Ready for Disbursement</div>
+                    <div className="text-[10px] text-slate-500">{fmtPKRCompact(stageTotals.due)} payout ready</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Financial Reserves & Liabilities (4 Cols) */}
+            <div className="xl:col-span-4 bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex flex-col justify-between">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                  Financial Reserves &amp; Liabilities
+                </h3>
+                <span className="text-[10px] font-bold text-slate-400">Live Accruals</span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5 text-xs flex-1 items-center">
+                <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-0.5">
+                  <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wide">Processing Payments</div>
+                  <div className="text-sm font-extrabold text-blue-800 font-mono">{fmtPKRCompact(filteredStats.totalInRun)}</div>
+                  <div className="text-[9px] text-blue-600">Active payout runs</div>
+                </div>
+
+                <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl space-y-0.5">
+                  <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">Withheld Tax</div>
+                  <div className="text-sm font-extrabold text-amber-800 font-mono">{fmtPKRCompact(filteredStats.totalWithheldTax)}</div>
+                  <div className="text-[9px] text-amber-600">Tax withheld for FBR</div>
+                </div>
+
+                <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-0.5">
+                  <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wide">Team Overrides</div>
+                  <div className="text-sm font-extrabold text-purple-800 font-mono">{fmtPKRCompact(filteredStats.overrideTotal)}</div>
+                  <div className="text-[9px] text-purple-600">Manager overrides</div>
+                </div>
+
+                <div className="p-3 bg-rose-50/60 border border-rose-100 rounded-xl space-y-0.5">
+                  <div className="text-[10px] font-bold text-rose-900 uppercase tracking-wide">Clawbacks</div>
+                  <div className="text-sm font-extrabold text-rose-800 font-mono">{fmtPKRCompact(filteredStats.totalClawbacks)}</div>
+                  <div className="text-[9px] text-rose-600">Lapse reversals</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── ROW 3: Sales Channel Distribution ────────────────────── */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                Distribution Channel Performance
+              </h3>
+              <span className="text-[10px] font-bold text-slate-400">
+                {filteredStats.byChannel.length} Active Channels
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+              <div className="lg:col-span-4 xl:col-span-3 flex items-center justify-start p-3 bg-slate-50 border border-slate-100 rounded-xl gap-4">
+                <RingGauge
+                  value={topChannelPct}
+                  strokeHex="#2563eb"
+                  label="Top Channel"
+                  sublabel="Mix"
+                  valueLabel={`${topChannelPct}%`}
+                  size={64}
+                  strokeW={6}
+                />
+                <div>
+                  <div className="text-[10px] font-bold uppercase text-slate-400">Dominant Channel</div>
+                  <div className="text-sm font-extrabold text-slate-900">
+                    {topChannel ? CHANNEL_LABELS[topChannel.channel] || topChannel.channel : "—"}
+                  </div>
+                  <div className="text-xs font-semibold text-blue-600 mt-0.5">
+                    {fmtPKRCompact(topChannel?.net || 0)} Total Net
+                  </div>
+                </div>
+              </div>
+
+              <div className="lg:col-span-8 xl:col-span-9 grid grid-cols-1 md:grid-cols-2 gap-2.5 text-xs">
+                {filteredStats.byChannel.map((c) => {
+                  const pct = channelTotalNet > 0 ? Math.round((c.net / channelTotalNet) * 100) : 0;
+                  const cfg = CHANNEL_CONFIG[c.channel] || { icon: AgentIcon, iconBg: "bg-slate-50", iconColor: "text-slate-600", barColor: "bg-sky-500" };
+                  return (
+                    <div key={c.channel} className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50/80 border border-slate-100">
+                      <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${cfg.iconBg} ${cfg.iconColor}`}>
+                        {cfg.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center text-[11px] mb-1">
+                          <span className="font-semibold text-slate-700 truncate">{CHANNEL_LABELS[c.channel] || c.channel}</span>
+                          <span className="font-mono font-bold text-slate-900">{fmtPKRCompact(c.net)} ({pct}%)</span>
                         </div>
                         <div className="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
                           <div className={`h-full ${cfg.barColor} rounded-full`} style={{ width: `${pct}%` }} />
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* 2x2 Financial Liabilities Quadrant Grid */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex-1">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                    Financial Reserves &amp; Liabilities
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-400">Live Accruals</span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2.5 text-xs">
-                  <div className="p-3 bg-blue-50/60 border border-blue-100 rounded-xl space-y-0.5">
-                    <div className="text-[10px] font-bold text-blue-900 uppercase tracking-wide">Processing Payments</div>
-                    <div className="text-sm font-extrabold text-blue-800 font-mono">{fmtPKRCompact(filteredStats.totalInRun)}</div>
-                    <div className="text-[9px] text-blue-600">Active payout runs</div>
-                  </div>
-
-                  <div className="p-3 bg-amber-50/60 border border-amber-100 rounded-xl space-y-0.5">
-                    <div className="text-[10px] font-bold text-amber-900 uppercase tracking-wide">Withheld Tax</div>
-                    <div className="text-sm font-extrabold text-amber-800 font-mono">{fmtPKRCompact(filteredStats.totalWithheldTax)}</div>
-                    <div className="text-[9px] text-amber-600">Tax withheld for FBR</div>
-                  </div>
-
-                  <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-xl space-y-0.5">
-                    <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wide">Team Overrides</div>
-                    <div className="text-sm font-extrabold text-purple-800 font-mono">{fmtPKRCompact(filteredStats.overrideTotal)}</div>
-                    <div className="text-[9px] text-purple-600">Manager overrides</div>
-                  </div>
-
-                  <div className="p-3 bg-rose-50/60 border border-rose-100 rounded-xl space-y-0.5">
-                    <div className="text-[10px] font-bold text-rose-900 uppercase tracking-wide">Clawbacks</div>
-                    <div className="text-sm font-extrabold text-rose-800 font-mono">{fmtPKRCompact(filteredStats.totalClawbacks)}</div>
-                    <div className="text-[9px] text-rose-600">Lapse reversals</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Commission Audit Feed */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3 flex-1">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                    Outstanding Audit Log
-                  </h3>
-                  <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
-                    {outstanding.length} Pending
-                  </span>
-                </div>
-
-                <div className="max-h-48 overflow-y-auto space-y-2 text-xs pr-1">
-                  {outstanding.slice(0, 10).map((entry) => (
-                    <div key={entry.id} className="p-2 bg-slate-50 border border-slate-100 rounded-xl flex justify-between items-center">
-                      <div className="min-w-0 flex-1">
-                        <div className="font-bold text-slate-800 text-[11px] truncate">{entry.payeeName}</div>
-                        <div className="text-[10px] text-slate-500 font-mono">Pol #{entry.policyNumber}</div>
-                      </div>
-                      <div className="text-right shrink-0">
-                        <div className="font-extrabold text-slate-900 font-mono text-[11px]">{fmtPKRCompact(entry.pendingNet)}</div>
-                        <StatusPill status={entry.status} />
-                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-
             </div>
-
           </div>
 
         </div>

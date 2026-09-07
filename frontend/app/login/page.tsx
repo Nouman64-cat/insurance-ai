@@ -72,7 +72,7 @@ export default function LoginPage() {
       api.defaults.headers.common["X-Tenant-Id"] = userTenantId;
 
       // Redirect to the dashboard
-      router.push("/");
+      window.location.href = "/";
     } catch (err: any) {
       setError(
         err.response?.data?.detail ??

@@ -55,7 +55,7 @@ export function UnderwritingCard({ policies, claims, policyStats, riskIndex }: U
   return (
     <PillarCard
       icon={<ShieldIcon />}
-      title="Underwriting Intelligence"
+      title="Underwriting Risk"
       barClass="bg-blue-600"
       iconBg="bg-blue-50"
       iconColor="text-blue-600"

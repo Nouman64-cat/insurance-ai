@@ -158,17 +158,12 @@ export default function DashboardPage() {
     <div className="px-6 py-4 max-w-screen-2xl mx-auto w-full space-y-4">
 
       {/* ── Executive Navigation Header Bar ───────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-lg font-bold tracking-tight text-slate-900">Executive Overview</h1>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live AI Suite Active
-            </span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Real-time Underwriting, Claims Performance &amp; Portfolio Analytics
-          </p>
+      <div className="flex flex-row justify-between items-center gap-3 bg-white px-4 py-3 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-center gap-2.5 shrink-0">
+          <h1 className="text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap">Executive Overview</h1>
+          {/* <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 whitespace-nowrap">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> Live AI Suite Active
+          </span> */}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           <RegionFilter regions={regions} value={regionFilter} onChange={setRegionFilter} />
@@ -187,19 +182,6 @@ export default function DashboardPage() {
         {/* ── LEFT: Main analytics column (75% width) ───────────────────── */}
         <div className="xl:col-span-9 lg:col-span-8 flex flex-col justify-between gap-4">
 
-          {/* KPI Strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {KPIs.map((k) => (
-              <MetricCard
-                key={k.title}
-                title={k.title}
-                value={loading ? "—" : k.value}
-                subtitle={k.subtitle}
-                accent={k.accent}
-              />
-            ))}
-          </div>
-
           {/* Row 1: Map + Time Trend */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <InteractiveMapCard
@@ -213,6 +195,7 @@ export default function DashboardPage() {
               policies={filteredPolicies}
               claims={filteredClaims}
               ledger={filteredLedger}
+              title="Revenue & Loss Trends"
             />
           </div>
 
