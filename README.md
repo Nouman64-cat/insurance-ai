@@ -94,17 +94,66 @@ This pulls base images, installs dependencies, and starts all containers. Takes 
 
 On first boot, `tenant-service` connects to your external PostgreSQL via `DATABASE_URL` and runs its migrations automatically (`migrate.py`, via the FastAPI lifespan) — check `docker compose logs tenant-service` for `all migrations complete` if a service fails to come up healthy.
 
-**3. Create your first tenant**
+**3. Create the platform SuperAdmin**
 
-The platform is multi-tenant. Every request requires a valid `X-Tenant-Id` header. Create one tenant to get started:
+Tenant creation and Admin bootstrap are gated behind a **SuperAdmin** — a platform-level operator attached to a reserved `"Platform"` tenant. Create one with the bootstrap CLI (run inside the `tenant-service` container):
 
 ```bash
-curl -s -X POST "http://localhost:8010/tenants?name=Acme+Insurance" | python3 -m json.tool
+docker compose exec tenant-service python create_superadmin.py --email you@yourdomain.com
 ```
 
-Copy the `id` from the response — you will pass it as `X-Tenant-Id` in every subsequent request.
+Only `--email` is required. Nothing is taken from the email — the display name is a random single word (e.g. `Riley`), the username is that word plus random digits (e.g. `riley4821`), and a secure password is auto-generated. Optional overrides: `--username`, `--first-name`, `--last-name`, `--password`.
 
-**4. Start the Kafka consumer daemon**
+The credentials are printed to stdout (and best-effort emailed via SES — `emailed: no` just means email isn't configured; the account still exists). Re-running is safe: it reuses the `"Platform"` tenant and `SuperAdmin` role, and errors if the email/username is already taken.
+
+```
+SuperAdmin created:
+  email:    you@yourdomain.com
+  username: riley4821
+  name:     Riley
+  password: <generated>
+```
+
+**4. Create your first tenant**
+
+The platform is multi-tenant. Every request requires a valid `X-Tenant-Id` header. Log in as the SuperAdmin to get a JWT, then create a tenant:
+
+```bash
+# Log in (form-encoded; "username" is the SuperAdmin email)
+TOKEN=$(curl -s -X POST http://localhost:8010/auth/token \
+  -d "username=you@yourdomain.com" \
+  -d "password=<superadmin-password>" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# Create a tenant (name + alphanumeric code both required)
+curl -s -X POST http://localhost:8010/tenants \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Acme Insurance", "code": "ACME"}' | python3 -m json.tool
+```
+
+Copy the `id` from the response — you pass it as `X-Tenant-Id` in every subsequent request.
+
+To bootstrap that tenant's first Admin user (all calls use the SuperAdmin `$TOKEN`):
+
+```bash
+TENANT_ID=<id-from-above>
+
+# a) create a branch the Admin will belong to
+BRANCH_ID=$(curl -s -X POST http://localhost:8010/tenants/$TENANT_ID/branches \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"branch_code": "HQ", "name": "Head Office", "city": "Karachi"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+
+# b) create the first Admin (username + password are generated and emailed / returned)
+curl -s -X POST http://localhost:8010/tenants/$TENANT_ID/setup \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d "{\"email\": \"admin@acme.com\", \"full_name\": \"Acme Admin\", \"branch_id\": \"$BRANCH_ID\"}" \
+  | python3 -m json.tool
+```
+
+After that, the Admin logs in via `POST /auth/token` and manages users normally.
+
+**5. Start the Kafka consumer daemon**
 
 The Risk Engine exposes a Kafka consumer that processes async proposals. Run it in a separate terminal:
 
@@ -120,7 +169,7 @@ INFO  consumer started — polling insurance.proposal.submitted.v1
 
 Leave this running. It polls continuously and publishes results to `insurance.risk.evaluated.v1`.
 
-**5. Verify everything is up**
+**6. Verify everything is up**
 
 | URL                          | Expected response                                    |
 | ---------------------------- | ---------------------------------------------------- |
@@ -363,6 +412,9 @@ docker compose up --build api-gateway risk-engine -d
 
 # Start the Kafka consumer (in a separate terminal)
 docker compose exec risk-engine python consumer.py
+
+# Create a platform SuperAdmin (tenant / admin bootstrap operator)
+docker compose exec tenant-service python create_superadmin.py --email you@yourdomain.com
 
 # Watch logs for one service
 docker compose logs -f risk-engine

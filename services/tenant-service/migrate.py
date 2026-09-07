@@ -916,8 +916,16 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ALTER TABLE business_rules ADD COLUMN IF NOT EXISTS eligibility_criteria VARCHAR(1000)",
     ),
     (
-        "v42 — add REINSURANCE to ruledomainenum",
-        "ALTER TYPE ruledomainenum ADD VALUE IF NOT EXISTS 'REINSURANCE'",
+        # ruledomainenum belonged to the pre-v2.1 flat rule schema. On databases
+        # that never had that column (or had it dropped by v44b) the type is
+        # absent, and a bare ALTER TYPE aborts startup with UndefinedObjectError.
+        # Guard it so a missing type is a no-op — rule domains are now modelled by
+        # the rule_categories / rule_subcategories hierarchy.
+        "v42 — add REINSURANCE to ruledomainenum (if it still exists)",
+        "DO $$ BEGIN "
+        "ALTER TYPE ruledomainenum ADD VALUE IF NOT EXISTS 'REINSURANCE'; "
+        "EXCEPTION WHEN undefined_object THEN NULL; "
+        "END $$;",
     ),
     # ── Rule engine v2.1 — 6-tier hierarchy, typed impacts, grouped criteria ──
     # New columns are added nullable here; _migrate_rule_engine_v2() backfills

@@ -16,9 +16,13 @@ from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
+from services.email_templates import credentials_email
+
 log = logging.getLogger(__name__)
 
 EMAIL_PROVIDER = os.environ.get("EMAIL_PROVIDER", "")
+# Where the credentials email's "Sign in" button points.
+APP_LOGIN_URL = os.environ.get("APP_LOGIN_URL", "http://localhost:3000/login")
 AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
 SES_FROM_EMAIL = os.environ.get("AWS_SES_FROM_EMAIL", "")
 SES_USERNAME = os.environ.get("AWS_SES_USERNAME", "")
@@ -90,27 +94,13 @@ async def send_credentials_email(
     tenant_name: str | None = None,
 ) -> bool:
     """Emails a newly created account's login credentials."""
-    scope = f"for **{tenant_name}**" if tenant_name else "on the platform"
-    subject = f"Your insurance-ai {role_label} account"
-
-    text_body = (
-        f"Hi {full_name},\n\n"
-        f"An {role_label} account has been created for you {scope.replace('**', '')}.\n\n"
-        f"Username: {username}\n"
-        f"Email:    {to_email}\n"
-        f"Password: {password}\n\n"
-        "Please log in and change your password as soon as possible.\n\n"
-        "— insurance-ai"
+    subject, text_body, html_body = credentials_email(
+        full_name=full_name,
+        email=to_email,
+        username=username,
+        password=password,
+        role_label=role_label,
+        tenant_name=tenant_name,
+        login_url=APP_LOGIN_URL,
     )
-    html_body = f"""
-    <p>Hi {full_name},</p>
-    <p>An <strong>{role_label}</strong> account has been created for you {scope}.</p>
-    <table cellpadding="4">
-      <tr><td><strong>Username</strong></td><td>{username}</td></tr>
-      <tr><td><strong>Email</strong></td><td>{to_email}</td></tr>
-      <tr><td><strong>Password</strong></td><td>{password}</td></tr>
-    </table>
-    <p>Please log in and change your password as soon as possible.</p>
-    <p>— insurance-ai</p>
-    """
     return await send_email(to_email, subject, text_body, html_body)
