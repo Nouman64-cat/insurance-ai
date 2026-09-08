@@ -1,22 +1,27 @@
 import asyncio
-import base64
 import json
+import logging
 import os
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from fastapi.responses import StreamingResponse
-import google.generativeai as genai
+
+import llm_provider
+from llm_provider import NoProviderConfigured, PdfProviderUnavailable
+
+log = logging.getLogger("ocr-engine")
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
 
-async def _record_token_usage(usage_dict: dict):
+async def _record_token_usage(usage_dict: dict, model_name: str = "unknown"):
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
                 f"{TENANT_SERVICE_URL}/tokens/usage",
                 json={
                     "service_name": "OCR Engine",
+                    "model_name": model_name,
                     "input_tokens": usage_dict["input"],
                     "output_tokens": usage_dict["output"],
                     "total_tokens": usage_dict["total"]
@@ -26,12 +31,6 @@ async def _record_token_usage(usage_dict: dict):
     except Exception as e:
         print(f"Failed to record token usage: {e}")
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY environment variable is not set")
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
 # this is System prompt
 
 OCR_PROMPT = (
@@ -88,76 +87,100 @@ app.add_middleware(
 )
 
 
-def _run_ocr(file_bytes: bytes, mime_type: str) -> dict:
-    response = model.generate_content([
-        OCR_PROMPT,
-        {"mime_type": mime_type, "data": base64.b64encode(file_bytes).decode()},
-    ])
-    usage = response.usage_metadata
-    return {
-        "text": response.text,
-        "token_usage": {
-            "input": usage.prompt_token_count,
-            "output": usage.candidates_token_count,
-            "total": usage.total_token_count,
-        },
-    }
+def _text_of(content) -> str:
+    """LangChain message content is str for these providers, but be defensive."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "") for b in content if isinstance(b, dict)
+        )
+    return str(content or "")
+
+
+async def _run_ocr(file_bytes: bytes, mime_type: str) -> dict:
+    """Run OCR against the configured primary model, failing over to the
+    fallback on error. Raises PdfProviderUnavailable / NoProviderConfigured."""
+    cfg = await llm_provider.resolve()
+    chain, dropped_for_pdf = llm_provider.provider_chain(cfg, mime_type)
+
+    last_exc: Exception | None = None
+    for entry in chain:
+        try:
+            model = llm_provider.build_model(entry)
+            messages = llm_provider.messages_for(entry, OCR_PROMPT, file_bytes, mime_type)
+            response = await model.ainvoke(messages)
+            return {
+                "text": _text_of(response.content),
+                "token_usage": llm_provider.usage_of(response),
+                "model_name": llm_provider.model_of(response),
+            }
+        except (PdfProviderUnavailable, NoProviderConfigured):
+            raise
+        except Exception as exc:  # noqa: BLE001 — try the next provider
+            last_exc = exc
+            log.warning("OCR via %s failed: %s", entry.get("provider"), exc)
+    if dropped_for_pdf:
+        raise PdfProviderUnavailable(
+            f"PDF OCR failed on the PDF-capable provider(s) ({last_exc}) and the "
+            "configured fallback (OpenAI) can't read PDFs. Fix the primary "
+            "provider or set a Gemini/Anthropic fallback in Platform → LLM "
+            "Configuration."
+        )
+    raise RuntimeError(f"All OCR providers failed. Last error: {last_exc}")
 
 
 async def _stream_ocr_sse(file_bytes: bytes, mime_type: str):
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue()
-
-    def run_gemini():
-        try:
-            encoded = base64.b64encode(file_bytes).decode()
-            response = model.generate_content(
-                [OCR_PROMPT, {"mime_type": mime_type, "data": encoded}],
-                stream=True,
-            )
-            for chunk in response:
-                if chunk.text:
-                    loop.call_soon_threadsafe(
-                        queue.put_nowait, {"type": "chunk", "text": chunk.text}
-                    )
-            usage = response.usage_metadata
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                {
-                    "type": "done",
-                    "token_usage": {
-                        "input": usage.prompt_token_count,
-                        "output": usage.candidates_token_count,
-                        "total": usage.total_token_count,
-                    },
-                },
-            )
-            loop.create_task(_record_token_usage({
-                "input": usage.prompt_token_count,
-                "output": usage.candidates_token_count,
-                "total": usage.total_token_count,
-            }))
-        except Exception as exc:
-            loop.call_soon_threadsafe(
-                queue.put_nowait, {"type": "error", "message": str(exc)}
-            )
-        finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)
-
-    fut = loop.run_in_executor(None, run_gemini)
     try:
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            yield f"data: {json.dumps(item)}\n\n"
-    finally:
-        await fut
+        cfg = await llm_provider.resolve()
+        chain, dropped_for_pdf = llm_provider.provider_chain(cfg, mime_type)
+    except (PdfProviderUnavailable, NoProviderConfigured) as exc:
+        yield f"data: {json.dumps({'type': 'error', 'message': str(exc)})}\n\n"
+        return
+
+    last_exc: Exception | None = None
+    for idx, entry in enumerate(chain):
+        try:
+            model = llm_provider.build_model(entry, streaming=True)
+            messages = llm_provider.messages_for(entry, OCR_PROMPT, file_bytes, mime_type)
+            final = None
+            async for chunk in model.astream(messages):
+                text = _text_of(chunk.content)
+                if text:
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': text})}\n\n"
+                final = chunk if final is None else (final + chunk)
+            usage = llm_provider.usage_of(final)
+            model_name = llm_provider.model_of(final)
+            yield f"data: {json.dumps({'type': 'done', 'token_usage': usage})}\n\n"
+            asyncio.create_task(_record_token_usage(usage, model_name))
+            return
+        except Exception as exc:  # noqa: BLE001 — fail over, or report if last
+            last_exc = exc
+            log.warning("OCR stream via %s failed: %s", entry.get("provider"), exc)
+            if idx == len(chain) - 1:
+                msg = str(exc)
+                if dropped_for_pdf:
+                    msg = (
+                        f"PDF OCR failed ({exc}) and the configured fallback (OpenAI) "
+                        "can't read PDFs — set a Gemini/Anthropic fallback in "
+                        "Platform → LLM Configuration."
+                    )
+                yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "engine": "Gemini 2.5 Flash", "model": "gemini-2.5-flash"}
+    try:
+        cfg = await llm_provider.resolve()
+        primary = (cfg.get("primary") or {})
+        fallback = (cfg.get("fallback") or {})
+        return {
+            "status": "healthy",
+            "primary": f"{primary.get('provider')}/{primary.get('model')}",
+            "fallback": f"{fallback.get('provider')}/{fallback.get('model')}" if fallback else None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "healthy", "config_error": str(exc)}
 
 
 @app.post("/extract")
@@ -174,13 +197,17 @@ async def extract_text(file: UploadFile = File(...)):
     mime_type = MIME_MAP[file_ext]
 
     try:
-        result = _run_ocr(file_bytes, mime_type)
-        asyncio.create_task(_record_token_usage(result["token_usage"]))
+        result = await _run_ocr(file_bytes, mime_type)
+        asyncio.create_task(_record_token_usage(result["token_usage"], result["model_name"]))
         return {
             "filename": file.filename,
             "extracted_text": result["text"],
             "token_usage": result["token_usage"],
         }
+    except PdfProviderUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NoProviderConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR Processing Error: {str(e)}")
 
@@ -225,8 +252,8 @@ async def extract_text_from_path(input_path: str, output_path: str | None = None
         with open(input_path, "rb") as f:
             file_bytes = f.read()
 
-        result = _run_ocr(file_bytes, mime_type)
-        asyncio.create_task(_record_token_usage(result["token_usage"]))
+        result = await _run_ocr(file_bytes, mime_type)
+        asyncio.create_task(_record_token_usage(result["token_usage"], result["model_name"]))
 
         if output_path:
             os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -240,5 +267,9 @@ async def extract_text_from_path(input_path: str, output_path: str | None = None
             "extracted_text": result["text"],
             "token_usage": result["token_usage"],
         }
+    except PdfProviderUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NoProviderConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

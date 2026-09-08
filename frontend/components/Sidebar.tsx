@@ -365,6 +365,19 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
+        href: "/super-admin/llm-config",
+        label: "LLM Configuration",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <rect x="4" y="4" width="16" height="16" rx="2" />
+            <path d="M9 9h6v6H9z" />
+            <path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
         href: "/profile",
         label: "Profile",
         icon: (
@@ -592,7 +605,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
-  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens", "/super-admin/llm-config"];
 
   const displayGroups = (userRole === "SuperAdmin"
     ? [

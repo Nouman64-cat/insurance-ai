@@ -808,6 +808,18 @@ async def proxy_tokens_usage(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tokens/usage")
 
 
+# Platform LLM provider config (SuperAdmin). The tenant-service enforces the
+# SuperAdmin JWT; the gateway only forwards. `/internal/llm-config` is
+# deliberately NOT proxied — services reach it directly on the docker network.
+@app.api_route(
+    "/platform/llm-config{path:path}",
+    methods=["GET", "PUT", "POST", "OPTIONS"],
+    include_in_schema=False,
+)
+async def proxy_platform_llm_config(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/platform/llm-config{path}")
+
+
 @app.api_route("/agent/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"], include_in_schema=False)
 async def proxy_agent(path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/agent/{path}")

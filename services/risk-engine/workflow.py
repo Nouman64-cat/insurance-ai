@@ -5,13 +5,14 @@ import os
 from typing import Any, Dict, List, Optional
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.graph import END, START, StateGraph
 from neo4j import GraphDatabase
 from neo4j import exceptions as neo4j_exc
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
+import usage
+from llm import structured_llm
 from underwriting_rules import check_plan_rules
 
 logger = logging.getLogger(__name__)
@@ -51,16 +52,9 @@ class RiskState(TypedDict):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# LLM helper
+# LLM helper — see llm.py. structured_llm() returns a Gemini structured-output
+# runnable that transparently fails over to OpenAI when OPENAI_API_KEY is set.
 # ─────────────────────────────────────────────────────────────────────────────
-
-def _llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0.1,
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-    )
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # LLM output schemas
@@ -115,7 +109,7 @@ def validate_input(state: RiskState) -> Dict[str, Any]:
 def medical_scoring(state: RiskState) -> Dict[str, Any]:
     customer = state["customer"]
     e_app = state.get("e_application")
-    structured_llm = _llm().with_structured_output(MedicalScoreOutput)
+    model = structured_llm(MedicalScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert life insurance medical underwriter.
          Evaluate the following customer's baseline medical and lifestyle risk based on:
@@ -132,7 +126,9 @@ def medical_scoring(state: RiskState) -> Dict[str, Any]:
          Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user", "Customer Data: {customer}\n\nE-Application Disclosures: {e_app}")
     ])
-    result = (prompt | structured_llm).invoke({"customer": customer, "e_app": e_app or "None provided"})
+    raw = (prompt | model).invoke({"customer": customer, "e_app": e_app or "None provided"})
+    usage.record(raw["raw"], tenant_id=state.get("tenant_id"))
+    result = raw["parsed"]
     medical_reasons = [r.dict() for r in result.medical_reasons]
     return {"medical_score": result.medical_score, "medical_reasons": medical_reasons}
 
@@ -141,7 +137,7 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
     customer = state["customer"]
     policy = state["policy"]
     acr = state.get("acr")
-    structured_llm = _llm().with_structured_output(FinancialScoreOutput)
+    model = structured_llm(FinancialScoreOutput)
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert insurance financial underwriter.
          Assess the financial risk of this customer based on:
@@ -154,7 +150,9 @@ def financial_scoring(state: RiskState) -> Dict[str, Any]:
          Provide structured risk factors including the parameter, observation, and risk rating."""),
         ("user", "Customer: {customer}\nPolicy: {policy}\n\nAgent Confidential Report (ACR): {acr}")
     ])
-    result = (prompt | structured_llm).invoke({"customer": customer, "policy": policy, "acr": acr or "None provided"})
+    raw = (prompt | model).invoke({"customer": customer, "policy": policy, "acr": acr or "None provided"})
+    usage.record(raw["raw"], tenant_id=state.get("tenant_id"))
+    result = raw["parsed"]
     financial_reasons = [r.dict() for r in result.financial_reasons]
     return {"financial_score": result.financial_score, "financial_reasons": financial_reasons}
 
@@ -274,8 +272,8 @@ def fraud_check(state: RiskState) -> Dict[str, Any]:
 
     comp_screening = state.get("compliance_screening")
 
-    # ── 3. LLM evaluation with Gemini ─────────────────────────────────────────
-    structured_llm = _llm().with_structured_output(FraudScoreOutput)
+    # ── 3. LLM evaluation (Gemini, → OpenAI on failure) ───────────────────────
+    model = structured_llm(FraudScoreOutput)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are a senior insurance fraud investigator specialising in network-based fraud rings and compliance screening.
@@ -304,12 +302,14 @@ Provide structured risk factors including the parameter, observation, and risk r
          "=== MEMGRAPH RING INTELLIGENCE ===\n{graph_summary}"),
     ])
 
-    result = (prompt | structured_llm).invoke({
+    raw = (prompt | model).invoke({
         "customer":       customer,
         "policy":          policy,
         "comp_screening":  comp_screening or "None provided",
         "graph_summary":   graph_summary,
     })
+    usage.record(raw["raw"], tenant_id=state.get("tenant_id"))
+    result = raw["parsed"]
 
     fraud_reasons = [r.dict() for r in result.fraud_reasons]
     return {

@@ -27,6 +27,17 @@ SERVICE_CHAT_AGENT = "Chat Agent"
 SERVICE_PLAN_ADVISOR = "Chat Agent — Plan Advisor"
 
 
+def model_from_response(response: Any) -> Optional[str]:
+    """The model id a provider actually served this call with.
+
+    Providers hang it in different places: Gemini/OpenAI use
+    response_metadata["model_name"] (OpenAI's is date-suffixed, e.g.
+    "gpt-4o-mini-2024-07-18"), Anthropic uses response_metadata["model"].
+    """
+    md = getattr(response, "response_metadata", None) or {}
+    return md.get("model_name") or md.get("model") or md.get("model_id")
+
+
 def extract_usage(response: Any) -> Optional[dict[str, int]]:
     """Pull token counts off a LangChain AIMessage.
 
@@ -99,7 +110,7 @@ def record(
 
     payload = {
         "service_name": service_name,
-        "model_name": model_name or os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+        "model_name": model_name or model_from_response(response) or "unknown",
         "tenant_id": tenant_id or None,
         "thread_id": thread_id,
         **usage,

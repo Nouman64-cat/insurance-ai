@@ -1,44 +1,43 @@
 import json
 import os
 import asyncio
+import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import httpx
-import google.generativeai as genai
+
+import llm_provider
+from llm_provider import NoProviderConfigured
+
+log = logging.getLogger("text-summarizer")
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
 
-async def _record_token_usage(usage_dict: dict):
+
+async def _record_token_usage(usage_dict: dict, model_name: str = "unknown"):
     try:
         async with httpx.AsyncClient() as client:
             await client.post(
                 f"{TENANT_SERVICE_URL}/tokens/usage",
                 json={
                     "service_name": "Text Summarizer",
+                    "model_name": model_name,
                     "input_tokens": usage_dict["input"],
                     "output_tokens": usage_dict["output"],
-                    "total_tokens": usage_dict["total"]
+                    "total_tokens": usage_dict["total"],
                 },
-                timeout=5.0
+                timeout=5.0,
             )
     except Exception as e:
         print(f"Failed to record token usage: {e}")
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    raise RuntimeError("GEMINI_API_KEY environment variable is not set")
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
 
 app = FastAPI(
     title="Text Summarizer Service",
-    description="Microservice for summarizing OCR-extracted text using Gemini 2.5 Flash.",
-    version="1.0.0",
+    description="Summarizes OCR-extracted text using the platform's configured LLM (primary + fallback).",
+    version="2.0.0",
 )
 
 app.add_middleware(
@@ -56,9 +55,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 class SummarizeRequest(BaseModel):
-    documents: list[str]  # Updated to accept a list of strings
+    documents: list[str]
     max_words: int | None = None
+
 
 class UnderwriterNoteRequest(BaseModel):
     """Structured case context used to draft a concise underwriter note.
@@ -67,21 +68,16 @@ class UnderwriterNoteRequest(BaseModel):
     context: str
     max_words: int | None = 90
 
+
 class TokenUsage(BaseModel):
     input: int
     output: int
     total: int
 
+
 class SummarizeResponse(BaseModel):
     summary: str
     token_usage: TokenUsage
-
-SAFETY_SETTINGS = {
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-}
 
 
 def _build_prompt(request: SummarizeRequest) -> str:
@@ -110,9 +106,7 @@ def _build_underwriting_prompt(request: SummarizeRequest) -> str:
     """Same input shape as _build_prompt, but organizes the output by
     underwriting concern (Medical / Financial / Occupational) instead of by
     source document — this is what feeds RiskAssessment.ai_summary from the
-    Case Detail workbench, so an underwriter reading it wants "what does this
-    customer's paperwork say about their medical/financial/occupational
-    risk", not a per-document index.
+    Case Detail workbench.
     """
     prompt = (
         f"You are an expert life insurance underwriter. You have {len(request.documents)} OCR-extracted "
@@ -142,8 +136,8 @@ def _build_underwriting_prompt(request: SummarizeRequest) -> str:
 
 def _build_underwriter_note_prompt(request: UnderwriterNoteRequest) -> str:
     """Draft a short, human-sounding internal underwriter note from the case
-    context. The output is plain prose (no markdown) so it drops straight into
-    the notes textarea for the underwriter to review and edit before posting."""
+    context. Plain prose (no markdown) so it drops straight into the notes
+    textarea for the underwriter to review and edit before posting."""
     max_words = request.max_words or 90
     return (
         "You are an experienced life insurance underwriter writing a brief internal "
@@ -157,100 +151,51 @@ def _build_underwriter_note_prompt(request: UnderwriterNoteRequest) -> str:
     )
 
 
-async def _stream_summarize_sse(prompt: str):
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue = asyncio.Queue()
-
-    def run_gemini():
-        try:
-            response = model.generate_content(
-                prompt, safety_settings=SAFETY_SETTINGS, stream=True
-            )
-            for chunk in response:
-                if chunk.text:
-                    loop.call_soon_threadsafe(
-                        queue.put_nowait, {"type": "chunk", "text": chunk.text}
-                    )
-            usage = response.usage_metadata
-            loop.call_soon_threadsafe(
-                queue.put_nowait,
-                {
-                    "type": "done",
-                    "token_usage": {
-                        "input": usage.prompt_token_count,
-                        "output": usage.candidates_token_count,
-                        "total": usage.total_token_count,
-                    },
-                },
-            )
-            loop.create_task(_record_token_usage({
-                "input": usage.prompt_token_count,
-                "output": usage.candidates_token_count,
-                "total": usage.total_token_count,
-            }))
-        except Exception as exc:
-            loop.call_soon_threadsafe(
-                queue.put_nowait, {"type": "error", "message": str(exc)}
-            )
-        finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)
-
-    fut = loop.run_in_executor(None, run_gemini)
+async def _summarize(prompt: str, *, strip: bool = False) -> SummarizeResponse:
     try:
-        while True:
-            item = await queue.get()
-            if item is None:
-                break
-            yield f"data: {json.dumps(item)}\n\n"
-    finally:
-        await fut
+        result = await llm_provider.run(prompt)
+    except NoProviderConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        msg = str(e) or "Unknown error during summarization"
+        raise HTTPException(status_code=500, detail=f"Summarization error: {msg}")
+
+    usage = result["usage"]
+    asyncio.create_task(_record_token_usage(usage, result["model_name"]))
+    summary = result["text"].strip() if strip else result["text"]
+    return SummarizeResponse(summary=summary, token_usage=TokenUsage(**usage))
+
+
+async def _stream_summarize_sse(prompt: str):
+    async for ev in llm_provider.stream(prompt):
+        if ev.get("type") == "done":
+            asyncio.create_task(
+                _record_token_usage(ev["token_usage"], ev.get("model_name", "unknown"))
+            )
+            ev = {"type": "done", "token_usage": ev["token_usage"]}
+        yield f"data: {json.dumps(ev)}\n\n"
 
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "engine": "Gemini 2.5 Flash", "model": "gemini-2.5-flash"}
+    try:
+        cfg = await llm_provider.resolve()
+        primary = cfg.get("primary") or {}
+        fallback = cfg.get("fallback") or {}
+        return {
+            "status": "healthy",
+            "primary": f"{primary.get('provider')}/{primary.get('model')}",
+            "fallback": f"{fallback.get('provider')}/{fallback.get('model')}" if fallback else None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"status": "healthy", "config_error": str(exc)}
 
 
 @app.post("/summarize", response_model=SummarizeResponse)
 async def summarize_text(request: SummarizeRequest):
     if not request.documents:
         raise HTTPException(status_code=400, detail="Documents list must not be empty.")
-
-    prompt = _build_prompt(request)
-
-    try:
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
-        )
-
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini model")
-
-        usage = response.usage_metadata
-        if not usage:
-            raise ValueError("No token usage metadata in response")
-
-        asyncio.create_task(_record_token_usage({
-            "input": usage.prompt_token_count,
-            "output": usage.candidates_token_count,
-            "total": usage.total_token_count,
-        }))
-
-        return SummarizeResponse(
-            summary=response.text,
-            token_usage=TokenUsage(
-                input=usage.prompt_token_count,
-                output=usage.candidates_token_count,
-                total=usage.total_token_count,
-            ),
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid response from Gemini: {str(e)}")
-    except Exception as e:
-        error_msg = str(e) if str(e) else "Unknown error during summarization"
-        raise HTTPException(status_code=500, detail=f"Summarization error: {error_msg}")
+    return await _summarize(_build_prompt(request))
 
 
 @app.post("/summarize/underwriting", response_model=SummarizeResponse)
@@ -259,42 +204,7 @@ async def summarize_underwriting(request: SummarizeRequest):
     — Medical / Financial / Occupational sections instead of per-document."""
     if not request.documents:
         raise HTTPException(status_code=400, detail="Documents list must not be empty.")
-
-    prompt = _build_underwriting_prompt(request)
-
-    try:
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
-        )
-
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini model")
-
-        usage = response.usage_metadata
-        if not usage:
-            raise ValueError("No token usage metadata in response")
-
-        asyncio.create_task(_record_token_usage({
-            "input": usage.prompt_token_count,
-            "output": usage.candidates_token_count,
-            "total": usage.total_token_count,
-        }))
-
-        return SummarizeResponse(
-            summary=response.text,
-            token_usage=TokenUsage(
-                input=usage.prompt_token_count,
-                output=usage.candidates_token_count,
-                total=usage.total_token_count,
-            ),
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid response from Gemini: {str(e)}")
-    except Exception as e:
-        error_msg = str(e) if str(e) else "Unknown error during summarization"
-        raise HTTPException(status_code=500, detail=f"Summarization error: {error_msg}")
+    return await _summarize(_build_underwriting_prompt(request))
 
 
 @app.post("/summarize/underwriter-note", response_model=SummarizeResponse)
@@ -303,42 +213,7 @@ async def summarize_underwriter_note(request: UnderwriterNoteRequest):
     the Case Detail workbench (customer, policy, risk scores, decision, reasons)."""
     if not request.context or not request.context.strip():
         raise HTTPException(status_code=400, detail="Context must not be empty.")
-
-    prompt = _build_underwriter_note_prompt(request)
-
-    try:
-        loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None,
-            lambda: model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
-        )
-
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini model")
-
-        usage = response.usage_metadata
-        if not usage:
-            raise ValueError("No token usage metadata in response")
-
-        asyncio.create_task(_record_token_usage({
-            "input": usage.prompt_token_count,
-            "output": usage.candidates_token_count,
-            "total": usage.total_token_count,
-        }))
-
-        return SummarizeResponse(
-            summary=response.text.strip(),
-            token_usage=TokenUsage(
-                input=usage.prompt_token_count,
-                output=usage.candidates_token_count,
-                total=usage.total_token_count,
-            ),
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=500, detail=f"Invalid response from Gemini: {str(e)}")
-    except Exception as e:
-        error_msg = str(e) if str(e) else "Unknown error during note generation"
-        raise HTTPException(status_code=500, detail=f"Note generation error: {error_msg}")
+    return await _summarize(_build_underwriter_note_prompt(request), strip=True)
 
 
 @app.post("/summarize/stream")
@@ -347,10 +222,8 @@ async def summarize_text_stream(request: SummarizeRequest):
     if not request.documents:
         raise HTTPException(status_code=400, detail="Documents list must not be empty.")
 
-    prompt = _build_prompt(request)
-
     return StreamingResponse(
-        _stream_summarize_sse(prompt),
+        _stream_summarize_sse(_build_prompt(request)),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

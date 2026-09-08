@@ -1628,6 +1628,42 @@ class TokenUsage(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True, nullable=False)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 12. LLMProviderConfig  —  SuperAdmin-managed model / API-key settings
+# ─────────────────────────────────────────────────────────────────────────────
+class LLMProviderConfig(SQLModel, table=True):
+    """Platform-wide LLM provider settings, managed by a SuperAdmin.
+
+    One row per provider ("gemini" | "openai" | "anthropic"). `role` selects
+    which provider is the primary model and which is the fallback
+    ("primary" | "fallback" | "disabled"); the API enforces at most one
+    "primary" and one "fallback".
+
+    The API key is stored Fernet-encrypted (see
+    services/tenant-service/crypto_utils.py) and is NEVER returned to the
+    browser — only `api_key_last4` / a `has_key` flag are exposed by the
+    SuperAdmin endpoints. chat-agent and risk-engine read the decrypted set
+    from the internal-only GET /internal/llm-config, cached for ~60s, and fall
+    back to the GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY env vars
+    when no config exists.
+    """
+
+    __tablename__ = "llm_provider_config"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    # gemini | openai | anthropic — a plain string, not an enum, so a new
+    # provider never needs an ALTER TYPE migration.
+    provider: str = Field(max_length=40, unique=True, index=True)
+    model_name: str = Field(max_length=120)
+    # primary | fallback | disabled
+    role: str = Field(default="disabled", max_length=20)
+    # Fernet token (urlsafe base64 str). Null = no key set for this provider.
+    api_key_encrypted: Optional[str] = Field(default=None)
+    api_key_last4: Optional[str] = Field(default=None, max_length=8)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_by: Optional[UUID] = Field(default=None)
+
+
 # =============================================================================
 # POLICY ISSUANCE & RENEWALS MODULE
 # =============================================================================

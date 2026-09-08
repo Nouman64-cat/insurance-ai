@@ -96,6 +96,10 @@ async def get_token_usage(
                 "cached": 0,
                 "requests": 0,
                 "models": [],
+                # Per-model breakdown — costs differ by an order of magnitude
+                # across providers, so the dashboard prices each model at its
+                # own rate rather than assuming one.
+                "by_model": {},
             }
 
         bucket = aggregated[day_str][svc]
@@ -103,7 +107,16 @@ async def get_token_usage(
         bucket["output"] += row.output_tokens
         bucket["cached"] += (row.cached_tokens or 0)
         bucket["requests"] += 1
-        if row.model_name and row.model_name not in bucket["models"]:
-            bucket["models"].append(row.model_name)
+
+        model_key = row.model_name or "unknown"
+        if model_key not in bucket["models"]:
+            bucket["models"].append(model_key)
+        mb = bucket["by_model"].setdefault(
+            model_key, {"input": 0, "output": 0, "cached": 0, "requests": 0}
+        )
+        mb["input"] += row.input_tokens
+        mb["output"] += row.output_tokens
+        mb["cached"] += (row.cached_tokens or 0)
+        mb["requests"] += 1
 
     return {"data": aggregated}

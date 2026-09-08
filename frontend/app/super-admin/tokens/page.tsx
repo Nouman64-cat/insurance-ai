@@ -4,12 +4,89 @@ import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import api from "@/app/services/api";
 
-// --- Configuration & Constants ---
-const LLM_MODEL = "gemini-2.5-flash";
-const INPUT_COST_PER_MILLION = 0.075;
-const OUTPUT_COST_PER_MILLION = 0.300;
-// Prompt-cache hits bill at a fraction of fresh input.
-const CACHED_INPUT_COST_PER_MILLION = 0.01875;
+// --- Per-model pricing ------------------------------------------------------
+// USD per 1M tokens. Sources (verify periodically):
+//   Gemini    — https://ai.google.dev/gemini-api/docs/pricing
+//   OpenAI    — https://platform.openai.com/docs/pricing
+//   Anthropic — https://www.anthropic.com/pricing  (cache-read ≈ 0.1× input)
+// Last checked: 2026-09-07.
+interface Rate {
+  input: number;
+  cached: number; // cache-read / cached-input rate
+  output: number;
+}
+
+const MODEL_PRICING: Record<string, Rate> = {
+  "gemini-2.5-flash-lite": { input: 0.10, cached: 0.01, output: 0.40 },
+  "gemini-2.5-flash": { input: 0.30, cached: 0.03, output: 2.50 },
+  "gemini-2.5-pro": { input: 1.25, cached: 0.125, output: 10.0 },
+  "gemini-2.0-flash": { input: 0.10, cached: 0.025, output: 0.40 },
+  "gpt-4o-mini": { input: 0.15, cached: 0.075, output: 0.60 },
+  "gpt-4o": { input: 2.50, cached: 1.25, output: 10.0 },
+  "gpt-4.1-nano": { input: 0.10, cached: 0.025, output: 0.40 },
+  "gpt-4.1-mini": { input: 0.40, cached: 0.10, output: 1.60 },
+  "gpt-4.1": { input: 2.00, cached: 0.50, output: 8.00 },
+  "gpt-5-mini": { input: 0.25, cached: 0.025, output: 2.00 },
+  "gpt-5": { input: 1.25, cached: 0.125, output: 10.0 },
+  "claude-haiku-4-5": { input: 1.00, cached: 0.10, output: 5.00 },
+  "claude-3-5-haiku": { input: 0.80, cached: 0.08, output: 4.00 },
+  "claude-sonnet-4-5": { input: 3.00, cached: 0.30, output: 15.0 },
+  "claude-sonnet-4-6": { input: 3.00, cached: 0.30, output: 15.0 },
+  "claude-sonnet-5": { input: 2.00, cached: 0.20, output: 10.0 },
+  "claude-3-5-sonnet": { input: 3.00, cached: 0.30, output: 15.0 },
+  "claude-opus-4-1": { input: 15.0, cached: 1.50, output: 75.0 },
+  "claude-opus-5": { input: 5.00, cached: 0.50, output: 25.0 },
+};
+
+// Used when a usage row's model isn't in the table (or is "unknown").
+const DEFAULT_RATE: Rate = { input: 1.0, cached: 0.1, output: 3.0 };
+
+/** Strip a trailing date/version suffix and match the longest known prefix. */
+function rateFor(model: string): { rate: Rate; known: boolean } {
+  const m = (model || "").toLowerCase().replace(/[@-]\d{4}[-.]?\d{2}[-.]?\d{2}.*$/, "");
+  let best = "";
+  for (const key of Object.keys(MODEL_PRICING)) {
+    if (m === key || m.startsWith(key)) {
+      if (key.length > best.length) best = key;
+    }
+  }
+  return best ? { rate: MODEL_PRICING[best], known: true } : { rate: DEFAULT_RATE, known: false };
+}
+
+interface ModelTokens {
+  input: number;
+  output: number;
+  cached: number;
+  requests: number;
+}
+
+/** Cost of one model's tokens: fresh input + cached input + output, each at its own rate. */
+function costOfModel(model: string, t: ModelTokens): number {
+  const { rate } = rateFor(model);
+  const fresh = Math.max(t.input - t.cached, 0);
+  return (
+    (fresh / 1_000_000) * rate.input +
+    (t.cached / 1_000_000) * rate.cached +
+    (t.output / 1_000_000) * rate.output
+  );
+}
+
+/** Cost across a by_model map. */
+function costOf(byModel: Record<string, ModelTokens>): number {
+  return Object.entries(byModel).reduce((sum, [m, t]) => sum + costOfModel(m, t), 0);
+}
+
+/** Same tokens, but every token billed at the model's full (non-cached) input rate. */
+function unoptimizedCostOf(byModel: Record<string, ModelTokens>): number {
+  return Object.entries(byModel).reduce((sum, [m, t]) => {
+    const { rate } = rateFor(m);
+    return (
+      sum +
+      (t.input / 1_000_000) * rate.input +
+      (t.output / 1_000_000) * rate.output
+    );
+  }, 0);
+}
 
 // One service's consumption on one day.
 interface ServiceDay {
@@ -18,6 +95,7 @@ interface ServiceDay {
   cached: number;
   requests: number;
   models: string[];
+  by_model: Record<string, ModelTokens>;
 }
 
 interface DailyUsage {
@@ -35,46 +113,42 @@ interface ServiceBreakdown {
   total_cached: number;
   total_requests: number;
   total_cost: number;
+  by_model: Record<string, ModelTokens>;
   description?: string;
-  efficiencyBadge?: string;
   routeLink?: string;
   routeLabel?: string;
 }
 
-const EMPTY_DAY: ServiceDay = { input: 0, output: 0, cached: 0, requests: 0, models: [] };
+const EMPTY_DAY: ServiceDay = { input: 0, output: 0, cached: 0, requests: 0, models: [], by_model: {} };
 
-// Default service metadata for FinOps engineering overview
-const FINOPS_SERVICE_METADATA: Record<string, { description: string; badge: string; route: string; label: string }> = {
-  "Chatbot Agent": {
-    description: "Conversational Copilot with 1-Click direct action routing and dynamic tool subset binding.",
-    badge: "Prompt Cache Active (75% savings)",
+// Metadata for the services that emit token-usage rows. Keys must match the
+// `service_name` each service posts to /tokens/usage.
+const FINOPS_SERVICE_METADATA: Record<string, { description: string; route: string; label: string }> = {
+  "Chat Agent": {
+    description: "Conversational Copilot — tool-calling agent with dynamic tool-subset binding and prompt caching.",
     route: "/",
-    label: "Open Copilot"
+    label: "Open Copilot",
   },
-  "Rule Engine Service": {
-    description: "AST-compiled expression engine for risk scoring & tier evaluation. Zero LLM cost per evaluation.",
-    badge: "100% Deterministic (Zero Token Cost)",
-    route: "/admin/rule-engine",
-    label: "Launch Rule Catalog"
+  "Chat Agent — Plan Advisor": {
+    description: "Ranks the top plans for a customer during a Copilot proposal flow.",
+    route: "/",
+    label: "Open Copilot",
   },
-  "Commission Ledger Engine": {
-    description: "Waterfall engine for multi-tier producer payouts, tax withholding, and ledger generation.",
-    badge: "Local Engine (Zero Token Cost)",
-    route: "/commissions",
-    label: "Open Commission Ledger"
+  "Risk Engine": {
+    description: "LangGraph medical / financial / fraud scoring and plan suggestion.",
+    route: "/assessments",
+    label: "View Assessments",
   },
   "OCR Engine": {
     description: "Document text extraction & CNIC artifact parsing using vision models.",
-    badge: "Cached Input Active",
     route: "/cases",
-    label: "View Cases"
+    label: "View Cases",
   },
   "Text Summarizer": {
     description: "Medical history and underwriting file summarization pipeline.",
-    badge: "Batch Optimized",
     route: "/case-summarizer",
-    label: "Summarizer"
-  }
+    label: "Summarizer",
+  },
 };
 
 // --- Icons ---
@@ -195,8 +269,9 @@ function TokenManagementContent() {
         const dayData: Record<string, Partial<ServiceDay>> = aggregated[dayStr] || {};
 
         const services: Record<string, ServiceDay> = {};
-        
-        // Include reported API services
+
+        // Only real, reported usage — one row per service that actually
+        // recorded token consumption on this day.
         for (const [name, raw] of Object.entries(dayData)) {
           services[name] = {
             input: raw?.input ?? 0,
@@ -204,21 +279,8 @@ function TokenManagementContent() {
             cached: raw?.cached ?? 0,
             requests: raw?.requests ?? 0,
             models: raw?.models ?? [],
+            by_model: (raw?.by_model as Record<string, ModelTokens>) ?? {},
           };
-        }
-
-        // Ensure key platform services always show in telemetry for full FinOps visibility
-        if (!services["Chatbot Agent"]) {
-          services["Chatbot Agent"] = { input: 142500, output: 28400, cached: 97400, requests: 64, models: [LLM_MODEL] };
-        }
-        if (!services["Rule Engine Service"]) {
-          services["Rule Engine Service"] = { input: 0, output: 0, cached: 0, requests: 310, models: ["AST-Python-Engine"] };
-        }
-        if (!services["Commission Ledger Engine"]) {
-          services["Commission Ledger Engine"] = { input: 0, output: 0, cached: 0, requests: 185, models: ["Local-Waterfall-Engine"] };
-        }
-        if (!services["OCR Engine"]) {
-          services["OCR Engine"] = { input: 45000, output: 12000, cached: 28000, requests: 22, models: [LLM_MODEL] };
         }
 
         data.push({
@@ -232,7 +294,6 @@ function TokenManagementContent() {
       setUsageData(data);
     } catch (e) {
       console.error(e);
-      // Fallback synthetic telemetry if backend request fails
       setUsageData([]);
     }
   };
@@ -257,13 +318,19 @@ function TokenManagementContent() {
   }
 
   // --- Calculations ---
-  const calculateCost = (input: number, output: number, cached = 0) => {
-    const fresh = Math.max(input - cached, 0);
-    return (
-      (fresh / 1_000_000) * INPUT_COST_PER_MILLION +
-      (cached / 1_000_000) * CACHED_INPUT_COST_PER_MILLION +
-      (output / 1_000_000) * OUTPUT_COST_PER_MILLION
-    );
+  // Merge every day's by_model maps for a service into one.
+  const mergeByModel = (maps: Record<string, ModelTokens>[]): Record<string, ModelTokens> => {
+    const out: Record<string, ModelTokens> = {};
+    for (const map of maps) {
+      for (const [model, t] of Object.entries(map || {})) {
+        const b = out[model] ?? (out[model] = { input: 0, output: 0, cached: 0, requests: 0 });
+        b.input += t.input ?? 0;
+        b.output += t.output ?? 0;
+        b.cached += t.cached ?? 0;
+        b.requests += t.requests ?? 0;
+      }
+    }
+    return out;
   };
 
   const serviceNames = Array.from(
@@ -273,27 +340,24 @@ function TokenManagementContent() {
   const services: ServiceBreakdown[] = serviceNames
     .map((name) => {
       const days = usageData.map((d) => d.services[name] ?? EMPTY_DAY);
-      const total_input = days.reduce((t, v) => t + v.input, 0);
-      const total_output = days.reduce((t, v) => t + v.output, 0);
-      const total_cached = days.reduce((t, v) => t + v.cached, 0);
+      const by_model = mergeByModel(days.map((v) => v.by_model));
       const meta = FINOPS_SERVICE_METADATA[name] || {
-        description: "System processing service.",
-        badge: "Standard LLM Service",
+        description: "LLM service.",
         route: "/",
-        label: "View Service"
+        label: "View",
       };
 
       return {
         service: name,
-        total_input,
-        total_output,
-        total_cached,
+        total_input: days.reduce((t, v) => t + v.input, 0),
+        total_output: days.reduce((t, v) => t + v.output, 0),
+        total_cached: days.reduce((t, v) => t + v.cached, 0),
         total_requests: days.reduce((t, v) => t + v.requests, 0),
-        total_cost: calculateCost(total_input, total_output, total_cached),
+        total_cost: costOf(by_model),
+        by_model,
         description: meta.description,
-        efficiencyBadge: meta.badge,
         routeLink: meta.route,
-        routeLabel: meta.label
+        routeLabel: meta.label,
       };
     })
     .sort((a, b) => b.total_cost - a.total_cost);
@@ -303,10 +367,24 @@ function TokenManagementContent() {
   const totalCachedTokens = services.reduce((t, s) => t + s.total_cached, 0);
   const totalRequests = services.reduce((t, s) => t + s.total_requests, 0);
 
-  const totalCost = calculateCost(totalInputTokens, totalOutputTokens, totalCachedTokens);
-  // Estimate what cost would be without prompt caching & 1-click shortcut direct routing
-  const unoptimizedCost = ((totalInputTokens + totalCachedTokens * 0.5) / 1_000_000) * INPUT_COST_PER_MILLION + (totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION + 1.45;
-  const estimatedSavings = Math.max(unoptimizedCost - totalCost, 1.25);
+  const allByModel = mergeByModel(services.map((s) => s.by_model));
+  const totalCost = costOf(allByModel);
+  // What the same tokens would cost if none had been served from cache.
+  const unoptimizedCost = unoptimizedCostOf(allByModel);
+  const estimatedSavings = Math.max(unoptimizedCost - totalCost, 0);
+
+  // Split the total cost into its input (fresh + cached) and output parts.
+  const inputCost = Object.entries(allByModel).reduce((sum, [m, t]) => {
+    const { rate } = rateFor(m);
+    return sum + (Math.max(t.input - t.cached, 0) / 1_000_000) * rate.input + (t.cached / 1_000_000) * rate.cached;
+  }, 0);
+  const outputCost = Object.entries(allByModel).reduce((sum, [m, t]) => {
+    const { rate } = rateFor(m);
+    return sum + (t.output / 1_000_000) * rate.output;
+  }, 0);
+
+  const modelsSeen = Object.keys(allByModel).filter((m) => m && m !== "unknown");
+  const hasUnknownModel = Object.keys(allByModel).some((m) => !rateFor(m).known);
 
   const diffDays = usageData.length;
   const cacheHitRate = totalInputTokens > 0 ? (totalCachedTokens / totalInputTokens) * 100 : 0;
@@ -330,7 +408,15 @@ function TokenManagementContent() {
             </h1>
           </div>
           <p className="text-xs text-slate-500 mt-1">
-            Real-time LLM cost optimization, prompt caching efficiency, and 1-click action routing metrics for <span className="font-semibold text-slate-700">{LLM_MODEL}</span>.
+            Real-time LLM spend across every configured model, priced per-model.{" "}
+            {modelsSeen.length > 0 && (
+              <span className="font-semibold text-slate-700">
+                Models in range: {modelsSeen.join(", ")}
+              </span>
+            )}
+            {hasUnknownModel && (
+              <span className="text-amber-600"> · some rows use an unrecognised model — costs for those are estimated.</span>
+            )}
           </p>
         </div>
         
@@ -445,17 +531,17 @@ function TokenManagementContent() {
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Input Tokens</p>
               <h3 className="text-2xl font-bold text-blue-600">{totalInputTokens.toLocaleString()}</h3>
               <div className="flex items-center justify-between mt-2 text-xs">
-                <span className="text-slate-400">${INPUT_COST_PER_MILLION} / 1M</span>
-                <span className="font-semibold text-slate-700">Cost: ${((totalInputTokens / 1_000_000) * INPUT_COST_PER_MILLION).toFixed(5)}</span>
+                <span className="text-slate-400">incl. {totalCachedTokens.toLocaleString()} cached</span>
+                <span className="font-semibold text-slate-700">Cost: ${inputCost.toFixed(5)}</span>
               </div>
             </div>
-            
+
             <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition-shadow">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Total Output Tokens</p>
               <h3 className="text-2xl font-bold text-blue-600">{totalOutputTokens.toLocaleString()}</h3>
               <div className="flex items-center justify-between mt-2 text-xs">
-                <span className="text-slate-400">${OUTPUT_COST_PER_MILLION} / 1M</span>
-                <span className="font-semibold text-slate-700">Cost: ${((totalOutputTokens / 1_000_000) * OUTPUT_COST_PER_MILLION).toFixed(5)}</span>
+                <span className="text-slate-400">priced per model</span>
+                <span className="font-semibold text-slate-700">Cost: ${outputCost.toFixed(5)}</span>
               </div>
             </div>
             
@@ -595,7 +681,7 @@ function TokenManagementContent() {
                 />
                 <div>
                   <p className="text-xs font-bold text-slate-800">System Prompt Caching</p>
-                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">Reduces Gemini input token cost from $0.075 to $0.01875 per 1M tokens.</p>
+                  <p className="text-[11px] font-normal text-slate-500 mt-0.5">Cached prompt-prefix tokens bill at a fraction of fresh input (~10–25% depending on model).</p>
                 </div>
               </label>
 
@@ -760,17 +846,29 @@ function TokenManagementContent() {
                         <td className="px-5 py-4">
                           <div className="flex items-center justify-between gap-2">
                             <p className="font-bold text-slate-900 text-sm">{svc.service}</p>
-                            <span className="px-2 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-700 border border-slate-200">
-                              {svc.efficiencyBadge}
-                            </span>
+                            <div className="flex flex-wrap gap-1 justify-end">
+                              {Object.keys(svc.by_model).map((m) => (
+                                <span
+                                  key={m}
+                                  className={`px-1.5 py-0.5 text-[10px] font-semibold rounded border ${
+                                    rateFor(m).known
+                                      ? "bg-slate-100 text-slate-600 border-slate-200"
+                                      : "bg-amber-50 text-amber-700 border-amber-200"
+                                  }`}
+                                  title={rateFor(m).known ? "" : "unrecognised model — cost estimated"}
+                                >
+                                  {m}
+                                </span>
+                              ))}
+                            </div>
                           </div>
                           {svc.description && (
                             <p className="text-[11px] text-slate-500 mt-0.5">{svc.description}</p>
                           )}
-                          
+
                           <div className="mt-3 space-y-1 text-xs">
                             <div className="flex justify-between">
-                              <span className="text-slate-500">Executions / Requests:</span>
+                              <span className="text-slate-500">Requests:</span>
                               <span className="font-semibold text-slate-700">{svc.total_requests.toLocaleString()}</span>
                             </div>
                             <div className="flex justify-between">
@@ -789,6 +887,20 @@ function TokenManagementContent() {
                               <span className="text-slate-500">Output Tokens:</span>
                               <span className="font-semibold text-blue-600">{svc.total_output.toLocaleString()}</span>
                             </div>
+
+                            {Object.keys(svc.by_model).length > 1 && (
+                              <div className="pt-1 space-y-0.5">
+                                {Object.entries(svc.by_model)
+                                  .sort((a, b) => costOfModel(b[0], b[1]) - costOfModel(a[0], a[1]))
+                                  .map(([m, t]) => (
+                                    <div key={m} className="flex justify-between text-[11px] text-slate-400">
+                                      <span>{m}</span>
+                                      <span>${costOfModel(m, t).toFixed(5)}</span>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
+
                             <div className="flex justify-between items-center pt-2 mt-2 border-t border-slate-100">
                               <div className="flex items-center gap-1.5">
                                 <span className="font-bold text-slate-700">Cost:</span>

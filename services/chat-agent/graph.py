@@ -25,9 +25,9 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
-from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
+import providers
 import usage
 from history import compact_tool_result, trim_history
 from claims_journey import register_claims_journey
@@ -363,12 +363,28 @@ def _build_prompt(role: str, platform: str = "web", domains: frozenset[str] | No
 
 
 # Cheap memo: binding tools re-serialises every schema, and the set of
-# (role, platform, domains) combinations in play is tiny.
-_LLM_CACHE: dict[tuple, ChatGoogleGenerativeAI] = {}
+# (role, platform, domains) combinations in play is tiny. Cleared whenever the
+# provider config version changes (a SuperAdmin edited models / keys).
+_LLM_CACHE: dict[tuple, Any] = {}
+_LLM_CACHE_VERSION: str | None = None
 
 
-def _llm(role: str = "Admin", platform: str = "web", domains: frozenset[str] | None = None):
-    """The tool-bound model for this turn's scope."""
+def _reset_cache_if_stale(version: str) -> None:
+    global _LLM_CACHE_VERSION
+    if version != _LLM_CACHE_VERSION:
+        _LLM_CACHE.clear()
+        _LLM_CACHE_VERSION = version
+
+
+def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
+         domains: frozenset[str] | None = None):
+    """The tool-bound model for this turn's scope.
+
+    `cfg` comes from providers.resolve(): primary + optional fallback provider,
+    each with its own model and key. The returned runnable calls the primary
+    and, on any error, fails over to the fallback (LangChain .with_fallbacks).
+    """
+    _reset_cache_if_stale(cfg["version"])
     key = (role, platform, domains)
     cached = _LLM_CACHE.get(key)
     if cached is not None:
@@ -379,28 +395,23 @@ def _llm(role: str = "Admin", platform: str = "web", domains: frozenset[str] | N
         in_scope = tool_names_for(domains)
         allowed = [t for t in allowed if t.name in in_scope]
 
-    llm = _bare_llm().bind_tools(allowed)
-    _LLM_CACHE[key] = llm
-    return llm
+    primary = providers.build_chat(cfg["primary"]).bind_tools(allowed)
+    if cfg.get("fallback"):
+        primary = primary.with_fallbacks(
+            [providers.build_chat(cfg["fallback"]).bind_tools(allowed)]
+        )
+    _LLM_CACHE[key] = primary
+    return primary
 
 
-def _bare_llm() -> ChatGoogleGenerativeAI:
-    """An unbound model — no tool schemas attached.
-
-    Use this for side tasks like the plan advisor. Those used to go through
-    _llm(), which bound all ~50 tool schemas (~7k tokens) to a call that
-    needed none of them.
-    """
-    return ChatGoogleGenerativeAI(
-        model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-        temperature=0.1,
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-        max_output_tokens=2048,
-        # Retries are handled by the explicit loop in agent_node. Leaving the
-        # SDK's own layer at 3 on top of that meant a sustained 503 burned up
-        # to nine billed calls for one turn.
-        max_retries=0,
-    )
+def _structured_llm(cfg: dict, schema, **kw):
+    """An unbound structured-output runnable (primary + fallback) for side
+    tasks like the plan advisor — no tool schemas attached."""
+    primary = providers.build_chat(cfg["primary"]).with_structured_output(schema, **kw)
+    if cfg.get("fallback"):
+        fb = providers.build_chat(cfg["fallback"]).with_structured_output(schema, **kw)
+        return primary.with_fallbacks([fb])
+    return primary
 
 
 def _recent_text(messages: list, limit: int = 6) -> list[str]:
@@ -470,12 +481,16 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
     history = trim_history(state["messages"])
     messages = [SystemMessage(content=_build_prompt(user_role, platform, domains)), *history]
 
-    llm = _llm(user_role, platform, domains)
+    cfg = await providers.resolve()
+    llm = _llm(cfg, user_role, platform, domains)
     thread_id = ((config or {}).get("configurable") or {}).get("thread_id")
 
-    # Gemini intermittently 429s/503s under load — one failed call must not
-    # kill a live conversation turn, so retry with short exponential backoff
-    # before giving up. This is now the ONLY retry layer (see _bare_llm).
+    # The primary model intermittently 429s/503s (and right now: 403s on a
+    # billing block) — one failed call must not kill a live conversation turn.
+    # `_llm()` already fails each call over to the configured fallback provider;
+    # this loop then retries the whole pair with short exponential backoff
+    # before giving up. It is the ONLY retry layer (providers.build_chat forces
+    # max_retries=0 on every model).
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
@@ -498,6 +513,15 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
                 raise RuntimeError(
                     "The AI model is out of quota (prepayment credits depleted on the Gemini API key). "
                     "This needs billing topped up at https://ai.studio/projects — resending won't help."
+                ) from exc
+            # 403 with a "dunning" decision = the Gemini project is blocked for
+            # a billing/payment problem. Not transient; if this reaches here the
+            # OpenAI fallback is unset or also failing.
+            if "PERMISSION_DENIED" in text or "dunning" in text:
+                raise RuntimeError(
+                    "The AI model is unavailable — the Gemini API key's project is blocked "
+                    "(billing / payment issue) and no working fallback is configured. "
+                    "Fix Gemini billing or set OPENAI_API_KEY."
                 ) from exc
             if "429" in text or "rate limit" in text.lower():
                 raise RuntimeError(
@@ -1082,7 +1106,8 @@ async def permission_gate(state: ChatState) -> Command:
                         # Bare model — this ranks five plan names and needs no
                         # tools. It used to go through _llm(), which bound the
                         # entire toolset (~7k tokens of schema) to every call.
-                        llm = _bare_llm().with_structured_output(Top5PlansOutput, include_raw=True)
+                        _cfg = await providers.resolve()
+                        llm = _structured_llm(_cfg, Top5PlansOutput, include_raw=True)
                         prompt = ChatPromptTemplate.from_messages([
                             ("system", "You are an expert life insurance advisor. You will be provided with a customer's details and a list of available insurance plans. Your task is to recommend the top 5 most suitable plans for this customer based on their demographics, age, and occupation. Return ONLY the exact plan names from the provided list, ordered by suitability."),
                             ("user", "Customer Data: {customer}\n\nAvailable Plans: {plans}")

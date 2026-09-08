@@ -1,15 +1,9 @@
-import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import ChatGoogleGenerativeAI
 
-def _llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0.1,
-        google_api_key=os.getenv("GEMINI_API_KEY"),
-    )
+import usage
+from llm import structured_llm
 
 class SuggestPlanOutput(BaseModel):
     suggested_plan_id: str = Field(description="The exact 'id' of the recommended insurance plan from the provided list.")
@@ -17,12 +11,12 @@ class SuggestPlanOutput(BaseModel):
     suggested_term: int = Field(description="The recommended policy term in years.")
     reasoning: str = Field(description="A brief, professional explanation of why this plan, coverage, and term were selected, suitable for the admin UI.")
 
-def suggest_plan(customer: Dict[str, Any], plans: List[Dict[str, Any]]) -> Dict[str, Any]:
+def suggest_plan(customer: Dict[str, Any], plans: List[Dict[str, Any]], tenant_id: Optional[str] = None) -> Dict[str, Any]:
     if not plans:
         raise ValueError("No plans provided for suggestion.")
         
-    structured_llm = _llm().with_structured_output(SuggestPlanOutput)
-    
+    model = structured_llm(SuggestPlanOutput)
+
     prompt = ChatPromptTemplate.from_messages([
         ("system", """You are an expert life insurance advisor and underwriter.
 You will be provided with an customer's demographic, financial, and medical details, along with a list of available insurance plans.
@@ -39,11 +33,13 @@ Output your selection strictly adhering to the structured format."""),
         ("user", "Customer Data: {customer}\n\nAvailable Plans: {plans}")
     ])
     
-    result = (prompt | structured_llm).invoke({
+    raw = (prompt | model).invoke({
         "customer": customer,
         "plans": plans
     })
-    
+    usage.record(raw["raw"], tenant_id=tenant_id)
+    result = raw["parsed"]
+
     return {
         "suggested_plan_id": result.suggested_plan_id,
         "suggested_coverage": result.suggested_coverage,

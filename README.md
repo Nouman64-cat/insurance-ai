@@ -478,6 +478,58 @@ If the error is `ModuleNotFoundError`, a new dependency was added to `requiremen
 docker compose build --no-cache risk-engine && docker compose up risk-engine -d
 ```
 
+### LLM provider / fallback configuration
+
+**All four LLM services** — `chat-agent`, `risk-engine`, `ocr-engine`,
+`text-summarizer` — resolve a **primary** and **fallback** model at runtime and
+retry the identical request against the fallback on any primary failure (429
+rate limit, 503 overload, 403 billing/"dunning" block, quota exhaustion).
+
+Configure it in the **SuperAdmin UI** — *Platform → LLM Configuration*
+(`/super-admin/llm-config`). Pick the provider (Gemini / OpenAI / Anthropic)
+for the primary and fallback roles, set the model, paste the API key, hit
+**Test key**. Keys are stored **Fernet-encrypted** in `llm_provider_config`
+(needs `CONFIG_ENCRYPTION_KEY` in `.env`) and never returned to the browser.
+Changes take effect within ~60s — no restart. The services read the decrypted
+set from `tenant-service`'s internal-only `GET /internal/llm-config` (guarded
+by `INTERNAL_API_SECRET`, not exposed through the api-gateway).
+
+**No provider keys live in `.env`.** An optional env fallback
+(`GEMINI_API_KEY` / `GEMINI_MODEL` for the primary; `OPENAI_API_KEY` /
+`OPENAI_FALLBACK_MODEL` then `ANTHROPIC_API_KEY` / `ANTHROPIC_FALLBACK_MODEL`
+for the fallback) is only consulted when the DB config is empty or
+`tenant-service` is unreachable.
+
+**OCR / PDF caveat:** OpenAI chat models cannot read PDFs — only Gemini and
+Anthropic can. If the OCR fallback is OpenAI and a PDF is submitted while the
+PDF-capable provider is down, `ocr-engine` returns a clear error pointing at
+the LLM Configuration page. Images work on all three providers.
+
+```bash
+# What are the services actually using right now?
+curl -s -H "X-Internal-Secret: $INTERNAL_API_SECRET" \
+  http://localhost:8011/internal/llm-config | python3 -m json.tool
+docker compose exec ocr-engine  curl -s localhost:8004/health
+docker compose exec text-summarizer curl -s localhost:8005/health
+
+# Is the primary provider itself the problem?
+docker compose exec chat-agent python -c "import asyncio,providers; \
+c=asyncio.run(providers.resolve()); print(c['primary']['provider'], c['primary']['model'])"
+```
+
+A `PERMISSION_DENIED` / `dunning` error means the Gemini key's Google Cloud
+project is blocked for a payment issue — fix billing at https://ai.studio, or
+switch the primary to OpenAI/Anthropic in the UI.
+
+### Token Economy (`/super-admin/tokens`)
+
+Every LLM call posts a row to `tenant-service`'s `/tokens/usage` with the
+**model that actually ran** (`chat-agent`, `risk-engine`, `ocr-engine`,
+`text-summarizer`). The page prices each model at its own rate — see
+`MODEL_PRICING` in `frontend/app/super-admin/tokens/page.tsx` (verify against
+the provider pricing pages periodically). Rows whose model isn't in that table
+are costed at `DEFAULT_RATE` and flagged "estimated" in the UI.
+
 ### Database doesn't exist / tenant-service can't connect
 
 PostgreSQL is external, so there's no docker volume to reset here. Instead:

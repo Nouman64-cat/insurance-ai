@@ -199,8 +199,8 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       TENANT_SERVICE_URL: http://tenant-service:8001
       API_GATEWAY_URL: http://api-gateway:8000
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      GEMINI_MODEL: ${GEMINI_MODEL}
+      # LLM provider keys/models come from the SuperAdmin config in
+      # tenant-service (Platform → LLM Configuration), not env vars.
     healthcheck:
       test: [ "CMD-SHELL", 'python -c "import urllib.request; urllib.request.urlopen(''http://localhost:8006/health'')"' ]
       interval: 15s
