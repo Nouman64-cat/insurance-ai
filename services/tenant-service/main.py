@@ -72,6 +72,7 @@ from routers.reinsurance import router as reinsurance_router
 from routers.claims import router as claims_router
 from routers.demo import router as demo_router
 from routers.rules import router as rules_router
+from routers.search import router as search_router
 # STAGE B — POST-ISSUANCE: renewal scheduler import disabled for now.
 # from routers.renewal_scheduler import start_renewal_scheduler
 from shared.models.core import Role
@@ -199,6 +200,7 @@ app.include_router(reinsurance_router)
 app.include_router(claims_router)
 app.include_router(demo_router)
 app.include_router(rules_router)
+app.include_router(search_router)
 
 
 @app.get("/health", tags=["Ops"])

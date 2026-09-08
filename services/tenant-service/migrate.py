@@ -1091,6 +1091,41 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v47f — add extracted_metadata to artifacts",
         "ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS extracted_metadata JSON",
     ),
+    # ── v48 — trigram indexes backing the global header search ────────────────
+    # GET /tenants/{id}/search runs leading-wildcard ILIKE across these columns;
+    # a GIN trigram index keeps that off a sequential scan as tenant data grows.
+    (
+        "v48a — pg_trgm extension for global search",
+        "CREATE EXTENSION IF NOT EXISTS pg_trgm",
+    ),
+    (
+        "v48b — trgm index on customers.name",
+        "CREATE INDEX IF NOT EXISTS ix_trgm_customers_name ON customers USING gin (name gin_trgm_ops)",
+    ),
+    (
+        "v48c — trgm index on customers.cnic",
+        "CREATE INDEX IF NOT EXISTS ix_trgm_customers_cnic ON customers USING gin (cnic gin_trgm_ops)",
+    ),
+    (
+        "v48d — trgm index on cases.caseNumber",
+        'CREATE INDEX IF NOT EXISTS ix_trgm_cases_casenumber ON cases USING gin ("caseNumber" gin_trgm_ops)',
+    ),
+    (
+        "v48e — trgm index on policies.policy_number",
+        "CREATE INDEX IF NOT EXISTS ix_trgm_policies_policy_number ON policies USING gin (policy_number gin_trgm_ops)",
+    ),
+    (
+        "v48f — trgm index on policies.product_name",
+        "CREATE INDEX IF NOT EXISTS ix_trgm_policies_product_name ON policies USING gin (product_name gin_trgm_ops)",
+    ),
+    (
+        "v48g — trgm index on claims.claim_number",
+        "CREATE INDEX IF NOT EXISTS ix_trgm_claims_claim_number ON claims USING gin (claim_number gin_trgm_ops)",
+    ),
+    (
+        "v48h — trgm index on claims.claimant_name",
+        "CREATE INDEX IF NOT EXISTS ix_trgm_claims_claimant_name ON claims USING gin (claimant_name gin_trgm_ops)",
+    ),
 ]
 
 

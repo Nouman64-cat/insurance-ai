@@ -1,30 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useCopilot } from "@/components/CopilotContext";
+import GlobalSearch from "@/components/GlobalSearch";
 
 function BellIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
       <path fillRule="evenodd" d="M5.25 9a6.75 6.75 0 0113.5 0v.75c0 2.123.8 4.057 2.118 5.52a.75.75 0 01-.297 1.206c-1.544.57-3.16.99-4.831 1.243a3.75 3.75 0 11-7.48 0 24.585 24.585 0 01-4.831-1.244.75.75 0 01-.298-1.205A8.217 8.217 0 005.25 9.75V9zm4.502 8.9a2.25 2.25 0 104.496 0 25.057 25.057 0 01-4.496 0z" clipRule="evenodd" />
-    </svg>
-  );
-}
-
-function SearchIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4" aria-hidden="true">
-      <circle cx="11" cy="11" r="8" />
-      <line x1="21" y1="21" x2="16.65" y2="16.65" />
-    </svg>
-  );
-}
-
-function DownloadIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-      <polyline points="7 10 12 15 17 10" />
-      <line x1="12" y1="15" x2="12" y2="3" />
     </svg>
   );
 }
@@ -86,18 +68,7 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
       </div>
 
       {/* Center: Search */}
-      <div className="hidden md:flex flex-1 max-w-xs">
-        <div className="relative w-full">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-            <SearchIcon />
-          </span>
-          <input
-            type="search"
-            placeholder="Search cases, policies…"
-            className="w-full pl-9 pr-4 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 transition-all"
-          />
-        </div>
-      </div>
+      <GlobalSearch />
 
       {/* Right: Actions */}
       <div className="flex items-center gap-3 flex-shrink-0">
@@ -136,13 +107,6 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
           </button>
         </div>
 
-        <button
-          type="button"
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 hover:border-slate-300 transition-all"
-        >
-          <DownloadIcon />
-          Export PDF
-        </button>
         <button
           type="button"
           onClick={() => window.location.reload()}

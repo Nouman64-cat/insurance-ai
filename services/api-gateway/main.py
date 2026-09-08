@@ -830,6 +830,22 @@ async def proxy_tenant_artifacts(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/artifacts{path}")
 
 
+# ── Global search — proxied to tenant-service, which owns the searched tables ──
+
+@app.get(
+    "/tenants/{tenant_id}/search",
+    tags=["Search"],
+    summary="Global search across cases, customers, policies and claims",
+)
+async def global_search(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/search")
+
+
+@app.api_route("/tenants/{tenant_id}/search{path:path}", methods=["GET", "OPTIONS"], include_in_schema=False)
+async def proxy_tenant_search(tenant_id: UUID, path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/search{path}")
+
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Health
