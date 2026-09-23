@@ -79,7 +79,7 @@ update_case_status first for the decision, then continue.
 
 ## MANUAL STEP-BY-STEP (when the user drives one stage at a time)
 
-1. **add_customer / add_organization / add_family_group** → Register the applicant. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, you MUST ask them first whether the customer is an **Individual**, a **Corporate (Organization)**, or a **Family** group. Then, use the appropriate tool: `add_customer` for individuals, `add_organization` for corporate, and `add_family_group` for families.
+1. **add_customer / add_organization / add_family_group** → Register the applicant. **CRITICAL:** If the user asks to "add a customer" but does not specify the type, call **resolve_customer_type** — do NOT ask which type it is yourself in plain text, the tool presents Individual / Corporate (Organization) / Family group as clickable buttons and its result tells you which of `add_customer` / `add_organization` / `add_family_group` to call next.
 2. create_case → open the underwriting case
 3. create_proposal → NEVER ask the user to type product details manually. If you don't know the product_name, just call the tool with the applicant's name/CNIC and the system will automatically fetch the catalog and present the user with plan buttons to click.
 4. **Pre-Underwriting Gates (Strictly Sequential 6 Gates):**
@@ -119,12 +119,17 @@ update_case_status first for the decision, then continue.
 - Money: "50k"/"50kpkr" → 50000
 - Single name ("zia") → use for both first_name and last_name
 - NEVER invent a CNIC/email/id that wasn't given — omit it and the platform will ask.
+- NEVER invent an agent_name/agent_email (e.g. "demo_agent", "Test Agent") — this MUST be a real
+  Agent-role user. Leave it unset, even when generating demo/fake customer data, and let the tool
+  present the real list of agents to pick from.
 
 ## DEMO / GENERIC DATA
 
 When the user says "demo", "test data", "generic data", or "make something up":
 - For INDIVIDUAL customers, use **quick_start_workflow** (use_demo_data=true). Add full_journey=true if they want the whole flow exercised.
 - For CORPORATE or FAMILY customers, DO NOT use quick_start_workflow. Instead, generate realistic fake data yourself (fake names, emails, incomes, etc.) and call the **add_organization** or **add_family_group** tool directly.
+- The "make something up" license covers the CUSTOMER's own fields only — it never extends to
+  agent_name/agent_email. That must stay a real Agent-role user or be left unset; see above.
 
 ## STYLE
 
@@ -412,6 +417,38 @@ def _structured_llm(cfg: dict, schema, **kw):
         fb = providers.build_chat(cfg["fallback"]).with_structured_output(schema, **kw)
         return primary.with_fallbacks([fb])
     return primary
+
+
+class ChatTitleOutput(BaseModel):
+    title: str = Field(description="A short (3-6 word) title-case summary of what this "
+                                    "conversation is about. No quotes, no trailing punctuation.")
+
+
+async def generate_chat_title(first_user_message: str, first_assistant_reply: str, tenant_id: str | None) -> str:
+    """A short, cheap side-task exactly like the plan advisor (Top5PlansOutput
+    below) — bare structured-output call, no tool schemas — run once per
+    conversation, right after its first exchange, so the sidebar can show a
+    real title instead of the first message truncated."""
+    try:
+        cfg = await providers.resolve()
+        llm = _structured_llm(cfg, ChatTitleOutput, include_raw=True)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", "Summarize what this conversation is about in a short, specific, "
+                       "title-case title (3-6 words). No quotes, no trailing period."),
+            ("user", "User: {user_msg}\n\nAssistant: {assistant_msg}"),
+        ])
+        raw = await (prompt | llm).ainvoke({
+            "user_msg": (first_user_message or "")[:500],
+            "assistant_msg": (first_assistant_reply or "")[:500],
+        })
+        usage.record(raw.get("raw"), service_name=usage.SERVICE_CHAT_TITLE, tenant_id=tenant_id)
+        parsed = raw.get("parsed")
+        if parsed and parsed.title.strip():
+            return parsed.title.strip().strip('"')
+    except Exception as e:
+        print(f"Failed to generate chat title: {e}")
+    fallback = (first_user_message or "").strip()
+    return (fallback[:40] + "…" if len(fallback) > 40 else fallback) or "New Conversation"
 
 
 def _recent_text(messages: list, limit: int = 6) -> list[str]:
@@ -1071,6 +1108,48 @@ async def permission_gate(state: ChatState) -> Command:
         else:
             msg = "Currently, you have no access to do this, ask your manager."
         result = {"success": False, "error": msg}
+        return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
+
+    # ── Customer intake: which kind of customer, as chips rather than prose ──
+    #
+    # add_customer / add_organization / add_family_group are three distinct
+    # tools with three distinct required-args shapes, so the model can't just
+    # call one of them speculatively when the user hasn't said which kind of
+    # customer they mean — it has nothing valid to put in the call. Before this
+    # existed, the prompt told the model to ask in plain text instead, which
+    # meant that one question alone never went through permission_gate and
+    # never became a clickable choice like everything else in this file.
+    # resolve_customer_type is a standalone tool that exists only so this
+    # question has something to intercept.
+    if name == "resolve_customer_type":
+        # (display, tool to call next, url slug for the leads-page form chooser)
+        choices = [
+            ("Individual", "add_customer", "individual"),
+            ("Corporate (Organization)", "add_organization", "corporate"),
+            ("Family group", "add_family_group", "family"),
+        ]
+        answer = _ask_choice(
+            name, args,
+            "Is this an Individual, a Corporate (Organization), or a Family group?",
+            [(display, tool) for display, tool, _ in choices],
+        )
+        resolved = next((c for c in choices if c[1] == _match_choice(answer, [(d, t) for d, t, _ in choices])), None)
+        if resolved:
+            display, resolved_tool, slug = resolved
+            result = {
+                "success": True,
+                "message": f"Customer type resolved: {display}. Now call `{resolved_tool}` "
+                           "with the applicant's details to register them.",
+                # Offer the two ways this normally goes from here — generated demo
+                # data (fast, for a test run) or the portal's own multi-step form
+                # (for a real applicant) — instead of only listing fields to type.
+                "quick_actions": [
+                    {"label": "Add demo data", "actionType": "submit", "payload": "Add demo data"},
+                    {"label": "Fill the form instead", "actionType": "navigate", "payload": f"admin/leads?add={slug}"},
+                ],
+            }
+        else:
+            result = {"success": False, "error": f"Didn't recognise '{answer}' as a customer type."}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
     if name == "create_proposal":

@@ -1068,6 +1068,53 @@ export function CopilotInterface() {
     }
   }, [sessions]);
 
+  // AI-generated sidebar titles: as soon as a brand-new conversation has its
+  // first exchange (one real user message + the assistant's first reply —
+  // enough for an LLM to know what it's about), create its sidebar row early
+  // with a pending title and ask the backend for a short title. The row shows
+  // a skeleton in place of the title until that call resolves. Loaded/past
+  // sessions already have a title and are skipped via the `activeSessionId`
+  // guard below.
+  useEffect(() => {
+    if (isLoading || activeSessionId) return;
+    const firstUserIdx = messages.findIndex(m => m.role === "user");
+    if (firstUserIdx === -1) return;
+    const firstAssistantReply = messages.slice(firstUserIdx + 1).find(m => m.role === "assistant" && m.text);
+    if (!firstAssistantReply) return;
+    const firstUserMessage = messages[firstUserIdx];
+
+    const newSessionId = Date.now().toString();
+    setActiveSessionId(newSessionId);
+    setSessions(prev => [{
+      id: newSessionId,
+      date: Date.now(),
+      title: "", // pending — rendered as a skeleton until the title call resolves
+      messages: [...messages],
+      actions: [...turnActions],
+      pinned: false,
+    }, ...prev]);
+
+    api.post("/chat/title", {
+      first_user_message: firstUserMessage.text,
+      first_assistant_reply: firstAssistantReply.text,
+    })
+      .then(res => {
+        const title = res.data?.title?.trim();
+        // Only apply if still pending — the user may have already renamed it
+        // by hand while the call was in flight.
+        if (title) setSessions(prev => prev.map(s => s.id === newSessionId && !s.title ? { ...s, title } : s));
+      })
+      .catch(() => {
+        // Fall back to the same naive truncation saveCurrentSession used to
+        // always use, rather than leaving the row stuck on a skeleton forever.
+        const fallback = firstUserMessage.text.length > 35
+          ? firstUserMessage.text.slice(0, 35) + "..."
+          : firstUserMessage.text;
+        setSessions(prev => prev.map(s => s.id === newSessionId && !s.title ? { ...s, title: fallback || "New Conversation" } : s));
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, isLoading, activeSessionId]);
+
   const saveCurrentSession = () => {
     if (messages.length <= 1) return;
     const userMsgTitle = messages.find(m => m.role === 'user')?.text || "New Conversation";
@@ -1131,6 +1178,15 @@ export function CopilotInterface() {
   };
 
   const [chatSearch, setChatSearch] = useState("");
+
+  // Once one button in a message's quick-action group is clicked, the whole
+  // group locks — the clicked one stays highlighted, the rest grey out —
+  // instead of remaining clickable as if the choice never happened. Keyed by
+  // message id -> the index of the action that was clicked. Upload actions
+  // are excluded: a group can offer several "Upload X" buttons for several
+  // missing documents, and clicking one must not lock out the others — that
+  // type already shows its own real "Uploaded" state from uploadedDocs.
+  const [usedActions, setUsedActions] = useState<Record<string, number>>({});
 
 
 
@@ -1458,7 +1514,7 @@ export function CopilotInterface() {
                               onClick={(e) => e.stopPropagation()}
                               className="w-full bg-slate-800 text-white text-[13px] px-2 py-0.5 rounded border border-blue-500/80 outline-none"
                             />
-                          ) : (
+                          ) : session.title ? (
                             <div className="flex items-center gap-1.5 text-[13px] font-medium truncate">
                               {session.pinned && (
                                 <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
@@ -1467,6 +1523,9 @@ export function CopilotInterface() {
                               )}
                               <span className="truncate">{session.title}</span>
                             </div>
+                          ) : (
+                            // Empty title = the AI title-gen call is still in flight.
+                            <div className="h-3.5 w-[70%] rounded bg-white/10 animate-pulse" title="Generating title…" />
                           )}
                           <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
                             <span>{new Date(session.date).toLocaleDateString()}</span>
@@ -1737,11 +1796,6 @@ export function CopilotInterface() {
                                </>
                              ) : (
                                <div className="w-full flex flex-col gap-3">
-                                 {msg.steps && msg.steps.length > 0 && (
-                                   <div className="mb-1 max-w-[85%]">
-                                     <ProcessGraph steps={msg.steps} compact={true} />
-                                   </div>
-                                 )}
                                  <div className="prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-800 w-full copilot-markdown prose-p:font-serif prose-headings:font-serif prose-li:font-serif">
                                    <ReactMarkdown>{msg.text}</ReactMarkdown>
                                  </div>
@@ -1793,13 +1847,26 @@ export function CopilotInterface() {
                                    );
                                  }
                                  const isUploaded = checkIsUploaded(action, uploadedDocs);
+                                 const usedIdx = usedActions[msg.id];
+                                 const isChosen = usedIdx === idx;
+                                 const isLocked = action.actionType !== "upload" && usedIdx !== undefined && !isChosen;
                                  return (
                                    <button
                                      key={`${action.actionType}-${action.label}-${idx}`}
-                                     onClick={() => handleQuickAction(action)}
+                                     disabled={isLocked}
+                                     onClick={() => {
+                                       if (action.actionType !== "upload") {
+                                         setUsedActions(prev => ({ ...prev, [msg.id]: idx }));
+                                       }
+                                       handleQuickAction(action);
+                                     }}
                                      className={`px-3 py-1.5 text-xs font-semibold rounded-full border shadow-sm transition-all flex items-center gap-1.5 ${
                                        isUploaded
                                          ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 font-bold"
+                                         : isChosen
+                                         ? "bg-blue-600 text-white border-blue-600 font-bold"
+                                         : isLocked
+                                         ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                                          : "bg-white border-slate-200 hover:bg-slate-50 hover:border-blue-200 hover:text-blue-700"
                                      }`}
                                    >
@@ -1949,8 +2016,10 @@ export function CopilotInterface() {
            ) : null}
         </div>
         </div>
-        {/* Right Suggestions Panel */}
-        {(() => {
+        {/* Right sidebar: static — stays mounted for the whole conversation so
+            the pipeline's live/settled status is always visible alongside chat,
+            instead of scrolling away as part of one message bubble. */}
+        {!(messages.length <= 1 && messages[0]?.role === "assistant") && (() => {
           const actionsToShow = turnActions.length > 0
             ? turnActions
             : (messages[messages.length - 1]?.role === "assistant"
@@ -1960,10 +2029,19 @@ export function CopilotInterface() {
             .filter((s) => !actionsToShow.some((a) => a.label === s))
             .map((s) => ({ label: s, actionType: "submit", payload: s } as QuickAction));
           const finalActions = [...actionsToShow, ...extraActions];
-          if (finalActions.length === 0 || (messages.length <= 1 && messages[0]?.role === "assistant")) return null;
           return (
-            <div className="hidden xl:flex flex-col w-[220px] flex-shrink-0 bg-white/60 backdrop-blur-sm border-l border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">Suggested Actions</div>
+            <div className="hidden xl:flex flex-col w-[260px] flex-shrink-0 bg-white/60 backdrop-blur-sm border-l border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-4">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">Pipeline</div>
+                {steps.length > 0 ? (
+                  <ProcessGraph steps={steps} />
+                ) : (
+                  <p className="px-2 text-[12px] text-slate-400">No active process right now.</p>
+                )}
+              </div>
+              {finalActions.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-1">Suggested Actions</div>
               {finalActions.slice(0, 8).map((action, idx) => {
                 const isUploaded = checkIsUploaded(action, uploadedDocs);
                 return (
@@ -1991,6 +2069,8 @@ export function CopilotInterface() {
                   </button>
                 );
               })}
+              </div>
+              )}
             </div>
           );
         })()}
@@ -2282,20 +2362,33 @@ export function CopilotInterface() {
                               );
                             }
                             const isUploaded = checkIsUploaded(action, uploadedDocs);
+                            const usedIdx = usedActions[msg.id];
+                            const isChosen = usedIdx === idx;
+                            const isLocked = action.actionType !== "upload" && usedIdx !== undefined && !isChosen;
                             return (
                             <button
                               key={`${action.actionType}-${action.label}-${idx}`}
-                              onClick={() => handleQuickAction(action)}
+                              disabled={isLocked}
+                              onClick={() => {
+                                if (action.actionType !== "upload") {
+                                  setUsedActions(prev => ({ ...prev, [msg.id]: idx }));
+                                }
+                                handleQuickAction(action);
+                              }}
                               className={`px-3 py-1.5 text-[12px] font-bold rounded-full border transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
                                 isUploaded
                                   ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600"
-                                  : action.actionType === "navigate"
-                                    ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                    : action.actionType === "upload"
-                                      ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
-                                      : action.actionType === "confirm"
+                                  : isChosen
+                                    ? "bg-blue-600 hover:bg-blue-600 text-white border-blue-600"
+                                    : isLocked
+                                      ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                      : action.actionType === "navigate"
                                         ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-                                        : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                        : action.actionType === "upload"
+                                          ? "bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200"
+                                          : action.actionType === "confirm"
+                                            ? "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                                            : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
                                 }`}
                             >
                               {isUploaded ? (

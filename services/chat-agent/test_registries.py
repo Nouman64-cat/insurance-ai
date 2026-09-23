@@ -35,6 +35,10 @@ CLIENT_EXECUTED = {"upload_document"}
 GRAPH_ROUTED = {
     "start_underwriting_journey", "continue_underwriting_journey",
     "start_claim_journey", "continue_claim_journey",
+    # Answered entirely inside permission_gate's own interceptor (asks the
+    # Individual/Corporate/Family chip question, never mutates anything), so
+    # it never reaches a tool_executor handler.
+    "resolve_customer_type",
 }
 
 

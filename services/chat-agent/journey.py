@@ -71,6 +71,10 @@ def _mark(node: str, *, next_node: Optional[str], status: str = "done") -> dict[
 def _fail(state: ChatState, node: str, error: str) -> dict[str, Any]:
     return {
         "journey_error": error,
+        # Stamped explicitly rather than left to carry over from whichever
+        # stage happened to run last — j_finish reads this to decide which
+        # recovery chips (if any) make sense for the stage that actually failed.
+        "journey_stage": STAGES[node][0],
         "journey_audit": _log(state, f"ERROR at {STAGES[node][1]}: {error}"),
         **_mark(node, next_node=None, status="error"),
     }
@@ -401,6 +405,16 @@ async def j_finish(state: ChatState) -> dict:
 
     if error:
         result.update({"success": False, "error": error})
+        if state.get("journey_stage") == "document_audit":
+            # get_document_checklist itself failed here (as opposed to the
+            # Pending Documents branch below, where it succeeded and named
+            # exact missing docs) — offer the same recovery path as a click
+            # instead of narrating "would you like to see the checklist?" in
+            # prose and waiting for the user to type yes.
+            result["quick_actions"] = [
+                {"label": "View document checklist", "actionType": "submit",
+                 "payload": f"Show me the document checklist for {case_no or cnic}"},
+            ]
     elif outcome == "Pending Documents":
         missing = state.get("journey_missing_documents", [])
         result.update({

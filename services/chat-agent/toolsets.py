@@ -44,6 +44,7 @@ CORE_TOOLS: set[str] = {
     "list_insurance_plans",
     "get_dashboard_stats",
     # intake & case handling — the spine of every conversation
+    "resolve_customer_type",
     "add_customer",
     "update_customer",
     # Named in the base prompt's step 1 alongside add_customer, so they have to

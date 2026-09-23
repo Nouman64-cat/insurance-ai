@@ -98,6 +98,11 @@ export function Chatbot() {
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [showVoice, setShowVoice] = useState(false);
+  // Once one button in a message's quick-action group is clicked, the whole
+  // group locks — the clicked one stays highlighted, the rest grey out —
+  // rather than staying clickable as if the choice never happened. Keyed by
+  // message id -> the index of the action that was clicked.
+  const [usedActions, setUsedActions] = useState<Record<string, number>>({});
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -268,21 +273,39 @@ export function Chatbot() {
                   }
                   {m.quickActions && m.quickActions.length > 0 && (
                     <div className="flex flex-wrap gap-2">
-                      {m.quickActions.map((action, idx) => action.actionType === "select" ? (
-                        <QuickActionSelect
-                          key={`select-${action.label}-${idx}`}
-                          action={action}
-                          onRun={sendText}
-                        />
-                      ) : (
-                        <button
-                          key={`${action.actionType}-${action.label}-${idx}`}
-                          onClick={() => handleQuickAction(action)}
-                          className="px-3 py-1 text-[11px] font-semibold rounded-full border bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 transition-all active:scale-95"
-                        >
-                          {action.label}
-                        </button>
-                      ))}
+                      {m.quickActions.map((action, idx) => {
+                        if (action.actionType === "select") {
+                          return (
+                            <QuickActionSelect
+                              key={`select-${action.label}-${idx}`}
+                              action={action}
+                              onRun={sendText}
+                            />
+                          );
+                        }
+                        const usedIdx = usedActions[m.id];
+                        const isChosen = usedIdx === idx;
+                        const isLocked = usedIdx !== undefined && !isChosen;
+                        return (
+                          <button
+                            key={`${action.actionType}-${action.label}-${idx}`}
+                            disabled={usedIdx !== undefined}
+                            onClick={() => {
+                              setUsedActions(prev => ({ ...prev, [m.id]: idx }));
+                              handleQuickAction(action);
+                            }}
+                            className={`px-3 py-1 text-[11px] font-semibold rounded-full border transition-all active:scale-95 ${
+                              isChosen
+                                ? "bg-blue-600 text-white border-blue-600"
+                                : isLocked
+                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                            }`}
+                          >
+                            {action.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>

@@ -25,3 +25,8 @@ class ExecuteToolRequest(BaseModel):
     args: dict[str, Any] = {}
     role: str = "Agent"
     platform: str = "web"
+
+
+class ChatTitleRequest(BaseModel):
+    first_user_message: str
+    first_assistant_reply: str

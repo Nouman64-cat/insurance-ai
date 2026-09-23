@@ -57,6 +57,19 @@ async def chat_resume(request: Request, token: str = Depends(oauth2_scheme)):
     return await _proxy_sse("/chat/resume", request)
 
 
+@router.post("/title", summary="Non-streaming AI-generated chat title, from the first exchange")
+async def chat_title(request: Request, token: str = Depends(oauth2_scheme)):
+    body = await request.body()
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": request.headers.get("authorization", ""),
+        "X-Tenant-Id": request.headers.get("x-tenant-id", ""),
+    }
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(f"{CHAT_AGENT_URL}/chat/title", content=body, headers=headers)
+        return Response(content=resp.content, status_code=resp.status_code, media_type="application/json")
+
+
 @router.post("/execute-tool", summary="Non-streaming tool execution (used by the voice agent)")
 async def chat_execute_tool(request: Request, token: str = Depends(oauth2_scheme)):
     body = await request.body()

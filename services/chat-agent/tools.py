@@ -209,6 +209,16 @@ def get_dashboard_stats() -> str:
 # Write / mutate — customers
 # ═══════════════════════════════════════════════════════════════════════════
 
+@tool(args_schema=EmptyArgs)
+def resolve_customer_type(**kwargs) -> str:
+    """Call this FIRST whenever the user asks to add/register a new customer but hasn't
+    said whether it's an Individual, a Corporate (Organization), or a Family group. Presents
+    the three as clickable buttons and its result tells you which of add_customer /
+    add_organization / add_family_group to call next. Never ask this question yourself in
+    plain text — always call this tool."""
+    return "{}"
+
+
 class AddCustomerArgs(BaseModel):
     first_name: str
     last_name: str = Field(description="If only one name is known, reuse it here.")
@@ -223,7 +233,9 @@ class AddCustomerArgs(BaseModel):
     agent_name: Optional[str] = Field(
         default=None,
         description="Name or email of the Agent who owns this lead. Only needed when the caller "
-        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask.",
+        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask. "
+        "This MUST be a real Agent's name/email the user actually gave you — even for demo/test "
+        "data, NEVER invent a placeholder like 'demo_agent' or 'Test Agent'.",
     )
 
 
@@ -625,7 +637,9 @@ class QuickStartArgs(BaseModel):
     agent_name: Optional[str] = Field(
         default=None,
         description="Name or email of the Agent who owns this lead. Only needed when the caller "
-        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask.",
+        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask. "
+        "This MUST be a real Agent's name/email the user actually gave you — even for demo/test "
+        "data, NEVER invent a placeholder like 'demo_agent' or 'Test Agent'.",
     )
 
 
@@ -1457,6 +1471,7 @@ ALL_TOOLS = [
     get_risk_assessment,
     get_dashboard_stats,
     # customers
+    resolve_customer_type,
     add_customer,
     update_customer,
     bulk_add_customers,

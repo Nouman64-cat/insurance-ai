@@ -87,6 +87,7 @@ MUTATING_TOOLS = {
 # Read-only + navigation. Never gated, never confirmed — asking "shall I open
 # the cases page?" before every navigation makes the agent unusable.
 SAFE_TOOLS = {
+    "resolve_customer_type",
     "navigate_to_page",
     "show_record",
     "search_records",
@@ -203,6 +204,7 @@ REQUIRED_ARGS: dict[str, list[str]] = {
 # Tools that emit progress steps worth showing in the UI's process graph, with
 # the label each step gets. Everything else falls back to a humanised tool name.
 STEP_LABELS: dict[str, str] = {
+    "resolve_customer_type": "Determining customer type",
     "add_customer": "Registering customer",
     "update_customer": "Updating customer",
     "delete_customer": "Deleting customer",
@@ -322,6 +324,7 @@ def is_destructive(tool_name: str) -> bool:
 
 AGENT_ALLOWED_TOOLS = {
     # Lead Generation & Customer Intake
+    "resolve_customer_type",
     "add_customer",
     "update_customer",
     "add_organization",
@@ -477,6 +480,7 @@ CLAIMS_MANAGER_ALLOWED_TOOLS = CLAIMS_ADJUSTER_ALLOWED_TOOLS | CLAIMS_MANAGER_ON
 # every newly declared tool — including payout approval and rule deployment —
 # was granted to Underwriter the moment it existed.
 UNDERWRITER_ALLOWED_TOOLS = SAFE_TOOLS | {
+    "resolve_customer_type",
     "add_customer",
     "update_customer",
     "bulk_add_customers",

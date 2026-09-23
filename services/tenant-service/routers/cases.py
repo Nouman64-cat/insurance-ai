@@ -809,17 +809,19 @@ async def update_case_status(
             if policy_to_update and case.policy_id is None:
                 case.policy_id = policy_to_update.id
                 session.add(case)
-                
-                # If it was still Quoted (because the case wasn't explicitly created against it),
-                # move it to Proposed now so it can legally transition to Approved/Declined.
-                st_early = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
-                if st_early == PolicyStatusEnum.QUOTED.value:
-                    apply_transition(
-                        session, policy_to_update, PolicyStatusEnum.PROPOSED,
-                        event_type="case_linked_retroactively", actor=str(user.id)
-                    )
 
         if policy_to_update:
+            # A policy can still be sitting in Quoted — e.g. the case was linked
+            # directly via case.policy_id rather than discovered by the fallback
+            # lookup above, or the fallback found one that was never bumped past
+            # Quoted — so bump it to Proposed first; Quoted can't jump straight
+            # to Approved/Declined per the state machine.
+            st_early = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
+            if st_early == PolicyStatusEnum.QUOTED.value:
+                apply_transition(
+                    session, policy_to_update, PolicyStatusEnum.PROPOSED,
+                    event_type="case_linked_retroactively", actor=str(user.id)
+                )
             target_status = (
                 PolicyStatusEnum.APPROVED if case.caseStatus == CaseStatusEnum.APPROVED
                 else PolicyStatusEnum.DECLINED

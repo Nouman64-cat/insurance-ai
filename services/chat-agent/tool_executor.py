@@ -714,8 +714,8 @@ async def _current_user(ctx: Ctx) -> dict:
     return res.json()
 
 
-async def _find_agent_user(ctx: Ctx, query: str) -> Optional[dict]:
-    """Fuzzy-match a typed name/email against Agent-role users.
+async def _list_agent_users(ctx: Ctx) -> list[dict]:
+    """All Agent-role users.
 
     /users/ only returns each user's role_id (a global, not tenant-scoped, FK
     into the roles table) — not a resolved role name — so the Agent role's id
@@ -725,12 +725,16 @@ async def _find_agent_user(ctx: Ctx, query: str) -> Optional[dict]:
     roles_res.raise_for_status()
     agent_role = next((r for r in roles_res.json() if r.get("name") == "Agent"), None)
     if not agent_role:
-        return None
+        return []
 
     users_res = await ctx.client.get(ctx.tsvc("/users/"))
     users_res.raise_for_status()
-    agents = [u for u in users_res.json() if u.get("role_id") == agent_role["id"]]
+    return [u for u in users_res.json() if u.get("role_id") == agent_role["id"]]
 
+
+async def _find_agent_user(ctx: Ctx, query: str) -> Optional[dict]:
+    """Fuzzy-match a typed name/email against Agent-role users."""
+    agents = await _list_agent_users(ctx)
     q = query.strip().lower()
     for u in agents:
         if (u.get("email") or "").lower() == q:
@@ -741,14 +745,42 @@ async def _find_agent_user(ctx: Ctx, query: str) -> Optional[dict]:
     return None
 
 
+async def _agent_picker_result(ctx: Ctx, message: str) -> dict:
+    """A dead-end text prompt ('please type an agent's name') is exactly the
+    thing this codebase avoids — always resolve to the real Agent-role list
+    as a searchable pick, whether nothing was given or what was given (typed,
+    or invented by the model despite being told not to) didn't match."""
+    agents = await _list_agent_users(ctx)
+    if not agents:
+        return {
+            "success": False,
+            "error": "There are no Agent-role users set up yet to assign this lead to. Add one first.",
+        }
+    return {
+        "success": False,
+        "message": message,
+        "quick_actions": [{
+            "label": "Agent",
+            "actionType": "select",
+            "payload": "{value}",
+            "placeholder": "Choose an agent…",
+            "options": [
+                {"label": f"{u.get('full_name')} ({u.get('email')})", "value": u.get("full_name") or u.get("email")}
+                for u in agents
+            ],
+        }],
+    }
+
+
 async def _resolve_lead_agent(args: dict, ctx: Ctx) -> tuple[Optional[dict], Optional[dict]]:
     """Who does this new lead/customer belong to?
 
     An Agent creating a lead is obviously its own agent — auto-attach them,
     no need to ask. Anyone else (Admin/Underwriter) doesn't have that implicit
     ownership, so the lead needs an explicit agent named; if they haven't
-    given one, decline with a message asking for it rather than leaving the
-    lead unowned.
+    given one (or named one that doesn't exist — including the model
+    inventing a placeholder despite being told not to), offer the real list
+    to pick from rather than leaving the lead unowned or dead-ending in text.
 
     Returns (agent, error_response) — exactly one of the two is set.
     """
@@ -758,17 +790,15 @@ async def _resolve_lead_agent(args: dict, ctx: Ctx) -> tuple[Optional[dict], Opt
 
     query = args.get("agent_name") or args.get("agent_email")
     if not query:
-        return None, {
-            "success": False,
-            "message": "Who is the agent associated with this lead/customer? Please give their name or email.",
-        }
+        return None, await _agent_picker_result(
+            ctx, "Who is the agent associated with this lead/customer? Pick one, or search by name."
+        )
 
     agent = await _find_agent_user(ctx, query)
     if not agent:
-        return None, {
-            "success": False,
-            "message": f"I couldn't find an Agent matching '{query}'. Please give their exact name or email.",
-        }
+        return None, await _agent_picker_result(
+            ctx, f"'{query}' isn't a real Agent on this tenant. Pick one, or search by name."
+        )
     return agent, None
 
 

@@ -94,14 +94,18 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
                 return prev;
               }
               const copy = [...prev];
-              // Move the assessment from any previous message in this turn to the final token bubble
-              if (pendingAssessmentRef.current || pendingQuickActionsRef.current) {
+              // Move the assessment (only) from any previous message in this turn to
+              // the final token bubble. quickActions are deliberately NOT migrated
+              // off older messages any more — a confirm/clarify interrupt's own
+              // buttons (Yes/Cancel, Individual/Corporate/Family, …) must stay on
+              // that message exactly as answered, not vanish because a later,
+              // unrelated quick_actions event arrived for the next step.
+              if (pendingAssessmentRef.current) {
                 for (let i = copy.length - 1; i >= 0; i--) {
                   if (copy[i].role === "user") break;
-                  if (copy[i].role === "assistant" && (copy[i].assessment || copy[i].quickActions)) {
+                  if (copy[i].role === "assistant" && copy[i].assessment) {
                     copy[i] = { ...copy[i] };
-                    if (pendingAssessmentRef.current) delete copy[i].assessment;
-                    if (pendingQuickActionsRef.current) delete copy[i].quickActions;
+                    delete copy[i].assessment;
                   }
                 }
               }
@@ -174,17 +178,20 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
         }
 
         case "quick_actions":
-          // Attach contextual next-step suggestions directly to the chat bubble
+          // Buffered here so the token handler above attaches these to the
+          // NEW bubble it's about to create for this turn's reply.
           pendingQuickActionsRef.current = evt.actions;
           setMessages((prev) => {
-            const copy = [...prev];
-            for (let i = copy.length - 1; i >= 0; i--) {
-              if (copy[i].role === "assistant") {
-                copy[i] = { ...copy[i], quickActions: evt.actions };
-                break;
-              }
+            const last = prev[prev.length - 1];
+            // Backfill onto the current bubble only if it has no actions of
+            // its own yet — never overwrite an interrupt's already-answered
+            // Yes/Cancel (or similar) with this turn's next-step suggestions.
+            if (last && last.role === "assistant" && !last.quickActions) {
+              const copy = [...prev];
+              copy[copy.length - 1] = { ...last, quickActions: evt.actions };
+              return copy;
             }
-            return copy;
+            return prev;
           });
           // Also set turnActions for the floating panel (filter out upload actions
           // since they are already attached to the specific message bubble)

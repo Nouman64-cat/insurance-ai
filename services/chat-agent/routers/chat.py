@@ -17,8 +17,9 @@ from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.types import Command
 
+from graph import generate_chat_title
 from permission import is_role_allowed, step_label
-from schemas import ChatResumeRequest, ChatStreamRequest, ExecuteToolRequest
+from schemas import ChatResumeRequest, ChatStreamRequest, ChatTitleRequest, ExecuteToolRequest
 from tool_executor import ExecCtx, execute_tool
 
 router = APIRouter(prefix="/chat", tags=["chat"])
@@ -202,6 +203,16 @@ async def chat_resume(body: ChatResumeRequest, request: Request):
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
+
+
+@router.post("/title")
+async def chat_title(body: ChatTitleRequest, x_tenant_id: str = Header(default="")):
+    """Non-streaming, cheap side-task: a short AI-generated title for the
+    sidebar, derived from the conversation's first exchange. No RBAC needed —
+    it reads two message strings the caller already has, it doesn't touch
+    domain data."""
+    title = await generate_chat_title(body.first_user_message, body.first_assistant_reply, x_tenant_id)
+    return {"title": title}
 
 
 @router.post("/execute-tool")

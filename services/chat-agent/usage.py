@@ -25,6 +25,7 @@ TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service
 # Keep these stable — they are the series names on the Token Economy chart.
 SERVICE_CHAT_AGENT = "Chat Agent"
 SERVICE_PLAN_ADVISOR = "Chat Agent — Plan Advisor"
+SERVICE_CHAT_TITLE = "Chat Agent — Title Generator"
 
 
 def model_from_response(response: Any) -> Optional[str]:
