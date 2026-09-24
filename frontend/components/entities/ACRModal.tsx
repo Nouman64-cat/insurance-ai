@@ -32,13 +32,22 @@ export function ACRModal({ caseId, initial, onClose, onDone }: {
   const [err, setErr] = useState<string | null>(null);
 
   const submit = async () => {
+    const missingDeclarations: string[] = [];
+    if (!form.terms_explained_to_proposer) missingDeclarations.push("confirm policy terms were explained");
+    if (!form.identity_verified_kyc) missingDeclarations.push("confirm identity verification (KYC)");
+    if (!form.signature_obtained_in_presence) missingDeclarations.push("confirm signature in your presence");
+    if (missingDeclarations.length > 0) {
+      setErr(`Please complete the Agent Declaration: ${missingDeclarations.join("; ")}.`);
+      return;
+    }
+
     setBusy(true); setErr(null);
     try {
       await saveACR(caseId, form);
       await submitACR(caseId);
       onDone();
     } catch (e: any) {
-      setErr(e?.message ?? "Failed to submit ACR");
+      setErr(e?.response?.data?.detail ?? e?.message ?? "Failed to submit ACR");
     } finally {
       setBusy(false);
     }
@@ -121,7 +130,10 @@ export function ACRModal({ caseId, initial, onClose, onDone }: {
           </div>
 
           <div>
-            <p className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-2">Agent Declaration</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-bold text-slate-700 uppercase tracking-wide">Agent Declaration</p>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">Required to submit</span>
+            </div>
             <div className="space-y-2">
               <label className="flex items-center gap-1.5 text-sm text-slate-600">
                 <input type="checkbox" checked={form.terms_explained_to_proposer} onChange={(e) => setForm({ ...form, terms_explained_to_proposer: e.target.checked })} />

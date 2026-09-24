@@ -138,7 +138,6 @@ async def initiate_ipp(
         raise HTTPException(status_code=409, detail="This case has no linked policy/quote yet.")
 
     stmt = select(InitialPremiumPayment).where(
-        InitialPremiumPayment.tenant_id == tenant_id,
         InitialPremiumPayment.case_id == case_id
     )
     ipp = (await session.exec(stmt)).first()
@@ -176,8 +175,25 @@ async def initiate_ipp(
         ipp.updated_at = now
         session.add(ipp)
 
-    await session.commit()
-    await session.refresh(ipp)
+    try:
+        await session.commit()
+        await session.refresh(ipp)
+    except Exception:
+        await session.rollback()
+        # In case of concurrent request / duplicate key race condition:
+        stmt = select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id)
+        existing = (await session.exec(stmt)).first()
+        if existing is None:
+            raise
+        existing.amount = amount
+        existing.status = IPPStatusEnum.INITIATED
+        existing.method = intent.method.value
+        existing.reference = intent.reference
+        existing.updated_at = datetime.utcnow()
+        session.add(existing)
+        await session.commit()
+        await session.refresh(existing)
+        ipp = existing
 
     return IPPInitiateResponse(
         amount=round(amount, 2),

@@ -1,5 +1,6 @@
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
+from uuid import UUID
 import os
 
 from fastapi import APIRouter, Depends
@@ -9,9 +10,107 @@ from sqlalchemy import text
 from google import genai
 
 from database import get_session
+from shared.models.core import TokenUsage
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/agent", tags=["agent"])
+
+# Series name on the Token Economy chart — keep stable.
+SERVICE_AGENT_COPILOT = "Agent Copilot (RAG)"
+
+
+def _tenant_uuid(tenant_id: Optional[str]) -> Optional[UUID]:
+    if not tenant_id:
+        return None
+    try:
+        return UUID(str(tenant_id))
+    except (ValueError, TypeError):
+        return None
+
+
+async def _record_generation_usage(
+    db: AsyncSession,
+    response: Any,
+    *,
+    model_name: str,
+    tenant_id: Optional[str],
+) -> None:
+    """Persist a google-genai generate_content call's token usage.
+
+    Neither the RAG endpoint's embed nor its generate call flows through
+    chat-agent's LangChain metering, so without this the Token Economy
+    dashboard understates real spend. Best-effort — a metering failure must
+    never fail the suggestion.
+
+    Output tokens include `thoughts_token_count`: Gemini 2.5 bills thinking
+    tokens at the output rate but reports them separately from
+    `candidates_token_count`.
+    """
+    try:
+        meta = getattr(response, "usage_metadata", None)
+        if meta is None:
+            return
+        input_tokens = int(getattr(meta, "prompt_token_count", 0) or 0)
+        output_tokens = int(getattr(meta, "candidates_token_count", 0) or 0) + int(
+            getattr(meta, "thoughts_token_count", 0) or 0
+        )
+        total_tokens = int(
+            getattr(meta, "total_token_count", 0) or (input_tokens + output_tokens)
+        )
+        cached_tokens = int(getattr(meta, "cached_content_token_count", 0) or 0)
+        if not input_tokens and not output_tokens:
+            return
+        db.add(
+            TokenUsage(
+                service_name=SERVICE_AGENT_COPILOT,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                cached_tokens=cached_tokens,
+                tenant_id=_tenant_uuid(tenant_id),
+                model_name=model_name,
+            )
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 — metering must never break the endpoint
+        log.warning("Agent Copilot generation usage not recorded: %s", exc)
+
+
+async def _record_embedding_usage(
+    db: AsyncSession,
+    response: Any,
+    *,
+    model_name: str,
+    tenant_id: Optional[str],
+) -> None:
+    """Persist a google-genai embed_content call's usage.
+
+    The embeddings API has no usage_metadata; it reports
+    `response.metadata.billable_character_count`. Gemini bills embeddings
+    per input token, and ~4 characters ≈ 1 token, so the char count is
+    divided by 4 to record a comparable token figure. Recorded as input
+    tokens (embeddings have no output).
+    """
+    try:
+        emb_meta = getattr(response, "metadata", None)
+        chars = int(getattr(emb_meta, "billable_character_count", 0) or 0)
+        if not chars:
+            return
+        input_tokens = max(1, round(chars / 4))
+        db.add(
+            TokenUsage(
+                service_name=SERVICE_AGENT_COPILOT,
+                input_tokens=input_tokens,
+                output_tokens=0,
+                total_tokens=input_tokens,
+                cached_tokens=0,
+                tenant_id=_tenant_uuid(tenant_id),
+                model_name=model_name,
+            )
+        )
+        await db.commit()
+    except Exception as exc:  # noqa: BLE001 — metering must never break the endpoint
+        log.warning("Agent Copilot embedding usage not recorded: %s", exc)
 
 class SuggestActionRequest(BaseModel):
     context: str
@@ -38,6 +137,9 @@ async def suggest_actions(req: SuggestActionRequest, db: AsyncSession = Depends(
         response = client.models.embed_content(
             model="models/gemini-embedding-001",
             contents=req.context,
+        )
+        await _record_embedding_usage(
+            db, response, model_name="models/gemini-embedding-001", tenant_id=req.tenant_id
         )
         query_embedding = response.embeddings[0].values
         
@@ -93,7 +195,10 @@ Respond ONLY with a valid JSON object in the following format:
             contents=prompt,
             config={"response_mime_type": "application/json"}
         )
-        
+        await _record_generation_usage(
+            db, gen_response, model_name="gemini-2.5-flash", tenant_id=req.tenant_id
+        )
+
         import json
         out = json.loads(gen_response.text)
         log.info(f"RAG Suggestion Generated: {out}")

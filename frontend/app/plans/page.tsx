@@ -345,7 +345,13 @@ export default function InsurancePlansPage() {
               No plans match your search/filters.
             </div>
           ) : (
-            <PlansTable plans={filteredPlans} onView={setViewingPlan} />
+            <PlansTable
+              plans={filteredPlans}
+              onView={setViewingPlan}
+              onEdit={openEdit}
+              onDelete={(p) => void handleDelete(p)}
+              isAdmin={isAdmin}
+            />
           )}
         </>
       )}
@@ -436,10 +442,22 @@ function formatPKRCompact(n: number): string {
   return n.toLocaleString();
 }
 
-function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: InsurancePlan) => void }) {
+function PlansTable({
+  plans,
+  onView,
+  onEdit,
+  onDelete,
+  isAdmin,
+}: {
+  plans: InsurancePlan[];
+  onView: (p: InsurancePlan) => void;
+  onEdit: (p: InsurancePlan) => void;
+  onDelete: (p: InsurancePlan) => void;
+  isAdmin: boolean;
+}) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-x-auto">
-      <table className="w-full text-sm min-w-[1150px]">
+      <table className="w-full text-sm min-w-[1200px]">
         <thead>
           <tr className="border-b border-slate-200 bg-slate-50 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">
             <th className="px-4 py-2.5">Plan</th>
@@ -450,6 +468,7 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
             <th className="px-4 py-2.5">Term</th>
             <th className="px-4 py-2.5">Medical Exam Thresholds (PKR)</th>
             <th className="px-4 py-2.5">Status</th>
+            <th className="px-4 py-2.5 text-right">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -460,7 +479,7 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
               <tr
                 key={plan.id}
                 onClick={() => onView(plan)}
-                className="border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50"
+                className="border-b border-slate-100 last:border-0 cursor-pointer hover:bg-slate-50 transition-colors"
               >
                 <td className="px-4 py-2.5">
                   <div className="font-semibold text-slate-800">{plan.label}</div>
@@ -504,6 +523,28 @@ function PlansTable({ plans, onView }: { plans: InsurancePlan[]; onView: (p: Ins
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_BADGE[plan.status] ?? ""}`}>
                     {plan.status}
                   </span>
+                </td>
+                <td className="px-4 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => onEdit(plan)}
+                      className="px-2.5 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200/60"
+                      title="Edit plan configuration"
+                    >
+                      Edit
+                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => onDelete(plan)}
+                        className="px-2.5 py-1 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-200/60"
+                        title="Remove plan"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );

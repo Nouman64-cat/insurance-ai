@@ -6,7 +6,8 @@ import Link from "next/link";
 
 import { usePathname, useSearchParams } from "next/navigation";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import api from "@/app/services/api";
 
 
 
@@ -484,8 +485,9 @@ export function Sidebar() {
   // Drag and Drop state
   const initialOrder = NAV_ITEMS.map((g: any) => ({ group: g.group, links: g.links.map((l: any) => l.href) }));
   const [navOrder, setNavOrder] = useState(initialOrder);
-  const [draggedItem, setDraggedItem] = useState<{ groupIndex: number, linkIndex: number } | null>(null);
-  const [draggedOverItem, setDraggedOverItem] = useState<{ groupIndex: number, linkIndex: number } | null>(null);
+  const [draggedItem, setDraggedItem] = useState<{ group: string; href: string } | null>(null);
+  const navOrderRef = useRef(navOrder);
+  navOrderRef.current = navOrder;
 
   useEffect(() => {
     const tab = searchParams.get("tab");
@@ -519,43 +521,33 @@ export function Sidebar() {
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
-        const validGroupNames = new Set(NAV_ITEMS.map((g: any) => g.group).filter(Boolean));
+        const validGroupArray = Array.isArray(parsed) ? parsed : [];
 
-        // Filter out obsolete groups that no longer exist in NAV_ITEMS
-        const validParsed = Array.isArray(parsed)
-          ? parsed.filter((g: any) => g.group && validGroupNames.has(g.group))
-          : [];
+        // Normalize each category so modules strictly belong to their original category and never cross categories
+        const normalizedOrder = NAV_ITEMS.map((origG: any) => {
+          const savedG = validGroupArray.find((g: any) => g && g.group === origG.group);
+          const origHrefs: string[] = origG.links.map((l: any) => l.href);
+          const origHrefsSet = new Set(origHrefs);
 
-        // Append any groups added to NAV_ITEMS since order was saved
-        const savedGroups = new Set(validParsed.map((g: any) => g.group));
-        NAV_ITEMS.forEach((g: any) => {
-          if (g.group && !savedGroups.has(g.group)) {
-            validParsed.push({ group: g.group, links: g.links.map((l: any) => l.href) });
+          if (!savedG || !Array.isArray(savedG.links)) {
+            return { group: origG.group, links: origHrefs };
           }
-        });
 
-        // Clean up any links inside saved groups that now belong to a different group in NAV_ITEMS
-        validParsed.forEach((groupObj: any) => {
-          groupObj.links = groupObj.links.filter((href: string) => {
-            const currentOrigGroup = NAV_ITEMS.find((g: any) => g.links.some((l: any) => l.href === href));
-            return !currentOrigGroup || currentOrigGroup.group === groupObj.group;
-          });
-        });
+          // Retain custom user order within this group, but only for links that belong to this group
+          const filteredLinks = savedG.links.filter((href: string) => origHrefsSet.has(href));
 
-        // Merge any remaining new links into their respective target groups
-        const allSavedHrefs = new Set(validParsed.flatMap((g: any) => g.links));
-        const missingLinks = NAV_ITEMS.flatMap((g: any) => g.links).filter((l: any) => !allSavedHrefs.has(l.href));
-        if (missingLinks.length > 0 && validParsed.length > 0) {
-          missingLinks.forEach((l: any) => {
-            const origGroup = NAV_ITEMS.find((g: any) => g.links.some((link: any) => link.href === l.href));
-            const targetGroup = validParsed.find((g: any) => g.group === origGroup?.group) || validParsed[0];
-            if (targetGroup && !targetGroup.links.includes(l.href)) {
-              targetGroup.links.push(l.href);
+          // Ensure any links that belong to this group but were missing are appended
+          origHrefs.forEach((href: string) => {
+            if (!filteredLinks.includes(href)) {
+              filteredLinks.push(href);
             }
           });
-        }
-        setNavOrder(validParsed);
-        localStorage.setItem("sidebar_nav_order", JSON.stringify(validParsed));
+
+          return { group: origG.group, links: filteredLinks };
+        });
+
+        setNavOrder(normalizedOrder);
+        localStorage.setItem("sidebar_nav_order", JSON.stringify(normalizedOrder));
       } catch (e) { }
     }
   }, []);
@@ -565,34 +557,86 @@ export function Sidebar() {
     localStorage.removeItem("sidebar_nav_order");
   };
 
-  const handleDragStart = (e: React.DragEvent, groupIndex: number, linkIndex: number) => {
-    setDraggedItem({ groupIndex, linkIndex });
-    // e.dataTransfer.effectAllowed = 'move'; // Causing visual issues in some browsers without specific data
+  const handleDragStart = (e: React.DragEvent, groupName: string, href: string) => {
+    setDraggedItem({ group: groupName, href });
+    e.dataTransfer.setData("text/plain", href);
+    e.dataTransfer.effectAllowed = "move";
   };
 
-  const handleDragEnter = (e: React.DragEvent, groupIndex: number, linkIndex: number) => {
+  const handleDragEnter = (e: React.DragEvent, targetGroupName: string, targetHref: string) => {
     e.preventDefault();
     if (!draggedItem) return;
-    if (draggedItem.groupIndex === groupIndex && draggedItem.linkIndex === linkIndex) return;
+
+    // Strict boundary: modules must stay within their own category (no inter-categorical reordering)
+    if (draggedItem.group !== targetGroupName) return;
+    if (draggedItem.href === targetHref) return;
 
     setNavOrder((prevOrder) => {
-      const newOrder = JSON.parse(JSON.stringify(prevOrder));
-      const itemToMove = newOrder[draggedItem.groupIndex].links[draggedItem.linkIndex];
+      const newOrder = prevOrder.map((groupObj) => {
+        if (groupObj.group !== targetGroupName) return groupObj;
 
-      // Remove from old
-      newOrder[draggedItem.groupIndex].links.splice(draggedItem.linkIndex, 1);
-      // Insert at new
-      newOrder[groupIndex].links.splice(linkIndex, 0, itemToMove);
+        const links = [...groupObj.links];
+        const fromIndex = links.indexOf(draggedItem.href);
+        const toIndex = links.indexOf(targetHref);
 
-      setDraggedItem({ groupIndex, linkIndex });
+        if (fromIndex === -1 || toIndex === -1 || fromIndex === toIndex) {
+          return groupObj;
+        }
+
+        // Reorder within the same category
+        const [moved] = links.splice(fromIndex, 1);
+        links.splice(toIndex, 0, moved);
+
+        return { ...groupObj, links };
+      });
+
       return newOrder;
     });
   };
 
+  const handleDragOver = (e: React.DragEvent, groupName: string) => {
+    e.preventDefault();
+    if (!draggedItem) return;
+    if (draggedItem.group !== groupName) {
+      e.dataTransfer.dropEffect = "none";
+    } else {
+      e.dataTransfer.dropEffect = "move";
+    }
+  };
+
   const handleDragEnd = () => {
     setDraggedItem(null);
-    setDraggedOverItem(null);
-    localStorage.setItem("sidebar_nav_order", JSON.stringify(navOrder));
+    localStorage.setItem("sidebar_nav_order", JSON.stringify(navOrderRef.current));
+  };
+
+  const handleLogout = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // 1. Clear authentication & session credentials (keep UI prefs like theme and sidebar_nav_order)
+    localStorage.removeItem("jwt_token");
+    localStorage.removeItem("tenant_id");
+    localStorage.removeItem("tenant_name");
+    localStorage.removeItem("user_email");
+    localStorage.removeItem("user_name");
+    localStorage.removeItem("user_role");
+    localStorage.removeItem("branch_id");
+
+    // 2. Clear session storage
+    try {
+      sessionStorage.clear();
+    } catch { }
+
+    // 3. Reset in-memory axios default headers
+    try {
+      if (api.defaults?.headers?.common) {
+        delete api.defaults.headers.common["Authorization"];
+        delete api.defaults.headers.common["X-Tenant-Id"];
+      }
+    } catch { }
+
+    // 4. Force hard navigation to /login to ensure clean state reset
+    window.location.href = "/login";
   };
 
   // Reconstruct display groups using navOrder and NAV_ITEMS mapping
@@ -673,16 +717,20 @@ export function Sidebar() {
           if (visibleLinks.length === 0) return null;
 
           return (
-            <div key={group.group} className={collapsed && gIndex > 0 ? "pt-5 border-t border-slate-200 w-full" : ""}>
+            <div
+              key={group.group}
+              className={collapsed && gIndex > 0 ? "pt-5 border-t border-slate-200 w-full" : ""}
+              onDragOver={(e) => isDragEnabled && handleDragOver(e, group.group)}
+            >
               {!collapsed && (
                 <p className="px-2 mb-1.5 text-[9px] font-bold uppercase tracking-[0.15em] text-slate-600">
                   {group.group}
                 </p>
               )}
               <div className="space-y-0.5">
-                {visibleLinks.map((link: any, lIndex: number) => {
+                {visibleLinks.map((link: any) => {
                   const isActive = activeHref === link.href || (link.subLinks && link.subLinks.some((sub: any) => activeHref === sub.href));
-                  const isDraggingThis = draggedItem?.groupIndex === gIndex && draggedItem?.linkIndex === lIndex;
+                  const isDraggingThis = draggedItem?.href === link.href;
 
                   const toggleSubmenu = (e: React.MouseEvent) => {
                     e.preventDefault();
@@ -693,10 +741,14 @@ export function Sidebar() {
                     <div
                       key={link.href}
                       draggable={isDragEnabled}
-                      onDragStart={(e) => handleDragStart(e, gIndex, lIndex)}
-                      onDragEnter={(e) => isDragEnabled && handleDragEnter(e, gIndex, lIndex)}
+                      onDragStart={(e) => handleDragStart(e, group.group, link.href)}
+                      onDragEnter={(e) => isDragEnabled && handleDragEnter(e, group.group, link.href)}
                       onDragEnd={handleDragEnd}
-                      onDragOver={(e) => e.preventDefault()}
+                      onDragOver={(e) => isDragEnabled && handleDragOver(e, group.group)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        if (isDragEnabled) handleDragEnd();
+                      }}
                       className={`relative group ${isDraggingThis ? "opacity-50 border border-dashed border-slate-300 rounded-xl" : ""}`}
                     >
                       <Link
@@ -808,38 +860,67 @@ export function Sidebar() {
 
       {/* ── User & Logout ─────────────────────────────────────────────────── */}
       <div className="p-3 border-t border-slate-100 bg-slate-50 flex-shrink-0">
-        <div className={`flex items-center hover:bg-white rounded-xl transition-colors p-2 ${collapsed ? "justify-center" : "gap-3"}`}>
-          <Link href="/profile" className="flex items-center gap-3 flex-1 min-w-0" title="Profile">
-            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm flex-shrink-0 ring-2 ring-white">
-              {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "SR"}
-            </div>
-            {!collapsed && (
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-bold text-slate-900 truncate">{userName}</p>
-                <p className="text-[10px] text-slate-500 truncate">{userRole || userEmail}</p>
+        {!collapsed ? (
+          <div className="flex items-center justify-between gap-2 p-1.5 rounded-xl hover:bg-white transition-colors border border-transparent hover:border-slate-200">
+            <Link
+              href="/profile"
+              className="flex items-center gap-2.5 flex-1 min-w-0 p-1 rounded-lg hover:bg-slate-50 transition-colors group"
+              title="View Profile"
+            >
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs shadow-sm flex-shrink-0 ring-2 ring-white group-hover:ring-blue-400 transition-all">
+                {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "SR"}
               </div>
-            )}
-          </Link>
-          {!collapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-slate-800 truncate group-hover:text-blue-600 transition-colors leading-tight">
+                  {userName}
+                </p>
+                <p className="text-[10px] text-slate-500 truncate leading-tight mt-0.5">
+                  {userRole || userEmail}
+                </p>
+              </div>
+            </Link>
             <button
               type="button"
-              title="Logout"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                localStorage.clear();
-                window.location.replace("/login");
-              }}
-              className="text-slate-400 hover:text-red-500 hover:bg-red-50 p-1.5 rounded-lg transition-colors cursor-pointer flex-shrink-0 relative z-50"
+              id="sidebar-logout-btn"
+              title="Logout / Sign Out"
+              aria-label="Logout"
+              onClick={handleLogout}
+              className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer flex-shrink-0"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 pointer-events-none">
                 <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                 <polyline points="16 17 21 12 16 7"></polyline>
                 <line x1="21" y1="12" x2="9" y2="12"></line>
               </svg>
             </button>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-2">
+            <Link
+              href="/profile"
+              title={`${userName} (${userRole || userEmail})`}
+              className="p-1 rounded-lg hover:bg-white transition-colors"
+            >
+              <div className="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white font-bold text-xs shadow-sm ring-2 ring-white hover:ring-blue-400 transition-all">
+                {userName.split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase() || "SR"}
+              </div>
+            </Link>
+            <button
+              type="button"
+              id="sidebar-logout-btn-collapsed"
+              title="Logout / Sign Out"
+              aria-label="Logout"
+              onClick={handleLogout}
+              className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 pointer-events-none">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );

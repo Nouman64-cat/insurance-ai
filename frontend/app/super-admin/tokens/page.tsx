@@ -19,6 +19,8 @@ interface Rate {
 const MODEL_PRICING: Record<string, Rate> = {
   "gemini-2.5-flash-lite": { input: 0.10, cached: 0.01, output: 0.40 },
   "gemini-2.5-flash": { input: 0.30, cached: 0.03, output: 2.50 },
+  "models/gemini-embedding-001": { input: 0.15, cached: 0.15, output: 0.0 },
+  "gemini-embedding-001": { input: 0.15, cached: 0.15, output: 0.0 },
   "gemini-2.5-pro": { input: 1.25, cached: 0.125, output: 10.0 },
   "gemini-2.0-flash": { input: 0.10, cached: 0.025, output: 0.40 },
   "gpt-4o-mini": { input: 0.15, cached: 0.075, output: 0.60 },
@@ -148,6 +150,11 @@ const FINOPS_SERVICE_METADATA: Record<string, { description: string; route: stri
     description: "Medical history and underwriting file summarization pipeline.",
     route: "/case-summarizer",
     label: "Summarizer",
+  },
+  "Agent Copilot (RAG)": {
+    description: "Next-best-action suggestions — SOP retrieval (pgvector) plus a Gemini generation call per request.",
+    route: "/",
+    label: "Open Copilot",
   },
 };
 

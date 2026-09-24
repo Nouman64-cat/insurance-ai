@@ -83,6 +83,62 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   const [editAddingPolicy, setEditAddingPolicy] = useState(false);
   const [editPolicyLoading, setEditPolicyLoading] = useState(false);
 
+  // Editing existing assigned policy
+  const [editingPolicyId, setEditingPolicyId] = useState<string | null>(null);
+  const [editExistingCoverage, setEditExistingCoverage] = useState<string>("");
+  const [editExistingTerm, setEditExistingTerm] = useState<string>("");
+  const [editExistingDepName, setEditExistingDepName] = useState<string>("");
+  const [editExistingDepDob, setEditExistingDepDob] = useState<string>("");
+  const [editExistingLoading, setEditExistingLoading] = useState<boolean>(false);
+
+  const startEditExistingPolicy = (pol: Policy) => {
+    setEditingPolicyId(pol.id);
+    setEditExistingCoverage(String(pol.coverage_amount ?? ""));
+    setEditExistingTerm(String(pol.term_years ?? ""));
+    setEditExistingDepName(pol.dependent_name ?? "");
+    setEditExistingDepDob(pol.dependent_dob ?? "");
+  };
+
+  const cancelEditExistingPolicy = () => {
+    setEditingPolicyId(null);
+  };
+
+  const saveEditExistingPolicy = async (pol: Policy) => {
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId || !customer) return;
+    const cov = parseFloat(editExistingCoverage);
+    const term = parseInt(editExistingTerm);
+    if (isNaN(cov) || cov <= 0) {
+      setError("Please enter a valid coverage amount.");
+      return;
+    }
+    if (isNaN(term) || term <= 0) {
+      setError("Please enter a valid term in years.");
+      return;
+    }
+    setEditExistingLoading(true);
+    setError("");
+    try {
+      const payload: any = {
+        coverage_amount: cov,
+        term_years: term,
+      };
+      if (pol.insurance_type === "CHILD_EDUCATION_MARRIAGE" || editExistingDepName) {
+        payload.dependent_name = editExistingDepName || null;
+        payload.dependent_dob = editExistingDepDob || null;
+      }
+      await api.put(`/tenants/${tenantId}/customers/${customer.id}/policies/${pol.id}`, payload);
+      const res = await api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`);
+      setCustomerPolicies(res.data ?? []);
+      setEditingPolicyId(null);
+      setSuccess("Plan updated successfully.");
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? "Failed to update plan.");
+    } finally {
+      setEditExistingLoading(false);
+    }
+  };
+
   // Assignment/location — real top-level columns (Customer.city/province/branch_id/assigned_agent_id),
   // kept separate from the `details` JSON blob so they're filterable server-side.
   const [city, setCity] = useState("");
@@ -1472,37 +1528,147 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     {customerPolicies.map((pol) => {
                       const colorClass = PLAN_TYPE_COLORS[pol.insurance_type] ?? "border-slate-200 bg-slate-50";
                       const textClass = PLAN_TYPE_TEXT[pol.insurance_type] ?? "text-slate-700";
+
+                      if (editingPolicyId === pol.id) {
+                        return (
+                          <div key={pol.id} className="border-2 border-blue-400 bg-white rounded-xl p-4 shadow-sm space-y-3">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <p className="text-sm font-bold text-slate-900">{pol.product_name}</p>
+                                <p className="text-[10px] text-slate-400 uppercase font-semibold">
+                                  {INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type} · Editing
+                                </p>
+                              </div>
+                              <span className="text-xs px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-semibold border border-blue-200">
+                                Edit Plan Fields
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Coverage Amount (PKR)</label>
+                                <input
+                                  type="number"
+                                  value={editExistingCoverage}
+                                  onChange={(e) => setEditExistingCoverage(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                  placeholder="e.g. 5000000"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Term (Years)</label>
+                                <input
+                                  type="number"
+                                  value={editExistingTerm}
+                                  onChange={(e) => setEditExistingTerm(e.target.value)}
+                                  className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                  placeholder="e.g. 20"
+                                />
+                              </div>
+                            </div>
+
+                            {(pol.insurance_type === "CHILD_EDUCATION_MARRIAGE" || editExistingDepName) && (
+                              <div className="grid grid-cols-2 gap-3 pt-1">
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Dependent Name</label>
+                                  <input
+                                    type="text"
+                                    value={editExistingDepName}
+                                    onChange={(e) => setEditExistingDepName(e.target.value)}
+                                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                    placeholder="Child's full name"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[11px] font-bold text-slate-500 uppercase mb-1">Dependent DOB</label>
+                                  <input
+                                    type="date"
+                                    value={editExistingDepDob}
+                                    onChange={(e) => setEditExistingDepDob(e.target.value)}
+                                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                              <button
+                                type="button"
+                                onClick={cancelEditExistingPolicy}
+                                disabled={editExistingLoading}
+                                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => saveEditExistingPolicy(pol)}
+                                disabled={editExistingLoading}
+                                className="px-3 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
+                              >
+                                {editExistingLoading ? (
+                                  <>
+                                    <div className="animate-spin h-3 w-3 rounded-full border-2 border-white/40 border-t-white" />
+                                    <span>Saving…</span>
+                                  </>
+                                ) : (
+                                  <span>Save Changes</span>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
+
                       return (
-                        <div key={pol.id} className={`border-l-4 rounded-xl p-4 ${colorClass} relative`}>
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              const tenantId = localStorage.getItem("tenant_id");
-                              if (!tenantId || !customer) return;
-                              if (confirm("Are you sure you want to remove this policy?")) {
-                                try {
-                                  await api.delete(`/tenants/${tenantId}/customers/${customer.id}/policies/${pol.id}`);
-                                  const res = await api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`);
-                                  setCustomerPolicies(res.data ?? []);
-                                  setSuccess("Policy removed successfully.");
-                                } catch (err: any) {
-                                  setError(err.response?.data?.detail ?? "Failed to remove policy.");
-                                }
-                              }
-                            }}
-                            className="absolute -top-1.5 -right-1.5 flex items-center justify-center w-5 h-5 rounded-full bg-red-500 hover:bg-red-600 text-white text-[10px] font-bold shadow-md transition-colors z-20 cursor-pointer"
-                            title="Remove Policy"
-                          >
-                            ✕
-                          </button>
+                        <div key={pol.id} className={`border-l-4 rounded-xl p-4 ${colorClass}`}>
                           <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className={`text-sm font-bold ${textClass}`}>{pol.product_name}</p>
+                            <div className="min-w-0 flex-1">
+                              <p className={`text-sm font-bold truncate ${textClass}`}>{pol.product_name}</p>
                               <p className="text-[10px] text-slate-400 mt-0.5 font-semibold uppercase tracking-wider">
                                 {INSURANCE_TYPE_LABELS[pol.insurance_type] ?? pol.insurance_type}
                               </p>
                             </div>
-                            <span className={`shrink-0 text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/70`}>{pol.term_years} yr</span>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${textClass} bg-white/80 border border-slate-200/60 shadow-sm`}>
+                                {pol.term_years} yr
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => startEditExistingPolicy(pol)}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-slate-50 text-blue-600 hover:text-blue-700 text-xs font-bold shadow-sm border border-slate-200 transition-all cursor-pointer"
+                                title="Edit Plan Fields"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const tenantId = localStorage.getItem("tenant_id");
+                                  if (!tenantId || !customer) return;
+                                  if (confirm(`Are you sure you want to remove the plan "${pol.product_name}"?`)) {
+                                    try {
+                                      await api.delete(`/tenants/${tenantId}/customers/${customer.id}/policies/${pol.id}`);
+                                      const res = await api.get(`/tenants/${tenantId}/customers/${customer.id}/policies`);
+                                      setCustomerPolicies(res.data ?? []);
+                                      setSuccess("Plan removed successfully.");
+                                    } catch (err: any) {
+                                      setError(err.response?.data?.detail ?? "Failed to remove plan.");
+                                    }
+                                  }
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 hover:text-red-700 text-xs font-bold shadow-sm border border-slate-200 transition-all cursor-pointer"
+                                title="Remove Plan"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                <span>Remove</span>
+                              </button>
+                            </div>
                           </div>
                           <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                             <div>

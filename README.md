@@ -1,552 +1,292 @@
-# insurance-ai — AI-Powered Insurance Underwriting Platform
+# Insurance AI Platform — Cost Analysis Documents
 
-An event-driven, multi-tenant insurance underwriting platform built on FastAPI microservices, LangGraph AI workflows, Kafka, PostgreSQL, and Memgraph.
-
----
-
-## Architecture Overview
-
-```
-Browser / Postman
-       │  HTTP
-       ▼
- API Gateway :8010          ← single public entry point, tenant auth
-       │
-       ├── POST /evaluate        → publishes ProposalSubmittedEvent to Kafka (202 Accepted)
-       └── POST /evaluate/stream → calls Risk Engine directly over HTTP (SSE streaming)
-
-Kafka :9092
-  insurance.proposal.submitted.v1   ← Gateway publishes here
-  insurance.risk.evaluated.v1       ← Risk Engine consumer publishes here
-
-Risk Engine :8012
-  ├── FastAPI server      → POST /evaluate, POST /evaluate/stream (sync HTTP path)
-  └── consumer.py daemon  → polls Kafka, runs LangGraph, publishes results
-
-LangGraph Workflow (inside Risk Engine)
-  validate_input        → deterministic field + business-rule validation
-  medical_scoring       → Gemini 2.5 Flash (age, gender, occupation hazard)
-  financial_scoring     → Gemini 2.5 Flash (coverage ratio, term, income stability)
-  fraud_detection       → Memgraph ring query + Gemini 2.5 Flash
-  decision_aggregation  → deterministic (40% medical + 40% financial + 20% fraud)
-                          Auto Approve / Human Review / Decline
-
-Data Stores
-  PostgreSQL         → tenants, customers, policies, risk_assessments, claims, artifacts
-                       (external service — NOT a docker-compose container; see below)
-  Memgraph   :7688   → fraud ring detection graph (customer network analysis)
-```
-
-**PostgreSQL is external.** It is no longer part of `docker-compose.yml` — every service connects to a Postgres instance you run yourself (a local install, a managed cloud database, etc.) via the `DATABASE_URL` in `.env`. Containers reach a host-installed Postgres through `host.docker.internal` (macOS/Windows Docker Desktop); on Linux you may need `--add-host=host.docker.internal:host-gateway` or the host's LAN IP instead.
+**Analysis Date:** September 8, 2026  
+**Prepared By:** Senior FinTech Engineer  
+**Project:** insurance-ai (AI-Powered Insurance Underwriting Platform)
 
 ---
 
-## Port Reference
+## 📋 Document Index
 
-| Service          | Host Port      | Purpose                                                                  |
-| ---------------- | -------------- | ------------------------------------------------------------------------ |
-| Frontend         | 3000           | Next.js underwriting dashboard                                           |
-| Memgraph Lab Web | 3001           | Graph database UI                                                        |
-| **Docs**   | **4991** | **Docusaurus documentation site**                                  |
-| PostgreSQL       | *(external)* | Not run via docker-compose — point`DATABASE_URL` at your own instance |
-| Memgraph Bolt    | 7688           | Bolt protocol for graph queries                                          |
-| Memgraph Lab     | 7445           | Memgraph Lab UI                                                          |
-| API Gateway      | 8010           | Main public entry point                                                  |
-| Tenant Service   | 8011           | Tenant management                                                        |
-| Risk Engine      | 8012           | LangGraph risk evaluation                                                |
-| Decision Engine  | 8013           | (Scaffolded — future)                                                   |
-| OCR Engine       | 8014           | Document text extraction via Gemini                                      |
-| Text Summarizer  | 8015           | OCR text summarization via Gemini                                        |
-| Kafka UI         | 8090           | Inspect Kafka topics and messages                                        |
-| Kafka            | 9092           | Internal broker (service → service)                                     |
-| Kafka            | 9094           | External listener (host tools, Postman)                                  |
+This analysis package contains **3 comprehensive documents** covering all aspects of Gemini API usage and deployment costs:
 
----
+### 1. 📊 **Insurance-AI-Cost-Analysis.md** (Main Report)
+**Length:** 12,000+ words | **Audience:** Technical, Finance, Executive  
+**Purpose:** Comprehensive end-to-end cost analysis with detailed breakdowns
 
-## Prerequisites
+**Contains:**
+- ✅ Current Gemini API integration across 4 services
+- ✅ Pricing structure and per-request costs
+- ✅ Testing phase cost estimates (unit, regression, load testing)
+- ✅ Production deployment scenarios (50, 200, 500+ policies/day)
+- ✅ Hosting cost comparison (AWS ECS, EKS, DigitalOcean)
+- ✅ Cost optimization strategies (short, medium, long-term)
+- ✅ 12-month financial projections
+- ✅ Risk assessment and mitigation
+- ✅ Monitoring recommendations
+- ✅ Detailed appendices and reference tables
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) ≥ 4.x (includes Docker Compose v2)
-- A **running PostgreSQL instance** reachable from your machine (local install, Postgres.app, a managed cloud DB, etc.) — **not** provided by docker-compose. Create an empty database for the app to migrate into.
-- A **Gemini API key** from [Google AI Studio](https://aistudio.google.com/)
+**Read this for:** Complete understanding of costs and business implications
 
 ---
 
-## First Time Setup
+### 2. ⚡ **Cost-Analysis-Executive-Summary.md**
+**Length:** 2,500 words | **Audience:** Finance, Leadership, Stakeholders  
+**Purpose:** Quick reference with key metrics and decisions
 
-**1. Copy the environment file and set your credentials**
+**Contains:**
+- ✅ Quick facts and current setup
+- ✅ Where Gemini is used (4 services summary)
+- ✅ Cost by testing phase (single table view)
+- ✅ Production deployment costs (3 scenarios)
+- ✅ Infrastructure hosting options comparison
+- ✅ Cost optimization opportunities
+- ✅ Year-1 financial projection
+- ✅ Risk factors and key metrics
+- ✅ Immediate next steps
+- ✅ Approval checklist
 
-```bash
-cp .env.example .env
-```
-
-Open `.env` and fill in:
-
-- `DATABASE_URL` — pointing at your external PostgreSQL instance and the empty database you created (e.g. `postgresql+asyncpg://postgres:yourpassword@host.docker.internal:5432/insurance-ai` on macOS/Windows Docker Desktop)
-- Your Gemini API key and any other credentials
-
-**2. Build images and start all services**
-
-```bash
-docker compose up --build -d
-```
-
-This pulls base images, installs dependencies, and starts all containers. Takes **3–5 minutes** on a cold machine. Run `docker compose ps` to confirm all services are healthy before proceeding.
-
-On first boot, `tenant-service` connects to your external PostgreSQL via `DATABASE_URL` and runs its migrations automatically (`migrate.py`, via the FastAPI lifespan) — check `docker compose logs tenant-service` for `all migrations complete` if a service fails to come up healthy.
-
-**3. Create the platform SuperAdmin**
-
-Tenant creation and Admin bootstrap are gated behind a **SuperAdmin** — a platform-level operator attached to a reserved `"Platform"` tenant. Create one with the bootstrap CLI (run inside the `tenant-service` container):
-
-```bash
-docker compose exec tenant-service python create_superadmin.py --email you@yourdomain.com
-```
-
-Only `--email` is required. Nothing is taken from the email — the display name is a random single word (e.g. `Riley`), the username is that word plus random digits (e.g. `riley4821`), and a secure password is auto-generated. Optional overrides: `--username`, `--first-name`, `--last-name`, `--password`.
-
-The credentials are printed to stdout (and best-effort emailed via SES — `emailed: no` just means email isn't configured; the account still exists). Re-running is safe: it reuses the `"Platform"` tenant and `SuperAdmin` role, and errors if the email/username is already taken.
-
-```
-SuperAdmin created:
-  email:    you@yourdomain.com
-  username: riley4821
-  name:     Riley
-  password: <generated>
-```
-
-**4. Create your first tenant**
-
-The platform is multi-tenant. Every request requires a valid `X-Tenant-Id` header. Log in as the SuperAdmin to get a JWT, then create a tenant:
-
-```bash
-# Log in (form-encoded; "username" is the SuperAdmin email)
-TOKEN=$(curl -s -X POST http://localhost:8010/auth/token \
-  -d "username=you@yourdomain.com" \
-  -d "password=<superadmin-password>" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
-
-# Create a tenant (name + alphanumeric code both required)
-curl -s -X POST http://localhost:8010/tenants \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Acme Insurance", "code": "ACME"}' | python3 -m json.tool
-```
-
-Copy the `id` from the response — you pass it as `X-Tenant-Id` in every subsequent request.
-
-To bootstrap that tenant's first Admin user (all calls use the SuperAdmin `$TOKEN`):
-
-```bash
-TENANT_ID=<id-from-above>
-
-# a) create a branch the Admin will belong to
-BRANCH_ID=$(curl -s -X POST http://localhost:8010/tenants/$TENANT_ID/branches \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"branch_code": "HQ", "name": "Head Office", "city": "Karachi"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-
-# b) create the first Admin (username + password are generated and emailed / returned)
-curl -s -X POST http://localhost:8010/tenants/$TENANT_ID/setup \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d "{\"email\": \"admin@acme.com\", \"full_name\": \"Acme Admin\", \"branch_id\": \"$BRANCH_ID\"}" \
-  | python3 -m json.tool
-```
-
-After that, the Admin logs in via `POST /auth/token` and manages users normally.
-
-**5. Start the Kafka consumer daemon**
-
-The Risk Engine exposes a Kafka consumer that processes async proposals. Run it in a separate terminal:
-
-```bash
-docker compose exec risk-engine python consumer.py
-```
-
-You should see:
-
-```
-INFO  consumer started — polling insurance.proposal.submitted.v1
-```
-
-Leave this running. It polls continuously and publishes results to `insurance.risk.evaluated.v1`.
-
-**6. Verify everything is up**
-
-| URL                          | Expected response                                    |
-| ---------------------------- | ---------------------------------------------------- |
-| http://localhost:3000        | Underwriting dashboard (Next.js)                     |
-| http://localhost:4991        | Docusaurus documentation site                        |
-| http://localhost:8010/health | `{"service":"api-gateway","status":"healthy"}`     |
-| http://localhost:8012/health | `{"service":"risk-engine","status":"healthy"}`     |
-| http://localhost:8014/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
-| http://localhost:8015/health | `{"status":"healthy","engine":"Gemini 2.5 Flash"}` |
-| http://localhost:8010/docs   | API Gateway — Swagger UI                            |
-| http://localhost:8012/docs   | Risk Engine — Swagger UI                            |
-| http://localhost:8014/docs   | OCR Engine — Swagger UI                             |
-| http://localhost:8015/docs   | Text Summarizer — Swagger UI                        |
-| http://localhost:8090        | Kafka UI — topic browser                            |
-| http://localhost:3001        | Memgraph Lab — graph database UI                    |
+**Read this for:** Decision-making, budget approval, stakeholder communication
 
 ---
 
-## Documentation Site
+### 3. 🔧 **Cost-Calculation-Reference.md**
+**Length:** 3,000+ words | **Audience:** Finance analysts, Engineers, Operations  
+**Purpose:** Detailed calculations, formulas, and SQL queries for cost tracking
 
-The project ships with a [Docusaurus](https://docusaurus.io/) site covering architecture, DB schemas, data flow, the tech stack, and a per-service endpoint reference — all with live Mermaid diagrams.
+**Contains:**
+- ✅ Gemini API pricing matrix (all models)
+- ✅ Cost per service calculation (step-by-step)
+- ✅ Daily volume cost calculator
+- ✅ Monthly cost aggregation template
+- ✅ Testing phase detailed breakdown
+- ✅ Infrastructure cost formulas
+- ✅ Quick calculation Python function
+- ✅ Budget allocation template
+- ✅ Break-even analysis
+- ✅ SQL queries for cost monitoring
 
-**Run without Docker (fastest):**
-
-```bash
-cd docs
-npm install
-npm start
-# → http://localhost:4991
-```
-
-**Run via Docker Compose (alongside all other services):**
-
-```bash
-docker compose up docs
-# → http://localhost:4991
-```
-
-No `--build` step needed — the docs service uses the pre-built `node:20-alpine` image and installs dependencies at startup.
-
-Source lives in `docs/docs/`. Edit any `.md` file and the browser hot-reloads automatically.
+**Read this for:** Detailed calculations, building dashboards, ongoing monitoring
 
 ---
 
-## API Reference
+## 🎯 Quick Navigation
 
-### Underwriting — Async Path (recommended)
+### "I need a 5-minute overview"
+→ Read: **Cost-Analysis-Executive-Summary.md**  
+→ Focus: Sections 1-2 (Quick Facts, Where Gemini is Used)
 
-**POST /evaluate** — submits a proposal to Kafka and returns immediately.
+### "I need to approve a budget"
+→ Read: **Cost-Analysis-Executive-Summary.md**  
+→ Focus: Sections 5-6 (Deployment Costs, Projections)
 
-```bash
-curl -s -X POST http://localhost:8010/evaluate \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: <tenant-id>" \
-  -d '{
-    "customer": {
-      "cnic": "35201-1234567-1",
-      "name": "Sara Ahmed",
-      "dob": "1998-04-10",
-      "gender": "Female",
-      "occupation": "Software Engineer",
-      "declared_income": 500000
-    },
-    "policy": {
-      "product_name": "Term Life Insurance",
-      "coverage_amount": 3000000,
-      "term_years": 10
-    }
-  }'
-```
+### "I need to understand all technical details"
+→ Read: **Insurance-AI-Cost-Analysis.md** (full)
 
-Response — **202 Accepted**:
+### "I need to calculate specific scenarios"
+→ Read: **Cost-Calculation-Reference.md**  
+→ Focus: Sections 2-3 (Cost Calculator, Daily Volumes)
 
-```json
-{
-  "event_id": "3f2e1a...",
-  "proposal_id": "7c4b9d...",
-  "status": "accepted",
-  "message": "Proposal queued for async risk evaluation."
-}
-```
-
-Use the `event_id` to correlate the result on `insurance.risk.evaluated.v1` (visible in Kafka UI at `http://localhost:8090`).
+### "I need to monitor costs in production"
+→ Read: **Cost-Calculation-Reference.md**  
+→ Focus: Section 10 (SQL Queries)
 
 ---
 
-### Underwriting — Sync Streaming Path (dev/testing)
+## 📈 Key Findings Summary
 
-**POST /evaluate/stream** — calls the Risk Engine directly and streams SSE progress events as each LangGraph node completes.
+### Current Setup
+- **Model:** Google Gemini 2.5 Flash
+- **Pricing:** $0.30/1M input tokens, $2.50/1M output tokens
+- **Cost per policy evaluation:** ~$0.056 (5.6 cents)
 
-```bash
-curl -s -X POST http://localhost:8010/evaluate/stream \
-  -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: <tenant-id>" \
-  -H "Accept: text/event-stream" \
-  --no-buffer \
-  -d '{ ... same body ... }'
-```
+### Where It's Used
+1. **Risk Engine** — Medical & Financial scoring (3-4 calls per policy)
+2. **OCR Engine** — Document text extraction (1 call per document)
+3. **Text Summarizer** — Content summarization (1 call per summary)
+4. **Chat Agent** — Conversational AI (2-7 turns per conversation)
 
-SSE event types:
+### Testing Costs
+- Unit Testing: $0-5/month (mocked)
+- Regression Testing: $32/month
+- Load Testing: $250/month
+- **Total:** ~$282-287/month
 
-| Type         | When                          | Payload                |
-| ------------ | ----------------------------- | ---------------------- |
-| `progress` | each LangGraph node completes | `{node, data}`       |
-| `invalid`  | validation failed             | `{errors: [...]}`    |
-| `saved`    | DB write complete             | full assessment object |
-| `error`    | something failed              | `{message}`          |
+### Production Deployment (Medium: 200 policies/day)
+- **Monthly LLM Cost:** $3,755
+- **Monthly Infrastructure:** $674-1,380
+- **Monthly Total:** $4,429-5,135
+- **Annual Cost:** $53,148-61,620
 
----
+### Production Deployment (Large: 500 policies/day)
+- **Monthly LLM Cost:** $9,387
+- **Monthly Infrastructure:** $750-2,500
+- **Monthly Total:** $10,137-11,887
+- **Annual Cost:** $121,644-142,644
 
-### LangGraph Workflow — Decision Bands
-
-The `decision_aggregation` node is fully deterministic:
-
-```
-composite_score = (40% × medical_score) + (40% × financial_score) + (20% × fraud_probability × 100)
-```
-
-| Decision               | Condition                                   |
-| ---------------------- | ------------------------------------------- |
-| **Auto Approve** | composite < 30 AND fraud_probability < 0.10 |
-| **Decline**      | composite > 75 OR fraud_probability > 0.60  |
-| **Human Review** | everything else                             |
-
-The final `reasons` list includes XAI outputs from all three scoring nodes plus a plain-English math breakdown of the composite calculation.
+### Cost Optimization Potential
+- **Prompt Caching:** 20-30% input token savings (0-1 month)
+- **Model Downgrade:** 65-70% total cost savings (3-6 months)
+- **Hybrid LLM Stack:** 40-50% savings (6-12 months)
 
 ---
 
-### OCR Engine
+## 💰 Financial Summary
 
-**POST /extract** — upload a PDF or image, get extracted text.
+### Year 1 Budget Estimates (Recommended: Medium Scenario)
 
-```bash
-curl -s -X POST http://localhost:8014/extract \
-  -F "file=@/path/to/document.pdf"
-```
+| Category | Cost |
+|----------|------|
+| LLM API (Gemini) | $38,540 |
+| Infrastructure (AWS EKS) | $8,088 |
+| Database (RDS) | $4,200 |
+| Storage & Networking | $1,080 |
+| Monitoring & Tools | $1,200 |
+| Contingency (15%) | $6,120 |
+| **TOTAL YEAR 1** | **$59,228** |
 
-**POST /extract/stream** — same, as SSE stream.
-
-Supported formats: `PDF`, `PNG`, `JPG`, `JPEG`, `TIFF`, `BMP`
-
----
-
-### Text Summarizer
-
-**POST /summarize** — summarize OCR-extracted text from one or more documents.
-
-```bash
-curl -s -X POST http://localhost:8015/summarize \
-  -H "Content-Type: application/json" \
-  -d '{
-    "documents": ["<extracted text from OCR>"],
-    "max_words": 200
-  }'
-```
-
-**POST /summarize/stream** — same, as SSE stream.
+**Average Monthly:** ~$4,936
 
 ---
 
-### Risk Engine (direct — bypass gateway)
+## 🎯 Recommended Actions
 
-Useful for testing the LangGraph workflow in isolation without Kafka or tenant auth.
+### Immediate (This Week)
+1. ✅ Select hosting provider (AWS EKS recommended)
+2. ✅ Set up billing alerts
+3. ✅ Finalize budget approval
 
-```bash
-curl -s -X POST http://localhost:8012/evaluate \
-  -H "Content-Type: application/json" \
-  -d '{
-    "customer": { "cnic": "35201-1234567-1", "name": "Sara Ahmed", "dob": "1998-04-10", "gender": "female", "occupation": "software engineer", "declared_income": 500000 },
-    "policy": { "product_name": "Term Life Insurance", "coverage_amount": 3000000, "term_years": 10 }
-  }' | python3 -m json.tool
-```
+### Next 2 Weeks
+1. ✅ Deploy production monitoring
+2. ✅ Create cost dashboard
+3. ✅ Begin soft launch (50-100 policies/day)
 
----
+### Month 2
+1. ✅ Enable prompt caching (20-30% savings)
+2. ✅ Validate cost projections with actual data
+3. ✅ Plan model optimization
 
-## Kafka Topics
+### Months 3-6
+1. ✅ Evaluate Gemini 2.0 Flash (cost savings analysis)
+2. ✅ Negotiate volume discounts (if >$50K/month)
+3. ✅ Implement fallback strategy
 
-| Topic                               | Producer        | Consumer                        | Payload                                               |
-| ----------------------------------- | --------------- | ------------------------------- | ----------------------------------------------------- |
-| `insurance.proposal.submitted.v1` | API Gateway     | `consumer.py`                 | `ProposalSubmittedEvent` — customer + policy data |
-| `insurance.risk.evaluated.v1`     | `consumer.py` | *(result consumer — future)* | `RiskEvaluatedEvent` — scores + decision           |
-
-Browse both topics live at **http://localhost:8090** (Kafka UI).
-
----
-
-## After Making Code Changes
-
-### Python service changed
-
-Source directories are volume-mounted, so **uvicorn `--reload` picks up `.py` saves automatically** — no restart needed.
-
-If you changed `requirements.txt`, rebuild that service's image:
-
-```bash
-docker compose up --build api-gateway
-docker compose up --build risk-engine
-```
-
-If you added a new package to the risk-engine and the change is cached, force a clean rebuild:
-
-```bash
-docker compose build --no-cache risk-engine
-docker compose up risk-engine -d
-```
-
-### Frontend changed
-
-Next.js dev server has hot-reload enabled — saving any file under `frontend/` refreshes the browser automatically.
-
-If you added an npm package:
-
-```bash
-docker compose up --build frontend
-```
-
-### Shared models changed (`shared/models/core.py` or `shared/events/kafka_events.py`)
-
-The `shared/` directory is bind-mounted into the gateway and risk-engine. Uvicorn reloads automatically.
-
-PostgreSQL is external, so `docker compose down -v` no longer touches it (that only wipes Kafka's volume now). Schema changes to the DB models go through an additive migration instead of a full reset — add a new entry to `MIGRATIONS` in `services/tenant-service/migrate.py` following the existing add-column → backfill → set-not-null pattern, then restart `tenant-service` (or let `--reload` pick it up) to apply it against your existing database.
-
-### `docker-compose.yml` or `.env` changed
-
-```bash
-docker compose down
-docker compose up --build -d
-```
+### Months 6-12
+1. ✅ Assess fine-tuning ROI
+2. ✅ Plan hybrid LLM architecture
+3. ✅ Year 2 budget planning
 
 ---
 
-## Common Commands
+## 📊 Monitoring & Dashboard
 
-```bash
-# Start everything (after first-time setup)
-docker compose up -d
+### What to Track Weekly
+- Total API calls count
+- Average cost per policy
+- Model latency and error rates
+- Cache hit ratio (once caching enabled)
 
-# Rebuild and start specific services
-docker compose up --build api-gateway risk-engine -d
+### What to Track Monthly
+- Actual vs. budgeted spend
+- Cost per transaction trending
+- Service-level cost breakdown
+- Tenant cost attribution
 
-# Start the Kafka consumer (in a separate terminal)
-docker compose exec risk-engine python consumer.py
+### What to Track Quarterly
+- Year-over-year cost growth
+- Optimization opportunity assessment
+- Scaling readiness analysis
+- Vendor negotiation readiness
 
-# Create a platform SuperAdmin (tenant / admin bootstrap operator)
-docker compose exec tenant-service python create_superadmin.py --email you@yourdomain.com
-
-# Watch logs for one service
-docker compose logs -f risk-engine
-docker compose logs -f api-gateway
-
-# Stop all containers (data is preserved)
-docker compose down
-
-# Stop and wipe all data volumes (full reset)
-docker compose down -v
-
-# Open a shell inside a running service
-docker compose exec api-gateway sh
-docker compose exec risk-engine sh
-
-# Connect to PostgreSQL (external — connect directly from the host, matching your DATABASE_URL)
-psql -h localhost -p 5432 -U <user> -d <database>
-
-# List Kafka topics
-docker compose exec kafka /opt/kafka/bin/kafka-topics.sh \
-  --bootstrap-server localhost:9092 --list
-
-# Tail messages on a Kafka topic
-docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh \
-  --bootstrap-server localhost:9092 \
-  --topic insurance.risk.evaluated.v1 \
-  --from-beginning
-```
+**Dashboard Location:** `/frontend/app/super-admin/tokens/page.tsx` (already implemented)
 
 ---
 
-## Troubleshooting
+## 🏗️ Infrastructure Recommendation
 
-### Port conflicts
+### Recommended: AWS EKS (Kubernetes)
 
-```bash
-# Find which process is using a port
-lsof -i :8010
+**Why?**
+- Auto-scaling for variable load
+- Multi-region ready for disaster recovery
+- Cost-effective for enterprise workloads
+- Industry standard for financial services
 
-# Stop all containers and try again
-docker compose down
-docker compose up -d
-```
+**Monthly Cost:** $674-894 (including RDS)
 
-### Kafka consumer not receiving messages
+**Alternative:** AWS ECS Fargate ($860-1,380/month) for lighter DevOps overhead
 
-1. Confirm Kafka is healthy: `docker compose ps kafka`
-2. Confirm the topic exists: `docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list`
-3. Check consumer logs in the terminal where you ran `python consumer.py`
-4. Inspect the topic in Kafka UI at `http://localhost:8090`
+---
 
-### Risk Engine unhealthy after code change
+## 📞 Contact & Questions
 
-```bash
-docker compose logs risk-engine --tail 30
-```
+| Role | Email | Responsibility |
+|------|-------|-----------------|
+| Finance | finance@company.com | Budget approval, cost controls |
+| DevOps | devops@company.com | Infrastructure, monitoring |
+| Engineering | engineering@company.com | Cost optimization, model selection |
 
-If the error is `ModuleNotFoundError`, a new dependency was added to `requirements.txt` but not installed — rebuild without cache:
+---
 
-```bash
-docker compose build --no-cache risk-engine && docker compose up risk-engine -d
-```
+## 📋 Document Checklist
 
-### LLM provider / fallback configuration
+Use this when presenting costs to stakeholders:
 
-**All four LLM services** — `chat-agent`, `risk-engine`, `ocr-engine`,
-`text-summarizer` — resolve a **primary** and **fallback** model at runtime and
-retry the identical request against the fallback on any primary failure (429
-rate limit, 503 overload, 403 billing/"dunning" block, quota exhaustion).
+- [ ] **Executive Summary** read (Cost-Analysis-Executive-Summary.md)
+- [ ] **Key metrics** understood (Section 1-2 of summary)
+- [ ] **Deployment scenarios** reviewed (Section 5 of summary)
+- [ ] **Cost projections** validated (Section 9 of full report)
+- [ ] **Optimization strategy** approved (Section 7 of full report)
+- [ ] **Infrastructure** selected (Section 5.2 of full report)
+- [ ] **Budget** allocated and approved
+- [ ] **Monitoring** dashboard set up
+- [ ] **Team** trained on cost controls
 
-Configure it in the **SuperAdmin UI** — *Platform → LLM Configuration*
-(`/super-admin/llm-config`). Pick the provider (Gemini / OpenAI / Anthropic)
-for the primary and fallback roles, set the model, paste the API key, hit
-**Test key**. Keys are stored **Fernet-encrypted** in `llm_provider_config`
-(needs `CONFIG_ENCRYPTION_KEY` in `.env`) and never returned to the browser.
-Changes take effect within ~60s — no restart. The services read the decrypted
-set from `tenant-service`'s internal-only `GET /internal/llm-config` (guarded
-by `INTERNAL_API_SECRET`, not exposed through the api-gateway).
+---
 
-**No provider keys live in `.env`.** An optional env fallback
-(`GEMINI_API_KEY` / `GEMINI_MODEL` for the primary; `OPENAI_API_KEY` /
-`OPENAI_FALLBACK_MODEL` then `ANTHROPIC_API_KEY` / `ANTHROPIC_FALLBACK_MODEL`
-for the fallback) is only consulted when the DB config is empty or
-`tenant-service` is unreachable.
+## 🔐 Confidentiality
 
-**OCR / PDF caveat:** OpenAI chat models cannot read PDFs — only Gemini and
-Anthropic can. If the OCR fallback is OpenAI and a PDF is submitted while the
-PDF-capable provider is down, `ocr-engine` returns a clear error pointing at
-the LLM Configuration page. Images work on all three providers.
+**Classification:** Internal - Finance & Operations  
+**Retention:** 3 years (for compliance)  
+**Sharing:** Restricted to Finance, C-suite, and Technical Leadership
 
-```bash
-# What are the services actually using right now?
-curl -s -H "X-Internal-Secret: $INTERNAL_API_SECRET" \
-  http://localhost:8011/internal/llm-config | python3 -m json.tool
-docker compose exec ocr-engine  curl -s localhost:8004/health
-docker compose exec text-summarizer curl -s localhost:8005/health
+---
 
-# Is the primary provider itself the problem?
-docker compose exec chat-agent python -c "import asyncio,providers; \
-c=asyncio.run(providers.resolve()); print(c['primary']['provider'], c['primary']['model'])"
-```
+## 📝 Version History
 
-A `PERMISSION_DENIED` / `dunning` error means the Gemini key's Google Cloud
-project is blocked for a payment issue — fix billing at https://ai.studio, or
-switch the primary to OpenAI/Anthropic in the UI.
+| Version | Date | Updates |
+|---------|------|---------|
+| 1.0 | Sept 8, 2026 | Initial comprehensive analysis |
 
-### Token Economy (`/super-admin/tokens`)
+**Next Review:** December 8, 2026 (Quarterly)
 
-Every LLM call posts a row to `tenant-service`'s `/tokens/usage` with the
-**model that actually ran** (`chat-agent`, `risk-engine`, `ocr-engine`,
-`text-summarizer`). The page prices each model at its own rate — see
-`MODEL_PRICING` in `frontend/app/super-admin/tokens/page.tsx` (verify against
-the provider pricing pages periodically). Rows whose model isn't in that table
-are costed at `DEFAULT_RATE` and flagged "estimated" in the UI.
+---
 
-### Database doesn't exist / tenant-service can't connect
+## 🚀 How to Use This Package
 
-PostgreSQL is external, so there's no docker volume to reset here. Instead:
+### For Finance/Budgeting
+1. Read: Executive Summary (2-3 minutes)
+2. Extract: Year 1 budget from Section 9
+3. Present: Key findings from "Key Findings Summary" above
+4. Approve: Budget allocation template from Cost-Calculation-Reference
 
-1. Confirm the database in `DATABASE_URL` actually exists on your Postgres instance (`CREATE DATABASE insurance-ai;` if not).
-2. Confirm the host is reachable from inside a container — on macOS/Windows Docker Desktop this is normally `host.docker.internal`; on Linux you may need `--add-host` or the host's LAN IP.
-3. Test the connection directly from your host first: `psql -h localhost -p 5432 -U <user> -d <database>`.
-4. Restart `tenant-service` to re-run migrations once the connection is confirmed: `docker compose restart tenant-service`.
+### For Technical Teams
+1. Read: Main report Section 1-4 (Current Setup & Costs)
+2. Reference: Calculation guide for project planning
+3. Implement: Cost monitoring SQL queries (Section 10)
+4. Deploy: Budget guard mechanism (mentioned in main report Section 11)
 
-### Service won't start — missing `.env`
+### For Product/Operations
+1. Read: Executive Summary (all sections)
+2. Track: Key metrics in Section "Monitoring & Dashboard"
+3. Plan: Scaling according to financial projections
+4. Review: Quarterly for optimization opportunities
 
-```bash
-cp .env.example .env
-# fill in GEMINI_API_KEY and other credentials, then:
-docker compose up -d
-```
+---
 
-### Memgraph graph query returns no results
+**Questions? Refer to the full report or contact the Senior FinTech Engineer.**
 
-Memgraph starts empty. Fraud ring detection only returns connections for customers who were previously evaluated and written to the graph. On a fresh instance, the `fraud_detection` node falls back gracefully (fraud_probability defaults to LLM-only assessment).
+---
+
+**Last Updated:** September 8, 2026  
+**Status:** ✅ Ready for Distribution

@@ -753,7 +753,7 @@ class Policy(SQLModel, table=True):
         back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
     cases: List["Case"] = Relationship(
-        back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        back_populates="policy"
     )
     policy_versions: List["PolicyVersion"] = Relationship(
         back_populates="policy", sa_relationship_kwargs={"cascade": "all, delete-orphan"}

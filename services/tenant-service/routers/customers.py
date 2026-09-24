@@ -5,7 +5,7 @@ from datetime import date
 from typing import Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import func, or_, cast, String
+from sqlalchemy import func, or_, cast, String, delete as sa_delete, update as sa_update
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -18,6 +18,10 @@ from shared.models.core import (
     Customer, Policy, PolicyDocument, PolicyEvent, PolicyRequirement,
     PolicyVersion, PremiumQuote, PremiumSchedule, Tenant,
     ProfileStatusEnum, PolicyStatusEnum, InsurancePlan,
+    Artifact, AgentConfidentialReport, CustomerEApplication, MedicalExamOrder,
+    InsuranceHistoryCheck, CaseHistory, CaseAuditTrail, CaseComment,
+    CaseAssignment, InitialPremiumPayment, RiskAssessment, Commission,
+    PolicyOnboarding, RenewalTransaction, Claim, ClaimStatusHistory, ClaimPayout,
 )
 from shared.pricing.calculator import calculate_premium
 from routers.users import verify_admin   # reuse existing Admin guard
@@ -465,6 +469,30 @@ async def create_customer_policy(
 
 
 
+async def _clean_policy_dependencies(session: AsyncSession, policy_id: UUID):
+    # 1. Unlink any cases pointing to this policy so cases and their artifacts remain intact
+    await session.execute(sa_update(Case).where(Case.policy_id == policy_id).values(policy_id=None))
+    
+    # 2. Unlink any risk assessments pointing to this policy
+    await session.execute(sa_update(RiskAssessment).where(RiskAssessment.policy_id == policy_id).values(policy_id=None))
+    
+    # 3. Clean up claims on this policy if any
+    claim_ids = (await session.exec(select(Claim.id).where(Claim.policy_id == policy_id))).all()
+    for cid in claim_ids:
+        await session.execute(sa_delete(ClaimPayout).where(ClaimPayout.claim_id == cid))
+        await session.execute(sa_delete(ClaimStatusHistory).where(ClaimStatusHistory.claim_id == cid))
+    await session.execute(sa_delete(Claim).where(Claim.policy_id == policy_id))
+
+    # 4. Delete child tables that strictly depend on this policy
+    for model in (
+        PolicyEvent, PolicyDocument, PolicyVersion, PremiumSchedule,
+        PremiumQuote, PolicyRequirement, ComplianceCheck, CounterOffer,
+        Beneficiary, InitialPremiumPayment, Commission,
+        PolicyOnboarding, RenewalTransaction,
+    ):
+        await session.execute(sa_delete(model).where(model.policy_id == policy_id))
+
+
 @router.delete(
     "/{tenant_id}/customers/{customer_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -486,19 +514,25 @@ async def delete_customer(
     # so we don't hit FK violations on tables without ON DELETE CASCADE.
     policies = (await session.exec(select(Policy).where(Policy.customer_id == customer_id))).all()
     for policy in policies:
-        pid = policy.id
-        # Level-3 children (depend on policy)
-        for model in (
-            PolicyEvent, PolicyDocument, PolicyVersion, PremiumSchedule,
-            PremiumQuote, PolicyRequirement, ComplianceCheck, CounterOffer,
-            Beneficiary,
-        ):
-            for row in (await session.exec(select(model).where(model.policy_id == pid))).all():  # type: ignore[attr-defined]
-                await session.delete(row)
-        # Cases reference policy but may be shared; delete only this policy's cases
-        for row in (await session.exec(select(Case).where(Case.policy_id == pid))).all():
-            await session.delete(row)
+        await _clean_policy_dependencies(session, policy.id)
         await session.delete(policy)
+
+    # Delete all cases and their dependencies belonging to this customer
+    cases = (await session.exec(select(Case).where(Case.customer_id == customer_id))).all()
+    for c in cases:
+        caseld = c.caseld
+        await session.execute(sa_delete(CaseHistory).where(CaseHistory.caseld == caseld))
+        await session.execute(sa_delete(CaseAuditTrail).where(CaseAuditTrail.caseld == caseld))
+        await session.execute(sa_delete(CaseComment).where(CaseComment.caseld == caseld))
+        await session.execute(sa_delete(CaseAssignment).where(CaseAssignment.caseld == caseld))
+        await session.execute(sa_delete(RiskAssessment).where(RiskAssessment.case_id == caseld))
+        await session.execute(sa_delete(Artifact).where(Artifact.case_id == caseld))
+        await session.execute(sa_delete(InitialPremiumPayment).where(InitialPremiumPayment.case_id == caseld))
+        await session.execute(sa_delete(AgentConfidentialReport).where(AgentConfidentialReport.case_id == caseld))
+        await session.execute(sa_delete(CustomerEApplication).where(CustomerEApplication.case_id == caseld))
+        await session.execute(sa_delete(MedicalExamOrder).where(MedicalExamOrder.case_id == caseld))
+        await session.execute(sa_delete(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == caseld))
+        await session.delete(c)
 
     await session.delete(customer)
     await session.commit()
@@ -522,6 +556,7 @@ async def delete_customer_policy(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Policy not found"
         )
+    await _clean_policy_dependencies(session, policy_id)
     await session.delete(policy)
     await session.commit()
     return None
