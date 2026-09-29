@@ -16,7 +16,7 @@ import CustomizeEAppModal from "@/components/entities/CustomizeEAppModal";
 import VerifyEAppModal from "@/components/entities/VerifyEAppModal";
 import { createCounterOffer } from "@/app/services/preIssuance";
 import { runInsuranceHistory } from "@/app/services/insuranceHistory";
-import { assessMedicalExam, inviteMedicalExam, MEDICAL_CLEARED } from "@/app/services/medicalExam";
+import { assessMedicalExam, inviteMedicalExam, recordMedicalResult, MEDICAL_CLEARED } from "@/app/services/medicalExam";
 import api from "@/app/services/api";
 import FiltersPanel from "@/components/FiltersPanel";
 

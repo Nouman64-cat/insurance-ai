@@ -1019,12 +1019,14 @@ export default function PostUnderwritingPage() {
                     const totalLoading = Math.round((coState.deltaDuration + coState.deltaExposure + coState.deltaCoverage + coState.deltaRate) * 100);
                     
                     const descContent = totalLoading > 0 ? (
-                      <div className="flex flex-col gap-0.5">
+                      // Rendered inside a <p> (step.desc -> <p>{step.desc}</p>) —
+                      // must stay inline-safe, no <div> here.
+                      <span className="flex flex-col gap-0.5">
                         <span className="text-slate-700 font-semibold text-[11px]">
                           Risk Driver: {coState.reasonCode || "Escalation"}
                         </span>
                         <span>Proposer legal consent for loading & exclusion terms prior to contract perfection.</span>
-                      </div>
+                      </span>
                     ) : (
                       "Proposer legal consent for terms prior to contract perfection."
                     );

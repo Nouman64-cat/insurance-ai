@@ -712,6 +712,8 @@ async def confirm_floater_members(
         member_outcomes[cnic] = FamilyMemberOutcome(
             customer_id=customer.id,
             policy_id=shared_policy.id,
+            case_id=case.caseld,
+            case_number=case.caseNumber,
             relationship=_relationship_enum(row["relationship"]),
             status=PolicyStatusEnum.UNDER_REVIEW,   # placeholder — overwritten below once aggregated
             suggested_loading=None,
@@ -939,6 +941,8 @@ async def confirm_life_bundle_members(
         outcomes.append(FamilyMemberOutcome(
             customer_id=customer.id,
             policy_id=policy.id,
+            case_id=case.caseld,
+            case_number=case.caseNumber,
             relationship=_relationship_enum(row["relationship"]),
             status=policy.status,
             premium_total=breakdown.total_premium,

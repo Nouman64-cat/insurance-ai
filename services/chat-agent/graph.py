@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 from typing import Any, Optional
@@ -30,11 +31,13 @@ from pydantic import BaseModel, Field
 import providers
 import usage
 from history import compact_tool_result, trim_history
+
+logger = logging.getLogger(__name__)
 from claims_journey import register_claims_journey
 from journey import register_journey
 from toolsets import select_domains, tool_names_for
 
-from pages import catalogue
+from pages import catalogue, PAGES
 from permission import (
     CLIENT_EXECUTED_TOOLS,
     MOBILE_PORTAL_ONLY_TOOLS,
@@ -75,7 +78,13 @@ Call it IMMEDIATELY with just the name or CNIC — it resolves existing customer
 and applies product defaults; never pre-ask for DOB/income/product before calling. \
 **continue_underwriting_journey** resumes a suspended journey after documents are \
 uploaded or a human decision ("approve case X and continue") is recorded — call \
-update_case_status first for the decision, then continue.
+update_case_status first for the decision, then continue. **CRITICAL:** whenever the \
+user says anything like "continue"/"resume the journey"/"continue the underwriting \
+journey", call continue_underwriting_journey DIRECTLY and IMMEDIATELY — never call \
+upload_document or any other tool first, even if you believe documents are still \
+missing. The tool re-checks everything itself (documents, gates, status) and will \
+correctly report what's still needed; guessing at a different tool instead just \
+derails the resume.
 
 ## MANUAL STEP-BY-STEP (when the user drives one stage at a time)
 
@@ -92,6 +101,13 @@ update_case_status first for the decision, then continue.
      - **Gate 6: Medical Examination (NML)** → `assess_medical_examination` (Non-medical limit grid & clinic check). *Prerequisite: Gate 5 Clear.*
    - `get_pre_underwriting_status` → View the 6-gate progress table at any time.
    - *Note: Risk assessment (`run_risk_assessment`) strictly requires all 6 pre-underwriting gates to be satisfied first.*
+   - **CRITICAL:** NEVER tell the user "the next required step is Gate N" (or name a specific gate)
+     as plain narration with no tool call that turn — quick-action buttons can only ever be attached
+     to a tool's result, never to bare text. Whenever you're about to state which gate comes next,
+     call **`get_pre_underwriting_status`** in that same turn instead (or the specific next gate's
+     tool directly, e.g. `run_compliance_screening`) — it reports the same status AND attaches the
+     matching "Run <Gate Name>" button, so the user can act on it with one click instead of retyping
+     the request.
 5. get_document_checklist / upload_document → collect required docs
 6. run_risk_assessment → AI medical/financial/fraud scoring (enforces pre-underwriting readiness)
 7. approve_case → approve the case after risk assessment (moves to Policy Issuance queue)
@@ -125,17 +141,37 @@ update_case_status first for the decision, then continue.
 
 ## DEMO / GENERIC DATA
 
-When the user says "demo", "test data", "generic data", or "make something up":
-- For INDIVIDUAL customers, use **quick_start_workflow** (use_demo_data=true). Add full_journey=true if they want the whole flow exercised.
-- For CORPORATE or FAMILY customers, DO NOT use quick_start_workflow. Instead, generate realistic fake data yourself (fake names, emails, incomes, etc.) and call the **add_organization** or **add_family_group** tool directly.
+When the user says "demo", "test data", "generic data", "make something up", or asks to add a
+customer/family/organization WITHOUT giving you their real CNIC/details:
+- For INDIVIDUAL customers, use **quick_start_workflow** (use_demo_data=true) — NEVER call
+  add_customer yourself with a CNIC you invented (e.g. "12345-6789012-3" or any other placeholder
+  pattern). quick_start_workflow generates a genuinely random CNIC/name every call so repeated demo
+  requests never collide with an existing record; a hand-invented CNIC always collides eventually.
+  Add full_journey=true if they want the whole flow exercised.
+- For CORPORATE customers, DO NOT use quick_start_workflow. Instead, generate realistic fake data yourself (fake names, emails, incomes, etc.) and call **add_organization** directly.
+- For FAMILY customers, DO NOT use quick_start_workflow and DO NOT invent member data yourself —
+  call **add_family_group** with `use_demo_data=true` and no `members` list. The tool generates a
+  fresh, randomly-varied family (different names/CNICs every time) so repeated demo requests never
+  collide with an existing record.
 - The "make something up" license covers the CUSTOMER's own fields only — it never extends to
   agent_name/agent_email. That must stay a real Agent-role user or be left unset; see above.
+
+## ONE TOOL CALL PER TURN
+
+Call exactly ONE tool per turn, even when the user names several targets (e.g. "run pre-underwriting
+for case A and case B and case C"). Call the tool for the first one only; the platform will show you
+the tool's result before you continue, and you then call it again for the next target on your next
+turn. NEVER emit multiple tool_calls in a single response — only the first is processed, and this
+platform cannot recover if you do.
 
 ## STYLE
 
 Brief (2–3 sentences), warm, professional. After every completed action, state what \
 happened and what the sensible next step is — the UI turns your tool results into \
-clickable recommendation buttons automatically."""
+clickable recommendation buttons automatically. When a tool result includes quick_actions/ \
+options/custom_actions, NEVER restate those choices yourself as a bulleted or numbered list, \
+or as "Option A / Option B" prose — they already render as clickable buttons right below your \
+message. Just acknowledge briefly and let the buttons speak for themselves."""
 
 # Prompt sections that ship WITH their tool pack, never without it.
 #
@@ -400,10 +436,19 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
         in_scope = tool_names_for(domains)
         allowed = [t for t in allowed if t.name in in_scope]
 
-    primary = providers.build_chat(cfg["primary"]).bind_tools(allowed)
+    # permission_gate processes exactly one tool_call per turn (last.tool_calls[0]) —
+    # it has to, since a confirm/clarify interrupt suspends the whole node mid-dispatch
+    # and there's nowhere to stash unanswered tool_call_ids across that pause. If the
+    # model parallel-calls 2+ tools in one AIMessage, calls after the first are silently
+    # dropped (never get a ToolMessage), which permanently corrupts the thread — every
+    # later turn re-sends that dangling AIMessage and every provider rejects it with
+    # "assistant message with tool_calls must be followed by tool messages...". Force
+    # one-call-per-turn here rather than trying to make permission_gate loop-safe across
+    # an interrupt boundary.
+    primary = providers.build_chat(cfg["primary"]).bind_tools(allowed, parallel_tool_calls=False)
     if cfg.get("fallback"):
         primary = primary.with_fallbacks(
-            [providers.build_chat(cfg["fallback"]).bind_tools(allowed)]
+            [providers.build_chat(cfg["fallback"]).bind_tools(allowed, parallel_tool_calls=False)]
         )
     _LLM_CACHE[key] = primary
     return primary
@@ -539,10 +584,30 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
             )
             if _is_empty(response):
                 response = await _retry_empty(llm, messages, state, thread_id)
+            if isinstance(response, AIMessage) and len(response.tool_calls) > 1:
+                # permission_gate only ever dispatches tool_calls[0] (it must —
+                # a confirm/clarify interrupt suspends the node mid-dispatch with
+                # nowhere to stash the rest). A provider that parallel-calls
+                # anyway (Gemini ignores parallel_tool_calls=False; nothing
+                # upstream truncates) would otherwise leave tool_calls[1:]
+                # permanently unanswered — which every provider then rejects on
+                # every later turn, since the dangling AIMessage is checkpointed.
+                # Drop the extras here, before they ever reach persisted state.
+                dropped = [tc["name"] for tc in response.tool_calls[1:]]
+                logger.warning(
+                    "agent_node: model emitted %d parallel tool_calls, keeping only "
+                    "tool_calls[0] (%s) — dropping %r before persisting",
+                    len(response.tool_calls), response.tool_calls[0]["name"], dropped,
+                )
+                response = response.model_copy(update={
+                    "tool_calls": response.tool_calls[:1],
+                    "invalid_tool_calls": [],
+                })
             return {"messages": [response], "active_domains": sorted(domains)}
         except Exception as exc:  # noqa: BLE001 — SDK raises provider-specific types
             last_exc = exc
             text = str(exc)
+            logger.warning("agent_node LLM call failed (attempt %d): %r", attempt, exc)
             # Quota/billing exhaustion and rate limits aren't transient in a way
             # a 1.5s backoff fixes — retrying just burns more calls against the
             # same exhausted key. Fail fast with the real cause.
@@ -1106,7 +1171,12 @@ async def permission_gate(state: ChatState) -> Command:
                 "Please continue there for this step."
             )
         else:
-            msg = "Currently, you have no access to do this, ask your manager."
+            seen_role = state.get("user_role") or "none (not sent by the client)"
+            msg = (
+                f"Currently, you have no access to do this — this session is identified as role "
+                f"'{seen_role}'. If that isn't your real role, try logging out and back in; "
+                "otherwise ask your manager."
+            )
         result = {"success": False, "error": msg}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
@@ -1139,7 +1209,7 @@ async def permission_gate(state: ChatState) -> Command:
             result = {
                 "success": True,
                 "message": f"Customer type resolved: {display}. Now call `{resolved_tool}` "
-                           "with the applicant's details to register them.",
+                           "with the applicant's details to register them. Do NOT ask the user if they want to add demo data or fill the form manually, and do NOT list or describe those two choices in your reply (e.g. as a bulleted list) — the UI renders them as clickable buttons below your message. Reply with a short one-sentence acknowledgement only, e.g. \"Got it — Individual customer. How would you like to proceed?\"",
                 # Offer the two ways this normally goes from here — generated demo
                 # data (fast, for a test run) or the portal's own multi-step form
                 # (for a real applicant) — instead of only listing fields to type.
@@ -1806,6 +1876,78 @@ async def permission_gate(state: ChatState) -> Command:
             }
             return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
+    # ── Case status: a small fixed enum, offered as chips ────────────────────
+    if name == "update_case_status" and not args.get("new_status"):
+        choices = [
+            ("New", "New"), ("In Progress", "InProgress"), ("Pending Documents", "Pending Documents"),
+            ("Under Review", "Under Review"), ("Approved", "Approved"), ("Rejected", "Rejected"), ("Closed", "Closed"),
+        ]
+        answer = _ask_choice(name, args, "Which status should this case move to?", choices)
+        resolved = _match_choice(answer, choices)
+        if resolved:
+            args["new_status"] = resolved
+
+    # ── Case assignment: the real user list, not a name to type ──────────────
+    if name == "assign_case" and not args.get("assigned_user_name"):
+        try:
+            listed = await execute_tool("list_users", {}, ctx)
+            users = listed.get("users") or []
+        except Exception:
+            users = []
+        if users:
+            choices = [
+                (f"{u.get('full_name')} — {(u.get('role') or {}).get('name') or u.get('role_name') or '—'}",
+                 u.get("full_name"))
+                for u in users
+            ]
+            answer = _ask_choice(
+                name, args,
+                "Who should this case be assigned to?",
+                choices,
+                select_label="User",
+                placeholder="Pick a user…",
+            )
+            resolved = _match_choice(answer, choices)
+            if resolved:
+                args["assigned_user_name"] = resolved
+
+    # ── New user's role: the real role list, not a name to type ──────────────
+    if name == "add_user" and not args.get("role_name"):
+        try:
+            listed = await execute_tool("list_roles", {}, ctx)
+            roles = listed.get("roles") or []
+        except Exception:
+            roles = []
+        if roles:
+            choices = [(r["name"], r["name"]) for r in roles]
+            answer = _ask_choice(name, args, "What role should this user have?", choices)
+            resolved = _match_choice(answer, choices)
+            if resolved:
+                args["role_name"] = resolved
+
+    # ── Navigation: the real page catalogue, not a route name to type ────────
+    if name == "navigate_to_page" and not args.get("page_name"):
+        choices = [(p.label, p.route) for p in PAGES]
+        answer = _ask_choice(
+            name, args,
+            "Which page would you like to open?",
+            choices,
+            select_label="Page",
+            placeholder="Pick a page…",
+        )
+        resolved = _match_choice(answer, choices)
+        if resolved:
+            args["page_name"] = resolved
+
+    # ── show_record: which kind of record, as a short fixed list ─────────────
+    if name == "show_record" and not args.get("record_type"):
+        record_types = sorted({p.lists for p in PAGES if p.lists})
+        choices = [(rt.replace("_", " ").title(), rt) for rt in record_types]
+        answer = _ask_choice(name, args, "What kind of record are you looking for?", choices)
+        resolved = _match_choice(answer, choices)
+        if resolved:
+            args["record_type"] = resolved
+
     missing = missing_args(name, args)
     if missing:
         answer = interrupt({
@@ -1936,6 +2078,8 @@ async def permission_gate(state: ChatState) -> Command:
         update["last_action"] = result["last_action"]
     if result.get("assessment"):
         update["assessment"] = result["assessment"]
+    if result.get("family_members"):
+        update["family_members"] = result["family_members"]
     return back_to_agent(update)
 
 
@@ -1957,6 +2101,8 @@ async def client_executor_node(state: ChatState) -> Command:
         update["last_action"] = result["last_action"]
     if result.get("assessment"):
         update["assessment"] = result["assessment"]
+    if result.get("family_members"):
+        update["family_members"] = result["family_members"]
     if result.get("quick_actions"):
         # For tools that return quick actions via client execute
         pass # Not natively supported in state, but frontend reads it from the result if we had a way.

@@ -780,6 +780,8 @@ class FamilyValidationResponse(BaseModel):
 class FamilyMemberOutcome(BaseModel):
     customer_id: UUID
     policy_id: UUID                       # shared, for FLOATER; own, for LIFE_BUNDLE
+    case_id: Optional[UUID] = None
+    case_number: Optional[str] = None
     relationship: FamilyRelationshipEnum
     status: PolicyStatusEnum
     premium_total: Optional[float] = None
