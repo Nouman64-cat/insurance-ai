@@ -1158,7 +1158,10 @@ async def _update_case_status(args: dict, ctx: Ctx) -> dict:
 
     route = build_route("cases", case_id)
     status = args["new_status"]
-    view_case = {"label": "View Case", "actionType": "navigate", "payload": route}
+    # "embed", not "navigate" — this fires straight out of the underwriting
+    # decision flow (Approve/Reject), so it should stay inline in the chat
+    # like the rest of that flow rather than popping a new tab.
+    view_case = {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"}
     follow_up = {
         "Under Review": [
             {"label": "Approve", "actionType": "submit", "payload": f"Approve case {case.get('caseNumber')}"},
@@ -1494,13 +1497,18 @@ async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
     if is_ready:
         summary += "**Status: All 6 Gates Cleared!** The proposal is 100% ready for AI Risk Assessment."
         qa = [
-            {"label": "Run AI Risk Assessment", "actionType": "submit",
+            {"label": "Run AI Underwriting", "actionType": "submit",
              "payload": f"Run risk assessment for case {case.get('caseNumber')}"},
+            {"label": "Cancel", "actionType": "submit",
+             "payload": "Not right now — I'll run the risk assessment later."},
             {"label": "View Underwriting Workbench", "actionType": "navigate", "payload": "underwriting"},
         ]
     else:
         summary += "⚠️ **Status: Pre-Underwriting Incomplete.** Follow the sequential gates below to complete clearance:"
-        qa = []
+        # "embed" (not "navigate") — this is the pre-underwriting gate stage,
+        # the one case the in-chat case view is for, so remaining gates can
+        # be cleared inline instead of retyping which gate to run next.
+        qa = [{"label": "Open Case", "actionType": "embed", "payload": f"case/{case_id}"}]
         if e_app != "Verified":
             qa.append({"label": "1. Generate E-App Link", "actionType": "submit",
                        "payload": f"Generate e-application link for case {case.get('caseNumber')}"})
@@ -2304,37 +2312,77 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
     await _run_insurance_history_check({"case_number": case_no}, ctx)
     await _assess_medical_examination({"case_number": case_no, "auto_complete": True}, ctx)
 
-    # Verify final status
+    # Verify final status — each gate call above returns its own success/
+    # failure but was fired without checking it (some gates have hard
+    # prerequisites on the one before, e.g. IPP requires Compliance actually
+    # Passed, not just attempted) — so the only trustworthy signal of what
+    # really happened is re-reading the case fresh, not assuming the calls
+    # above all succeeded just because none of them raised.
     detail_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
     detail_res.raise_for_status()
     detail = detail_res.json()
     pre = detail.get("pre_underwriting_status") or {}
+    is_ready = bool(pre.get("is_ready"))
+
+    e_app = pre.get("e_application", "NotStarted")
+    acr = pre.get("acr", "NotStarted")
+    comp = pre.get("compliance", "NotRun")
+    ipp = pre.get("ipp", "NotStarted")
+    hist = pre.get("insurance_history", "NotStarted")
+    med = pre.get("medical_exam", "NotAssessed")
 
     route = f"case/{case_id}"
-    message = (
-        f"🎉 **All 6 Pre-Underwriting Clearance Gates Completed** for case **{case_no}**!\n\n"
+    table = (
         f"| Gate | Step | Status |\n"
         f"| :--- | :--- | :--- |\n"
-        f"| Gate 1 | **E-Application** | ✅ `{pre.get('e_application', 'Verified')}` |\n"
-        f"| Gate 2 | **Agent Confidential Report (ACR)** | ✅ `{pre.get('acr', 'Submitted')}` |\n"
-        f"| Gate 3 | **Compliance / PEP Screening** | ✅ `{pre.get('compliance', 'Passed')}` |\n"
-        f"| Gate 4 | **Initial Premium Payment (IPP)** | ✅ `{pre.get('ipp', 'Realized')}` |\n"
-        f"| Gate 5 | **SECP Insurance History Check** | ✅ `{pre.get('insurance_history', 'Clear')}` |\n"
-        f"| Gate 6 | **Medical Examination (NML)** | ✅ `{pre.get('medical_exam', 'Completed')}` |\n\n"
-        f"**The case is now 100% ready for AI Risk Assessment.**"
+        f"| Gate 1 | **E-Application** | {_gate_icon(e_app)} `{e_app}` |\n"
+        f"| Gate 2 | **Agent Confidential Report (ACR)** | {_gate_icon(acr)} `{acr}` |\n"
+        f"| Gate 3 | **Compliance / PEP Screening** | {_gate_icon(comp)} `{comp}` |\n"
+        f"| Gate 4 | **Initial Premium Payment (IPP)** | {_gate_icon(ipp)} `{ipp}` |\n"
+        f"| Gate 5 | **SECP Insurance History Check** | {_gate_icon(hist)} `{hist}` |\n"
+        f"| Gate 6 | **Medical Examination (NML)** | {_gate_icon(med)} `{med}` |\n"
     )
 
+    if is_ready:
+        return {
+            "success": True,
+            "message": f"🎉 **All 6 Pre-Underwriting Clearance Gates Completed** for case **{case_no}**!\n\n{table}\n**The case is now 100% ready for AI Risk Assessment.**",
+            "pre_underwriting_status": pre,
+            "is_ready": True,
+            "last_action": _action("run_pre_underwriting_clearance", "case", case_id, route, "All 6 gates cleared"),
+            "quick_actions": [
+                {"label": "Run AI Risk Assessment", "actionType": "submit",
+                 "payload": f"Run risk assessment for case {case_no}"},
+                {"label": "Open Underwriting Workbench", "actionType": "navigate", "payload": "underwriting"},
+            ],
+        }
+
+    # Genuinely not ready — one of the sequential gates blocked a later one
+    # (most commonly Gate 3 flagged rather than passed, which locks 4–6).
+    # Report the real state and the real next step instead of the blanket
+    # "completed" claim this used to make regardless of what happened.
+    qa = []
+    if comp not in ("Passed", "Cleared"):
+        qa.append({"label": "Clear Flagged Compliance Check", "actionType": "submit",
+                   "payload": f"Proceed anyway despite compliance flags for case {case_no}"})
+    elif ipp != "Realized":
+        qa.append({"label": "4. Process IPP Payment", "actionType": "submit",
+                   "payload": f"Process initial premium payment for case {case_no}"})
+    elif hist not in ("Clear", "Cleared"):
+        qa.append({"label": "5. Check Insurance History", "actionType": "submit",
+                   "payload": f"Run insurance history check for case {case_no}"})
+    elif med not in ("Completed", "Waived", "NotRequired"):
+        qa.append({"label": "6. Assess Medical Exam", "actionType": "submit",
+                   "payload": f"Assess medical examination for case {case_no}"})
+    qa.append({"label": "Check Gate Status", "actionType": "submit",
+               "payload": f"Check pre-underwriting status for case {case_no}"})
+
     return {
-        "success": True,
-        "message": message,
+        "success": False,
+        "message": f"⚠️ **Pre-Underwriting Clearance Incomplete** for case **{case_no}**.\n\n{table}\nOne or more gates need attention before this case is ready for AI Risk Assessment.",
         "pre_underwriting_status": pre,
-        "is_ready": True,
-        "last_action": _action("run_pre_underwriting_clearance", "case", case_id, route, "All 6 gates cleared"),
-        "quick_actions": [
-            {"label": "Run AI Risk Assessment", "actionType": "submit",
-             "payload": f"Run risk assessment for case {case_no}"},
-            {"label": "Open Underwriting Workbench", "actionType": "navigate", "payload": "underwriting"},
-        ],
+        "is_ready": False,
+        "quick_actions": qa[:4],
     }
 
 
@@ -2409,11 +2457,15 @@ async def _approve_case(args: dict, ctx: Ctx) -> dict:
         "message": f"Case **{case.get('caseNumber')}** has been **Approved** ✓\n"
                     "Do you want to issue the policy now?",
         "last_action": _action("approve_case", "case", case_id, route, f"{case.get('caseNumber')} approved"),
-        "navigate": _nav("policy-issuance"),
+        # No auto-navigate here — this used to pop a new tab the instant this
+        # message arrived, before the user even chose Yes or No. Nothing
+        # should open on its own once past pre-underwriting; the buttons
+        # below cover both real choices without leaving the chat.
         "quick_actions": [
             {"label": "Yes — Issue Policy", "actionType": "submit",
              "payload": f"Run pre-issuance verification and issue the policy for case {case.get('caseNumber')}"},
-            {"label": "No — Not Yet", "actionType": "navigate", "payload": route},
+            {"label": "No — Not Yet", "actionType": "submit",
+             "payload": "Okay, I'll issue the policy later."},
         ],
     }
 

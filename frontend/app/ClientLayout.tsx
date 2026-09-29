@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
 import { useEffect, useState } from "react";
@@ -19,6 +19,12 @@ const MAX_QUOTE_POLL_ATTEMPTS = 30;
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Popup windows and the in-chat panel iframe (both opened with ?_portal=1
+  // by CopilotInterface's navigate handlers) render the page's own content
+  // only — the surrounding sidebar/topbar/footer would just be a redundant,
+  // useless-to-click copy nested inside an already-chrome-full window.
+  const isPortalEmbed = searchParams?.get("_portal") === "1";
   const isLoginPage = pathname === "/login";
   // Public, unauthenticated pages meant to be opened by someone outside the
   // portal (e.g. a customer with no account) — must skip both the auth
@@ -271,15 +277,19 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       ) : (
         <>
           {/* ── Sidebar ──────────────────────────────────────────────────────── */}
-          {!isAutomationMode && <Sidebar />}
+          {!isAutomationMode && !isPortalEmbed && <Sidebar />}
 
           {/* ── Main column ─────────────────────────────────────────────────── */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
-            {!isAutomationMode && <TopBar />}
+            {!isAutomationMode && !isPortalEmbed && <TopBar />}
 
             {/* ── Page content ──────────────────────────────────────────────── */}
             <main className="flex-1 overflow-hidden relative flex">
-              {isAutomationMode ? (
+              {isPortalEmbed ? (
+                <div className="flex-1 overflow-auto bg-slate-50 relative h-full">
+                  {children}
+                </div>
+              ) : isAutomationMode ? (
                 <div className="flex-1 h-full relative z-30 overflow-hidden bg-slate-50">
                   <CopilotInterface />
                 </div>
@@ -291,7 +301,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             </main>
 
             {/* ── Footer ────────────────────────────────────────────────────── */}
-            {!isAutomationMode && (
+            {!isAutomationMode && !isPortalEmbed && (
               <footer className="border-t border-slate-200 bg-white py-2.5 px-6 shrink-0">
                 <p className="text-center text-[10px] text-slate-400">
                   insurance-ai Underwriting Portal — Prototype v0.1.0 &nbsp;·&nbsp; Strictly Confidential &nbsp;·&nbsp; {tenantName}

@@ -25,6 +25,20 @@ import {
   recordMedicalResult, MEDICAL_CLEARED, type MedicalExamOrder,
 } from "@/app/services/medicalExam";
 
+// When this page is embedded in the Copilot chat's in-conversation iframe
+// (see CopilotInterface.tsx's case panel), tell the parent window whenever
+// something meaningful changes here — an upload, a gate clearing — so the
+// chat can follow up with the next step instead of the embed silently
+// updating with no one in the conversation the wiser.
+function notifyParentPortal(event: string, detail?: Record<string, unknown>) {
+  if (typeof window === "undefined" || window.parent === window) return;
+  try {
+    window.parent.postMessage({ source: "insurance-ai-portal", type: event, ...detail }, window.location.origin);
+  } catch {
+    // Cross-origin or no listener — nothing to recover, the page still works standalone.
+  }
+}
+
 // ── Markdown renderer for the AI document summary ────────────────────────────
 
 const MD_COMPONENTS: React.ComponentProps<typeof ReactMarkdown>["components"] = {
@@ -958,6 +972,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       if (!notifiedPreUnderwritingRef.current) {
         notifiedPreUnderwritingRef.current = true;
         notify("✅ Pre-underwriting clearance complete — ready for AI risk assessment.", true);
+        notifyParentPortal("gates_cleared", { caseId });
       }
     } else {
       notifiedPreUnderwritingRef.current = false;
@@ -2260,7 +2275,12 @@ export default function CasePage({ params }: { params: { id: string } }) {
           caseId={caseId}
           docTypes={docs.required}
           onClose={() => setShowUpload(false)}
-          onUploaded={() => { setShowUpload(false); fetchArtifacts(); fetchDetail(); }}
+          onUploaded={() => {
+            setShowUpload(false);
+            fetchArtifacts();
+            fetchDetail();
+            notifyParentPortal("document_uploaded", { caseId });
+          }}
         />
       )}
 

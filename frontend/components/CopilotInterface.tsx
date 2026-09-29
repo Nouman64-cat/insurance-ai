@@ -38,6 +38,21 @@ const actionIcons: Record<string, string> = {
   download: "⬇️",
 };
 
+// Human-friendly title for the in-chat panel's header — derived from the
+// route rather than kept as a lookup table, so a new page never needs an
+// entry here to get a reasonable label.
+function routeLabel(route: string): string {
+  const clean = route.split("?")[0].replace(/^\/+/, "");
+  const last = clean.split("/").filter(Boolean).pop() || clean;
+  const isId = /^[0-9a-f-]{8,}$/i.test(last);
+  const base = isId ? clean.split("/").filter(Boolean).slice(0, -1).join(" ") : clean;
+  return (base || "record")
+    .split(/[\/\-]/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function checkIsUploaded(action: QuickAction, uploadedDocs: string[]): boolean {
   if (action.actionType !== "upload") return false;
   let docType = "";
@@ -433,7 +448,7 @@ export function CopilotInterface() {
   // remember the target row, push the route, and the global record
   // highlighter pops it once the destination list has rendered.
   const handleAgentNavigate = useCallback(
-    (route: string, entityId: string, highlight: boolean) => {
+    (route: string, entityId: string, highlight: boolean, embed?: boolean) => {
       if (highlight && entityId) {
         requestHighlight(entityId);
         triggerHighlight(entityId);
@@ -441,12 +456,20 @@ export function CopilotInterface() {
       const path = route.startsWith('/') ? route : `/${route}`;
       const sep = path.includes('?') ? '&' : '?';
       const targetUrl = `${window.location.origin}${path}${sep}_portal=1`;
-      window.open(targetUrl, "_blank");
+      if (embed) {
+        // The journey pausing mid pre-underwriting is the one case that
+        // should open the case view automatically, inline in the chat —
+        // no click needed, since that's exactly the moment the user needs
+        // to track/act on the 6 gates.
+        setCasePanel({ url: targetUrl, title: routeLabel(route) });
+      } else {
+        window.open(targetUrl, "_blank");
+      }
     },
     []
   );
 
-  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions } = useAgentChat({
+  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage } = useAgentChat({
     storageKey: STORAGE_KEY,
     welcomeMessage: WELCOME,
     onNavigate: handleAgentNavigate,
@@ -471,6 +494,55 @@ export function CopilotInterface() {
   const [paymentModalPolicy, setPaymentModalPolicy] = useState<any | null>(null);
   const [acrModalCase, setAcrModalCase] = useState<{ caseId: string; caseNumber: string } | null>(null);
   const [ruleBuilderModalArgs, setRuleBuilderModalArgs] = useState<any | null>(null);
+  // Inline case view for "navigate" actions — embeds the destination page via
+  // iframe directly in the conversation instead of opening a new tab, so the
+  // user tracks a case's gates, documents and results without leaving the chat.
+  const [casePanel, setCasePanel] = useState<{ url: string; title: string } | null>(null);
+  // Bumped on every new message while the panel is open, forcing the iframe
+  // to reload — so gate/document/decision actions taken through chat show up
+  // in the embedded view immediately instead of it sitting on a stale snapshot.
+  const [casePanelRefresh, setCasePanelRefresh] = useState(0);
+  useEffect(() => {
+    if (casePanel) setCasePanelRefresh((n) => n + 1);
+  }, [messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reverse direction of the sync above: the embedded case page (see
+  // case/[id]/page.tsx's notifyParentPortal) posts a message here whenever
+  // something meaningful happens inside the iframe — a document upload, all
+  // gates clearing. Follow up in the chat automatically so the AI reports
+  // what changed and what's next, instead of the action going unremarked
+  // just because it happened inside the embed rather than via a chat click.
+  useEffect(() => {
+    const handler = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.source !== "insurance-ai-portal") return;
+      if (!casePanel || isLoading) return;
+      if (event.data.type === "document_uploaded") {
+        send("I've uploaded a document for this case in the case view. Please re-check the document checklist and tell me what's next.");
+      } else if (event.data.type === "gates_cleared") {
+        // All 6 gates are done — the case view has nothing further for the
+        // user to act on there, so close it and hand off to the chat rather
+        // than leaving an inert embed open under the next question.
+        //
+        // This is injected directly rather than asked of the model: an LLM
+        // told "present exactly these two buttons" can still narrate them as
+        // plain text instead of actually producing clickable quick_actions —
+        // this outcome is already known deterministically (the gates really
+        // did just clear), so there's nothing for the model to decide here.
+        setCasePanel(null);
+        const caseRef = event.data.caseId;
+        addAssistantMessage(
+          "All 6 pre-underwriting gates have cleared for this case. Would you like to proceed with the AI underwriting now?",
+          [
+            { label: "Run AI Underwriting", actionType: "submit", payload: `Run risk assessment for case ${caseRef}` },
+            { label: "Cancel", actionType: "submit", payload: "Not right now — I'll run the risk assessment later." },
+          ]
+        );
+      }
+    };
+    window.addEventListener("message", handler);
+    return () => window.removeEventListener("message", handler);
+  }, [casePanel, isLoading, send, addAssistantMessage]);
 
   useEffect(() => {
     if (selectedFile && selectedFile.type.startsWith("image/")) {
@@ -974,6 +1046,12 @@ export function CopilotInterface() {
       const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
       const sep = path.includes('?') ? '&' : '?';
       window.open(`${window.location.origin}${path}${sep}_portal=1`, "_blank");
+    } else if (action.actionType === "embed") {
+      // Reserved for the 6 pre-underwriting gate stages — everything else
+      // uses "navigate" above and opens a normal new tab.
+      const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
+      const sep = path.includes('?') ? '&' : '?';
+      setCasePanel({ url: `${window.location.origin}${path}${sep}_portal=1`, title: routeLabel(action.payload) });
     } else if (action.actionType === "upload") {
       const data = JSON.parse(action.payload);
       pendingUploadRef.current = data;
@@ -1965,7 +2043,54 @@ export function CopilotInterface() {
                        </div>
                      </div>
                    ))}
-                   
+
+                   {/* Live case view — embedded inline in the conversation
+                       (not an overlay/modal, not a sidebar) so it reads as
+                       part of this reply and the chat stays fully usable
+                       above and below it. Remounts on every open via `key`,
+                       so it always reflects the case's current stage/status
+                       rather than a stale snapshot from when it first loaded. */}
+                   {casePanel && (
+                     <div className="w-full px-4 py-4">
+                       <div className="max-w-3xl mx-auto">
+                         <div className="rounded-2xl border border-slate-200 shadow-sm bg-white flex flex-col overflow-hidden">
+                           <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 bg-slate-50 shrink-0">
+                             <div className="flex items-center gap-2 min-w-0">
+                               <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                               <span className="font-bold text-xs text-slate-800 truncate">{casePanel.title}</span>
+                             </div>
+                             <div className="flex items-center gap-1 shrink-0">
+                               <a
+                                 href={casePanel.url}
+                                 target="_blank"
+                                 rel="noopener noreferrer"
+                                 title="Open in new tab"
+                                 className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                               >
+                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                               </a>
+                               <button
+                                 type="button"
+                                 onClick={() => setCasePanel(null)}
+                                 title="Close"
+                                 className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                               >
+                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                               </button>
+                             </div>
+                           </div>
+                           <iframe
+                             key={`${casePanel.url}#${casePanelRefresh}`}
+                             src={casePanel.url}
+                             className="w-full border-0"
+                             style={{ height: "70vh" }}
+                             title={casePanel.title}
+                           />
+                         </div>
+                       </div>
+                     </div>
+                   )}
+
                    {isLoading && (
                      <div className="w-full px-4 py-6">
                        <div className="max-w-3xl mx-auto flex gap-4 md:gap-6">

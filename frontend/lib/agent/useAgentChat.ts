@@ -26,8 +26,10 @@ interface UseAgentChatOptions {
   storageKey: string;
   welcomeMessage?: AgentMessage;
   // Fired when a tool asks the browser to open a page (and optionally pop a
-  // specific record). Navigation is a component concern — the hook only relays.
-  onNavigate?: (route: string, entityId: string, highlight: boolean) => void;
+  // specific record). Navigation is a component concern — the hook only
+  // relays. `embed` distinguishes the one case (a journey mid pre-underwriting)
+  // that should open in the chat's inline case view instead of a new tab.
+  onNavigate?: (route: string, entityId: string, highlight: boolean, embed?: boolean) => void;
 }
 
 export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgentChatOptions) {
@@ -236,7 +238,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
           break;
 
         case "navigate":
-          onNavigateRef.current?.(evt.route, evt.entity_id, evt.highlight);
+          onNavigateRef.current?.(evt.route, evt.entity_id, evt.highlight, evt.embed);
           break;
 
         case "assessment":
@@ -401,6 +403,20 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
     setSteps([]);
   }, []);
 
+  // For scenarios the client already knows the outcome of deterministically
+  // (e.g. all pre-underwriting gates just cleared, observed directly via the
+  // embedded case view) — appends a real assistant message with real
+  // quick_actions straight into the conversation, no LLM round-trip. Asking
+  // the model to "present exactly these two buttons" is unreliable: it can
+  // narrate them as plain text instead of actually calling the tool that
+  // would produce clickable ones.
+  const addAssistantMessage = useCallback((text: string, quickActions?: QuickAction[]) => {
+    setMessages((prev) => [...prev, { id: newId(), role: "assistant", text, quickActions }]);
+    if (quickActions?.length) {
+      setTurnActions(quickActions.filter((a) => a.actionType !== "upload"));
+    }
+  }, []);
+
   const clearChat = useCallback(() => {
     const tid = newId();
     localStorage.setItem(threadStorageKey, tid);
@@ -413,5 +429,5 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
     localStorage.removeItem(`${storageKey}_actions`);
   }, [storageKey, threadStorageKey, welcomeMessage]);
 
-  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions };
+  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage };
 }

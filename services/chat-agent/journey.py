@@ -483,11 +483,12 @@ async def j_finish(state: ChatState) -> dict:
         elif state.get("journey_stage") == "pre_underwriting_clearance":
             # run_pre_underwriting_clearance is all-or-nothing (no mid-gate
             # pause), so a flagged/blocked gate surfaces here as a plain
-            # error with no chip — leaving the user to retype which gate to
-            # run next. get_pre_underwriting_status reports the same failure
-            # AND attaches the specific next-gate button (see graph.py's
-            # "NEVER narrate the next gate without calling a tool" rule).
+            # error. Same "embed" case view as the Pending Documents branch
+            # below — this IS one of the 6 pre-underwriting gate stages, so
+            # the user should be able to clear the remaining gates from the
+            # in-chat case panel instead of retyping which gate to run next.
             result["quick_actions"] = [
+                {"label": "Open Case", "actionType": "embed", "payload": route},
                 {"label": "Check gate status", "actionType": "submit",
                  "payload": f"Check pre-underwriting status for case {case_no or cnic}"},
             ]
@@ -499,7 +500,9 @@ async def j_finish(state: ChatState) -> dict:
             "quick_actions": [
                 *({"label": f"Upload {d}", "actionType": "upload",
                    "payload": json.dumps({"document_type": d, "cnic": cnic, "case_number": case_no})} for d in missing[:2]),
-                {"label": "Open Case", "actionType": "navigate", "payload": route},
+                # "embed" (not "navigate") — this is the pre-underwriting
+                # gate stage, the one case the in-chat case view is for.
+                {"label": "Open Case", "actionType": "embed", "payload": route},
                 {"label": "Resume journey", "actionType": "submit", "payload": "Continue the underwriting journey"},
             ],
         })
@@ -516,7 +519,8 @@ async def j_finish(state: ChatState) -> dict:
             "quick_actions": [
                 {"label": "Proceed", "actionType": "submit", "payload": f"Approve case {case_no} and continue the journey"},
                 {"label": "Decline", "actionType": "submit", "payload": f"Reject case {case_no} and continue the journey"},
-                {"label": "View Case", "actionType": "navigate", "payload": route},
+                {"label": "Download Report", "actionType": "download", "payload": case_id},
+                {"label": "View Case", "actionType": "embed", "payload": route},
             ],
         })
         if r:
@@ -533,7 +537,7 @@ async def j_finish(state: ChatState) -> dict:
             "success": True,
             "message": f"Underwriting journey complete — {case_no} finished as **{outcome or 'Closed'}**.",
             "quick_actions": [
-                {"label": "View Case", "actionType": "navigate", "payload": route},
+                {"label": "View Case", "actionType": "embed", "payload": route},
                 {"label": "Start another journey", "actionType": "submit", "payload": "Run the underwriting journey with demo data"},
             ],
         })
@@ -552,7 +556,24 @@ async def j_finish(state: ChatState) -> dict:
             "entity_id": state["journey_case_id"], "route": route,
             "label": f"Journey: {outcome or ('error' if error else 'done')} ({case_no})",
         }
-        result["navigate"] = {"route": route, "entity_id": state["journey_case_id"], "highlight": True}
+        if outcome == "Pending Documents" or (error and state.get("journey_stage") == "pre_underwriting_clearance"):
+            # Auto-open the in-chat case view the instant the journey pauses
+            # here — this is the one stage the embed exists for (tracking the
+            # 6 pre-underwriting gates), so it shouldn't need an extra click.
+            # Covers both a missing-documents pause AND a blocked/flagged
+            # gate (e.g. Compliance came back Flagged, locking IPP/History/
+            # Medical behind it) — either way the fix happens in this same
+            # case view, so open it automatically rather than making the
+            # user click "Open Case" first.
+            #
+            # No `navigate` at all for every later outcome (Under Review,
+            # Approved, Closed, ...): auto-navigating unconditionally used to
+            # pop a new tab the instant that message arrived, with no click
+            # involved — once past pre-underwriting, nothing should open on
+            # its own. A "View Case"/"Open Case" quick_action (embed) is
+            # still offered per-outcome above for anyone who explicitly
+            # wants to look.
+            result["navigate"] = {"route": route, "entity_id": state["journey_case_id"], "highlight": True, "embed": True}
 
     return {
         "messages": [ToolMessage(content=json.dumps(result), tool_call_id=call.get("id", ""), name=call.get("name", "start_underwriting_journey"))],
