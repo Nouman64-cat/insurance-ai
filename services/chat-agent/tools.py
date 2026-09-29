@@ -29,6 +29,13 @@ RecordType = Literal[
     "quote", "artifact", "assessment", "plan",
 ]
 
+_AGENT_NAME_DESCRIPTION = (
+    "Name or email of the Agent who owns this lead. Only needed when the caller "
+    "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask. "
+    "This MUST be a real Agent's name/email the user actually gave you — even for demo/test "
+    "data, NEVER invent a placeholder like 'demo_agent' or 'Test Agent'."
+)
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Navigation & discovery
@@ -230,13 +237,7 @@ class AddCustomerArgs(BaseModel):
     is_smoker: Optional[bool] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
-    agent_name: Optional[str] = Field(
-        default=None,
-        description="Name or email of the Agent who owns this lead. Only needed when the caller "
-        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask. "
-        "This MUST be a real Agent's name/email the user actually gave you — even for demo/test "
-        "data, NEVER invent a placeholder like 'demo_agent' or 'Test Agent'.",
-    )
+    agent_name: Optional[str] = Field(default=None, description=_AGENT_NAME_DESCRIPTION)
 
 
 @tool(args_schema=AddCustomerArgs)
@@ -320,6 +321,7 @@ class AddOrganizationArgs(BaseModel):
     contact_person: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
+    agent_name: Optional[str] = Field(default=None, description=_AGENT_NAME_DESCRIPTION)
 
 
 @tool(args_schema=AddOrganizationArgs)
@@ -347,8 +349,16 @@ class AddFamilyGroupArgs(BaseModel):
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     household_declared_income: Optional[float] = None
+    agent_name: Optional[str] = Field(default=None, description=_AGENT_NAME_DESCRIPTION)
     members: Optional[list[FamilyMember]] = Field(
         default=None, description="Members to enroll. Exactly one must be 'Self'."
+    )
+    use_demo_data: bool = Field(
+        default=False,
+        description="Generate a realistic, randomly-varied demo family (name, members, CNICs, "
+        "incomes) instead of the caller inventing member details themselves — set this instead of "
+        "writing member data by hand whenever the user says 'demo'/'test data'/'make something up' "
+        "for a family. Each call produces a different family, never the same names/CNICs twice.",
     )
 
 
@@ -451,6 +461,11 @@ def create_proposal(**kwargs) -> str:
 class UploadDocumentArgs(BaseModel):
     applicant_name: Optional[str] = None
     cnic: Optional[str] = None
+    case_number: Optional[str] = Field(
+        default=None,
+        description="The case's number if you already know it (e.g. from a recent tool result) — "
+        "more reliable than cnic/applicant_name for finding the right case.",
+    )
     document_type: str = Field(description="e.g. CNIC, Salary Slip, Bank Statement, Medical Report.")
 
 
@@ -634,13 +649,7 @@ class QuickStartArgs(BaseModel):
         default=None,
         description="Optional specific name to use for the demo customer, instead of a random one."
     )
-    agent_name: Optional[str] = Field(
-        default=None,
-        description="Name or email of the Agent who owns this lead. Only needed when the caller "
-        "isn't themselves an Agent — leave unset otherwise, the tool figures out who to ask. "
-        "This MUST be a real Agent's name/email the user actually gave you — even for demo/test "
-        "data, NEVER invent a placeholder like 'demo_agent' or 'Test Agent'.",
-    )
+    agent_name: Optional[str] = Field(default=None, description=_AGENT_NAME_DESCRIPTION)
 
 
 @tool(args_schema=QuickStartArgs)

@@ -69,6 +69,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
   const threadIdRef = useRef<string>("");
   const pendingAssessmentRef = useRef<any>(null);
   const pendingQuickActionsRef = useRef<QuickAction[] | null>(null);
+  const pendingFamilyMembersRef = useRef<any>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -109,17 +110,28 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
                   }
                 }
               }
+              if (pendingFamilyMembersRef.current) {
+                for (let i = copy.length - 1; i >= 0; i--) {
+                  if (copy[i].role === "user") break;
+                  if (copy[i].role === "assistant" && copy[i].familyMembers) {
+                    copy[i] = { ...copy[i] };
+                    delete copy[i].familyMembers;
+                  }
+                }
+              }
               copy.push({
                 id: newId(),
                 role: "assistant",
                 text: evt.content,
                 assessment: pendingAssessmentRef.current || undefined,
                 quickActions: pendingQuickActionsRef.current || undefined,
+                familyMembers: pendingFamilyMembersRef.current || undefined,
               });
               return copy;
             });
             pendingAssessmentRef.current = null;
             pendingQuickActionsRef.current = null;
+            pendingFamilyMembersRef.current = null;
           }
           break;
 
@@ -242,6 +254,20 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
           });
           break;
 
+        case "family_members":
+          pendingFamilyMembersRef.current = evt.family_members;
+          setMessages((prev) => {
+            const copy = [...prev];
+            for (let i = copy.length - 1; i >= 0; i--) {
+              if (copy[i].role === "assistant") {
+                copy[i] = { ...copy[i], familyMembers: evt.family_members };
+                break;
+              }
+            }
+            return copy;
+          });
+          break;
+
         case "done":
           setIsLoading(false);
           break;
@@ -347,6 +373,11 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
       // rather than restarting — but the "Waiting for you" node is now
       // answered, so settle it instead of leaving it pulsing forever.
       setSteps((prev) => prev.map((s) => (s.id.startsWith("wait:") && s.status === "active" ? { ...s, status: "done" } : s)));
+      // Clear stale turnActions from a prior step, same as send() does — a
+      // message with no quickActions of its own falls back to turnActions
+      // for its buttons, and a leftover set from a previous turn must not
+      // bleed onto an unrelated reply.
+      setTurnActions([]);
       setIsLoading(true);
       try {
         const res = await fetch("/api/chat/resume", {

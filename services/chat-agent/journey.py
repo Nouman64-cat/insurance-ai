@@ -25,11 +25,12 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import httpx
 from langchain_core.messages import ToolMessage
 
 from pages import build_route
 from state import ChatState
-from tool_executor import ExecCtx, execute_tool
+from tool_executor import API_GATEWAY_URL, ExecCtx, execute_tool
 
 # Stage metadata: node -> (stage id, UI label). Order matters for the
 # "what comes next" markers.
@@ -109,9 +110,18 @@ async def j_intake(state: ChatState) -> dict:
     # No match — register from provided fields if we have the essentials.
     required = ("first_name", "last_name", "cnic", "date_of_birth", "gender", "occupation", "declared_income")
     if all(args.get(k) for k in required):
-        res = await execute_tool("add_customer", {k: args[k] for k in required}, ctx)
+        # agent_name/agent_email were being silently dropped here (only the
+        # `required` fields were forwarded) — for anyone but the Agent role,
+        # add_customer needs one explicitly or it stalls on its own
+        # agent-picker prompt even though the caller already supplied one.
+        add_args = {k: args[k] for k in required}
+        if args.get("agent_name"):
+            add_args["agent_name"] = args["agent_name"]
+        if args.get("agent_email"):
+            add_args["agent_email"] = args["agent_email"]
+        res = await execute_tool("add_customer", add_args, ctx)
         if not res.get("success"):
-            return _fail(state, "j_intake", res.get("error") or "Could not register the applicant.")
+            return _fail(state, "j_intake", res.get("error") or res.get("message") or "Could not register the applicant.")
         return {
             "journey_stage": "case_creation",
             "journey_cnic": args["cnic"],
@@ -147,7 +157,7 @@ async def j_case(state: ChatState) -> dict:
 
     res = await execute_tool("create_case", {"cnic": cnic}, ctx)
     if not res.get("success"):
-        return _fail(state, "j_case", res.get("error") or "Could not open a case.")
+        return _fail(state, "j_case", res.get("error") or res.get("message") or "Could not open a case.")
     case_number = (res.get("message") or "").split("**")
     number = case_number[1] if len(case_number) > 1 else res.get("case_id", "")
     return {
@@ -187,7 +197,7 @@ async def j_proposal(state: ChatState) -> dict:
     }
     res = await execute_tool("create_proposal", proposal_args, ctx)
     if not res.get("success"):
-        return _fail(state, "j_proposal", res.get("error") or "Could not create the proposal.")
+        return _fail(state, "j_proposal", res.get("error") or res.get("message") or "Could not create the proposal.")
     product = {
         "product_name": args.get("product_name") or "Term Life Plus",
         "coverage_amount": args.get("coverage_amount") or 5_000_000,
@@ -213,7 +223,7 @@ async def j_pre_underwriting(state: ChatState) -> dict:
 
     res = await execute_tool("run_pre_underwriting_clearance", lookup, ctx)
     if not res.get("success"):
-        return _fail(state, "j_pre_underwriting", res.get("error") or "Could not complete pre-underwriting clearance.")
+        return _fail(state, "j_pre_underwriting", res.get("error") or res.get("message") or "Could not complete pre-underwriting clearance.")
 
     return {
         "journey_stage": "document_audit",
@@ -228,10 +238,16 @@ async def j_audit(state: ChatState) -> dict:
     pipeline (spec: Pending Documents wait state)."""
     ctx = _ctx(state)
     res = await execute_tool("get_document_checklist", {"cnic": state.get("journey_cnic")}, ctx)
-    if not res.get("success"):
-        return _fail(state, "j_audit", res.get("error") or "Could not audit documents.")
+    checklist = res.get("checklist")
+    # get_document_checklist returns success:False as a BUSINESS outcome
+    # ("checklist fetched fine, some documents are still missing"), not a
+    # tool failure — that's what the `missing` branch below handles. Only
+    # the genuine absence of a checklist (case lookup failed, HTTP error,
+    # ...) is an actual audit failure.
+    if checklist is None:
+        return _fail(state, "j_audit", res.get("error") or res.get("message") or "Could not audit documents.")
 
-    missing = (res.get("checklist") or {}).get("missing") or []
+    missing = checklist.get("missing") or []
     if missing:
         await execute_tool(
             "update_case_status",
@@ -254,12 +270,54 @@ async def j_audit(state: ChatState) -> dict:
     }
 
 
+async def _run_evaluation_directly(customer: dict, policy: dict, ctx: ExecCtx) -> dict:
+    """Runs + persists a risk assessment server-side, for callers (like this
+    journey) that have no browser to stream progress to.
+
+    run_risk_assessment's own tool handler is interactive-only: once every
+    precondition passes it returns a `__client_execute__` marker so the chat
+    UI can run api-gateway's SSE /evaluate/stream and show live steps. A
+    server-side journey has no client to hand that off to, so this calls the
+    same persisting endpoint directly and just waits for the final event —
+    same result, no progress UI. Mirrors CopilotInterface.tsx's SSE consumer.
+    """
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        async with client.stream(
+            "POST", f"{API_GATEWAY_URL}/evaluate/stream",
+            json={"customer": customer, "policy": policy},
+            headers=ctx.headers,
+        ) as resp:
+            resp.raise_for_status()
+            buffer = ""
+            async for chunk in resp.aiter_text():
+                buffer += chunk
+                while "\n\n" in buffer:
+                    line, buffer = buffer.split("\n\n", 1)
+                    line = line.strip()
+                    if not line.startswith("data: "):
+                        continue
+                    evt = json.loads(line[6:])
+                    if evt.get("type") == "saved":
+                        return {"success": True, "assessment": evt["data"]}
+                    if evt.get("type") in ("error", "invalid"):
+                        data = evt.get("data") or {}
+                        msg = evt.get("message") or "; ".join(data.get("errors") or []) or "Risk evaluation failed."
+                        return {"success": False, "message": msg}
+    return {"success": False, "message": "Risk evaluation stream ended without a result."}
+
+
 async def j_risk(state: ChatState) -> dict:
     """Stage 5 — tri-fold AI evaluation via the risk engine."""
     ctx = _ctx(state)
     await execute_tool("update_case_status", {"cnic": state.get("journey_cnic"), "new_status": "InProgress"}, ctx)
 
     res = await execute_tool("run_risk_assessment", {"cnic": state.get("journey_cnic")}, ctx)
+    if res.get("__client_execute__"):
+        # Every precondition (gates, documents, an existing policy) already
+        # passed for the marker to be returned — nothing left to check, just
+        # run it ourselves since there's no browser to hand it to.
+        args = res["tool_call"]["args"]
+        res = await _run_evaluation_directly(args["customer"], args["policy"], ctx)
     if not res.get("success"):
         return _fail(state, "j_risk", res.get("error") or res.get("message") or "Risk assessment failed.")
 
@@ -289,36 +347,19 @@ async def j_risk(state: ChatState) -> dict:
 
 
 async def j_decide(state: ChatState) -> dict:
-    """Stage 6 — deterministic routing on the engine's recommendation.
-    Auto Approve / Decline proceed to closure; anything else suspends for a
-    human underwriter (spec's HITL checkpoint)."""
+    """Stage 6 — a human always confirms the final call. The AI recommendation
+    (Auto Approve / Decline / Human Review) is presented as context, not acted
+    on automatically — j_finish's "Under Review" branch is what actually shows
+    the Approve/Reject buttons, for every recommendation alike. Case status
+    moves to Under Review here so it's visibly awaiting a decision instead of
+    silently parked in Progress while the journey pauses."""
     ctx = _ctx(state)
-    rec = ((state.get("journey_risk") or {}).get("recommendation") or "Human Review").strip()
-
-    if rec == "Auto Approve":
-        await execute_tool("update_case_status", {"cnic": state.get("journey_cnic"), "new_status": "Approved"}, ctx)
-        return {
-            "journey_stage": "case_closure",
-            "journey_outcome": "Approved",
-            "journey_audit": _log(state, "Auto-approved by AI underwriter — policy bound"),
-            **_mark("j_decide", next_node="j_close"),
-        }
-
-    if rec == "Decline":
-        await execute_tool("update_case_status", {"cnic": state.get("journey_cnic"), "new_status": "Rejected"}, ctx)
-        return {
-            "journey_stage": "case_closure",
-            "journey_outcome": "Rejected",
-            "journey_audit": _log(state, "Declined on composite risk threshold"),
-            **_mark("j_decide", next_node="j_close"),
-        }
-
     await execute_tool("update_case_status", {"cnic": state.get("journey_cnic"), "new_status": "Under Review"}, ctx)
     return {
         "journey_stage": "underwriting_decision",
         "journey_outcome": "Under Review",
         "requires_human_intervention": True,
-        "journey_audit": _log(state, "Routed to human underwriter — pipeline suspended"),
+        "journey_audit": _log(state, "Risk assessment complete — awaiting proceed/decline"),
         **_mark("j_decide", next_node=None, status="error"),
     }
 
@@ -343,9 +384,31 @@ async def j_close(state: ChatState) -> dict:
 
 
 async def j_resume(state: ChatState) -> dict:
-    """Router for continue_underwriting_journey — no work, just an audit line;
-    the conditional edge below picks the re-entry stage from state."""
-    return {"journey_audit": _log(state, "Journey resumed"), "journey_error": None}
+    """Router for continue_underwriting_journey.
+
+    A "Proceed"/"Decline" click updates the case's real status through the
+    plain approve_case/update_case_status tools, not through journey state —
+    journey_outcome is never actually written to "Approved"/"Rejected"
+    anywhere else. Without re-reading the real case here, route_resume's
+    check for that would always miss and loop back into j_decide, re-asking
+    the same question forever. Re-read the live status so a decision made
+    since the last pause is recognised.
+    """
+    update: dict[str, Any] = {"journey_audit": _log(state, "Journey resumed"), "journey_error": None}
+    if state.get("requires_human_intervention") and state.get("journey_case_id"):
+        ctx = _ctx(state)
+        try:
+            res = await execute_tool("get_case_details", {"case_number": state.get("journey_case_number")}, ctx)
+            # get_case_details wraps the whole /detail bundle under "case",
+            # and that bundle's own "case" key holds the actual case record.
+            bundle = res.get("case") or {}
+            status = str((bundle.get("case") or {}).get("caseStatus") or "")
+        except Exception:
+            status = ""
+        if status in ("Approved", "Rejected"):
+            update["journey_outcome"] = status
+            update["requires_human_intervention"] = False
+    return update
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -395,11 +458,13 @@ async def j_finish(state: ChatState) -> dict:
     case_no = state.get("journey_case_number") or ""
     cnic = state.get("journey_cnic") or ""
     case_id = state.get("journey_case_id")
-    # Documents suspension lands on the case's documents view (uploads live
-    # there); every scored outcome lands on the detail page with the results.
-    docs_route = build_route("cases", case_id) if case_id else "underwriting"
+    # Every outcome — including a documents suspension — lands on the case
+    # detail page: that's where both the upload checklist and the gate/result
+    # views actually live (app/case/[id]/page.tsx). A prior version pointed
+    # documents suspension at the bare cases list instead, which doesn't have
+    # an upload UI at all.
     results_route = f"case/{case_id}" if case_id else "underwriting"
-    route = docs_route if outcome == "Pending Documents" else results_route
+    route = results_route
 
     result: dict[str, Any] = {"audit_trail": state.get("journey_audit", []), "case_number": case_no, "outcome": outcome}
 
@@ -415,6 +480,17 @@ async def j_finish(state: ChatState) -> dict:
                 {"label": "View document checklist", "actionType": "submit",
                  "payload": f"Show me the document checklist for {case_no or cnic}"},
             ]
+        elif state.get("journey_stage") == "pre_underwriting_clearance":
+            # run_pre_underwriting_clearance is all-or-nothing (no mid-gate
+            # pause), so a flagged/blocked gate surfaces here as a plain
+            # error with no chip — leaving the user to retype which gate to
+            # run next. get_pre_underwriting_status reports the same failure
+            # AND attaches the specific next-gate button (see graph.py's
+            # "NEVER narrate the next gate without calling a tool" rule).
+            result["quick_actions"] = [
+                {"label": "Check gate status", "actionType": "submit",
+                 "payload": f"Check pre-underwriting status for case {case_no or cnic}"},
+            ]
     elif outcome == "Pending Documents":
         missing = state.get("journey_missing_documents", [])
         result.update({
@@ -422,21 +498,24 @@ async def j_finish(state: ChatState) -> dict:
             "message": f"Journey suspended at document audit — {case_no} needs: {', '.join(missing)}.",
             "quick_actions": [
                 *({"label": f"Upload {d}", "actionType": "upload",
-                   "payload": json.dumps({"document_type": d, "cnic": cnic})} for d in missing[:2]),
+                   "payload": json.dumps({"document_type": d, "cnic": cnic, "case_number": case_no})} for d in missing[:2]),
+                {"label": "Open Case", "actionType": "navigate", "payload": route},
                 {"label": "Resume journey", "actionType": "submit", "payload": "Continue the underwriting journey"},
             ],
         })
     elif outcome == "Under Review":
         r = state.get("journey_risk") or {}
+        rec = r.get("recommendation", "Human Review")
         result.update({
             "success": True,
             "message": (
-                f"Journey suspended for human review — {case_no} "
-                f"(composite {r.get('composite_score')}, fraud {r.get('fraud_probability')})."
+                f"I've completed the underwriting risk assessment for {case_no} — "
+                f"AI recommendation: **{rec}**.\n\n"
+                "Would you like to **proceed** with these results, or **decline**?"
             ),
             "quick_actions": [
-                {"label": "Approve case", "actionType": "submit", "payload": f"Approve case {case_no} and continue the journey"},
-                {"label": "Reject case", "actionType": "submit", "payload": f"Reject case {case_no} and continue the journey"},
+                {"label": "Proceed", "actionType": "submit", "payload": f"Approve case {case_no} and continue the journey"},
+                {"label": "Decline", "actionType": "submit", "payload": f"Reject case {case_no} and continue the journey"},
                 {"label": "View Case", "actionType": "navigate", "payload": route},
             ],
         })

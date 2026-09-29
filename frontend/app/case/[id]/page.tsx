@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 
+import { useNotify } from "@/components/NotificationContext";
 import { DecisionBanner, StatusBadge } from "@/components/StatusBadge";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { fmtCoverage, fmtDob, fmtIncome, type AIDecision } from "@/lib/mock-data";
@@ -586,6 +587,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [medLink, setMedLink] = useState<string | null>(null);
   const [medErr, setMedErr] = useState<string | null>(null);
   const [showResultModal, setShowResultModal] = useState(false);
+  const [showAssessModal, setShowAssessModal] = useState(false);
+  const notifiedPreUnderwritingRef = useRef(false);
 
   const [docSummary, setDocSummary] = useState<string | null>(null);
   const [summarizing, setSummarizing] = useState(false);
@@ -717,13 +720,40 @@ export default function CasePage({ params }: { params: { id: string } }) {
   }, [tenantId, detail?.policy?.id, detail?.case?.policy_id]);
 
   const handleRunCompliance = async () => {
-    const policyId = detail?.policy?.id || detail?.case?.policy_id;
-    if (!policyId) return;
+    let policyId = detail?.policy?.id || detail?.case?.policy_id;
+    if (!policyId) {
+      if (!customer) {
+        alert("This case has no linked policy yet — PEP/sanctions screening needs one first.");
+        return;
+      }
+      if (!window.confirm(
+        "This case has no linked policy yet — PEP/sanctions screening needs one first.\n\n" +
+        "Create a default Term Life Plus proposal for this customer now?"
+      )) return;
+      setCompBusy(true);
+      try {
+        const coverage = Math.min((customer.declared_income || 0) * 10, 20_000_000) || 5_000_000;
+        const res = await api.post(`/tenants/${tenantId}/customers/${customer.id}/policies`, {
+          product_name: "Term Life Plus",
+          insurance_type: "TERM_LIFE",
+          coverage_amount: coverage,
+          term_years: 10,
+        });
+        policyId = res.data.id;
+        await fetchDetail();
+      } catch (e: any) {
+        alert(e?.message ?? "Could not create the proposal.");
+        setCompBusy(false);
+        return;
+      }
+    }
     setCompBusy(true);
     try {
       await runCompliance(policyId);
       await fetchCompliance();
-    } catch { /* */ }
+    } catch (e: any) {
+      alert(e?.message ?? "PEP/sanctions screening failed");
+    }
     finally { setCompBusy(false); }
   };
 
@@ -809,10 +839,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const handleAssessMedical = async () => {
     setMedBusy(true); setMedErr(null);
     try {
-      setMedical(await assessMedicalExam(caseId));
+      const order = await assessMedicalExam(caseId);
+      setMedical(order);
+      // Required → immediately issue the customer's booking link, same as the
+      // pre-underwriting queue's "Assess" shortcut, so this modal always shows
+      // a link to send rather than a second click being needed to get one.
+      if (order.status !== "NotRequired") {
+        const invite = await inviteMedicalExam(caseId);
+        setMedLink(`${window.location.origin}${invite.link_path}`);
+      } else {
+        setMedLink(null);
+      }
+      setShowAssessModal(true);
       await fetchDetail();
     } catch (e: any) {
-      setMedErr(e?.message ?? "Could not apply the non-medical limit grid");
+      const msg = e?.message ?? "Could not apply the non-medical limit grid";
+      setMedErr(msg);
+      alert(msg);
     } finally {
       setMedBusy(false);
     }
@@ -826,7 +869,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
       await fetchMedical();
       await fetchDetail();
     } catch (e: any) {
-      setMedErr(e?.message ?? "Failed to generate the booking link");
+      const msg = e?.message ?? "Failed to generate the booking link";
+      setMedErr(msg);
+      alert(msg);
     } finally {
       setMedBusy(false);
     }
@@ -840,7 +885,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
       setMedical(await waiveMedicalExam(caseId, reason));
       await fetchDetail();
     } catch (e: any) {
-      setMedErr(e?.message ?? "Failed to waive the medical requirement");
+      const msg = e?.message ?? "Failed to waive the medical requirement";
+      setMedErr(msg);
+      alert(msg);
     } finally {
       setMedBusy(false);
     }
@@ -853,7 +900,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
       setShowResultModal(false);
       await fetchDetail();
     } catch (e: any) {
-      setMedErr(e?.message ?? "Failed to record the results");
+      const msg = e?.message ?? "Failed to record the results";
+      setMedErr(msg);
+      alert(msg);
     } finally {
       setMedBusy(false);
     }
@@ -887,6 +936,33 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const searchParams = useSearchParams();
   const autoRun = searchParams.get("autoRun");
   const router = useRouter();
+  const { notify } = useNotify();
+
+  // One-shot popup the moment every pre-underwriting prerequisite clears —
+  // fires once per transition into "ready", not on every poll/re-render.
+  // Computed here (unconditionally, before the loading/error early returns
+  // below) with its own optional-chained reads rather than off the derived
+  // `missingPreChecks` array, which only exists after those early returns.
+  useEffect(() => {
+    if (!detail) return;
+    const docsReady = (detail.document_checklist?.missing ?? []).length === 0;
+    const eAppReady = eApp?.status === "Submitted" || eApp?.status === "Verified";
+    const acrReady = acr?.status === "Submitted";
+    const ippReady = ipp?.status === "Realized";
+    const pepReady = checks.length > 0 && checks.every((ck) => ck.status === "Passed");
+    const historyReady = history?.status === "Clear";
+    const medicalReady = medical?.status === "Completed" || medical?.status === "NotRequired" || medical?.status === "Waived";
+    const allReady = docsReady && eAppReady && acrReady && ippReady && pepReady && historyReady && medicalReady;
+
+    if (allReady) {
+      if (!notifiedPreUnderwritingRef.current) {
+        notifiedPreUnderwritingRef.current = true;
+        notify("✅ Pre-underwriting clearance complete — ready for AI risk assessment.", true);
+      }
+    } else {
+      notifiedPreUnderwritingRef.current = false;
+    }
+  }, [detail, eApp, acr, ipp, checks, history, medical, notify]);
 
   // Auto-run underwriting if requested via URL. In group mode the parallel
   // runner below handles every plan, so the single-case path stays out of it.
@@ -1790,6 +1866,22 @@ export default function CasePage({ params }: { params: { id: string } }) {
             />
           )}
 
+          {showAssessModal && medical && (
+            <MedicalAssessModal
+              order={medical}
+              link={medLink}
+              customerName={customer?.name}
+              busy={medBusy}
+              onClose={() => setShowAssessModal(false)}
+              onMarkCompleted={async () => {
+                await handleRecordResults({
+                  standard_panel: "normal", fasting_blood_sugar: "normal", urinalysis: "normal",
+                });
+                setShowAssessModal(false);
+              }}
+            />
+          )}
+
           {showACRModal && (
             <ACRModal
               caseId={caseId}
@@ -2282,6 +2374,132 @@ export default function CasePage({ params }: { params: { id: string } }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Medical assessment result — shown right after "Assess Medical" runs the
+// non-medical-limit grid. Mirrors the pre-underwriting queue's own modal
+// (app/underwriting/page.tsx) so the two entry points behave identically.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function MedicalAssessModal({
+  order, link, customerName, busy, onClose, onMarkCompleted,
+}: Readonly<{
+  order: MedicalExamOrder;
+  link: string | null;
+  customerName?: string;
+  busy: boolean;
+  onClose: () => void;
+  onMarkCompleted: () => void;
+}>) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+      <div className="bg-white rounded-2xl shadow-xl border border-slate-200 max-w-lg w-full overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+          <div>
+            <h3 className="font-bold text-slate-900 text-sm">Medical Requirement — Non-Medical Limit</h3>
+            <p className="text-xs text-slate-500">{customerName ?? "—"}</p>
+          </div>
+          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+            order.status === "NotRequired"
+              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+              : "bg-amber-100 text-amber-800 border border-amber-200"
+          }`}>
+            {order.status}
+          </span>
+        </div>
+        <div className="p-5 space-y-4 max-h-[60vh] overflow-y-auto text-xs">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Sum at risk</p>
+              <p className="font-bold text-slate-800 mt-0.5">{fmtCoverage(order.sum_assured_at_risk)}</p>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2.5">
+              <p className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">Non-medical limit (age {order.applicant_age ?? "—"})</p>
+              <p className="font-bold text-slate-800 mt-0.5">
+                {order.non_medical_limit != null ? fmtCoverage(order.non_medical_limit) : "—"}
+              </p>
+            </div>
+          </div>
+
+          {(order.trigger_reasons ?? []).length > 0 && (
+            <div className="space-y-1">
+              {order.trigger_reasons.map((r, i) => (
+                <p key={i} className="border-l-2 border-amber-400 pl-2.5 py-1 text-[11px] text-amber-800">{r}</p>
+              ))}
+            </div>
+          )}
+
+          {order.status === "NotRequired" ? (
+            <p className="text-slate-600 bg-emerald-50 border border-emerald-200 rounded-lg p-3">
+              This proposal is within the non-medical limit — it can be underwritten on the
+              E-Application alone. No panel examination is needed.
+            </p>
+          ) : (
+            <>
+              <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="bg-slate-50 px-3 py-2 flex items-center justify-between">
+                  <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold">
+                    Mandated panel — {(order.required_tests ?? []).length} tests
+                  </span>
+                  <span className="text-[11px] font-bold text-slate-700 font-mono">
+                    PKR {Math.round(order.estimated_cost ?? 0).toLocaleString()}
+                  </span>
+                </div>
+                <ul className="divide-y divide-slate-50">
+                  {(order.required_tests ?? []).map((t) => (
+                    <li key={t.code} className="px-3 py-1.5 flex items-center justify-between gap-2">
+                      <div>
+                        <p className="font-semibold text-slate-800 text-[11px]">{t.name}</p>
+                        <p className="text-[10px] text-slate-400">{t.category}</p>
+                      </div>
+                      {t.fasting && (
+                        <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                          FASTING
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {link && (
+                <div>
+                  <p className="text-[11px] text-slate-500 mb-1">
+                    Send this link to the customer — they pick a panel clinic and an appointment slot:
+                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <input readOnly value={link} onFocus={(e) => e.currentTarget.select()}
+                      className="text-[10px] border border-slate-200 rounded px-2 py-1.5 w-full font-mono text-slate-600 bg-white" />
+                    <button onClick={() => navigator.clipboard.writeText(link)}
+                      className="text-[10px] font-bold text-blue-700 px-2.5 py-1.5 bg-blue-50 border border-blue-200/60 rounded shrink-0 hover:bg-blue-100">
+                      Copy
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+        <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex flex-wrap justify-between items-center gap-2">
+          <div className="flex items-center gap-3">
+            {order.status !== "NotRequired" && order.status !== "Completed" && (
+              <button
+                onClick={onMarkCompleted}
+                disabled={busy}
+                className="text-xs font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-2xs"
+              >
+                {busy ? "Completing…" : "✓ Mark Examination Completed"}
+              </button>
+            )}
+          </div>
+          <button onClick={onClose} className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

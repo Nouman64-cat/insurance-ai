@@ -80,6 +80,16 @@ class Ctx:
         return f"{API_GATEWAY_URL}{path}"
 
 
+class ChoiceNeeded(LookupError):
+    """Raise instead of a plain LookupError when the candidate list that would
+    resolve the lookup is already in hand — execute_tool's wrapper catches
+    this specifically and attaches `quick_actions` so the user picks from
+    real options instead of hitting a dead-end error string."""
+    def __init__(self, message: str, quick_actions: list[dict]):
+        super().__init__(message)
+        self.quick_actions = quick_actions
+
+
 Handler = Callable[[dict[str, Any], Ctx], Awaitable[dict[str, Any]]]
 _HANDLERS: dict[str, Handler] = {}
 
@@ -504,7 +514,12 @@ async def _get_document_checklist(args: dict, ctx: Ctx) -> dict:
 
     upload_actions = [
         {"label": f"Upload {doc}", "actionType": "upload",
-         "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
+         "payload": json.dumps({
+             "document_type": doc,
+             "cnic": case.get("customer_cnic") or args.get("cnic") or "",
+             "case_number": case.get("caseNumber") or "",
+             "case_id": case_id,
+         })}
         for doc in missing[:3]
     ]
     return {
@@ -810,8 +825,27 @@ async def _add_customer(args: dict, ctx: Ctx) -> dict:
 
     payload = _customer_payload(args)
     payload["assigned_agent_id"] = agent.get("id")
-    res = await ctx.client.post(ctx.tsvc("/customers"), json=payload)
-    res.raise_for_status()
+    try:
+        res = await ctx.client.post(ctx.tsvc("/customers"), json=payload)
+        res.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 409:
+            cnic = args.get("cnic")
+            existing_res = await ctx.client.get(ctx.tsvc("/customers"))
+            existing_res.raise_for_status()
+            existing = _find_customer(existing_res.json(), cnic, None)
+            route = build_route("admin/leads", cnic)
+            raise ChoiceNeeded(
+                f"CNIC '{cnic}' is already registered"
+                + (f" to **{_full_name(existing)}**." if existing else "."),
+                quick_actions=[
+                    {"label": "Generate a new demo customer", "actionType": "submit",
+                     "payload": "Run quick_start_workflow with fresh random demo data"},
+                    {"label": "View Existing Customer", "actionType": "navigate", "payload": route},
+                    {"label": "Search Customers", "actionType": "navigate", "payload": "admin/customers"},
+                ],
+            )
+        raise
     data = res.json()
     name = f"{args.get('first_name')} {args.get('last_name')}".strip()
     cnic = args.get("cnic")
@@ -910,13 +944,30 @@ async def _bulk_add_customers(args: dict, ctx: Ctx) -> dict:
 # Write — users, organizations, families
 # ═══════════════════════════════════════════════════════════════════════════
 
+@handles("list_roles")
+async def _list_roles(args: dict, ctx: Ctx) -> dict:
+    """Not model-facing — exists so permission_gate can offer the real role
+    list as chips before add_user, instead of a free-text 'what role?'."""
+    res = await ctx.client.get(f"{TENANT_SERVICE_URL}/roles")
+    res.raise_for_status()
+    return {"success": True, "roles": res.json()}
+
+
 @handles("add_user")
 async def _add_user(args: dict, ctx: Ctx) -> dict:
     roles_res = await ctx.client.get(f"{TENANT_SERVICE_URL}/roles")
     roles_res.raise_for_status()
-    role = next((r for r in roles_res.json() if r["name"].lower() == args["role_name"].lower()), None)
+    roles = roles_res.json()
+    role = next((r for r in roles if r["name"].lower() == args["role_name"].lower()), None)
     if not role:
-        raise LookupError(f"Role {args['role_name']} doesn't exist.")
+        raise ChoiceNeeded(
+            f"Role \"{args['role_name']}\" doesn't exist. Which role did you mean?",
+            quick_actions=[
+                {"label": r["name"], "actionType": "submit",
+                 "payload": f"Add user {args.get('full_name', '')} ({args.get('email', '')}) with role {r['name']}"}
+                for r in roles
+            ],
+        )
 
     res = await ctx.client.post(
         ctx.tsvc("/users/"),
@@ -954,11 +1005,16 @@ async def _delete_user(args: dict, ctx: Ctx) -> dict:
 
 @handles("add_organization")
 async def _add_organization(args: dict, ctx: Ctx) -> dict:
+    agent, error = await _resolve_lead_agent(args, ctx)
+    if error:
+        return error
+
     res = await ctx.client.post(ctx.tsvc("/organizations"), json={
         "name": args["name"],
         "contact_person": args.get("contact_person"),
         "contact_email": args.get("contact_email"),
         "contact_phone": args.get("contact_phone"),
+        "assigned_agent_id": agent.get("id"),
     })
     res.raise_for_status()
     data = res.json()
@@ -966,7 +1022,7 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
     return {
         "success": True,
         "organization_id": data["id"],
-        "message": f"Organization **{args['name']}** created.",
+        "message": f"Organization **{args['name']}** created, assigned to agent **{agent.get('full_name')}**.",
         "last_action": _action("add_organization", "organization", data["id"], route, f"Organization {args['name']} added"),
         "quick_actions": [
             {"label": "View Organization", "actionType": "navigate", "payload": route},
@@ -976,18 +1032,29 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
 
 @handles("add_family_group")
 async def _add_family_group(args: dict, ctx: Ctx) -> dict:
+    agent, error = await _resolve_lead_agent(args, ctx)
+    if error:
+        return error
+
+    name = args.get("name")
+    members = args.get("members")
+    if args.get("use_demo_data") and not members:
+        name, members = _demo_family_group()
+
     res = await ctx.client.post(ctx.tsvc("/families"), json={
-        "name": args["name"],
+        "name": name,
         "contact_person": args.get("contact_person"),
         "contact_email": args.get("contact_email"),
         "contact_phone": args.get("contact_phone"),
         "household_declared_income": _as_float(args.get("household_declared_income")),
+        "assigned_agent_id": agent.get("id"),
     })
     res.raise_for_status()
     family_id = res.json()["id"]
-    message = f"Family group **{args['name']}** created."
+    message = f"Family group **{name}** created, assigned to agent **{agent.get('full_name')}**."
 
-    members = args.get("members")
+    enrolled_members = None
+    case_numbers: list[str] = []
     if members:
         fp = await ctx.client.post(
             ctx.tsvc(f"/families/{family_id}/floater-policies"),
@@ -1000,17 +1067,40 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
         )
         confirm.raise_for_status()
         message += f" Enrolled {len(members)} member(s)."
+        enrolled_members = members
+        case_numbers = [m["case_number"] for m in confirm.json().get("members", []) if m.get("case_number")]
+
+        member_lines = "\n".join(
+            f"- **{m.get('name', 'Member')}** — {m.get('relationship', '')}"
+            + (f", {m.get('occupation')}" if m.get("occupation") else "")
+            for m in members
+        )
+        message += f"\n\n{member_lines}"
+
+        if case_numbers:
+            message += "\n\nEach member has an underwriting case ready. Start pre-underwriting clearance?"
 
     route = build_route("admin/families", family_id)
-    return {
+    quick_actions = [{"label": "View Family", "actionType": "navigate", "payload": route}]
+    if case_numbers:
+        quick_actions.insert(0, {
+            "label": "Start underwriting for family",
+            "actionType": "submit",
+            "payload": (
+                "Run pre-underwriting clearance one case at a time, waiting for each to finish "
+                "before starting the next, for: " + ", ".join(case_numbers)
+            ),
+        })
+    result = {
         "success": True,
         "family_group_id": family_id,
         "message": message,
-        "last_action": _action("add_family_group", "family", family_id, route, f"Family {args['name']} added"),
-        "quick_actions": [
-            {"label": "View Family", "actionType": "navigate", "payload": route},
-        ],
+        "last_action": _action("add_family_group", "family", family_id, route, f"Family {name} added"),
+        "quick_actions": quick_actions,
     }
+    if enrolled_members is not None:
+        result["family_members"] = enrolled_members
+    return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1224,12 +1314,14 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
     if latest and latest.get("ai_decision") and not args.get("force_rerun"):
         decision = latest.get("ai_decision")
         results_route = f"case/{case_id}"
+        pending_decision = (case.get("caseStatus") or "") not in ("Approved", "Rejected", "Closed")
         summary = (
             f"Risk assessment for case **{case.get('caseNumber')}** has already been completed!\n"
             f"- Medical Score: {latest.get('medical_score') if latest.get('medical_score') is not None else '—'}/100\n"
             f"- Financial Score: {latest.get('financial_score') if latest.get('financial_score') is not None else '—'}/100\n"
             f"- Fraud Risk: {latest.get('fraud_probability') if latest.get('fraud_probability') is not None else '—'}\n"
             f"- **Decision: {decision}**"
+            + ("\n\nWould you like to **proceed** with these results, or **decline**?" if pending_decision else "")
         )
         return {
             "success": True,
@@ -1256,12 +1348,18 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
                 "route": results_route,
                 "label": "Risk assessment complete"
             },
-            "quick_actions": [
-                {"label": "View Results", "actionType": "navigate", "payload": results_route},
-                {"label": "Download Report", "actionType": "download", "payload": case_id},
-                {"label": "Approve Case", "actionType": "submit", "payload": f"Approve case {case.get('caseNumber')}"},
-                {"label": "Move to Review", "actionType": "submit", "payload": f"Move case {case_id} to Under Review"},
-            ]
+            "quick_actions": (
+                [
+                    {"label": "Proceed", "actionType": "submit",
+                     "payload": f"Approve case {case.get('caseNumber')} based on the risk assessment results"},
+                    {"label": "Decline", "actionType": "submit",
+                     "payload": f"Reject case {case.get('caseNumber')} based on the risk assessment results"},
+                    {"label": "View Results", "actionType": "navigate", "payload": results_route},
+                ] if pending_decision else [
+                    {"label": "View Results", "actionType": "navigate", "payload": results_route},
+                    {"label": "Download Report", "actionType": "download", "payload": case_id},
+                ]
+            )
         }
 
     # Pre-Underwriting 6-Gate Clearance Guard
@@ -1323,7 +1421,12 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
     if missing:
         upload_actions = [
             {"label": f"Upload {doc}", "actionType": "upload",
-             "payload": json.dumps({"document_type": doc, "cnic": case.get("customer_cnic") or args.get("cnic") or ""})}
+             "payload": json.dumps({
+                 "document_type": doc,
+                 "cnic": case.get("customer_cnic") or args.get("cnic") or "",
+                 "case_number": case.get("caseNumber") or "",
+                 "case_id": case_id,
+             })}
             for doc in missing[:3]
         ]
         return {
@@ -2303,15 +2406,14 @@ async def _approve_case(args: dict, ctx: Ctx) -> dict:
     route = "policy-issuance"
     return {
         "success": True,
-        "message": f"Case **{case.get('caseNumber')}** has been **Approved** ✓\nIt is now in the Policy Issuance queue, ready for pre-issuance verification and policy drafting.",
+        "message": f"Case **{case.get('caseNumber')}** has been **Approved** ✓\n"
+                    "Do you want to issue the policy now?",
         "last_action": _action("approve_case", "case", case_id, route, f"{case.get('caseNumber')} approved"),
         "navigate": _nav("policy-issuance"),
         "quick_actions": [
-            {"label": "Check Pre-Issuance Status", "actionType": "submit",
-             "payload": f"Check the pre-issuance status for case {case.get('caseNumber')}"},
-            {"label": "Run Pre-Issuance Verification", "actionType": "submit",
-             "payload": f"Run pre-issuance verification for case {case.get('caseNumber')}"},
-            {"label": "Open Policy Issuance", "actionType": "navigate", "payload": route},
+            {"label": "Yes — Issue Policy", "actionType": "submit",
+             "payload": f"Run pre-issuance verification and issue the policy for case {case.get('caseNumber')}"},
+            {"label": "No — Not Yet", "actionType": "navigate", "payload": route},
         ],
     }
 
@@ -2810,6 +2912,66 @@ def _demo_customer() -> dict:
     }
 
 
+_FAMILY_SURNAMES = ["Smith", "Anderson", "Rizvi", "Chaudhry", "Bukhari", "Farooq", "Siddiqui", "Qureshi"]
+_MALE_NAMES = ["Ahmed", "Hassan", "Muhammad", "Ali", "Bilal"]
+_FEMALE_NAMES = ["Sara", "Fatima", "Aisha", "Zainab", "Hina"]
+_RELATIONSHIP_OCCUPATIONS = {
+    "Spouse": ["Doctor", "Teacher", "Homemaker", "Consultant", "Accountant"],
+    "Child": ["Student"],
+    "Parent": ["Retired", "Pensioner"],
+}
+
+
+def _demo_family_group() -> tuple[str, list[dict]]:
+    """A fresh, randomly-varied demo family every call — never the same
+    name/CNIC twice, unlike an LLM asked to 'make something up' which tends
+    to repeat the same plausible-sounding example (e.g. "John Smith")."""
+    surname = random.choice(_FAMILY_SURNAMES)
+    used_cnics: set[str] = set()
+    used_first_names: set[str] = set()
+
+    def _cnic() -> str:
+        while True:
+            c = f"{random.randint(10000, 99999)}-{random.randint(1000000, 9999999)}-{random.randint(1, 9)}"
+            if c not in used_cnics:
+                used_cnics.add(c)
+                return c
+
+    def _first_name(gender: str) -> str:
+        pool = _MALE_NAMES if gender == "Male" else _FEMALE_NAMES
+        available = [n for n in pool if n not in used_first_names] or pool
+        first = random.choice(available)
+        used_first_names.add(first)
+        return first
+
+    def _member(relationship: str, gender: str, year_range: tuple[int, int]) -> dict:
+        year = random.randint(*year_range)
+        occupation = random.choice(_RELATIONSHIP_OCCUPATIONS.get(relationship, _OCCUPATIONS))
+        return {
+            "cnic": _cnic(),
+            "name": f"{_first_name(gender)} {surname}",
+            "dob": f"{year}-{random.randint(1, 12):02d}-{random.randint(1, 28):02d}",
+            "gender": gender,
+            "occupation": occupation,
+            "declared_income": random.randrange(300_000, 2_500_000, 50_000) if relationship != "Child" else 0,
+            "relationship": relationship,
+            "is_smoker": random.random() < 0.2,
+            "height_cm": random.randint(150, 190),
+            "weight_kg": random.randint(45, 95),
+        }
+
+    self_gender = random.choice(["Male", "Female"])
+    spouse_gender = "Female" if self_gender == "Male" else "Male"
+    members = [
+        _member("Self", self_gender, (1975, 1995)),
+        _member("Spouse", spouse_gender, (1978, 1997)),
+    ]
+    if random.random() < 0.6:
+        members.append(_member("Child", random.choice(["Male", "Female"]), (2005, 2020)))
+
+    return f"The {surname} Family", members
+
+
 @handles("quick_start_workflow")
 async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
     agent, error = await _resolve_lead_agent(args, ctx)
@@ -2933,6 +3095,10 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
             exec_ctx=ctx,
         )
         return await handler(args, scoped)
+    except ChoiceNeeded as exc:
+        # A "couldn't find it, but here's what does exist" path — offered as
+        # chips instead of a dead-end string the user has to retype from.
+        return {"success": False, "error": str(exc), "quick_actions": exc.quick_actions}
     except LookupError as exc:
         # Expected "couldn't find it" paths — surfaced verbatim so the model can
         # relay a useful sentence instead of an HTTP trace.
@@ -3034,8 +3200,16 @@ async def _find_rule_set(ctx: Ctx, code: str) -> dict:
         None,
     )
     if not match:
-        known = ", ".join(sorted(s.get("rule_code") or s.get("code") or "" for s in sets)[:8])
-        raise LookupError(f'No rule set "{code}". Known codes include: {known}.')
+        if not sets:
+            raise LookupError('No rule set "' + str(code) + '" — the catalogue is empty.')
+        raise ChoiceNeeded(
+            f'No rule set "{code}". Which one did you mean?',
+            quick_actions=[
+                {"label": f"{s.get('rule_code') or s.get('code')} — {s.get('name') or ''}".rstrip(" —"),
+                 "actionType": "submit", "payload": s.get("rule_code") or s.get("code")}
+                for s in sorted(sets, key=lambda s: s.get("rule_code") or s.get("code") or "")[:8]
+            ],
+        )
     return match
 
 
@@ -3222,9 +3396,21 @@ async def _evaluate_rule_scope(args: dict, ctx: Ctx) -> dict:
     context = _parse_json_arg(args.get("context_json"), "context_json") or {}
     subcategory = args.get("subcategory") or args.get("category")
     if not subcategory:
+        res = await ctx.client.get(_rules(ctx, "/categories"))
+        res.raise_for_status()
+        cats = res.json()
+        subs = [(s.get("code"), c.get("name"), s.get("name"))
+                for c in cats for s in (c.get("subcategories") or [])]
+        if not subs:
+            return {"success": False, "error": "No rule categories are set up yet — nothing to evaluate."}
         return {
             "success": False,
-            "error": "Which subcategory should I evaluate? Call list_rule_categories to see what exists.",
+            "error": "Which subcategory should I evaluate?",
+            "quick_actions": [
+                {"label": f"{cat_name} — {sub_name}", "actionType": "submit",
+                 "payload": f"Evaluate rule scope {code}"}
+                for code, cat_name, sub_name in subs[:8]
+            ],
         }
     body = {"subcategory_code": subcategory, "context": context, "actor": "AI Copilot"}
     if args.get("channel"):
@@ -3491,10 +3677,19 @@ async def _add_rule_to_version(args: dict, ctx: Ctx) -> dict:
 
 def _find_rule(draft: dict, rule_code: str) -> dict:
     needle = (rule_code or "").strip().lower()
-    rule = next((r for r in (draft.get("rules") or []) if (r.get("rule_code") or "").lower() == needle), None)
+    rules = draft.get("rules") or []
+    rule = next((r for r in rules if (r.get("rule_code") or "").lower() == needle), None)
     if not rule:
-        known = ", ".join(r.get("rule_code", "") for r in (draft.get("rules") or [])[:10]) or "none"
-        raise LookupError(f'No rule "{rule_code}" in the draft. It has: {known}.')
+        if not rules:
+            raise LookupError(f'No rule "{rule_code}" — the draft has no rules yet.')
+        raise ChoiceNeeded(
+            f'No rule "{rule_code}" in the draft. Which one did you mean?',
+            quick_actions=[
+                {"label": f"{r.get('rule_code')} — {r.get('name') or ''}".rstrip(" —"), "actionType": "submit",
+                 "payload": r.get("rule_code")}
+                for r in rules[:8]
+            ],
+        )
     return rule
 
 
@@ -4505,8 +4700,14 @@ async def _resolve_claim_policy(args: dict, ctx: Ctx) -> dict:
             "run the underwriting journey first."
         )
     hint = number or name or cnic or "that"
-    known = ", ".join(f"{p.get('policy_number')} ({p.get('customer_name')})" for p in pool[:5])
-    raise LookupError(f'No policy matches "{hint}". Claimable policies include: {known}.')
+    raise ChoiceNeeded(
+        f'No policy matches "{hint}". Which policy is this claim against?',
+        quick_actions=[
+            {"label": f"{p.get('policy_number')} — {p.get('customer_name')}", "actionType": "submit",
+             "payload": f"Register a claim on policy {p.get('policy_number')}"}
+            for p in pool[:6]
+        ],
+    )
 
 
 async def fetch_claimable_policies(exec_ctx: ExecCtx) -> list[dict]:

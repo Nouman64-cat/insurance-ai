@@ -58,6 +58,16 @@ export type PendingInterrupt =
   | { kind: "confirm"; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
   | { kind: "client_execute"; toolCall: { name: string; args: Record<string, any> } };
 
+export interface FamilyMember {
+  name?: string;
+  cnic?: string;
+  dob?: string;
+  gender?: string;
+  occupation?: string;
+  declared_income?: number;
+  relationship?: string;
+}
+
 export interface AgentMessage {
   id: string;
   role: "user" | "assistant";
@@ -67,6 +77,7 @@ export interface AgentMessage {
   actionResult?: ActionResult;
   steps?: ProcessStep[];
   assessment?: AssessmentScores;
+  familyMembers?: FamilyMember[];
 }
 
 // One node in the live process graph the agent narrates while working.
@@ -102,5 +113,6 @@ export type AgentStreamEvent =
   | { type: "step"; id: string; label: string; status: ProcessStep["status"] }
   | { type: "navigate"; route: string; entity_id: string; highlight: boolean }
   | { type: "assessment"; assessment: AssessmentScores }
+  | { type: "family_members"; family_members: FamilyMember[] }
   | { type: "done"; thread_id: string }
   | { type: "error"; message: string };

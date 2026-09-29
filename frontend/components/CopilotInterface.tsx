@@ -402,6 +402,20 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
       { label: "Start new application", actionType: "submit", payload: "Add a new customer" },
     ];
   }
+  if (text.includes("family group") && text.includes("created")) {
+    return [
+      { label: "View family", actionType: "navigate", payload: "admin/families" },
+      { label: "Add another family", actionType: "submit", payload: "Add another family group" },
+      { label: "View leads", actionType: "navigate", payload: "admin/customers" },
+    ];
+  }
+  if (text.includes("organization") && text.includes("created")) {
+    return [
+      { label: "View organization", actionType: "navigate", payload: "admin/organizations" },
+      { label: "Add another organization", actionType: "submit", payload: "Add another organization" },
+      { label: "View leads", actionType: "navigate", payload: "admin/customers" },
+    ];
+  }
   return [
     { label: "Open Rule Engine ⚡", actionType: "navigate", payload: "admin/rule-engine" },
     { label: "Open Commission Engine ⚡", actionType: "navigate", payload: "commissions" },
@@ -521,7 +535,7 @@ export function CopilotInterface() {
   // it's the only place holding the attached File object (see graph.py's
   // CLIENT_EXECUTED_TOOLS / permission_gate's "client_execute" interrupt kind).
   const uploadDocument = useCallback(async (
-    args: { document_type: string; cnic?: string; applicant_name?: string; claim_id?: string; claim_number?: string },
+    args: { document_type: string; cnic?: string; applicant_name?: string; claim_id?: string; claim_number?: string; case_number?: string; case_id?: string },
     file: File,
   ) => {
     const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
@@ -558,6 +572,8 @@ export function CopilotInterface() {
 
     const list = await api.get(`/tenants/${tenantId}/cases`);
     const c = list.data.find((c: any) => {
+      if (args.case_id && (c.caseld === args.case_id || c.id === args.case_id)) return true;
+      if (args.case_number && c.caseNumber === args.case_number) return true;
       if (args.cnic && c.customer_cnic === args.cnic) return true;
       if (!args.applicant_name) return false;
       const n = args.applicant_name.toLowerCase();
@@ -723,7 +739,7 @@ export function CopilotInterface() {
           }
         }
         
-        const summary = `Assessment complete for **${args.case_id}**\n- Medical: ${finalScores.medical_score ?? '—'}/100\n- Financial: ${finalScores.financial_score ?? '—'}/100\n- Fraud: ${finalScores.fraud_probability ?? '—'}\n- **Decision: ${finalDecision}**`;
+        const summary = `I've completed the underwriting risk assessment for **${args.case_id}**.\n- Medical: ${finalScores.medical_score ?? '—'}/100\n- Financial: ${finalScores.financial_score ?? '—'}/100\n- Fraud: ${finalScores.fraud_probability ?? '—'}\n- **Decision: ${finalDecision}**\n\nWould you like to **proceed** with these results, or **decline**?`;
         const results_route = `case/${args.case_id}`;
 
         resolveInterrupt({
@@ -746,9 +762,10 @@ export function CopilotInterface() {
             label: "Risk assessment complete"
           },
           quick_actions: [
+            { label: "Proceed", actionType: "submit", payload: `Approve case ${args.case_id} based on the risk assessment results` },
+            { label: "Decline", actionType: "submit", payload: `Reject case ${args.case_id} based on the risk assessment results` },
             { label: "View Results", actionType: "navigate", payload: results_route },
             { label: "Download Report", actionType: "download", payload: args.case_id },
-            { label: "Move to Review", actionType: "submit", payload: `Move case ${args.case_id} to Under Review` }
           ]
         });
       } catch (err: any) {
@@ -1742,7 +1759,7 @@ export function CopilotInterface() {
                  </div>
                ) : (
                  <div className="flex flex-col pb-8 pt-8">
-                   {messages.map((msg) => (
+                   {messages.map((msg, msgIdx) => (
                      <div key={msg.id} className="w-full px-4 py-4 md:py-6">
                        <div className={`max-w-3xl mx-auto flex gap-4 md:gap-5 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
                          
@@ -1799,7 +1816,37 @@ export function CopilotInterface() {
                                  <div className="prose prose-slate max-w-none text-[16px] leading-relaxed break-words text-slate-800 w-full copilot-markdown prose-p:font-serif prose-headings:font-serif prose-li:font-serif">
                                    <ReactMarkdown>{msg.text}</ReactMarkdown>
                                  </div>
-                                 
+
+                                 {msg.familyMembers && msg.familyMembers.length > 0 && (
+                                   <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm max-w-3xl">
+                                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Enrolled Members</div>
+                                     <div className="overflow-x-auto -mx-1">
+                                       <table className="w-full min-w-[420px] text-[13px]">
+                                         <thead>
+                                           <tr className="border-b border-slate-100">
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Name</th>
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Relationship</th>
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Occupation</th>
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Declared Income</th>
+                                           </tr>
+                                         </thead>
+                                         <tbody>
+                                           {msg.familyMembers.map((m, i) => (
+                                             <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
+                                               <td className="py-2 px-2 align-top font-semibold text-slate-800">{m.name || "—"}</td>
+                                               <td className="py-2 px-2 align-top text-slate-600">{m.relationship || "—"}</td>
+                                               <td className="py-2 px-2 align-top text-slate-500">{m.occupation || "—"}</td>
+                                               <td className="py-2 px-2 align-top text-slate-500">
+                                                 {m.declared_income != null ? `PKR ${Number(m.declared_income).toLocaleString()}` : "—"}
+                                               </td>
+                                             </tr>
+                                           ))}
+                                         </tbody>
+                                       </table>
+                                     </div>
+                                   </div>
+                                 )}
+
                                  {/* AI Message Action Bar (Perplexity Style) */}
                                  <div className="flex items-center justify-between w-full mt-1 pt-1 text-slate-400 max-w-3xl">
                                    <div className="flex items-center gap-3 md:gap-4">
@@ -1832,10 +1879,40 @@ export function CopilotInterface() {
                              )}
                            </div>
                            
-                           {/* Quick Actions */}
-                           {msg.quickActions && msg.quickActions.length > 0 && (
+                           {/* Quick Actions — falls back to turnActions (set the
+                               moment a quick_actions SSE event lands, independent
+                               of message-array timing) so the latest reply's
+                               buttons never silently go missing. */}
+                           {(() => {
+                             const isLast = msgIdx === messages.length - 1;
+                             // A reply that just narrates in prose without calling a tool this
+                             // turn (e.g. re-listing missing documents from earlier context)
+                             // never gets its own quick_actions SSE event, so msg.quickActions
+                             // is empty — falling back straight to turnActions would then show
+                             // a stale, unrelated action set (turnActions deliberately strips
+                             // upload actions, assuming they live on the message that requested
+                             // them). Derive fresh, content-matched actions from this message's
+                             // own text first, so "documents are missing" always gets its upload
+                             // chips back even when no backend tool_call fired this turn.
+                             // Only reach for the content-derived fallback on the specific
+                             // "documents are missing" pattern — getRecommendedActions' final
+                             // branch is a broad catch-all (Rule Engine/Commission Engine
+                             // shortcuts) that would misfire on almost any plain reply.
+                             const lowerText = (msg.text || "").toLowerCase();
+                             const looksLikeMissingDocs = msg.role === "assistant" &&
+                               (lowerText.includes("missing documents") ||
+                                (lowerText.includes("missing") && lowerText.includes("document")) ||
+                                (lowerText.includes("upload") && lowerText.includes("document")));
+                             const contentActions = looksLikeMissingDocs ? getRecommendedActions(msg) : [];
+                             const effectiveActions = msg.quickActions && msg.quickActions.length > 0
+                               ? msg.quickActions
+                               : contentActions.length > 0
+                               ? contentActions
+                               : (isLast && msg.role === "assistant" ? turnActions : undefined);
+                             if (!effectiveActions || effectiveActions.length === 0) return null;
+                             return (
                              <div className={`flex flex-wrap gap-2 mt-4 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                               {msg.quickActions.map((action, idx) => {
+                               {effectiveActions.map((action, idx) => {
                                  if (action.actionType === "select") {
                                    return (
                                      <QuickActionSelect
@@ -1882,7 +1959,8 @@ export function CopilotInterface() {
                                  );
                                })}
                              </div>
-                           )}
+                             );
+                           })()}
                          </div>
                        </div>
                      </div>
@@ -2349,9 +2427,21 @@ export function CopilotInterface() {
                           })()}
                         </div>
                       )}
-                      {msg.quickActions && msg.quickActions.length > 0 && (
+                      {(() => {
+                        const lowerText = (msg.text || "").toLowerCase();
+                        const looksLikeMissingDocs = msg.role === "assistant" &&
+                          (lowerText.includes("missing documents") ||
+                           (lowerText.includes("missing") && lowerText.includes("document")) ||
+                           (lowerText.includes("upload") && lowerText.includes("document")));
+                        const phoneEffectiveActions = msg.quickActions && msg.quickActions.length > 0
+                          ? msg.quickActions
+                          : looksLikeMissingDocs
+                          ? getRecommendedActions(msg)
+                          : undefined;
+                        if (!phoneEffectiveActions || phoneEffectiveActions.length === 0) return null;
+                        return (
                         <div className="flex flex-wrap gap-2 mt-1">
-                          {msg.quickActions.map((action, idx) => {
+                          {phoneEffectiveActions.map((action, idx) => {
                             if (action.actionType === "select") {
                               return (
                                 <QuickActionSelect
@@ -2405,7 +2495,8 @@ export function CopilotInterface() {
                             );
                           })}
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
