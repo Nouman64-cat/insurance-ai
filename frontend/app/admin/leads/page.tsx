@@ -15,6 +15,7 @@ import { getUserDirectory } from "@/app/services/agents";
 import { useNotify } from "@/components/NotificationContext";
 import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import CustomerQuickLeadModal from "@/components/entities/CustomerQuickLeadModal";
+import { notifyParentPortal } from "@/lib/agent/portalMessage";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
@@ -1135,8 +1136,15 @@ export default function LeadsHubPage() {
       {/* Step 2: the matching entry form — all inline, no navigation */}
       <CustomerQuickLeadModal
         open={activeAdd?.type === "INDIVIDUAL" && activeAdd.mode === "quick"}
+        defaultAgentEmail={searchParams.get("agent_email")}
         onClose={() => setActiveAdd(null)}
-        onSaved={handleAddSaved}
+        onSaved={(message) => {
+          handleAddSaved(message);
+          // A quick lead is a one-shot capture with nothing further to do in
+          // the form, so when this page is embedded in the Copilot panel, let
+          // the chat close it and confirm. No-op outside the chat.
+          notifyParentPortal("quick_lead_saved", { message });
+        }}
       />
       <CustomerFormModal
         open={activeAdd?.type === "INDIVIDUAL" && activeAdd.mode === "full"}

@@ -953,6 +953,18 @@ async def _list_roles(args: dict, ctx: Ctx) -> dict:
     return {"success": True, "roles": res.json()}
 
 
+@handles("list_agent_users")
+async def _list_agents(args: dict, ctx: Ctx) -> dict:
+    """Not model-facing — exists so permission_gate can ask who owns a new
+    customer up front (right after 'add a customer'), instead of only when the
+    create tool itself runs several steps later."""
+    agents = await _list_agent_users(ctx)
+    return {
+        "success": True,
+        "agents": [{"name": u.get("full_name"), "email": u.get("email")} for u in agents],
+    }
+
+
 @handles("add_user")
 async def _add_user(args: dict, ctx: Ctx) -> dict:
     roles_res = await ctx.client.get(f"{TENANT_SERVICE_URL}/roles")

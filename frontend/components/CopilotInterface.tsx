@@ -469,7 +469,7 @@ export function CopilotInterface() {
     []
   );
 
-  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage } = useAgentChat({
+  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, recordSelection } = useAgentChat({
     storageKey: STORAGE_KEY,
     welcomeMessage: WELCOME,
     onNavigate: handleAgentNavigate,
@@ -517,7 +517,19 @@ export function CopilotInterface() {
       if (event.origin !== window.location.origin) return;
       if (event.data?.source !== "insurance-ai-portal") return;
       if (!casePanel || isLoading) return;
-      if (event.data.type === "document_uploaded") {
+      if (event.data.type === "quick_lead_saved") {
+        // A quick lead is complete the moment it's saved — close the form and
+        // confirm in the chat. Explicit actions are passed so the previous
+        // turn's chips (e.g. "Add demo data") don't resurface under this reply.
+        setCasePanel(null);
+        addAssistantMessage(
+          `✅ Quick lead saved. ${event.data.message || "The lead's information has been stored."} You can complete the full profile later from the Leads page.`,
+          [
+            { label: "Add another customer", actionType: "submit", payload: "Add a new customer" },
+            { label: "View Leads", actionType: "navigate", payload: "admin/leads" },
+          ]
+        );
+      } else if (event.data.type === "document_uploaded") {
         send("I've uploaded a document for this case in the case view. Please re-check the document checklist and tell me what's next.");
       } else if (event.data.type === "gates_cleared") {
         // All 6 gates are done — the case view has nothing further for the
@@ -1047,8 +1059,9 @@ export function CopilotInterface() {
       const sep = path.includes('?') ? '&' : '?';
       window.open(`${window.location.origin}${path}${sep}_portal=1`, "_blank");
     } else if (action.actionType === "embed") {
-      // Reserved for the 6 pre-underwriting gate stages — everything else
-      // uses "navigate" above and opens a normal new tab.
+      // Opens the page inline in the chat panel. Used for the 6 pre-underwriting
+      // gate stages and the customer intake form ("Fill the form instead") —
+      // everything else uses "navigate" above and opens a normal new tab.
       const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
       const sep = path.includes('?') ? '&' : '?';
       setCasePanel({ url: `${window.location.origin}${path}${sep}_portal=1`, title: routeLabel(action.payload) });
@@ -1217,6 +1230,12 @@ export function CopilotInterface() {
     const sessionId = activeSessionId || Date.now().toString();
     setSessions(prev => {
       const existing = prev.find(s => s.id === sessionId);
+      // Merely opening a chat saves the one being left, which used to stamp it
+      // with a fresh date and float it to the top of the list — burying the
+      // chat that was actually most recent. Only real changes count as activity.
+      if (existing && JSON.stringify(existing.messages) === JSON.stringify(messages)) {
+        return prev.map(s => s.id === sessionId ? { ...s, actions: [...turnActions] } : s);
+      }
       const filtered = prev.filter(s => s.id !== sessionId);
       return [{
         id: sessionId,
@@ -1998,6 +2017,8 @@ export function CopilotInterface() {
                                        action={action}
                                        onRun={(text) => handleSubmit(undefined, text)}
                                        variant="card"
+                                       selectedLabel={msg.selections?.[idx]}
+                                       onSelected={(label) => recordSelection(msg.id, idx, label)}
                                      />
                                    );
                                  }
@@ -2573,6 +2594,8 @@ export function CopilotInterface() {
                                   key={`select-${action.label}-${idx}`}
                                   action={action}
                                   onRun={(text) => handleSubmit(undefined, text)}
+                                  selectedLabel={msg.selections?.[idx]}
+                                  onSelected={(label) => recordSelection(msg.id, idx, label)}
                                 />
                               );
                             }

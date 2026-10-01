@@ -16,6 +16,10 @@ class ChatState(TypedDict, total=False):
     # forward so a multi-step flow keeps its tools once the triggering keyword
     # has scrolled out of the matching window.
     active_domains: list[str]
+    # Agent picked at the very start of customer intake (resolve_customer_type),
+    # applied to the create call that follows and then cleared. Only ever set
+    # for non-Agent roles — an Agent is auto-assigned as their own lead's owner.
+    lead_agent: Optional[str]
 
     # ── Autonomous underwriting journey (agentic pipeline) ──────────────────
     # The tool_call that launched the pipeline — j_finish answers it with a

@@ -7,13 +7,22 @@ export function QuickActionSelect({
   action,
   onRun,
   variant = "chip",
+  selectedLabel,
+  onSelected,
 }: {
   action: QuickAction;
   onRun: (text: string) => void;
   variant?: "chip" | "card";
+  // The persisted answer, when the parent keeps one (see AgentMessage.selections).
+  selectedLabel?: string;
+  onSelected?: (label: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // Once an option is picked the prompt is answered: show what was chosen and
+  // stop accepting input, the same way a clicked chip stays highlighted.
+  const [localChosen, setChosen] = useState<string | null>(null);
+  const chosen = selectedLabel ?? localChosen;
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -37,12 +46,15 @@ export function QuickActionSelect({
   const options = action.options ?? [];
   if (options.length === 0) return null;
 
-  const run = (chosen: string) => {
-    if (!chosen) return;
+  const run = (value: string) => {
+    if (!value || chosen !== null) return;
     setIsOpen(false);
+    const label = options.find((o) => o.value === value)?.label ?? value;
+    setChosen(label);
+    onSelected?.(label);
     const text = action.payload?.includes("{value}")
-      ? action.payload.replace("{value}", chosen)
-      : action.payload || chosen;
+      ? action.payload.replace("{value}", value)
+      : action.payload || value;
     onRun(text);
   };
 
@@ -50,8 +62,13 @@ export function QuickActionSelect({
     return (
       <button
         type="button"
+        disabled={chosen !== null}
         onClick={() => run(options[0].value)}
-        className="px-3 py-1.5 text-[12px] font-bold rounded-full border bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 shadow-sm transition-all active:scale-95"
+        className={`px-3 py-1.5 text-[12px] font-bold rounded-full border shadow-sm transition-all ${
+          chosen !== null
+            ? "bg-blue-600 text-white border-blue-600 cursor-default"
+            : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 active:scale-95"
+        }`}
       >
         {action.label}: {options[0].label}
       </button>
@@ -77,20 +94,29 @@ export function QuickActionSelect({
       <div className="relative flex-1 min-w-0">
         <button
           type="button"
+          disabled={chosen !== null}
           onClick={() => setIsOpen(!isOpen)}
-          className={`w-full flex items-center justify-between text-left rounded-lg border border-blue-200 bg-white font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500/20 ${
-            compact ? "max-w-[16rem] px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"
-          }`}
+          className={`w-full flex items-center justify-between text-left rounded-lg border font-medium focus:outline-none ${
+            chosen !== null
+              ? "border-blue-600 bg-blue-600 text-white cursor-default"
+              : "border-blue-200 bg-white text-slate-700 hover:bg-slate-50 focus:ring-2 focus:ring-blue-500/20"
+          } ${compact ? "max-w-[16rem] px-2 py-1 text-xs" : "px-3 py-1.5 text-sm"}`}
         >
           <span className="truncate">
-            {action.placeholder || "Choose one…"}
+            {chosen ?? (action.placeholder || "Choose one…")}
           </span>
-          <svg className="w-4 h-4 ml-2 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-          </svg>
+          {chosen !== null ? (
+            <svg className="w-4 h-4 ml-2 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 ml-2 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          )}
         </button>
 
-        {isOpen && (
+        {isOpen && chosen === null && (
           <div className="absolute z-50 w-[240px] max-w-[80vw] left-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg overflow-hidden flex flex-col">
             <div className="p-2 border-b border-slate-100 bg-slate-50">
               <div className="relative">

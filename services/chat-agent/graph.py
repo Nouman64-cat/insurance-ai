@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+from urllib.parse import quote
 from typing import Any, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -658,6 +659,11 @@ def _tool_result_message(name: str, call_id: str, result: dict) -> ToolMessage:
 # single REST call. Routed via Command(goto=...) below.
 JOURNEY_TOOLS = {"start_underwriting_journey", "continue_underwriting_journey"}
 CLAIM_JOURNEY_TOOLS = {"start_claim_journey", "continue_claim_journey"}
+# Create calls that take agent_name — the agent chosen up front is injected here.
+LEAD_INTAKE_TOOLS = {
+    "add_customer", "add_organization", "add_family_group",
+    "quick_start_workflow", "start_underwriting_journey",
+}
 
 
 class Top5PlansOutput(BaseModel):
@@ -1180,6 +1186,14 @@ async def permission_gate(state: ChatState) -> Command:
         result = {"success": False, "error": msg}
         return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
 
+    # An agent picked at the start of intake rides along on the create call.
+    # Cleared once consumed so a later, unrelated "add a customer" asks again.
+    consumed_lead_agent = False
+    if name in LEAD_INTAKE_TOOLS and state.get("lead_agent"):
+        consumed_lead_agent = True
+        if not args.get("agent_name") and not args.get("agent_email"):
+            args["agent_name"] = state["lead_agent"]
+
     # ── Customer intake: which kind of customer, as chips rather than prose ──
     #
     # add_customer / add_organization / add_family_group are three distinct
@@ -1192,35 +1206,77 @@ async def permission_gate(state: ChatState) -> Command:
     # resolve_customer_type is a standalone tool that exists only so this
     # question has something to intercept.
     if name == "resolve_customer_type":
+        # Who owns this customer is the first thing asked — before the type and
+        # before any details — rather than surfacing as a picker only once the
+        # create tool runs. An Agent is their own lead's owner, so never asked.
+        lead_agent = None
+        lead_agent_email = None
+        if (ctx.role or "").strip().lower() != "agent":
+            listed = await execute_tool("list_agent_users", {}, ctx)
+            agents = listed.get("agents") or []
+            if agents:
+                agent_choices = [
+                    (f"{a['name']} ({a['email']})", a["name"] or a["email"]) for a in agents
+                ]
+                picked = _ask_choice(
+                    name, args,
+                    "Which agent is this customer assigned to?",
+                    agent_choices,
+                    select_label="Agent",
+                    placeholder="Choose an agent…",
+                    force_select=True,
+                )
+                lead_agent = _match_choice(picked, agent_choices) or picked
+                lead_agent_email = next(
+                    (a["email"] for a in agents if lead_agent in (a["name"], a["email"])), None
+                )
+
         # (display, tool to call next, url slug for the leads-page form chooser)
         choices = [
             ("Individual", "add_customer", "individual"),
             ("Corporate (Organization)", "add_organization", "corporate"),
             ("Family group", "add_family_group", "family"),
         ]
+        # Echo the pick back — selecting from the dropdown adds no chat bubble
+        # of its own, so without this nothing says who was chosen.
+        type_question = "Is this an Individual, a Corporate (Organization), or a Family group?"
+        if lead_agent:
+            type_question = f"Agent selected: **{lead_agent}**. {type_question}"
         answer = _ask_choice(
             name, args,
-            "Is this an Individual, a Corporate (Organization), or a Family group?",
+            type_question,
             [(display, tool) for display, tool, _ in choices],
         )
         resolved = next((c for c in choices if c[1] == _match_choice(answer, [(d, t) for d, t, _ in choices])), None)
         if resolved:
             display, resolved_tool, slug = resolved
+            # The form opens with this agent already selected (agent_email is
+            # read by the leads page's quick-lead form) instead of unassigned.
+            form_path = f"admin/leads?add={slug}"
+            if lead_agent_email:
+                form_path += f"&agent_email={quote(lead_agent_email)}"
             result = {
                 "success": True,
-                "message": f"Customer type resolved: {display}. Now call `{resolved_tool}` "
-                           "with the applicant's details to register them. Do NOT ask the user if they want to add demo data or fill the form manually, and do NOT list or describe those two choices in your reply (e.g. as a bulleted list) — the UI renders them as clickable buttons below your message. Reply with a short one-sentence acknowledgement only, e.g. \"Got it — Individual customer. How would you like to proceed?\"",
+                "message": f"Customer type resolved: {display}. "
+                           + (f"Assigned agent already chosen: {lead_agent} — it is applied automatically, so do NOT ask for or pass agent_name. " if lead_agent else "")
+                           + f"Now call `{resolved_tool}` "
+                           "with the applicant's details to register them. Do NOT ask the user if they want to add demo data or fill the form manually, and do NOT list or describe those two choices in your reply (e.g. as a bulleted list) — the UI renders them as clickable buttons below your message. Reply with a short one-sentence acknowledgement only, e.g. \"Got it — Individual customer" + (f", assigned to {lead_agent}" if lead_agent else "") + ". How would you like to proceed?\"",
                 # Offer the two ways this normally goes from here — generated demo
                 # data (fast, for a test run) or the portal's own multi-step form
                 # (for a real applicant) — instead of only listing fields to type.
                 "quick_actions": [
                     {"label": "Add demo data", "actionType": "submit", "payload": "Add demo data"},
-                    {"label": "Fill the form instead", "actionType": "navigate", "payload": f"admin/leads?add={slug}"},
+                    # Web opens the form in the chat's inline panel instead of a new tab;
+                    # the mobile app has no embed view, so it keeps plain navigation.
+                    {"label": "Fill the form instead", "actionType": "embed" if platform == "web" else "navigate", "payload": form_path},
                 ],
             }
         else:
             result = {"success": False, "error": f"Didn't recognise '{answer}' as a customer type."}
-        return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})
+        return back_to_agent({
+            "messages": [_tool_result_message(name, call_id, result)],
+            "lead_agent": lead_agent,
+        })
 
     if name == "create_proposal":
         provided_plan = args.get("product_name")
@@ -2033,6 +2089,7 @@ async def permission_gate(state: ChatState) -> Command:
                 "journey_risk": None, "journey_outcome": None,
                 "requires_human_intervention": False,
                 "journey_audit": [], "journey_error": None,
+                "lead_agent": None,
             })
         return Command(goto="j_resume", update={"pending_call": pending, "journey_error": None})
 
@@ -2074,6 +2131,8 @@ async def permission_gate(state: ChatState) -> Command:
         return Command(goto="client_executor", update={"pending_call": pending})
         
     update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
+    if consumed_lead_agent:
+        update["lead_agent"] = None
     if result.get("last_action"):
         update["last_action"] = result["last_action"]
     if result.get("assessment"):
