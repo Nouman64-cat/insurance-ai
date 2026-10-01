@@ -78,6 +78,10 @@ export interface AgentMessage {
   text: string;
   attachments?: { name: string; url: string }[];
   quickActions?: QuickAction[];
+  // Which option was picked in each "select" quick action, keyed by the
+  // action's index. Lives on the message (not in component state) so an
+  // answered dropdown stays answered after switching chats or reloading.
+  selections?: Record<number, string>;
   actionResult?: ActionResult;
   steps?: ProcessStep[];
   assessment?: AssessmentScores;

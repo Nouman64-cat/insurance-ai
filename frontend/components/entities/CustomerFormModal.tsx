@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import api from "@/app/services/api";
+import api, { OCR_BASE_URL } from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
@@ -34,6 +34,83 @@ interface Props {
   /** Called after a successful create/update with a success message. */
   onSaved: (message: string) => void;
 }
+
+// Form fields that can be auto-filled from an uploaded document, with the tab
+// each lives on (used to mark tabs that still have missing fields).
+// Form fields that can be auto-filled from an uploaded document, with the tab
+// each lives on (used to mark tabs that still have missing fields).
+type ExtractKey =
+  | "firstName" | "lastName" | "cnic" | "dob" | "gender" | "maritalStatus"
+  | "mobile" | "email" | "emergency" | "street" | "city" | "province" | "postal"
+  | "cnicIssueDate" | "cnicExpiryDate" | "validationStatus"
+  | "employmentType" | "occupation" | "employerName" | "industry" | "yearsOfExperience"
+  | "occupationHazardLevel" | "declaredIncome" | "monthlyIncome" | "incomeStabilityScore"
+  | "heightCm" | "weightKg" | "exerciseFrequency"
+  | "smokingStatus" | "alcoholConsumptionFrequency"
+  | "creditScore" | "delinquencyCount" | "riskGrade" | "numberOfDependents" | "dependentType"
+  | "beneficiaryFirstName" | "beneficiaryLastName" | "beneficiaryCnic" | "beneficiaryRelationship" | "beneficiaryShare"
+  | "selectedPlan" | "policyCoverage" | "policyTerm";
+
+const EXTRACT_FIELDS: { key: ExtractKey; label: string; tab: string }[] = [
+  // Tab 1: Identity & Contact
+  { key: "firstName", label: "First Name", tab: "demographics" },
+  { key: "lastName", label: "Last Name", tab: "demographics" },
+  { key: "cnic", label: "CNIC", tab: "demographics" },
+  { key: "dob", label: "Date of Birth", tab: "demographics" },
+  { key: "gender", label: "Gender", tab: "demographics" },
+  { key: "maritalStatus", label: "Marital Status", tab: "demographics" },
+  { key: "mobile", label: "Mobile Number", tab: "demographics" },
+  { key: "email", label: "Email Address", tab: "demographics" },
+  { key: "emergency", label: "Emergency Contact Name", tab: "demographics" },
+  { key: "street", label: "Street Address", tab: "demographics" },
+  { key: "city", label: "City", tab: "demographics" },
+  { key: "province", label: "Province", tab: "demographics" },
+  { key: "postal", label: "Postal Code", tab: "demographics" },
+
+  // Tab 2: CNIC & Docs
+  { key: "cnicIssueDate", label: "CNIC Issue Date", tab: "cnic" },
+  { key: "cnicExpiryDate", label: "CNIC Expiry Date", tab: "cnic" },
+  { key: "validationStatus", label: "CNIC Validation Status", tab: "cnic" },
+
+  // Tab 3: Occupation & Income
+  { key: "employmentType", label: "Employment Type", tab: "employment" },
+  { key: "occupation", label: "Occupation", tab: "employment" },
+  { key: "employerName", label: "Employer Name", tab: "employment" },
+  { key: "industry", label: "Industry Sector", tab: "employment" },
+  { key: "yearsOfExperience", label: "Years of Experience", tab: "employment" },
+  { key: "occupationHazardLevel", label: "Occupation Hazard Level", tab: "employment" },
+  { key: "declaredIncome", label: "Declared Annual Income", tab: "employment" },
+  { key: "monthlyIncome", label: "Monthly Income", tab: "employment" },
+  { key: "incomeStabilityScore", label: "Income Stability Score", tab: "employment" },
+
+  // Tab 4: Medical & Lifestyle
+  { key: "heightCm", label: "Height (cm)", tab: "medical" },
+  { key: "weightKg", label: "Weight (kg)", tab: "medical" },
+  { key: "exerciseFrequency", label: "Exercise Frequency", tab: "medical" },
+
+  // Tab 5: Habit Check
+  { key: "smokingStatus", label: "Smoking Status", tab: "habit_check" },
+  { key: "alcoholConsumptionFrequency", label: "Alcohol Consumption", tab: "habit_check" },
+
+  // Tab 6: Financial Profile
+  { key: "creditScore", label: "Credit Score", tab: "financial" },
+  { key: "delinquencyCount", label: "Delinquencies Count", tab: "financial" },
+  { key: "riskGrade", label: "Risk Grade", tab: "financial" },
+  { key: "numberOfDependents", label: "Number of Dependents", tab: "financial" },
+  { key: "dependentType", label: "Primary Dependent Type", tab: "financial" },
+
+  // Tab 7: Nominee Details
+  { key: "beneficiaryFirstName", label: "Nominee First Name", tab: "beneficiary" },
+  { key: "beneficiaryLastName", label: "Nominee Last Name", tab: "beneficiary" },
+  { key: "beneficiaryCnic", label: "Nominee CNIC", tab: "beneficiary" },
+  { key: "beneficiaryRelationship", label: "Nominee Relationship", tab: "beneficiary" },
+  { key: "beneficiaryShare", label: "Nominee Share %", tab: "beneficiary" },
+
+  // Tab 8: Insurance Plans
+  { key: "selectedPlan", label: "Insurance Plan", tab: "insurance_plan" },
+  { key: "policyCoverage", label: "Coverage Amount", tab: "insurance_plan" },
+  { key: "policyTerm", label: "Policy Term", tab: "insurance_plan" },
+];
 
 export default function CustomerFormModal({ open, mode, customer, onClose, onSaved }: Props) {
   const isCreate = mode === "create";
@@ -92,6 +169,285 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
   const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
 
+  // ── Auto-fill from an uploaded document (PDF / PNG / JPG) ─────────────────
+  // `flagged` holds the fields the document did not contain. A flagged field is
+  // highlighted only while it is still empty, so the amber clears as soon as
+  // the user fills it in.
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractNotice, setExtractNotice] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
+  const [flagged, setFlagged] = useState<Set<string>>(new Set());
+
+  const isEmptyValue = (v: unknown) => v === undefined || v === null || String(v).trim() === "";
+  const currentValueOf = (key: ExtractKey): unknown => {
+    switch (key) {
+      // Tab 1: Identity & Contact
+      case "firstName": return formValues.firstName;
+      case "lastName": return formValues.lastName;
+      case "cnic": return formValues.cnic;
+      case "dob": return formValues.dob;
+      case "gender": return formValues.gender;
+      case "maritalStatus": return formValues.maritalStatus;
+      case "mobile": return details.contact.mobile_number;
+      case "email": return details.contact.email;
+      case "emergency": return details.contact.emergency_contact_name;
+      case "street": return details.address.street_address;
+      case "city": return city;
+      case "province": return province;
+      case "postal": return details.address.postal_code;
+
+      // Tab 2: CNIC & Docs
+      case "cnicIssueDate": return details.cnic_metadata.issue_date;
+      case "cnicExpiryDate": return details.cnic_metadata.expiry_date;
+      case "validationStatus": return details.cnic_metadata.validation_status;
+
+      // Tab 3: Occupation & Income
+      case "employmentType": return details.occupation_details.employment_type;
+      case "occupation": return formValues.occupation;
+      case "employerName": return details.occupation_details.employer_name;
+      case "industry": return details.occupation_details.industry;
+      case "yearsOfExperience": return details.occupation_details.years_of_experience;
+      case "occupationHazardLevel": return details.occupation_details.occupation_hazard_level;
+      case "declaredIncome": return formValues.declaredIncome;
+      case "monthlyIncome": return details.income_record.monthly_income;
+      case "incomeStabilityScore": return details.income_record.income_stability_score;
+
+      // Tab 4: Medical & Lifestyle
+      case "heightCm": return details.lifestyle.height_cm || "";
+      case "weightKg": return details.lifestyle.weight_kg || "";
+      case "exerciseFrequency": return details.lifestyle.exercise_frequency;
+
+      // Tab 5: Habit Check
+      case "smokingStatus": return details.habit_check.smoking_status;
+      case "alcoholConsumptionFrequency": return details.habit_check.alcohol_consumption_frequency;
+
+      // Tab 6: Financial Profile
+      case "creditScore": return details.financial_records.credit_bureau.credit_score || "";
+      case "delinquencyCount": return details.financial_records.credit_bureau.delinquency_count;
+      case "riskGrade": return details.financial_records.credit_bureau.risk_grade;
+      case "numberOfDependents": return details.financial_records.dependents.number_of_dependents;
+      case "dependentType": return details.financial_records.dependents.dependent_type;
+
+      // Tab 7: Nominee Details
+      case "beneficiaryFirstName": return details.beneficiary.first_name;
+      case "beneficiaryLastName": return details.beneficiary.last_name;
+      case "beneficiaryCnic": return details.beneficiary.cnic_number;
+      case "beneficiaryRelationship": return details.beneficiary.relationship;
+      case "beneficiaryShare": return details.beneficiary.share_percentage || "";
+
+      // Tab 8: Insurance Plans
+      case "selectedPlan": return isCreate ? formValues.selectedPlanId : editSelectedPlanId;
+      case "policyCoverage": return isCreate ? formValues.policyCoverage : editPolicyCoverage;
+      case "policyTerm": return isCreate ? formValues.policyTerm : editPolicyTerm;
+    }
+  };
+  const isMissing = (key: ExtractKey) => flagged.has(key) && isEmptyValue(currentValueOf(key));
+  // Applied to a field's wrapper div so the input/select/label inside pick it up.
+  const hl = (key: ExtractKey) =>
+    isMissing(key)
+      ? "space-y-1 [&_input]:!border-amber-400 [&_input]:!bg-amber-50 [&_select]:!border-amber-400 [&_select]:!bg-amber-50 [&>label]:text-amber-700"
+      : "space-y-1";
+  const missingInTab = (tab: string) =>
+    EXTRACT_FIELDS.some((f) => f.tab === tab && isMissing(f.key));
+
+  const handleDocumentUpload = async (file: File) => {
+    const ext = file.name.toLowerCase().split(".").pop() || "";
+    if (!["pdf", "png", "jpg", "jpeg"].includes(ext)) {
+      setExtractNotice({ tone: "error", text: "Unsupported file. Please upload a PDF, PNG or JPG." });
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setExtractNotice({ tone: "error", text: "That file is larger than 10 MB." });
+      return;
+    }
+    setExtracting(true);
+    setExtractNotice(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch(`${OCR_BASE_URL}/extract-customer`, { method: "POST", body });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `Extraction failed (${res.status}).`);
+
+      const f = data.fields || {};
+      const opts = { shouldDirty: true, shouldValidate: false };
+      const found = new Set<ExtractKey>();
+      const take = (key: ExtractKey, value: unknown, apply: (v: any) => void) => {
+        if (isEmptyValue(value)) return;
+        apply(value);
+        found.add(key);
+      };
+
+      // Tab 1: Identity & Contact
+      take("firstName", f.first_name, (v) => setValue("firstName", v, opts));
+      take("lastName", f.last_name, (v) => setValue("lastName", v, opts));
+      take("cnic", f.cnic, (v) => setValue("cnic", formatCNIC(v), opts));
+      take("dob", f.date_of_birth, (v) => setValue("dob", v, opts));
+      take("gender", f.gender, (v) => setValue("gender", v, opts));
+      take("maritalStatus", f.marital_status, (v) => setValue("maritalStatus", v, opts));
+      take("mobile", f.mobile_number, (v) => updateField("contact", "mobile_number", v));
+      take("email", f.email, (v) => updateField("contact", "email", v));
+      take("emergency", f.emergency_contact_name, (v) => updateField("contact", "emergency_contact_name", v));
+      take("street", f.street_address, (v) => updateField("address", "street_address", v));
+      take("postal", f.postal_code, (v) => updateField("address", "postal_code", v));
+      take("city", f.city, (v) => setCity(v));
+      take("province", f.province, (v) => setProvince(v));
+
+      // Tab 2: CNIC & Docs
+      take("cnicIssueDate", f.cnic_issue_date, (v) => updateField("cnic_metadata", "issue_date", v));
+      take("cnicExpiryDate", f.cnic_expiry_date, (v) => updateField("cnic_metadata", "expiry_date", v));
+      take("validationStatus", f.cnic_validation_status, (v) => updateField("cnic_metadata", "validation_status", v));
+
+      // Tab 3: Occupation & Income
+      take("employmentType", f.employment_type, (v) => updateField("occupation_details", "employment_type", v));
+      take("occupation", f.occupation, (v) => setValue("occupation", v, opts));
+      take("employerName", f.employer_name, (v) => updateField("occupation_details", "employer_name", v));
+      take("industry", f.industry, (v) => updateField("occupation_details", "industry", v));
+      take("yearsOfExperience", f.years_of_experience, (v) => updateField("occupation_details", "years_of_experience", v));
+      take("occupationHazardLevel", f.occupation_hazard_level, (v) => updateField("occupation_details", "occupation_hazard_level", v));
+      take("declaredIncome", f.declared_annual_income, (v) => {
+        setValue("declaredIncome", v, opts);
+        updateField("income_record", "declared_income", v);
+        updateField("income_record", "annual_income", v);
+      });
+      take("monthlyIncome", f.monthly_income, (v) => updateField("income_record", "monthly_income", v));
+      take("incomeStabilityScore", f.income_stability_score, (v) => updateField("income_record", "income_stability_score", v));
+
+      // Tab 4: Medical & Lifestyle
+      if (f.has_pre_existing_conditions !== null && f.has_pre_existing_conditions !== undefined) {
+        updateField("medical_history", "has_pre_existing_conditions", Boolean(f.has_pre_existing_conditions));
+      }
+      if (f.is_smoker !== null && f.is_smoker !== undefined) {
+        updateField("medical_history", "is_smoker", Boolean(f.is_smoker));
+      }
+      if (f.is_diabetic !== null && f.is_diabetic !== undefined) {
+        updateField("medical_history", "is_diabetic", Boolean(f.is_diabetic));
+      }
+      if (Array.isArray(f.medical_conditions) && f.medical_conditions.length > 0) {
+        setDetails(prev => ({ ...prev, conditions: f.medical_conditions }));
+      }
+      take("heightCm", f.height_cm, (v) => updateField("lifestyle", "height_cm", v));
+      take("weightKg", f.weight_kg, (v) => updateField("lifestyle", "weight_kg", v));
+      take("exerciseFrequency", f.exercise_frequency, (v) => updateField("lifestyle", "exercise_frequency", v));
+
+      // Tab 5: Habit Check
+      take("smokingStatus", f.smoking_status, (v) => updateField("habit_check", "smoking_status", v));
+      take("alcoholConsumptionFrequency", f.alcohol_consumption_frequency, (v) => updateField("habit_check", "alcohol_consumption_frequency", v));
+      if (f.recreational_drug_use_history !== null && f.recreational_drug_use_history !== undefined) {
+        updateField("habit_check", "recreational_drug_use_history", Boolean(f.recreational_drug_use_history));
+      }
+      if (f.participates_in_extreme_sports !== null && f.participates_in_extreme_sports !== undefined) {
+        updateField("habit_check", "participates_in_extreme_sports", Boolean(f.participates_in_extreme_sports));
+      }
+      if (Array.isArray(f.extreme_sports_details) && f.extreme_sports_details.length > 0) {
+        updateField("habit_check", "extreme_sports_details", f.extreme_sports_details);
+      }
+      if (f.private_aviation !== null && f.private_aviation !== undefined) {
+        updateField("habit_check", "private_aviation", Boolean(f.private_aviation));
+      }
+      if (f.frequent_high_risk_travel !== null && f.frequent_high_risk_travel !== undefined) {
+        updateField("habit_check", "frequent_high_risk_travel", Boolean(f.frequent_high_risk_travel));
+      }
+      if (Array.isArray(f.travel_destinations) && f.travel_destinations.length > 0) {
+        updateField("habit_check", "travel_destinations", f.travel_destinations);
+      }
+      if (f.moving_violations_past_3_years !== null && f.moving_violations_past_3_years !== undefined) {
+        updateField("habit_check", "moving_violations_past_3_years", f.moving_violations_past_3_years);
+      }
+      if (f.dui_dwi_history !== null && f.dui_dwi_history !== undefined) {
+        updateField("habit_check", "dui_dwi_history", Boolean(f.dui_dwi_history));
+      }
+      if (f.criminal_record !== null && f.criminal_record !== undefined) {
+        updateField("habit_check", "criminal_record", Boolean(f.criminal_record));
+      }
+
+      // Tab 6: Financial Profile
+      take("creditScore", f.credit_score, (v) => updateSubField("financial_records", "credit_bureau", "credit_score", v));
+      take("delinquencyCount", f.delinquency_count, (v) => updateSubField("financial_records", "credit_bureau", "delinquency_count", v));
+      take("riskGrade", f.risk_grade, (v) => updateSubField("financial_records", "credit_bureau", "risk_grade", v));
+      take("numberOfDependents", f.number_of_dependents, (v) => updateSubField("financial_records", "dependents", "number_of_dependents", v));
+      take("dependentType", f.dependent_type, (v) => updateSubField("financial_records", "dependents", "dependent_type", v));
+
+      // Tab 7: Nominee Details
+      take("beneficiaryFirstName", f.beneficiary_first_name, (v) => updateField("beneficiary", "first_name", v));
+      take("beneficiaryLastName", f.beneficiary_last_name, (v) => updateField("beneficiary", "last_name", v));
+      take("beneficiaryCnic", f.beneficiary_cnic, (v) => updateField("beneficiary", "cnic_number", formatCNIC(v)));
+      take("beneficiaryRelationship", f.beneficiary_relationship, (v) => updateField("beneficiary", "relationship", v));
+      take("beneficiaryShare", f.beneficiary_share, (v) => updateField("beneficiary", "share_percentage", v));
+
+      // Tab 8: Insurance Plans
+      let plans = availablePlans;
+      if (plans.length === 0) {
+        const tenantId = localStorage.getItem("tenant_id");
+        if (tenantId) {
+          try {
+            const fetched = await listInsurancePlans(tenantId);
+            plans = (fetched ?? []).filter((p: any) => p.is_active || p.status === "Active");
+            setAvailablePlans(plans);
+          } catch (_) {}
+        }
+      }
+      if (f.insurance_plan_name && plans.length > 0) {
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+        const target = norm(f.insurance_plan_name);
+        const match = plans.find((p) =>
+          norm(p.label).includes(target) ||
+          target.includes(norm(p.label)) ||
+          norm(p.code) === target ||
+          norm(p.insurance_type) === target
+        );
+        if (match) {
+          setValue("selectedPlanId", match.id, opts);
+          setEditSelectedPlanId(match.id);
+          found.add("selectedPlan");
+        }
+      }
+      take("policyCoverage", f.policy_coverage, (v) => {
+        setValue("policyCoverage", v, opts);
+        setEditPolicyCoverage(String(v));
+      });
+      take("policyTerm", f.policy_term, (v) => {
+        setValue("policyTerm", v, opts);
+        setEditPolicyTerm(String(v));
+      });
+      if (f.dependent_name) {
+        setValue("policyDependentName", f.dependent_name, opts);
+        setEditPolicyDependentName(f.dependent_name);
+      }
+      if (f.dependent_dob) {
+        setValue("policyDependentDob", f.dependent_dob, opts);
+        setEditPolicyDependentDob(f.dependent_dob);
+      }
+
+      // Gender / marital status are pre-set to defaults on a new customer. If
+      // the document didn't state them and they're still the untouched default,
+      // clear them so they read as "missing" rather than silently asserting a value.
+      if (isCreate) {
+        if (!found.has("gender") && formValues.gender === "Male") setValue("gender", "", opts);
+        if (!found.has("maritalStatus") && formValues.maritalStatus === "Single") setValue("maritalStatus", "", opts);
+      }
+
+      const notFound = EXTRACT_FIELDS.filter((x) => !found.has(x.key));
+      setFlagged(new Set(notFound.map((x) => x.key)));
+      setFormTab("demographics");
+      setExtractNotice(
+        found.size === 0
+          ? { tone: "warn", text: "No customer details could be read from this document. Please fill the form manually." }
+          : notFound.length === 0
+          ? { tone: "ok", text: `Filled ${found.size} fields across all tabs from ${file.name}. Please review them before saving.` }
+          : {
+              tone: "warn",
+              text: `Filled ${found.size} fields from ${file.name}. ${notFound.length} not found in the document are highlighted — please fill them in: ${notFound.map((x) => x.label).join(", ")}.`,
+            }
+      );
+    } catch (err: any) {
+      setExtractNotice({ tone: "error", text: err?.message || "Could not extract details from this document." });
+    } finally {
+      setExtracting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
   // Initialize whenever the modal opens.
   useEffect(() => {
     if (!open) return;
@@ -99,6 +455,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     setSuccess("");
     setFormTab("demographics");
     setSuggestedReasoning("");
+    setExtractNotice(null);
+    setFlagged(new Set());
 
     const tenantId = localStorage.getItem("tenant_id");
 
@@ -303,7 +661,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         first_name: data.firstName,
         last_name: data.lastName,
         date_of_birth: data.dob,
-        gender: data.gender,
+        // Blank when a document didn't state it — the API enum rejects "".
+        gender: data.gender && String(data.gender).trim() !== "" ? data.gender : null,
         marital_status: data.maritalStatus,
         nationality: data.nationality,
         occupation: data.occupation,
@@ -456,7 +815,38 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             <h3 className="text-base font-bold text-slate-900">{isCreate ? "Add New Customer" : "Edit Customer"}</h3>
             <p className="text-xs text-slate-500 mt-0.5">Please populate the structured underwriting variables below.</p>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          <div className="flex items-center gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handleDocumentUpload(file);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={extracting || formLoading}
+              title="Upload a PDF, PNG or JPG (max 10 MB) to fill the form automatically"
+              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-blue-200 bg-white text-blue-700 hover:bg-blue-50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-1.5 transition-colors"
+            >
+              {extracting ? (
+                <>
+                  <span className="w-3 h-3 rounded-full border-2 border-blue-300 border-t-blue-700 animate-spin" />
+                  Reading document…
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" /></svg>
+                  Upload document
+                </>
+              )}
+            </button>
+            <button onClick={onClose} className="text-slate-400 hover:text-slate-600">✕</button>
+          </div>
         </div>
 
         {/* Tab navigation */}
@@ -472,6 +862,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 }`}
             >
               {tab.label}
+              {missingInTab(tab.id) && (
+                <span className="ml-1.5 inline-block w-1.5 h-1.5 rounded-full bg-amber-500" title="Fields to fill in on this tab" />
+              )}
               {tab.id === "insurance_plan" && selectedPlanId && (
                 <span className="ml-1.5 inline-flex items-center justify-center w-1.5 h-1.5 rounded-full bg-blue-500" />
               )}
@@ -509,13 +902,28 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             </div>
           )}
 
+          {extractNotice && (
+            <div
+              className={`rounded-xl p-3.5 text-xs font-medium flex justify-between items-start gap-3 shadow-sm border ${
+                extractNotice.tone === "ok"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                  : extractNotice.tone === "warn"
+                  ? "bg-amber-50 border-amber-200 text-amber-800"
+                  : "bg-red-50 border-red-200 text-red-600"
+              }`}
+            >
+              <span>{extractNotice.text}</span>
+              <button type="button" onClick={() => setExtractNotice(null)} className="opacity-60 hover:opacity-100 leading-none" title="Close">✕</button>
+            </div>
+          )}
+
           {/* TAB 1: Demographics & Contact */}
           {formTab === "demographics" && (
             <div className="space-y-6">
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Core Identity Parameters</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("firstName")}`}>
                     <label className="text-xs font-semibold text-slate-600">First Name *</label>
                     <input
                       type="text"
@@ -524,7 +932,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                     {errors.firstName && <span className="text-[10px] text-red-500">{errors.firstName.message}</span>}
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("lastName")}`}>
                     <label className="text-xs font-semibold text-slate-600">Last Name *</label>
                     <input
                       type="text"
@@ -533,7 +941,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                     {errors.lastName && <span className="text-[10px] text-red-500">{errors.lastName.message}</span>}
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("cnic")}`}>
                     <label className="text-xs font-semibold text-slate-600">CNIC (Optional for Lead)</label>
                     <input
                       type="text"
@@ -548,7 +956,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                     {errors.cnic && <span className="text-[10px] text-red-500">{errors.cnic.message}</span>}
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("dob")}`}>
                     <label className="text-xs font-semibold text-slate-600">Date of Birth *</label>
                     <input
                       type="date"
@@ -557,24 +965,26 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                     {errors.dob && <span className="text-[10px] text-red-500">{errors.dob.message}</span>}
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("gender")}`}>
                     <label className="text-xs font-semibold text-slate-600">Gender *</label>
                     <select
                       {...register("gender")}
                       className={`w-full bg-slate-50 border ${errors.gender ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     >
+                      <option value="">Select gender</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
                       <option value="Other">Other</option>
                     </select>
                     {errors.gender && <span className="text-[10px] text-red-500">{errors.gender.message}</span>}
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("maritalStatus")}`}>
                     <label className="text-xs font-semibold text-slate-600">Marital Status</label>
                     <select
                       {...register("maritalStatus")}
                       className={`w-full bg-slate-50 border ${errors.maritalStatus ? 'border-red-400' : 'border-slate-200'} rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400`}
                     >
+                      <option value="">Select status</option>
                       <option value="Single">Single</option>
                       <option value="Married">Married</option>
                       <option value="Divorced">Divorced</option>
@@ -590,7 +1000,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Contact Details</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("mobile")}`}>
                     <label className="text-xs font-semibold text-slate-600">Mobile Number</label>
                     <input
                       type="text"
@@ -599,7 +1009,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("email")}`}>
                     <label className="text-xs font-semibold text-slate-600">Email Address</label>
                     <input
                       type="email"
@@ -608,7 +1018,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("emergency")}`}>
                     <label className="text-xs font-semibold text-slate-600">Emergency Contact Name</label>
                     <input
                       type="text"
@@ -625,7 +1035,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Address Information</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1 md:col-span-3">
+                  <div className={`${hl("street")} md:col-span-3`}>
                     <label className="text-xs font-semibold text-slate-600">Street Address</label>
                     <input
                       type="text"
@@ -634,7 +1044,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("city")}`}>
                     <label className="text-xs font-semibold text-slate-600">City</label>
                     <input
                       type="text"
@@ -644,7 +1054,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("province")}`}>
                     <label className="text-xs font-semibold text-slate-600">Province</label>
                     <select
                       value={province}
@@ -657,7 +1067,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       ))}
                     </select>
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("postal")}`}>
                     <label className="text-xs font-semibold text-slate-600">Postal Code</label>
                     <input
                       type="text"
@@ -711,7 +1121,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">CNIC Metadata (Module 2)</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("cnicIssueDate")}`}>
                     <label className="text-xs font-semibold text-slate-600">CNIC Issue Date</label>
                     <input
                       type="date"
@@ -720,7 +1130,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("cnicExpiryDate")}`}>
                     <label className="text-xs font-semibold text-slate-600">CNIC Expiry Date</label>
                     <input
                       type="date"
@@ -729,7 +1139,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("validationStatus")}`}>
                     <label className="text-xs font-semibold text-slate-600">Validation Status</label>
                     <select
                       value={details.cnic_metadata.validation_status}
@@ -787,7 +1197,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Employment Details</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("employmentType")}`}>
                     <label className="text-xs font-semibold text-slate-600">Employment Type</label>
                     <select
                       value={details.occupation_details.employment_type}
@@ -802,7 +1212,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       <option value="Student">Student</option>
                     </select>
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("occupation")}`}>
                     <label className="text-xs font-semibold text-slate-600">Occupation *</label>
                     <input
                       type="text"
@@ -811,7 +1221,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                     {errors.occupation && <span className="text-[10px] text-red-500">{errors.occupation.message}</span>}
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("employerName")}`}>
                     <label className="text-xs font-semibold text-slate-600">Employer Name</label>
                     <input
                       type="text"
@@ -820,7 +1230,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("industry")}`}>
                     <label className="text-xs font-semibold text-slate-600">Industry Sector</label>
                     <input
                       type="text"
@@ -830,7 +1240,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("yearsOfExperience")}`}>
                     <label className="text-xs font-semibold text-slate-600">Years of Experience</label>
                     <input
                       type="number"
@@ -839,7 +1249,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("occupationHazardLevel")}`}>
                     <label className="text-xs font-semibold text-slate-600">Occupation Hazard Level</label>
                     <select
                       value={details.occupation_details.occupation_hazard_level}
@@ -860,7 +1270,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Income & Financial Parameters</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("declaredIncome")}`}>
                     <label className="text-xs font-semibold text-slate-600">Declared Annual Income (PKR) *</label>
                     <input
                       type="number"
@@ -869,7 +1279,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                     />
                     {errors.declaredIncome && <span className="text-[10px] text-red-500">{errors.declaredIncome.message}</span>}
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("monthlyIncome")}`}>
                     <label className="text-xs font-semibold text-slate-600">Monthly Income Equivalent</label>
                     <input
                       type="number"
@@ -878,7 +1288,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("incomeStabilityScore")}`}>
                     <label className="text-xs font-semibold text-slate-600">Income Stability Score (1-100)</label>
                     <input
                       type="number"
@@ -984,7 +1394,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Lifestyle & BMI metrics</h4>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("heightCm")}`}>
                     <label className="text-xs font-semibold text-slate-600">Height (cm)</label>
                     <input
                       type="number"
@@ -993,7 +1403,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("weightKg")}`}>
                     <label className="text-xs font-semibold text-slate-600">Weight (kg)</label>
                     <input
                       type="number"
@@ -1011,7 +1421,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-700 outline-none"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("exerciseFrequency")}`}>
                     <label className="text-xs font-semibold text-slate-600">Exercise Frequency</label>
                     <select
                       value={details.lifestyle.exercise_frequency}
@@ -1047,7 +1457,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("smokingStatus")}`}>
                     <label className="text-xs font-semibold text-slate-600">Smoking Status</label>
                     <select
                       value={details.habit_check.smoking_status}
@@ -1061,7 +1471,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       <option value="Chewing Tobacco">Chewing Tobacco</option>
                     </select>
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("alcoholConsumptionFrequency")}`}>
                     <label className="text-xs font-semibold text-slate-600">Alcohol Consumption Frequency</label>
                     <select
                       value={details.habit_check.alcohol_consumption_frequency}
@@ -1320,7 +1730,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Credit Bureau & Bank details</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("creditScore")}`}>
                     <label className="text-xs font-semibold text-slate-600">Credit Score</label>
                     <input
                       type="number"
@@ -1329,7 +1739,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("delinquencyCount")}`}>
                     <label className="text-xs font-semibold text-slate-600">Delinquencies count</label>
                     <input
                       type="number"
@@ -1338,7 +1748,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("riskGrade")}`}>
                     <label className="text-xs font-semibold text-slate-600">Credit Bureau Risk Grade</label>
                     <select
                       value={details.financial_records.credit_bureau.risk_grade}
@@ -1361,7 +1771,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Dependents Info</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("numberOfDependents")}`}>
                     <label className="text-xs font-semibold text-slate-600">Number of Dependents</label>
                     <input
                       type="number"
@@ -1370,7 +1780,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("dependentType")}`}>
                     <label className="text-xs font-semibold text-slate-600">Primary Dependent Type</label>
                     <select
                       value={details.financial_records.dependents.dependent_type}
@@ -1395,7 +1805,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Primary Beneficiary (Section 7)</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
+                  <div className={`${hl("beneficiaryFirstName")}`}>
                     <label className="text-xs font-semibold text-slate-600">First Name</label>
                     <input
                       type="text"
@@ -1404,7 +1814,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("beneficiaryLastName")}`}>
                     <label className="text-xs font-semibold text-slate-600">Last Name</label>
                     <input
                       type="text"
@@ -1413,7 +1823,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("beneficiaryCnic")}`}>
                     <label className="text-xs font-semibold text-slate-600">CNIC Number</label>
                     <input
                       type="text"
@@ -1424,7 +1834,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400"
                     />
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("beneficiaryRelationship")}`}>
                     <label className="text-xs font-semibold text-slate-600">Relationship</label>
                     <select
                       value={details.beneficiary.relationship}
@@ -1439,7 +1849,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       <option value="Other">Other</option>
                     </select>
                   </div>
-                  <div className="space-y-1">
+                  <div className={`${hl("beneficiaryShare")}`}>
                     <label className="text-xs font-semibold text-slate-600">Share Percentage (%)</label>
                     <input
                       type="number"
@@ -1655,7 +2065,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                           )}
 
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-1">
+                            <div className={`${hl("policyCoverage")}`}>
                               <label className="text-xs font-semibold text-slate-600">Coverage Amount (PKR) *</label>
                               <input
                                 type="number" min={0}
@@ -1677,7 +2087,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                                 </p>
                               )}
                             </div>
-                            <div className="space-y-1">
+                            <div className={`${hl("policyTerm")}`}>
                               <label className="text-xs font-semibold text-slate-600">Policy Term (Years) *</label>
                               <input
                                 type="number"
@@ -1943,7 +2353,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                       )}
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="space-y-1">
+                        <div className={`${hl("policyCoverage")}`}>
                           <label className="text-xs font-semibold text-slate-600">
                             Coverage Amount (PKR) *
                           </label>
@@ -1966,7 +2376,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
                             </p>
                           )}
                         </div>
-                        <div className="space-y-1">
+                        <div className={`${hl("policyTerm")}`}>
                           <label className="text-xs font-semibold text-slate-600">
                             Policy Term (Years) *
                           </label>

@@ -98,7 +98,7 @@ def _text_of(content) -> str:
     return str(content or "")
 
 
-async def _run_ocr(file_bytes: bytes, mime_type: str) -> dict:
+async def _run_ocr(file_bytes: bytes, mime_type: str, prompt: str = OCR_PROMPT) -> dict:
     """Run OCR against the configured primary model, failing over to the
     fallback on error. Raises PdfProviderUnavailable / NoProviderConfigured."""
     cfg = await llm_provider.resolve()
@@ -108,7 +108,7 @@ async def _run_ocr(file_bytes: bytes, mime_type: str) -> dict:
     for entry in chain:
         try:
             model = llm_provider.build_model(entry)
-            messages = llm_provider.messages_for(entry, OCR_PROMPT, file_bytes, mime_type)
+            messages = llm_provider.messages_for(entry, prompt, file_bytes, mime_type)
             response = await model.ainvoke(messages)
             return {
                 "text": _text_of(response.content),
@@ -210,6 +210,401 @@ async def extract_text(file: UploadFile = File(...)):
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OCR Processing Error: {str(e)}")
+
+
+CUSTOMER_PROVINCES = [
+    "Punjab", "Sindh", "Khyber Pakhtunkhwa", "Balochistan",
+    "Gilgit-Baltistan", "Azad Jammu & Kashmir", "Islamabad Capital Territory",
+]
+_PROVINCE_ALIASES = {
+    "kpk": "Khyber Pakhtunkhwa", "k.p.k": "Khyber Pakhtunkhwa", "khyber pakhtunkhawa": "Khyber Pakhtunkhwa",
+    "nwfp": "Khyber Pakhtunkhwa", "gb": "Gilgit-Baltistan", "gilgit baltistan": "Gilgit-Baltistan",
+    "ajk": "Azad Jammu & Kashmir", "azad kashmir": "Azad Jammu & Kashmir", "azad jammu and kashmir": "Azad Jammu & Kashmir",
+    "ict": "Islamabad Capital Territory", "islamabad": "Islamabad Capital Territory",
+}
+
+CUSTOMER_FIELDS = (
+    # Tab 1: Identity & Contact
+    "first_name", "last_name", "cnic", "date_of_birth", "gender", "marital_status",
+    "mobile_number", "email", "emergency_contact_name", "street_address", "city",
+    "province", "postal_code",
+    # Tab 2: CNIC & Docs
+    "cnic_issue_date", "cnic_expiry_date", "cnic_validation_status",
+    # Tab 3: Occupation & Income
+    "employment_type", "occupation", "employer_name", "industry", "years_of_experience",
+    "occupation_hazard_level", "declared_annual_income", "monthly_income", "income_stability_score",
+    # Tab 4: Medical & Lifestyle
+    "has_pre_existing_conditions", "is_smoker", "is_diabetic", "medical_conditions",
+    "height_cm", "weight_kg", "exercise_frequency",
+    # Tab 5: Habit Check
+    "smoking_status", "alcohol_consumption_frequency", "recreational_drug_use_history",
+    "participates_in_extreme_sports", "extreme_sports_details", "private_aviation",
+    "frequent_high_risk_travel", "travel_destinations", "moving_violations_past_3_years",
+    "dui_dwi_history", "criminal_record",
+    # Tab 6: Financial Profile
+    "credit_score", "delinquency_count", "risk_grade", "number_of_dependents", "dependent_type",
+    # Tab 7: Nominee Details
+    "beneficiary_first_name", "beneficiary_last_name", "beneficiary_cnic",
+    "beneficiary_relationship", "beneficiary_share",
+    # Tab 8: Insurance Plans
+    "insurance_plan_name", "policy_coverage", "policy_term",
+    "dependent_name", "dependent_dob",
+)
+
+CUSTOMER_EXTRACT_PROMPT = (
+    "You are a comprehensive data-extraction engine for an insurance onboarding and underwriting system. "
+    "The input is a personal document (e.g. an application form, customer diagnostic sheet, CNIC, salary slip, "
+    "or insurance proposal). Read it thoroughly and return ONLY one valid JSON object — no prose, no Markdown fences.\n\n"
+    "CRITICAL FORMAT REQUIREMENT:\n"
+    "Return ONLY a single FLAT JSON object with the exact keys listed below at the top level. "
+    "Do NOT group or nest keys under section or tab names (e.g. do NOT create objects like {\"Identity & Contact\": {...}} or {\"Tab 1\": {...}}). "
+    "Every key must be a direct top-level property of the JSON object.\n\n"
+    "Identity & Contact (Tab 1):\n"
+    "- first_name: string (given name)\n"
+    "- last_name: string (surname / family name)\n"
+    "- cnic: string (13 digits formatted XXXXX-XXXXXXX-X)\n"
+    "- date_of_birth: string (YYYY-MM-DD)\n"
+    "- gender: exactly one of Male, Female, Other\n"
+    "- marital_status: exactly one of Single, Married, Divorced, Widowed\n"
+    "- mobile_number: string\n"
+    "- email: string\n"
+    "- emergency_contact_name: string\n"
+    "- street_address: string\n"
+    "- city: string\n"
+    f"- province: exactly one of {', '.join(CUSTOMER_PROVINCES)}\n"
+    "- postal_code: string\n\n"
+    "CNIC & Docs (Tab 2):\n"
+    "- cnic_issue_date: string (YYYY-MM-DD)\n"
+    "- cnic_expiry_date: string (YYYY-MM-DD)\n"
+    "- cnic_validation_status: exactly one of Valid, Invalid, Expired, Unverifiable\n\n"
+    "Occupation & Income (Tab 3):\n"
+    "- employment_type: exactly one of Salaried, Self-Employed, Business, Unemployed, Retired, Student\n"
+    "- occupation: string\n"
+    "- employer_name: string\n"
+    "- industry: string\n"
+    "- years_of_experience: integer\n"
+    "- occupation_hazard_level: exactly one of Low, Medium, High, VeryHigh\n"
+    "- declared_annual_income: number in PKR (if only monthly salary stated, multiply by 12)\n"
+    "- monthly_income: number in PKR\n"
+    "- income_stability_score: integer from 1 to 100\n\n"
+    "Medical & Lifestyle (Tab 4):\n"
+    "- has_pre_existing_conditions: boolean (true/false)\n"
+    "- is_smoker: boolean (true/false)\n"
+    "- is_diabetic: boolean (true/false)\n"
+    "- medical_conditions: list of objects [{\"condition_name\": string, \"severity\": 'Mild'|'Moderate'|'Severe'}] or empty list\n"
+    "- height_cm: number in centimeters\n"
+    "- weight_kg: number in kilograms\n"
+    "- exercise_frequency: exactly one of Sedentary, Light, Moderate, Active, VeryActive\n\n"
+    "Habit Check (Tab 5):\n"
+    "- smoking_status: exactly one of Non-smoker, Occasional, Heavy Smoker, Vaper, Chewing Tobacco\n"
+    "- alcohol_consumption_frequency: exactly one of None, Occasional, Moderate, Heavy\n"
+    "- recreational_drug_use_history: boolean (true/false)\n"
+    "- participates_in_extreme_sports: boolean (true/false)\n"
+    "- extreme_sports_details: list of strings (e.g. Skydiving, Scuba Diving (past 100ft), Bungee Jumping, Rock/Ice Climbing, Motorsports/Racing)\n"
+    "- private_aviation: boolean (true/false)\n"
+    "- frequent_high_risk_travel: boolean (true/false)\n"
+    "- travel_destinations: list of strings (destinations visited/planned)\n"
+    "- moving_violations_past_3_years: integer\n"
+    "- dui_dwi_history: boolean (true/false)\n"
+    "- criminal_record: boolean (true/false)\n\n"
+    "Financial Profile (Tab 6):\n"
+    "- credit_score: integer (credit score, e.g. 780)\n"
+    "- delinquency_count: integer\n"
+    "- risk_grade: exactly one of A, B, C, D, E, F\n"
+    "- number_of_dependents: integer\n"
+    "- dependent_type: exactly one of Spouse, Child, Parent, Sibling, Other\n\n"
+    "Nominee Details (Tab 7):\n"
+    "- beneficiary_first_name: string\n"
+    "- beneficiary_last_name: string\n"
+    "- beneficiary_cnic: string (13 digits formatted XXXXX-XXXXXXX-X)\n"
+    "- beneficiary_relationship: exactly one of Spouse, Parent, Child, Sibling, Guardian, Other\n"
+    "- beneficiary_share: integer percentage (e.g. 100)\n\n"
+    "Insurance Plans (Tab 8):\n"
+    "- insurance_plan_name: string (e.g. Salary Protection Plan or Term Life)\n"
+    "- policy_coverage: number in PKR\n"
+    "- policy_term: integer in years\n"
+    "- dependent_name: string or null\n"
+    "- dependent_dob: string (YYYY-MM-DD) or null\n\n"
+    "Rules:\n"
+    "- Use null for any value that is NOT explicitly mentioned or cannot be determined from the document. Never guess.\n"
+    "- The person is the applicant / document holder.\n"
+    "- Read values carefully exactly as written."
+)
+
+
+def _clean_customer_fields(raw: dict) -> dict:
+    """Validate and normalise what the model returned. Anything that doesn't
+    pass is dropped to None so the form leaves that field empty for manual
+    entry, rather than being filled with a plausible-looking wrong value."""
+    import re
+    from datetime import datetime
+
+    # Flatten nested structures (e.g. if the LLM grouped keys by section/tab)
+    flat_raw: dict = {}
+
+    def _flatten(d: dict):
+        for k, v in d.items():
+            if isinstance(v, dict):
+                _flatten(v)
+            else:
+                flat_raw[k] = v
+
+    if isinstance(raw, dict):
+        _flatten(raw)
+
+    def text(v):
+        if v is None:
+            return None
+        v = str(v).strip()
+        return v or None
+
+    def clean_cnic(v):
+        if not v:
+            return None
+        digits = re.sub(r"\D", "", str(v))
+        return f"{digits[:5]}-{digits[5:12]}-{digits[12]}" if len(digits) == 13 else None
+
+    def clean_date(v):
+        if not v:
+            return None
+        try:
+            return datetime.strptime(str(v)[:10], "%Y-%m-%d").date().isoformat()
+        except ValueError:
+            return None
+
+    def clean_bool(v):
+        if v is None:
+            return None
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            v_lower = v.strip().lower()
+            if v_lower in ("true", "yes", "y", "1"):
+                return True
+            if v_lower in ("false", "no", "n", "0", "none"):
+                return False
+        return None
+
+    def clean_num(v, is_int=False):
+        if v is None or v == "":
+            return None
+        try:
+            cleaned = str(v).replace(",", "").replace("$", "").replace("PKR", "").replace("pkr", "").strip()
+            num = float(cleaned)
+            return int(round(num)) if is_int else num
+        except (ValueError, TypeError):
+            return None
+
+    out: dict = {k: None for k in CUSTOMER_FIELDS}
+
+    # Text fields
+    for k in (
+        "first_name", "last_name", "mobile_number", "emergency_contact_name",
+        "street_address", "city", "postal_code", "occupation", "employer_name",
+        "industry", "insurance_plan_name", "beneficiary_first_name",
+        "beneficiary_last_name", "dependent_name",
+    ):
+        out[k] = text(flat_raw.get(k))
+
+    # CNICs
+    out["cnic"] = clean_cnic(flat_raw.get("cnic"))
+    out["beneficiary_cnic"] = clean_cnic(flat_raw.get("beneficiary_cnic"))
+
+    # Dates
+    out["date_of_birth"] = clean_date(flat_raw.get("date_of_birth"))
+    out["cnic_issue_date"] = clean_date(flat_raw.get("cnic_issue_date"))
+    out["cnic_expiry_date"] = clean_date(flat_raw.get("cnic_expiry_date"))
+    out["dependent_dob"] = clean_date(flat_raw.get("dependent_dob"))
+
+    # Enums
+    for key, allowed in (
+        ("gender", ("Male", "Female", "Other")),
+        ("marital_status", ("Single", "Married", "Divorced", "Widowed")),
+        ("cnic_validation_status", ("Valid", "Invalid", "Expired", "Unverifiable")),
+        ("employment_type", ("Salaried", "Self-Employed", "Business", "Unemployed", "Retired", "Student")),
+        ("occupation_hazard_level", ("Low", "Medium", "High", "VeryHigh")),
+        ("exercise_frequency", ("Sedentary", "Light", "Moderate", "Active", "VeryActive")),
+        ("smoking_status", ("Non-smoker", "Occasional", "Heavy Smoker", "Vaper", "Chewing Tobacco")),
+        ("alcohol_consumption_frequency", ("None", "Occasional", "Moderate", "Heavy")),
+        ("dependent_type", ("Spouse", "Child", "Parent", "Sibling", "Other")),
+        ("beneficiary_relationship", ("Spouse", "Parent", "Child", "Sibling", "Guardian", "Other")),
+    ):
+        val = text(flat_raw.get(key))
+        if val:
+            norm_val = val.lower().replace("-", " ").replace(" ", "")
+            match = next((a for a in allowed if a.lower().replace("-", " ").replace(" ", "") == norm_val), None)
+            out[key] = match
+
+    # Risk grade (A, B, C, D, E, F)
+    rg = text(flat_raw.get("risk_grade"))
+    if rg:
+        rg_clean = rg.upper().replace("GRADE", "").strip()
+        out["risk_grade"] = rg_clean if rg_clean in ("A", "B", "C", "D", "E", "F") else None
+
+    # Province
+    prov = (text(flat_raw.get("province")) or "").lower()
+    out["province"] = next(
+        (p for p in CUSTOMER_PROVINCES if p.lower() == prov), _PROVINCE_ALIASES.get(prov)
+    )
+
+    # Email
+    email = text(flat_raw.get("email"))
+    out["email"] = email if email and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) else None
+
+    # Numbers
+    out["declared_annual_income"] = clean_num(flat_raw.get("declared_annual_income"))
+    out["monthly_income"] = clean_num(flat_raw.get("monthly_income"))
+    out["years_of_experience"] = clean_num(flat_raw.get("years_of_experience"), is_int=True)
+    out["income_stability_score"] = clean_num(flat_raw.get("income_stability_score"), is_int=True)
+    out["height_cm"] = clean_num(flat_raw.get("height_cm"))
+    out["weight_kg"] = clean_num(flat_raw.get("weight_kg"))
+    out["moving_violations_past_3_years"] = clean_num(flat_raw.get("moving_violations_past_3_years"), is_int=True)
+    out["credit_score"] = clean_num(flat_raw.get("credit_score"), is_int=True)
+    out["delinquency_count"] = clean_num(flat_raw.get("delinquency_count"), is_int=True)
+    out["number_of_dependents"] = clean_num(flat_raw.get("number_of_dependents"), is_int=True)
+    out["beneficiary_share"] = clean_num(flat_raw.get("beneficiary_share"), is_int=True)
+    out["policy_coverage"] = clean_num(flat_raw.get("policy_coverage"))
+    out["policy_term"] = clean_num(flat_raw.get("policy_term"), is_int=True)
+
+    # Booleans
+    for b_key in (
+        "has_pre_existing_conditions", "is_smoker", "is_diabetic",
+        "recreational_drug_use_history", "participates_in_extreme_sports",
+        "private_aviation", "frequent_high_risk_travel", "dui_dwi_history",
+        "criminal_record",
+    ):
+        out[b_key] = clean_bool(flat_raw.get(b_key))
+
+    # Lists
+    # medical_conditions
+    med_conds = flat_raw.get("medical_conditions")
+    if isinstance(med_conds, list) and med_conds:
+        clean_conds = []
+        for c in med_conds:
+            if isinstance(c, dict) and c.get("condition_name"):
+                sev = text(c.get("severity")) or "Mild"
+                sev_match = next((s for s in ("Mild", "Moderate", "Severe") if s.lower() == sev.lower()), "Mild")
+                clean_conds.append({"condition_name": text(c.get("condition_name")), "severity": sev_match})
+        out["medical_conditions"] = clean_conds if clean_conds else None
+    else:
+        out["medical_conditions"] = None
+
+    # extreme_sports_details
+    esd = flat_raw.get("extreme_sports_details")
+    if isinstance(esd, list) and esd:
+        cleaned_esd = [str(item).strip() for item in esd if str(item).strip()]
+        out["extreme_sports_details"] = cleaned_esd if cleaned_esd else None
+    elif isinstance(esd, str) and esd.strip() and esd.strip().lower() != "none":
+        out["extreme_sports_details"] = [esd.strip()]
+    else:
+        out["extreme_sports_details"] = None
+
+    # travel_destinations
+    td = flat_raw.get("travel_destinations")
+    if isinstance(td, list) and td:
+        cleaned_td = [str(item).strip() for item in td if str(item).strip()]
+        out["travel_destinations"] = cleaned_td if cleaned_td else None
+    elif isinstance(td, str) and td.strip() and td.strip().lower() != "none":
+        out["travel_destinations"] = [td.strip()]
+    else:
+        out["travel_destinations"] = None
+
+    return out
+
+
+def _parse_json_object(text: str) -> dict:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = cleaned.split("\n", 1)[1] if "\n" in cleaned else cleaned
+        cleaned = cleaned.rsplit("```", 1)[0]
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError("The model did not return a JSON object.")
+    return json.loads(cleaned[start:end + 1])
+
+
+CUSTOMER_PDF_MAX_PAGES = 3
+
+
+def _pdf_pages_as_png(pdf_bytes: bytes) -> list[bytes]:
+    """First few pages of a PDF as PNGs. Empty list if PyMuPDF isn't available
+    or the PDF can't be opened, so the caller can surface the original error."""
+    try:
+        import pymupdf
+    except ImportError:
+        return []
+    try:
+        with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+            return [
+                page.get_pixmap(dpi=130).tobytes("png")
+                for page in list(doc)[:CUSTOMER_PDF_MAX_PAGES]
+            ]
+    except Exception as exc:  # noqa: BLE001 — corrupt/encrypted PDF
+        log.warning("Could not render PDF pages: %s", exc)
+        return []
+
+
+CUSTOMER_UPLOAD_EXTENSIONS = {"pdf", "png", "jpg", "jpeg"}
+CUSTOMER_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
+
+
+@app.post("/extract-customer")
+async def extract_customer_fields(file: UploadFile = File(...)):
+    """Read a PDF / PNG / JPG and return the customer-form fields found in it.
+
+    Fields the document doesn't contain come back as null — the caller leaves
+    those empty (and highlights them) rather than filling in guesses.
+    """
+    file_ext = (file.filename or "").lower().rsplit(".", 1)[-1]
+    if file_ext not in CUSTOMER_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported format. Upload a PDF, PNG or JPG file.")
+
+    file_bytes = await file.read()
+    if len(file_bytes) > CUSTOMER_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large (max 10 MB).")
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    try:
+        try:
+            results = [await _run_ocr(file_bytes, MIME_MAP[file_ext], prompt=CUSTOMER_EXTRACT_PROMPT)]
+        except PdfProviderUnavailable:
+            # The configured model (e.g. OpenAI) can't ingest PDFs, but it can
+            # read images — so read the PDF's pages as images instead.
+            pages = _pdf_pages_as_png(file_bytes)
+            if not pages:
+                raise
+            results = [await _run_ocr(png, "image/png", prompt=CUSTOMER_EXTRACT_PROMPT) for png in pages]
+
+        fields = {k: None for k in CUSTOMER_FIELDS}
+        usage = {"input": 0, "output": 0, "total": 0}
+        for idx, result in enumerate(results):
+            asyncio.create_task(_record_token_usage(result["token_usage"], result["model_name"]))
+            for k in usage:
+                usage[k] += result["token_usage"].get(k, 0)
+            try:
+                raw_json = _parse_json_object(result["text"])
+                page_fields = _clean_customer_fields(raw_json)
+            except (ValueError, json.JSONDecodeError) as exc:
+                if len(results) == 1:
+                    raise HTTPException(status_code=422, detail=f"Could not read structured details from this document ({exc}).")
+                continue
+            # Earlier pages win; later pages only fill what is still missing.
+            fields = {k: fields[k] if fields[k] is not None else page_fields[k] for k in CUSTOMER_FIELDS}
+        return {
+            "filename": file.filename,
+            "fields": fields,
+            "found": sum(1 for v in fields.values() if v is not None),
+            "token_usage": usage,
+        }
+    except HTTPException:
+        raise
+    except PdfProviderUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NoProviderConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Extraction error: {str(e)}")
 
 
 @app.post("/extract/stream")

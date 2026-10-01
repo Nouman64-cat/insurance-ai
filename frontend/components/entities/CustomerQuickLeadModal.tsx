@@ -9,9 +9,12 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSaved: (message: string) => void;
+  // Agent to preselect (matched by email) — set when the form is opened from
+  // the Copilot after the user already picked who owns the lead.
+  defaultAgentEmail?: string | null;
 }
 
-export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props) {
+export default function CustomerQuickLeadModal({ open, onClose, onSaved, defaultAgentEmail }: Props) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -41,6 +44,15 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved }: Props
       listAgents(tenantId).then(setAgentOptions).catch(() => setAgentOptions([]));
     }
   }, [open]);
+
+  // The agent list loads after the form opens, so preselect once it arrives.
+  // Keyed on the list rather than the selection, so a later manual change
+  // (even back to "Unassigned") is never overridden.
+  useEffect(() => {
+    if (!open || !defaultAgentEmail) return;
+    const match = agentOptions.find((a) => a.email?.toLowerCase() === defaultAgentEmail.toLowerCase());
+    if (match) setAssignedAgentId(match.id);
+  }, [open, agentOptions, defaultAgentEmail]);
 
   if (!open) return null;
 
