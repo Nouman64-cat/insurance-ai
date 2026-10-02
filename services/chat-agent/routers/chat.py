@@ -125,6 +125,8 @@ async def _consume(graph, config, input_):
                             yield _event({"type": "assessment", "assessment": result["assessment"]})
                         if result.get("family_members"):
                             yield _event({"type": "family_members", "family_members": result["family_members"]})
+                        if result.get("proposal_journey"):
+                            yield _event({"type": "proposal_journey", **result["proposal_journey"]})
                         if result.get("quick_actions"):
                             yield _event({"type": "quick_actions", "actions": result["quick_actions"]})
     except Exception as exc:
@@ -213,7 +215,10 @@ async def chat_title(body: ChatTitleRequest, x_tenant_id: str = Header(default="
     sidebar, derived from the conversation's first exchange. No RBAC needed —
     it reads two message strings the caller already has, it doesn't touch
     domain data."""
-    title = await generate_chat_title(body.first_user_message, body.first_assistant_reply, x_tenant_id)
+    title = await generate_chat_title(
+        body.first_user_message, body.first_assistant_reply, x_tenant_id,
+        transcript=body.transcript, avoid=body.avoid,
+    )
     return {"title": title}
 
 

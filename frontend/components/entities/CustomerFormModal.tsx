@@ -32,7 +32,11 @@ interface Props {
   customer?: Customer | null;
   onClose: () => void;
   /** Called after a successful create/update with a success message. */
-  onSaved: (message: string) => void;
+  onSaved: (
+    message: string,
+    // Set only when a new customer was created (not on edit).
+    created?: { id: string; isNew: true; name: string; cnic: string | null; hasProposal: boolean }
+  ) => void;
 }
 
 // Form fields that can be auto-filled from an uploaded document, with the tab
@@ -119,6 +123,11 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   const [success, setSuccess] = useState("");
   const [formLoading, setFormLoading] = useState(false);
   const [formTab, setFormTab] = useState("demographics");
+  // Embedded in the Copilot's chat panel, registering a new customer: the plan
+  // is part of entering the details, and the chat goes on to walk that proposal
+  // through its workflow (Draft → Submitted → Under Review → Underwriting), so
+  // a customer can't be registered there without one.
+  const inChatPanel = mode === "create" && typeof window !== "undefined" && window.parent !== window;
 
   const {
     register,
@@ -636,6 +645,13 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         },
       };
 
+      if (inChatPanel && !(data.selectedPlanId && data.policyCoverage && data.policyTerm)) {
+        setFormTab("insurance_plan");
+        setError("Please choose an insurance plan, coverage amount and term — the proposal is created from them.");
+        setFormLoading(false);
+        return;
+      }
+
       if (data.selectedPlanId) {
         const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
         if (selectedPlan) {
@@ -677,6 +693,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         details: payloadDetails,
       });
 
+      let proposalCreated = false;
       if (data.selectedPlanId && data.policyCoverage && data.policyTerm) {
         const selectedPlan = availablePlans.find((p) => p.id === data.selectedPlanId);
         if (selectedPlan) {
@@ -691,11 +708,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             policyPayload.dependent_dob = data.policyDependentDob || null;
           }
           await api.post(`/tenants/${tenantId}/customers/${customerResp.data.id}/policies`, policyPayload);
+          proposalCreated = true;
         }
       }
 
       registerPendingQuote(customerResp.data.id, customerResp.data.name);
-      onSaved("Customer registered successfully with full diagnostic profile!");
+      onSaved("Customer registered successfully with full diagnostic profile!", {
+        id: customerResp.data.id,
+        isNew: true,
+        name: `${data.firstName} ${data.lastName}`.trim(),
+        cnic: data.cnic || null,
+        hasProposal: proposalCreated,
+      });
       onClose();
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to register customer.");

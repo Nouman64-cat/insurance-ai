@@ -30,7 +30,7 @@ from langchain_core.messages import ToolMessage
 
 from pages import build_route
 from state import ChatState
-from tool_executor import API_GATEWAY_URL, ExecCtx, execute_tool
+from tool_executor import API_GATEWAY_URL, ExecCtx, execute_tool, upload_documents_action
 
 # Stage metadata: node -> (stage id, UI label). Order matters for the
 # "what comes next" markers.
@@ -498,8 +498,7 @@ async def j_finish(state: ChatState) -> dict:
             "success": True,
             "message": f"Journey suspended at document audit — {case_no} needs: {', '.join(missing)}.",
             "quick_actions": [
-                *({"label": f"Upload {d}", "actionType": "upload",
-                   "payload": json.dumps({"document_type": d, "cnic": cnic, "case_number": case_no})} for d in missing[:2]),
+                upload_documents_action(state.get("journey_case_id") or "", case_no, cnic, missing),
                 # "embed" (not "navigate") — this is the pre-underwriting
                 # gate stage, the one case the in-chat case view is for.
                 {"label": "Open Case", "actionType": "embed", "payload": route},

@@ -30,3 +30,7 @@ class ExecuteToolRequest(BaseModel):
 class ChatTitleRequest(BaseModel):
     first_user_message: str
     first_assistant_reply: str
+    # Later in a conversation: a condensed transcript to title from, and the
+    # titles other chats already have, so this one can be told apart from them.
+    transcript: str = ""
+    avoid: list[str] = []

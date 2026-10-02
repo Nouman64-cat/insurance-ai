@@ -470,7 +470,10 @@ class ChatTitleOutput(BaseModel):
                                     "conversation is about. No quotes, no trailing punctuation.")
 
 
-async def generate_chat_title(first_user_message: str, first_assistant_reply: str, tenant_id: str | None) -> str:
+async def generate_chat_title(
+    first_user_message: str, first_assistant_reply: str, tenant_id: str | None,
+    transcript: str = "", avoid: list[str] | None = None,
+) -> str:
     """A short, cheap side-task exactly like the plan advisor (Top5PlansOutput
     below) — bare structured-output call, no tool schemas — run once per
     conversation, right after its first exchange, so the sidebar can show a
@@ -480,12 +483,20 @@ async def generate_chat_title(first_user_message: str, first_assistant_reply: st
         llm = _structured_llm(cfg, ChatTitleOutput, include_raw=True)
         prompt = ChatPromptTemplate.from_messages([
             ("system", "Summarize what this conversation is about in a short, specific, "
-                       "title-case title (3-6 words). No quotes, no trailing period."),
-            ("user", "User: {user_msg}\n\nAssistant: {assistant_msg}"),
+                       "title-case title (3-6 words). No quotes, no trailing period. "
+                       "Many conversations here are the same kind of task, so lead with whatever "
+                       "tells this one apart — the person's or company's name, a case number, "
+                       "or the exact outcome — rather than the generic task. "
+                       "Do not reuse any of these existing titles: {avoid}"),
+            ("user", "{body}"),
         ])
+        if transcript.strip():
+            body = f"Conversation:\n{transcript[:3500]}"
+        else:
+            body = f"User: {(first_user_message or '')[:500]}\n\nAssistant: {(first_assistant_reply or '')[:500]}"
         raw = await (prompt | llm).ainvoke({
-            "user_msg": (first_user_message or "")[:500],
-            "assistant_msg": (first_assistant_reply or "")[:500],
+            "body": body,
+            "avoid": "; ".join((avoid or [])[:40]) or "(none)",
         })
         usage.record(raw.get("raw"), service_name=usage.SERVICE_CHAT_TITLE, tenant_id=tenant_id)
         parsed = raw.get("parsed")
@@ -575,6 +586,7 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
     # before giving up. It is the ONLY retry layer (providers.build_chat forces
     # max_retries=0 on every model).
     last_exc: Exception | None = None
+    rate_limited = False
     for attempt in range(3):
         try:
             response = await llm.ainvoke(messages)
@@ -626,12 +638,35 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
                     "(billing / payment issue) and no working fallback is configured. "
                     "Fix Gemini billing or set OPENAI_API_KEY."
                 ) from exc
-            if "429" in text or "rate limit" in text.lower():
+            lowered = text.lower()
+            # OpenAI reports an empty account as HTTP 429 too ("insufficient_quota" /
+            # "credit_balance_exhausted"), so a bare "429" check calls it a rate limit
+            # and tells the user to wait — which can never fix it.
+            if (
+                "insufficient_quota" in lowered
+                or "credit_balance_exhausted" in lowered
+                or "no credits remaining" in lowered
+                or "exceeded your current quota" in lowered
+            ):
                 raise RuntimeError(
-                    "The AI model is rate-limited right now. Give it a moment and resend that message."
+                    "The AI model's account is out of credits (the provider reports no credits remaining). "
+                    "This isn't a rate limit — resending won't help. An admin needs to add credits with the "
+                    "provider, or set a fallback model under Platform → LLM Configuration."
                 ) from exc
+            if "429" in text or "rate limit" in lowered:
+                # A genuine rate limit (requests/tokens per minute) clears on its own,
+                # so wait and retry rather than failing the turn on the first hit.
+                rate_limited = True
+                if attempt < 2:
+                    await asyncio.sleep(2.0 * (attempt + 1))
+                    continue
+                break
             if attempt < 2:
                 await asyncio.sleep(1.5 * (attempt + 1))
+    if rate_limited:
+        raise RuntimeError(
+            "The AI model is rate-limited right now. Give it a moment and resend that message."
+        ) from last_exc
     raise RuntimeError(
         "The AI model is briefly overloaded — please resend that message."
     ) from last_exc
@@ -1209,27 +1244,12 @@ async def permission_gate(state: ChatState) -> Command:
         # Who owns this customer is the first thing asked — before the type and
         # before any details — rather than surfacing as a picker only once the
         # create tool runs. An Agent is their own lead's owner, so never asked.
-        lead_agent = None
-        lead_agent_email = None
+        agent_choices: list = []
+        agent_rows: list = []
         if (ctx.role or "").strip().lower() != "agent":
             listed = await execute_tool("list_agent_users", {}, ctx)
-            agents = listed.get("agents") or []
-            if agents:
-                agent_choices = [
-                    (f"{a['name']} ({a['email']})", a["name"] or a["email"]) for a in agents
-                ]
-                picked = _ask_choice(
-                    name, args,
-                    "Which agent is this customer assigned to?",
-                    agent_choices,
-                    select_label="Agent",
-                    placeholder="Choose an agent…",
-                    force_select=True,
-                )
-                lead_agent = _match_choice(picked, agent_choices) or picked
-                lead_agent_email = next(
-                    (a["email"] for a in agents if lead_agent in (a["name"], a["email"])), None
-                )
+            agent_rows = listed.get("agents") or []
+            agent_choices = [(f"{a['name']} ({a['email']})", a["name"] or a["email"]) for a in agent_rows]
 
         # (display, tool to call next, url slug for the leads-page form chooser)
         choices = [
@@ -1237,16 +1257,52 @@ async def permission_gate(state: ChatState) -> Command:
             ("Corporate (Organization)", "add_organization", "corporate"),
             ("Family group", "add_family_group", "family"),
         ]
-        # Echo the pick back — selecting from the dropdown adds no chat bubble
-        # of its own, so without this nothing says who was chosen.
-        type_question = "Is this an Individual, a Corporate (Organization), or a Family group?"
-        if lead_agent:
-            type_question = f"Agent selected: **{lead_agent}**. {type_question}"
-        answer = _ask_choice(
-            name, args,
-            type_question,
-            [(display, tool) for display, tool, _ in choices],
-        )
+        # "Go back" from the type question returns to the agent question. It is
+        # offered only when an agent was asked at all, and the question simply
+        # repeats (interrupts replay in order, so each pass is a fresh pick).
+        go_back_chip = {"label": "← Go back", "actionType": "submit", "payload": "Go back"}
+        # Coming back from the next step ("How would you like to proceed?") the
+        # agent is already chosen — keep it for the first pass.
+        reuse_agent = state.get("lead_agent") if args.get("keep_agent") else None
+
+        lead_agent = None
+        lead_agent_email = None
+        while True:
+            lead_agent = None
+            lead_agent_email = None
+            if agent_choices:
+                if reuse_agent:
+                    lead_agent = reuse_agent
+                    reuse_agent = None
+                else:
+                    picked = _ask_choice(
+                        name, args,
+                        "Which agent is this customer assigned to?",
+                        agent_choices,
+                        select_label="Agent",
+                        placeholder="Choose an agent…",
+                        force_select=True,
+                    )
+                    lead_agent = _match_choice(picked, agent_choices) or picked
+                lead_agent_email = next(
+                    (a["email"] for a in agent_rows if lead_agent in (a["name"], a["email"])), None
+                )
+
+            # Echo the pick back — selecting from the dropdown adds no chat bubble
+            # of its own, so without this nothing says who was chosen.
+            type_question = "Is this an Individual, a Corporate (Organization), or a Family group?"
+            if lead_agent:
+                type_question = f"Agent selected: **{lead_agent}**. {type_question}"
+            answer = _ask_choice(
+                name, args,
+                type_question,
+                [(display, tool) for display, tool, _ in choices],
+                extra_actions=[go_back_chip] if agent_choices else None,
+            )
+            if agent_choices and answer.strip().lower() in ("go back", "← go back"):
+                continue
+            break
+
         resolved = next((c for c in choices if c[1] == _match_choice(answer, [(d, t) for d, t, _ in choices])), None)
         if resolved:
             display, resolved_tool, slug = resolved
@@ -1260,7 +1316,7 @@ async def permission_gate(state: ChatState) -> Command:
                 "message": f"Customer type resolved: {display}. "
                            + (f"Assigned agent already chosen: {lead_agent} — it is applied automatically, so do NOT ask for or pass agent_name. " if lead_agent else "")
                            + f"Now call `{resolved_tool}` "
-                           "with the applicant's details to register them. Do NOT ask the user if they want to add demo data or fill the form manually, and do NOT list or describe those two choices in your reply (e.g. as a bulleted list) — the UI renders them as clickable buttons below your message. Reply with a short one-sentence acknowledgement only, e.g. \"Got it — Individual customer" + (f", assigned to {lead_agent}" if lead_agent else "") + ". How would you like to proceed?\"",
+                           "with the applicant's details to register them. Do NOT ask the user if they want to add demo data or fill the form manually, and do NOT list or describe those two choices in your reply (e.g. as a bulleted list) — the UI renders them as clickable buttons below your message. Reply with a short acknowledgement only, e.g. \"Got it — Individual customer" + (f", assigned to {lead_agent}" if lead_agent else "") + ". How would you like to proceed?\" and add this warning on its own line: \"⚠️ Choose carefully — Add demo data creates the customer straight away, and you can't go back after that.\"",
                 # Offer the two ways this normally goes from here — generated demo
                 # data (fast, for a test run) or the portal's own multi-step form
                 # (for a real applicant) — instead of only listing fields to type.
@@ -1269,6 +1325,10 @@ async def permission_gate(state: ChatState) -> Command:
                     # Web opens the form in the chat's inline panel instead of a new tab;
                     # the mobile app has no embed view, so it keeps plain navigation.
                     {"label": "Fill the form instead", "actionType": "embed" if platform == "web" else "navigate", "payload": form_path},
+                    # Nothing has been created yet, so this step can still be undone.
+                    # (Once demo data or the form is used, there is no way back.)
+                    {"label": "← Go back", "actionType": "submit",
+                     "payload": "Go back — let me choose the customer type again (keep_agent true)"},
                 ],
             }
         else:
