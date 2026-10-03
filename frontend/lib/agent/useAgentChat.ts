@@ -30,13 +30,20 @@ interface UseAgentChatOptions {
   // relays. `embed` distinguishes the one case (a journey mid pre-underwriting)
   // that should open in the chat's inline case view instead of a new tab.
   onNavigate?: (route: string, entityId: string, highlight: boolean, embed?: boolean) => void;
+  // A tool created a customer with a Draft proposal and wants the proposal steps
+  // run in the chat. Fired once the reply has finished streaming, so the steps
+  // land after the assistant's own message rather than racing it.
+  onProposalJourney?: (customerId: string, name: string) => void;
 }
 
-export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgentChatOptions) {
+export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposalJourney }: UseAgentChatOptions) {
   const { notify } = useNotify();
   const threadStorageKey = `${storageKey}_thread_id`;
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
+  const onProposalJourneyRef = useRef(onProposalJourney);
+  onProposalJourneyRef.current = onProposalJourney;
+  const pendingProposalJourneyRef = useRef<{ customerId: string; name: string } | null>(null);
 
   const [messages, setMessages] = useState<AgentMessage[]>(() => {
     if (typeof window === "undefined") return welcomeMessage ? [welcomeMessage] : [];
@@ -241,6 +248,10 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
           onNavigateRef.current?.(evt.route, evt.entity_id, evt.highlight, evt.embed);
           break;
 
+        case "proposal_journey":
+          pendingProposalJourneyRef.current = { customerId: evt.customer_id, name: evt.name };
+          break;
+
         case "assessment":
           pendingAssessmentRef.current = evt.assessment;
           // Also attach to the current message just in case no token event follows
@@ -270,9 +281,15 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate }: UseAgen
           });
           break;
 
-        case "done":
+        case "done": {
           setIsLoading(false);
+          const pending = pendingProposalJourneyRef.current;
+          if (pending) {
+            pendingProposalJourneyRef.current = null;
+            onProposalJourneyRef.current?.(pending.customerId, pending.name);
+          }
           break;
+        }
 
         case "error":
           setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: `⚠️ ${evt.message}` }]);

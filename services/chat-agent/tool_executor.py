@@ -480,8 +480,24 @@ async def _get_case_details(args: dict, ctx: Ctx) -> dict:
         "case": detail,
         "navigate": _nav("cases", case_id),
         "quick_actions": [
-            {"label": "View Case", "actionType": "navigate", "payload": build_route("cases", case_id)},
+            {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"},
         ],
+    }
+
+
+def upload_documents_action(case_id: str, case_number: str, cnic: str, missing: list[str]) -> dict:
+    """One button for all of a case's missing documents. The web UI answers it
+    with a popup that has a slot per document type (PDF / PNG / JPG), instead of
+    a separate button — and file picker — for each one."""
+    return {
+        "label": "Upload Documents",
+        "actionType": "upload",
+        "payload": json.dumps({
+            "document_types": list(missing),
+            "cnic": cnic or "",
+            "case_number": case_number or "",
+            "case_id": case_id,
+        }),
     }
 
 
@@ -512,16 +528,7 @@ async def _get_document_checklist(args: dict, ctx: Ctx) -> dict:
             ],
         }
 
-    upload_actions = [
-        {"label": f"Upload {doc}", "actionType": "upload",
-         "payload": json.dumps({
-             "document_type": doc,
-             "cnic": case.get("customer_cnic") or args.get("cnic") or "",
-             "case_number": case.get("caseNumber") or "",
-             "case_id": case_id,
-         })}
-        for doc in missing[:3]
-    ]
+    upload_actions = [upload_documents_action(case_id, case.get("caseNumber") or "", case.get("customer_cnic") or args.get("cnic") or "", missing)]
     return {
         "success": False,
         "message": body,
@@ -1145,8 +1152,11 @@ async def _create_case(args: dict, ctx: Ctx) -> dict:
         "case_id": case_id,
         "message": f"Case **{case_no}** opened for {_full_name(customer)}.",
         "last_action": _action("create_case", "case", case_id, route, f"Case {case_no} created"),
+        # Show the new case inline in the chat panel straight away; the proposal
+        # (next step) then appears in the same view.
+        "navigate": {"route": f"case/{case_id}", "entity_id": case_id, "highlight": False, "embed": True},
         "quick_actions": [
-            {"label": "View Case", "actionType": "navigate", "payload": route},
+            {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"},
             {"label": "Create Proposal", "actionType": "submit",
              "payload": f"Create a proposal for CNIC {customer.get('cnic')}"},
         ],
@@ -1222,7 +1232,7 @@ async def _assign_case(args: dict, ctx: Ctx) -> dict:
         "message": f"**{case.get('caseNumber')}** assigned to **{user.get('full_name')}**.",
         "last_action": _action("assign_case", "case", case_id, route, f"Assigned to {user.get('full_name')}"),
         "quick_actions": [
-            {"label": "View Case", "actionType": "navigate", "payload": route},
+            {"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"},
             {"label": "Start Work", "actionType": "submit",
              "payload": f"Move case {case.get('caseNumber')} to InProgress"},
         ],
@@ -1244,7 +1254,7 @@ async def _add_case_comment(args: dict, ctx: Ctx) -> dict:
         "success": True,
         "message": f"Note added to **{case.get('caseNumber')}**.",
         "last_action": _action("add_case_comment", "case", case_id, route, "Comment added"),
-        "quick_actions": [{"label": "View Case", "actionType": "navigate", "payload": route}],
+        "quick_actions": [{"label": "View Case", "actionType": "embed", "payload": f"case/{case_id}"}],
     }
 
 
@@ -1279,6 +1289,16 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
     data = res.json()
 
     route = build_route("admin/leads", customer.get("cnic"))
+
+    # The proposal lives on the customer's case — show that case inline so the
+    # new proposal is visible before the pre-underwriting gates begin.
+    case_view = None
+    try:
+        case = await _resolve_case({"cnic": customer.get("cnic"), "applicant_name": _full_name(customer)}, ctx)
+        case_view = f"case/{_case_id(case)}"
+    except LookupError:
+        pass  # no case yet — the lead view below still works
+
     return {
         "success": True,
         "policy_id": data.get("id"),
@@ -1289,12 +1309,14 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
             f"The case is now in **Pre-Underwriting**. To proceed, complete the 6 clearance gates sequentially starting with **Gate 1: Customer E-Application**."
         ),
         "last_action": _action("create_proposal", "customer", customer.get("cnic", ""), route, "Proposal created"),
+        **({"navigate": {"route": case_view, "entity_id": "", "highlight": False, "embed": True}} if case_view else {}),
         "quick_actions": [
             {"label": "1. Generate E-App Link (Gate 1)", "actionType": "submit",
              "payload": f"Generate e-application link for CNIC {customer.get('cnic')}"},
             {"label": "Check Gate Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for CNIC {customer.get('cnic')}"},
-            {"label": "View Lead", "actionType": "navigate", "payload": route},
+            {"label": "View Proposal", "actionType": "embed", "payload": case_view}
+            if case_view else {"label": "View Lead", "actionType": "navigate", "payload": route},
         ],
     }
 
@@ -1369,9 +1391,9 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
                      "payload": f"Approve case {case.get('caseNumber')} based on the risk assessment results"},
                     {"label": "Decline", "actionType": "submit",
                      "payload": f"Reject case {case.get('caseNumber')} based on the risk assessment results"},
-                    {"label": "View Results", "actionType": "navigate", "payload": results_route},
+                    {"label": "View Results", "actionType": "embed", "payload": results_route},
                 ] if pending_decision else [
-                    {"label": "View Results", "actionType": "navigate", "payload": results_route},
+                    {"label": "View Results", "actionType": "embed", "payload": results_route},
                     {"label": "Download Report", "actionType": "download", "payload": case_id},
                 ]
             )
@@ -1418,7 +1440,7 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
             qa.append(next_action)
         qa.append({"label": "Check Gate Status", "actionType": "submit",
                    "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"})
-        qa.append({"label": "Open Workbench", "actionType": "navigate", "payload": "underwriting"})
+        qa.append({"label": "Open Workbench", "actionType": "embed", "payload": "underwriting"})
 
         return {
             "success": False,
@@ -1434,16 +1456,9 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
 
     missing = checklist.get("missing") or []
     if missing:
-        upload_actions = [
-            {"label": f"Upload {doc}", "actionType": "upload",
-             "payload": json.dumps({
-                 "document_type": doc,
-                 "cnic": case.get("customer_cnic") or args.get("cnic") or "",
-                 "case_number": case.get("caseNumber") or "",
-                 "case_id": case_id,
-             })}
-            for doc in missing[:3]
-        ]
+        upload_actions = [upload_documents_action(
+            case_id, case.get("caseNumber") or "", case.get("customer_cnic") or args.get("cnic") or "", missing
+        )]
         return {
             "success": False,
             "message": f"Missing {len(missing)} required document(s): {', '.join(missing)}.",
@@ -1494,55 +1509,92 @@ async def _get_pre_underwriting_status(args: dict, ctx: Ctx) -> dict:
     med = pre.get("medical_exam", "NotAssessed")
     is_ready = bool(pre.get("is_ready"))
 
+    # Requirement 1 is the document checklist; 2-7 are the six clearance gates
+    # (the same seven the case page's prerequisites checklist shows).
+    missing_docs: list[str] = []
+    try:
+        doc_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/document-checklist"))
+        if doc_res.status_code == 200:
+            missing_docs = doc_res.json().get("missing") or []
+    except httpx.HTTPError:
+        pass
+    docs_status = f"Missing ({len(missing_docs)})" if missing_docs else "Complete"
+    case_no = case.get("caseNumber")
+
+    # (name, status, done?, short explanation of what the requirement needs)
+    reqs = [
+        ("Mandatory Documents Checklist", docs_status, not missing_docs,
+         "Missing required document(s): " + ", ".join(missing_docs) + "." if missing_docs
+         else "All required documents are uploaded."),
+        ("Customer E-Application Questionnaire", e_app, e_app == "Verified",
+         "The customer's health disclosures questionnaire — send the link, then verify it once submitted."),
+        ("Agent's Confidential Report (ACR)", acr, acr == "Submitted",
+         "The agent's own confidential assessment of the applicant, to be filed."),
+        ("PEP & Sanctions Screening", comp, comp in ("Passed", "Cleared"),
+         "PEP and AML screening of the applicant against watchlists."),
+        ("Initial Premium Payment (IPP)", ipp, ipp == "Realized",
+         "Collect the initial premium payment so cover can start."),
+        ("Insurance History Clearance", hist, hist in ("Clear", "Cleared"),
+         "Prior policy coverage and over-insurance history check."),
+        ("Medical Examination / NML Grid", med, med in ("Completed", "Waived", "NotRequired"),
+         "Non-medical limit grid or panel diagnostic check, depending on the cover amount."),
+    ]
+    done_count = sum(1 for _, _, ok, _ in reqs if ok)
+    is_ready = is_ready and not missing_docs
+
+    lines = []
+    for i, (rname, rstatus, ok, rdetail) in enumerate(reqs, 1):
+        icon = "✅" if ok else _gate_icon(rstatus)
+        lines.append(f"{icon} **{i}. {rname}** — `{rstatus}`  \n   _{rdetail}_")
     summary = (
-        f"### Pre-Underwriting Clearance Gates for Case **{case.get('caseNumber')}**\n\n"
-        f"| Gate | Milestone | Status |\n"
-        f"| :--- | :--- | :--- |\n"
-        f"| **Gate 1** | **E-Application** | {_gate_icon(e_app)} `{e_app}` |\n"
-        f"| **Gate 2** | **Agent Confidential Report (ACR)** | {_gate_icon(acr)} `{acr}` |\n"
-        f"| **Gate 3** | **Compliance (PEP / Sanctions)** | {_gate_icon(comp)} `{comp}` |\n"
-        f"| **Gate 4** | **Initial Premium Payment (IPP)** | {_gate_icon(ipp)} `{ipp}` |\n"
-        f"| **Gate 5** | **Insurance History Check** | {_gate_icon(hist)} `{hist}` |\n"
-        f"| **Gate 6** | **Medical Examination** | {_gate_icon(med)} `{med}` |\n\n"
+        f"### Underwriting requirements for case **{case_no}** — {done_count} / 7 ready\n\n"
+        + "\n\n".join(lines) + "\n\n"
     )
 
+    workspace = {"label": "Open the case workspace", "actionType": "embed", "payload": f"case/{case_id}"}
     if is_ready:
-        summary += "**Status: All 6 Gates Cleared!** The proposal is 100% ready for AI Risk Assessment."
+        summary += "**All 7 requirements are complete.** The case is ready for AI underwriting."
         qa = [
             {"label": "Run AI Underwriting", "actionType": "submit",
-             "payload": f"Run risk assessment for case {case.get('caseNumber')}"},
+             "payload": f"Run risk assessment for case {case_no}"},
             {"label": "Cancel", "actionType": "submit",
              "payload": "Not right now — I'll run the risk assessment later."},
-            {"label": "View Underwriting Workbench", "actionType": "navigate", "payload": "underwriting"},
+            workspace,
         ]
     else:
-        summary += "⚠️ **Status: Pre-Underwriting Incomplete.** Follow the sequential gates below to complete clearance:"
-        # "embed" (not "navigate") — this is the pre-underwriting gate stage,
-        # the one case the in-chat case view is for, so remaining gates can
-        # be cleared inline instead of retyping which gate to run next.
-        qa = [{"label": "Open Case", "actionType": "embed", "payload": f"case/{case_id}"}]
-        if e_app != "Verified":
-            qa.append({"label": "1. Generate E-App Link", "actionType": "submit",
-                       "payload": f"Generate e-application link for case {case.get('caseNumber')}"})
+        qa = []
+        if missing_docs:
+            n, nxt = 1, "Upload the missing documents, one at a time."
+            qa.append(upload_documents_action(case_id, case_no, case.get("customer_cnic") or "", missing_docs))
+        elif e_app != "Verified":
+            n, nxt = 2, "Send the e-application link to the customer."
+            qa.append({"label": "Generate E-App Link", "actionType": "submit",
+                       "payload": f"Generate e-application link for case {case_no}"})
             if e_app == "Submitted":
                 qa.append({"label": "Verify E-Application", "actionType": "submit",
-                           "payload": f"Verify e-application for case {case.get('caseNumber')} action verify"})
+                           "payload": f"Verify e-application for case {case_no} action verify"})
         elif acr != "Submitted":
-            qa.append({"label": "2. Submit ACR", "actionType": "submit",
-                       "payload": f"Submit agent confidential report for case {case.get('caseNumber')}"})
+            n, nxt = 3, "File the agent's confidential report."
+            qa.append({"label": "File ACR", "actionType": "submit",
+                       "payload": f"Submit agent confidential report for case {case_no}"})
         elif comp not in ("Passed", "Cleared"):
-            qa.append({"label": "3. Run Compliance Screen", "actionType": "submit",
-                       "payload": f"Run compliance screening for case {case.get('caseNumber')}"})
+            n, nxt = 4, "Run the PEP and sanctions screening."
+            qa.append({"label": "Run PEP Check", "actionType": "submit",
+                       "payload": f"Run compliance screening for case {case_no}"})
         elif ipp != "Realized":
-            qa.append({"label": "4. Process IPP Payment", "actionType": "submit",
-                       "payload": f"Process initial premium payment for case {case.get('caseNumber')}"})
+            n, nxt = 5, "Collect the initial premium payment."
+            qa.append({"label": "Collect Premium", "actionType": "submit",
+                       "payload": f"Process initial premium payment for case {case_no}"})
         elif hist not in ("Clear", "Cleared"):
-            qa.append({"label": "5. Check Insurance History", "actionType": "submit",
-                       "payload": f"Run insurance history check for case {case.get('caseNumber')}"})
-        elif med not in ("Completed", "Waived", "NotRequired"):
-            qa.append({"label": "6. Assess Medical Exam", "actionType": "submit",
-                       "payload": f"Assess medical examination for case {case.get('caseNumber')}"})
-        qa.append({"label": "View Workbench", "actionType": "navigate", "payload": "underwriting"})
+            n, nxt = 6, "Run the insurance history check."
+            qa.append({"label": "Run History Check", "actionType": "submit",
+                       "payload": f"Run insurance history check for case {case_no}"})
+        else:
+            n, nxt = 7, "Assess the medical examination requirement."
+            qa.append({"label": "Assess Medical", "actionType": "submit",
+                       "payload": f"Assess medical examination for case {case_no}"})
+        summary += f"👉 **Next — requirement {n} of 7:** {nxt}"
+        qa.append(workspace)
 
     return {
         "success": True,
@@ -1730,12 +1782,15 @@ async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": (
-                f"🔒 **Gate 2 (ACR) Locked for Case {case.get('caseNumber')}**\n\n"
-                f"**Prerequisite Required:** Gate 1 (E-Application Verification) must be completed before filing the Agent Confidential Report.\n"
-                f"Current E-Application Status: `{e_app}`."
+                f"⚠️ **Gate 2 (ACR) is not ready yet for Case {case.get('caseNumber')}**\n\n"
+                f"**Required first:** Gate 1 (E-Application Verification) must be completed before filing the Agent Confidential Report.\n"
+                f"Current E-Application Status: `{e_app}`.\n\n"
+                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
             ),
             "status": "Locked",
             "quick_actions": [
+                {"label": "Yes, continue anyway", "actionType": "submit",
+                 "payload": f"Submit agent confidential report for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
                 {"label": "1. Generate E-App Link", "actionType": "submit",
                  "payload": f"Generate e-application link for case {case.get('caseNumber')}"},
                 {"label": "Verify E-Application", "actionType": "submit",
@@ -1750,30 +1805,38 @@ async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
     # than allowed to fabricate the KYC/moral-hazard narrative on their behalf.
     # `auto_fill` is set only by the internal demo/autonomous-journey shortcut
     # below, which intentionally bypasses this (no human agent in that loop).
+    #
+    # Not a hard stop: for a demo the user can confirm ("Yes, continue anyway"),
+    # which files a standard ACR on the agent's behalf like the demo journey does.
     if not args.get("auto_fill"):
         role = (ctx.exec_ctx.role or "").strip().lower()
-        if role != "agent":
+        if role != "agent" and not args.get("bypass_prerequisites"):
             return {
                 "success": False,
                 "message": (
-                    f"🔒 **Gate 2 (ACR) requires the assigned Agent** for case **{case.get('caseNumber')}**.\n\n"
-                    f"Only the Agent who met the proposer in person can complete the Agent's Confidential Report. "
-                    f"Please ask the agent on this case to fill it."
+                    f"⚠️ **Gate 2 (ACR) is normally filled by the assigned Agent** for case **{case.get('caseNumber')}**.\n\n"
+                    f"The Agent who met the proposer in person should complete the Agent's Confidential Report — it is required for underwriting. "
+                    f"You can continue anyway (for example in a demo) and a standard report will be filed on the agent's behalf."
                 ),
                 "status": "RequiresAgent",
                 "quick_actions": [
+                    {"label": "Yes, continue anyway", "actionType": "submit",
+                     "payload": f"Submit agent confidential report for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
                     {"label": "Check Gate Status", "actionType": "submit",
                      "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
                 ],
             }
-        return {
-            "__client_execute__": True,
-            "kind": "client_execute",
-            "tool_call": {
-                "name": "submit_agent_confidential_report",
-                "args": {"case_id": case_id, "case_number": case.get("caseNumber")},
-            },
-        }
+        if role == "agent":
+            return {
+                "__client_execute__": True,
+                "kind": "client_execute",
+                "tool_call": {
+                    "name": "submit_agent_confidential_report",
+                    "args": {"case_id": case_id, "case_number": case.get("caseNumber")},
+                },
+            }
+        # Non-agent who confirmed "continue anyway": fall through and file the
+        # standard ACR on the agent's behalf (same path as the demo journey).
 
     rec_map = {
         "STANDARD_RISK": "Recommend",
@@ -1846,12 +1909,15 @@ async def _run_compliance_screening(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": (
-                f"🔒 **Gate 3 (PEP / Sanctions Screening) Locked for Case {case.get('caseNumber')}**\n\n"
-                f"**Prerequisite Required:** Gate 2 (Agent Confidential Report) must be filed and submitted before running PEP / Sanctions Compliance Screening.\n"
-                f"Current ACR Status: `{acr_status}`."
+                f"⚠️ **Gate 3 (PEP / Sanctions Screening) is not ready yet for Case {case.get('caseNumber')}**\n\n"
+                f"**Required first:** Gate 2 (Agent Confidential Report) must be filed and submitted before running PEP / Sanctions Compliance Screening.\n"
+                f"Current ACR Status: `{acr_status}`.\n\n"
+                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
             ),
             "status": "Locked",
             "quick_actions": [
+                {"label": "Yes, continue anyway", "actionType": "submit",
+                 "payload": f"Run compliance screening for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
                 {"label": "2. Submit ACR (Gate 2)", "actionType": "submit",
                  "payload": f"Submit agent confidential report for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -1983,12 +2049,15 @@ async def _process_initial_premium_payment(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": (
-                f"🔒 **Gate 4 (Initial Premium Payment) Locked for Case {case.get('caseNumber')}**\n\n"
-                f"**Prerequisite Required:** Gate 3 (PEP / Sanctions Screening) must be cleared before collecting Section 30 Initial Premium Payment.\n"
-                f"Current Compliance Status: `{comp_status}`."
+                f"⚠️ **Gate 4 (Initial Premium Payment) is not ready yet for Case {case.get('caseNumber')}**\n\n"
+                f"**Required first:** Gate 3 (PEP / Sanctions Screening) must be cleared before collecting Section 30 Initial Premium Payment.\n"
+                f"Current Compliance Status: `{comp_status}`.\n\n"
+                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
             ),
             "status": "Locked",
             "quick_actions": [
+                {"label": "Yes, continue anyway", "actionType": "submit",
+                 "payload": f"Process initial premium payment for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
                 {"label": "3. Compliance Screen (Gate 3)", "actionType": "submit",
                  "payload": f"Run compliance screening for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -2055,12 +2124,15 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": (
-                f"🔒 **Gate 5 (SECP Insurance History) Locked for Case {case.get('caseNumber')}**\n\n"
-                f"**Prerequisite Required:** Gate 4 (Initial Premium Payment) must be realized under Section 30 before conducting cross-industry insurance history screening.\n"
-                f"Current IPP Status: `{ipp_status}`."
+                f"⚠️ **Gate 5 (SECP Insurance History) is not ready yet for Case {case.get('caseNumber')}**\n\n"
+                f"**Required first:** Gate 4 (Initial Premium Payment) must be realized under Section 30 before conducting cross-industry insurance history screening.\n"
+                f"Current IPP Status: `{ipp_status}`.\n\n"
+                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
             ),
             "status": "Locked",
             "quick_actions": [
+                {"label": "Yes, continue anyway", "actionType": "submit",
+                 "payload": f"Run insurance history check for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
                 {"label": "4. Initial Premium (Gate 4)", "actionType": "submit",
                  "payload": f"Process initial premium payment for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -2119,12 +2191,15 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
         return {
             "success": False,
             "message": (
-                f"🔒 **Gate 6 (Medical Examination) Locked for Case {case.get('caseNumber')}**\n\n"
-                f"**Prerequisite Required:** Gate 5 (Insurance History Check) must be completed before assessing Non-Medical Limits (NML) and diagnostic exams.\n"
-                f"Current History Status: `{hist_status}`."
+                f"⚠️ **Gate 6 (Medical Examination) is not ready yet for Case {case.get('caseNumber')}**\n\n"
+                f"**Required first:** Gate 5 (Insurance History Check) must be completed before assessing Non-Medical Limits (NML) and diagnostic exams.\n"
+                f"Current History Status: `{hist_status}`.\n\n"
+                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
             ),
             "status": "Locked",
             "quick_actions": [
+                {"label": "Yes, continue anyway", "actionType": "submit",
+                 "payload": f"Assess medical examination for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
                 {"label": "5. Insurance History (Gate 5)", "actionType": "submit",
                  "payload": f"Run insurance history check for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -2365,7 +2440,7 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
             "quick_actions": [
                 {"label": "Run AI Risk Assessment", "actionType": "submit",
                  "payload": f"Run risk assessment for case {case_no}"},
-                {"label": "Open Underwriting Workbench", "actionType": "navigate", "payload": "underwriting"},
+                {"label": "Open Underwriting Workbench", "actionType": "embed", "payload": "underwriting"},
             ],
         }
 
@@ -3036,6 +3111,47 @@ def _demo_family_group() -> tuple[str, list[dict]]:
     return f"The {surname} Family", members
 
 
+async def _create_demo_proposal(ctx: Ctx, customer_id: str, age: int, income: float) -> Optional[dict]:
+    """A Draft proposal on a real, active catalog plan that this demo customer
+    qualifies for (age, term and income-multiple limits), so the demo goes
+    through the same proposal steps as a form-registered customer. Returns the
+    chosen terms, or None if no plan fits / the call fails — the caller then
+    falls back to the plain demo result."""
+    try:
+        res = await ctx.client.get(ctx.tsvc("/insurance-plans"))
+        res.raise_for_status()
+        plans = res.json()
+    except httpx.HTTPError:
+        return None
+    for p in plans if isinstance(plans, list) else []:
+        if str(p.get("status")) != "Active" or str(p.get("category", "Individual")).lower() != "individual":
+            continue
+        if p.get("insurance_type") in ("GROUP_LIFE", "CHILD_EDUCATION_MARRIAGE"):
+            continue  # need a group / a named dependent
+        if not (p.get("entry_age_min", 0) <= age <= p.get("entry_age_max", 120)):
+            continue
+        t_min, t_max = int(p.get("term_min_years") or 1), int(p.get("term_max_years") or 30)
+        term = min(max(10, t_min), t_max)
+        if p.get("max_maturity_age") and age + term > p["max_maturity_age"]:
+            term = int(p["max_maturity_age"]) - age
+        if term < t_min:
+            continue
+        multiple = min(float(p.get("max_income_multiple") or 10), 10.0)
+        coverage = int(min(income * multiple, 20_000_000) // 100_000 * 100_000)
+        if coverage <= 0:
+            continue
+        try:
+            r = await ctx.client.post(ctx.tsvc(f"/customers/{customer_id}/policies"), json={
+                "plan_id": p.get("id"), "product_name": p.get("label"),
+                "insurance_type": p.get("insurance_type"), "coverage_amount": coverage, "term_years": term,
+            })
+            r.raise_for_status()
+        except httpx.HTTPError:
+            continue
+        return {"plan": p.get("label"), "coverage": coverage, "term": term}
+    return None
+
+
 @handles("quick_start_workflow")
 async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
     agent, error = await _resolve_lead_agent(args, ctx)
@@ -3066,6 +3182,26 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
     )
 
     if not args.get("full_journey"):
+        proposal = await _create_demo_proposal(
+            ctx, customer["id"], date.today().year - birth_year, float(demo["declared_income"])
+        )
+        if proposal:
+            # Same route as a customer registered through the form: the browser
+            # now takes the proposal through its steps (Draft → Submitted → Under
+            # Review → Send to Underwriting) and then offers the underwriting paths.
+            return {
+                "success": True,
+                "message": (
+                    f"Demo applicant created.\n\n{profile}\n"
+                    f"- Proposal: {proposal['plan']}, PKR {proposal['coverage']:,} over {proposal['term']} years (Draft)\n\n"
+                    "The proposal steps appear automatically below — do NOT describe or list next steps yourself, "
+                    "just acknowledge in one short sentence."
+                ),
+                "demo_customer": customer,
+                "proposal_journey": {"customer_id": customer["id"], "name": name},
+                "last_action": _action("quick_start_workflow", "customer", demo["cnic"],
+                                       build_route("admin/leads", demo["cnic"]), f"Demo customer {name} created"),
+            }
         return {
             "success": True,
             "message": f"Demo applicant created.\n\n{profile}\n\nNext: run the autonomous journey, or step through manually.",
@@ -3125,7 +3261,7 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
              "payload": f"Run risk assessment for case {case_no}"},
             {"label": "Check Pre-Underwriting Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for case {case_no}"},
-            {"label": "View case", "actionType": "navigate", "payload": route},
+            {"label": "View case", "actionType": "embed", "payload": f"case/{case_id}"},
         ],
     }
 

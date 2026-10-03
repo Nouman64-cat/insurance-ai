@@ -216,13 +216,22 @@ def get_dashboard_stats() -> str:
 # Write / mutate — customers
 # ═══════════════════════════════════════════════════════════════════════════
 
-@tool(args_schema=EmptyArgs)
+class ResolveCustomerTypeArgs(BaseModel):
+    keep_agent: Optional[bool] = Field(
+        default=False,
+        description="Set true ONLY when the user pressed 'Go back' to choose the customer type again "
+        "(their message says keep_agent true) — the agent they already picked is kept instead of asked again.",
+    )
+
+
+@tool(args_schema=ResolveCustomerTypeArgs)
 def resolve_customer_type(**kwargs) -> str:
     """Call this FIRST whenever the user asks to add/register a new customer but hasn't
     said whether it's an Individual, a Corporate (Organization), or a Family group. Presents
     the three as clickable buttons and its result tells you which of add_customer /
     add_organization / add_family_group to call next. Never ask this question yourself in
-    plain text — always call this tool."""
+    plain text — always call this tool. If the user pressed 'Go back' to choose the type
+    again, call it with keep_agent=true."""
     return "{}"
 
 
@@ -696,12 +705,26 @@ def verify_e_application(**kwargs) -> str:
     return "{}"
 
 
+class GateRunArgs(CaseLookupArgs):
+    """CaseLookupArgs plus the demo "continue anyway" flag, for gates that warn when an earlier one is incomplete."""
+    bypass_prerequisites: Optional[bool] = Field(
+        default=False,
+        description="Set true ONLY when the user has just confirmed they want to continue anyway "
+        "(clicked 'Yes, continue anyway') past a warning that an earlier step isn't done. Never set it on a first request.",
+    )
+
+
 class SubmitACRArgs(BaseModel):
     case_number: Optional[str] = None
     applicant_name: Optional[str] = None
     cnic: Optional[str] = None
     recommendation: Optional[Literal["Recommend", "RecommendWithCaution", "DoNotRecommend", "STANDARD_RISK"]] = "Recommend"
     remarks: Optional[str] = "Applicant verified in person. Moral hazard and financial standing satisfactory."
+    bypass_prerequisites: Optional[bool] = Field(
+        default=False,
+        description="Set true ONLY when the user has just confirmed they want to continue anyway "
+        "(clicked 'Yes, continue anyway') past a warning that an earlier step isn't done. Never set it on a first request.",
+    )
 
 
 @tool(args_schema=SubmitACRArgs)
@@ -710,7 +733,7 @@ def submit_agent_confidential_report(**kwargs) -> str:
     return "{}"
 
 
-@tool(args_schema=CaseLookupArgs)
+@tool(args_schema=GateRunArgs)
 def run_compliance_screening(**kwargs) -> str:
     """Gate 3: Run automated PEP, Sanctions, AML, and SECP compliance screening for the pre-underwriting case. If it comes back Flagged, do not treat that as an error — offer to proceed anyway."""
     return "{}"
@@ -727,6 +750,11 @@ class ProcessIPPArgs(BaseModel):
     applicant_name: Optional[str] = None
     cnic: Optional[str] = None
     payment_method: Optional[str] = Field(default="JazzCash", description="Payment method: JazzCash, Easypaisa, Card, BankTransfer.")
+    bypass_prerequisites: Optional[bool] = Field(
+        default=False,
+        description="Set true ONLY when the user has just confirmed they want to continue anyway "
+        "(clicked 'Yes, continue anyway') past a warning that an earlier step isn't done. Never set it on a first request.",
+    )
 
 
 @tool(args_schema=ProcessIPPArgs)
@@ -735,7 +763,7 @@ def process_initial_premium_payment(**kwargs) -> str:
     return "{}"
 
 
-@tool(args_schema=CaseLookupArgs)
+@tool(args_schema=GateRunArgs)
 def run_insurance_history_check(**kwargs) -> str:
     """Gate 5: Run the SECP shared industry insurance history screen, checking cumulative sum assured against HLV and policy churning."""
     return "{}"
@@ -745,6 +773,11 @@ class AssessMedicalExamArgs(BaseModel):
     case_number: Optional[str] = None
     applicant_name: Optional[str] = None
     cnic: Optional[str] = None
+    bypass_prerequisites: Optional[bool] = Field(
+        default=False,
+        description="Set true ONLY when the user has just confirmed they want to continue anyway "
+        "(clicked 'Yes, continue anyway') past a warning that an earlier step isn't done. Never set it on a first request.",
+    )
 
 
 @tool(args_schema=AssessMedicalExamArgs)

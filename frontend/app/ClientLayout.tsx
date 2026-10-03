@@ -24,7 +24,12 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
   // by CopilotInterface's navigate handlers) render the page's own content
   // only — the surrounding sidebar/topbar/footer would just be a redundant,
   // useless-to-click copy nested inside an already-chrome-full window.
-  const isPortalEmbed = searchParams?.get("_portal") === "1";
+  // Also true for any page loaded inside the Copilot's frame, even after a link
+  // inside it navigated away from the URL that carried ?_portal=1 — otherwise
+  // the whole app (sidebar, top bar) appeared nested inside the chat panel.
+  const [isFramed, setIsFramed] = useState(false);
+  useEffect(() => { setIsFramed(window.parent !== window); }, []);
+  const isPortalEmbed = searchParams?.get("_portal") === "1" || isFramed;
   const isLoginPage = pathname === "/login";
   // Public, unauthenticated pages meant to be opened by someone outside the
   // portal (e.g. a customer with no account) — must skip both the auth

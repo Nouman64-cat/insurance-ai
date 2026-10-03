@@ -13,10 +13,12 @@ export interface QuickAction {
   // takes, so it resumes a pending clarify interrupt or starts a new turn
   // exactly as typing the sentence would have.
   // "embed" is distinct from "navigate": it opens the destination inline in
-  // the chat's case panel instead of a new tab. Reserved for the 6
-  // pre-underwriting gate stages specifically — everywhere else in the app
-  // still opens a normal new tab via "navigate".
-  actionType: "navigate" | "submit" | "upload" | "confirm" | "select" | "download" | "embed";
+  // the chat's case panel instead of a new tab. Used for the underwriting
+  // process (case view, gates, workbench, results) and the customer intake
+  // form — everywhere else in the app still opens a normal new tab via "navigate".
+  // "proposal_step" is handled in the browser, not sent to the model: it moves a
+  // proposal one status forward (payload is JSON, see CopilotInterface).
+  actionType: "navigate" | "submit" | "upload" | "confirm" | "select" | "download" | "embed" | "proposal_step" | "uw_requirements";
   payload: string;
   // "select" only.
   options?: { label: string; value: string }[];
@@ -120,6 +122,7 @@ export type AgentStreamEvent =
   | { type: "quick_actions"; actions: QuickAction[] }
   | { type: "step"; id: string; label: string; status: ProcessStep["status"] }
   | { type: "navigate"; route: string; entity_id: string; highlight: boolean; embed?: boolean }
+  | { type: "proposal_journey"; customer_id: string; name: string }
   | { type: "assessment"; assessment: AssessmentScores }
   | { type: "family_members"; family_members: FamilyMember[] }
   | { type: "done"; thread_id: string }

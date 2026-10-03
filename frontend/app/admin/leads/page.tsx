@@ -1150,7 +1150,17 @@ export default function LeadsHubPage() {
         open={activeAdd?.type === "INDIVIDUAL" && activeAdd.mode === "full"}
         mode="create"
         onClose={() => setActiveAdd(null)}
-        onSaved={handleAddSaved}
+        onSaved={(message, created) => {
+          handleAddSaved(message, created);
+          // Registered with full details — hand back to the Copilot (if this
+          // page is embedded in it) so the conversation carries on with the
+          // next step instead of stopping on the leads board. No-op otherwise.
+          if (created) {
+            notifyParentPortal("customer_saved", {
+              id: created.id, name: created.name, cnic: created.cnic, hasProposal: created.hasProposal,
+            });
+          }
+        }}
       />
       {editEntityData?.type === "INDIVIDUAL" && (
         <CustomerFormModal

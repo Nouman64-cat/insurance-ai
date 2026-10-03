@@ -11,6 +11,10 @@ import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
 import { QuickActionSelect } from "./agent/QuickActionSelect";
+import { DocumentUploadDialog } from "./agent/DocumentUploadDialog";
+import type { DocumentUploadResult } from "./agent/DocumentUploadDialog";
+import { getQuote, listQuotes, updateQuote } from "../app/services/quotes";
+import type { QuoteDetail } from "../app/services/quotes";
 import type { AgentMessage, QuickAction, ProcessStep } from "@/lib/agent/types";
 
 import { useCopilot } from "./CopilotContext";
@@ -473,7 +477,11 @@ export function CopilotInterface() {
     storageKey: STORAGE_KEY,
     welcomeMessage: WELCOME,
     onNavigate: handleAgentNavigate,
+    // Demo data: the customer comes with a Draft proposal, so run the same
+    // proposal steps as after the form. (Defined further down — see the ref.)
+    onProposalJourney: (customerId, name) => startProposalJourneyRef.current?.(customerId, name),
   });
+  const startProposalJourneyRef = useRef<((customerId: string, name: string) => void) | null>(null);
 
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -498,13 +506,209 @@ export function CopilotInterface() {
   // iframe directly in the conversation instead of opening a new tab, so the
   // user tracks a case's gates, documents and results without leaving the chat.
   const [casePanel, setCasePanel] = useState<{ url: string; title: string } | null>(null);
-  // Bumped on every new message while the panel is open, forcing the iframe
-  // to reload — so gate/document/decision actions taken through chat show up
-  // in the embedded view immediately instead of it sitting on a stale snapshot.
-  const [casePanelRefresh, setCasePanelRefresh] = useState(0);
+  // Gate / document / decision actions taken through chat must show up in the
+  // open case view. The iframe used to be reloaded on every new message, which
+  // threw away whatever the user was doing in it (scroll position, open
+  // sections, a half-filled form) at random moments. Now it stays mounted and is
+  // just told to re-read its data; pages that don't listen simply keep what they
+  // have.
+  const casePanelFrameRef = useRef<HTMLIFrameElement | null>(null);
+  const casePanelScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollCasePanel = (dir: -1 | 1) =>
+    casePanelScrollRef.current?.scrollBy({ left: dir * 360, behavior: "smooth" });
   useEffect(() => {
-    if (casePanel) setCasePanelRefresh((n) => n + 1);
+    if (!casePanel) return;
+    casePanelFrameRef.current?.contentWindow?.postMessage(
+      { source: "insurance-ai-copilot", type: "refresh" },
+      window.location.origin
+    );
   }, [messages.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Proposal journey, run from the chat ───────────────────────────────────
+  // Mirrors the manual Proposal page's workflow and its per-status options
+  // (getAvailableActions in app/proposal/page.tsx) — one chat button per
+  // option. Each is a direct API call with a fixed follow-up message, not a
+  // model turn, so the steps can't be skipped or reordered.
+  type ProposalStepId =
+    | "submit" | "review" | "underwrite" | "request_info"
+    | "back_draft" | "back_submitted" | "resubmit" | "return_review" | "reject";
+  type ProposalState = "draft" | "submitted" | "review" | "info";
+  type ProposalBase = { customerId: string; quoteId: string; policyId: string; name: string; hasMissing: boolean };
+  // `from` is the state the buttons were offered in, so a cancelled action can offer them again.
+  type ProposalStep = ProposalBase & { step: ProposalStepId; from: ProposalState };
+
+  // What each button does: the status it sets and the state the proposal is in
+  // afterwards (which decides the next set of buttons).
+  const PROPOSAL_STEPS: Record<Exclude<ProposalStepId, "underwrite">, { label: string; status: string; to: ProposalState | null; done: string }> = {
+    submit:         { label: "Submit Proposal",        status: "Proposed",             to: "submitted", done: "is now **Submitted**." },
+    review:         { label: "Start Review",           status: "UnderReview",          to: "review",    done: "is now **Under Review**." },
+    request_info:   { label: "Request Info",           status: "InformationRequested", to: "info",      done: "is now **Info Requested** — more information is needed." },
+    back_draft:     { label: "Step Back to Draft",     status: "Quoted",               to: "draft",     done: "is back to **Draft**." },
+    back_submitted: { label: "Step Back to Submitted", status: "Proposed",             to: "submitted", done: "is back to **Submitted**." },
+    resubmit:       { label: "Re-Submit Proposal",     status: "Proposed",             to: "submitted", done: "is **Submitted** again." },
+    return_review:  { label: "Return to Under Review", status: "UnderReview",          to: "review",    done: "is back **Under Review**." },
+    reject:         { label: "Reject Proposal",        status: "Declined",             to: null,        done: "has been **Rejected**." },
+  };
+  // The options offered in each state, the main path first — same lists as the
+  // Proposal page shows for Draft / Submitted / Under Review / Info Requested.
+  const PROPOSAL_OPTIONS: Record<ProposalState, { ids: ProposalStepId[]; next: string }> = {
+    draft:     { ids: ["submit", "request_info", "reject"],                         next: "Next step: submit the proposal." },
+    submitted: { ids: ["review", "request_info", "back_draft", "reject"],           next: "Next step: start the review." },
+    review:    { ids: ["underwrite", "request_info", "back_submitted", "reject"],   next: "Next step: send it to underwriting.\n\n⚠️ **Choose carefully** — once you send it to underwriting, you can't go back." },
+    info:      { ids: ["resubmit", "return_review", "reject"],                      next: "Once the information is in, re-submit the proposal." },
+  };
+  const proposalActions = (state: ProposalState, base: ProposalBase): QuickAction[] =>
+    PROPOSAL_OPTIONS[state].ids
+      .filter((step) => !(step === "submit" && base.hasMissing))
+      .map((step) => ({
+      label: step === "underwrite" ? "Send to Underwriting" : PROPOSAL_STEPS[step].label,
+      actionType: "proposal_step",
+      payload: JSON.stringify({ ...base, step, from: state }),
+    }));
+
+  // The summary shown under each step. Built from the live proposal (the same
+  // data the Proposal page's detail window reads), so it follows what actually
+  // happened and differs per status, like that window does.
+  const PROPOSAL_TYPE_LABELS: Record<string, string> = {
+    TERM_LIFE: "Term Life", WHOLE_LIFE: "Whole Life", ENDOWMENT: "Endowment / Savings Plan",
+    CHILD_EDUCATION_MARRIAGE: "Child Education & Marriage Plan", GROUP_LIFE: "Group Life",
+    SAVINGS: "Savings / Investment Plan", SINGLE_PREMIUM: "Single Premium Investment", HEALTH_CASH: "Hospital Cash / Health Plan",
+  };
+  const pkr = (n: number) => `Rs. ${Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const missingCustomerFields = (d: QuoteDetail) =>
+    [
+      !d.customer_dob && "Date of Birth",
+      !d.customer_gender && "Gender",
+      !d.customer_occupation && "Occupation",
+      !d.customer_declared_income && "Annual Income",
+    ].filter(Boolean) as string[];
+
+  const proposalSummary = (d: QuoteDetail, state: ProposalState | "rejected"): string => {
+    const type = PROPOSAL_TYPE_LABELS[d.insurance_type] ?? d.insurance_type;
+    const figures =
+      `- **Plan:** ${d.plan_label} (${type})\n` +
+      `- **Sum assured:** ${pkr(d.coverage_amount)} over ${d.term_years} years\n` +
+      `- **Annual premium:** ${pkr(d.total_premium)} (${pkr(d.base_premium)} + risk loading ${pkr(d.loading_applied)})`;
+    const ref = `Ref ${d.quote_id.slice(0, 8).toUpperCase()}`;
+    const missing = missingCustomerFields(d);
+    const created = new Date(d.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+
+    if (state === "draft") {
+      return (
+        `**Proposal statement** · ${ref}\n\n` +
+        `We are pleased to present the following insurance proposal for **${d.customer_name}**. Based on the information provided, we propose a **${type}** policy under the **${d.plan_label}** plan, providing a sum assured of **${pkr(d.coverage_amount)}** over a term of **${d.term_years} years**. ` +
+        `The total annual premium for this coverage is **${pkr(d.total_premium)}** (expected premium of ${pkr(d.base_premium)} plus a risk of ${pkr(d.loading_applied)}). This proposal is valid subject to satisfactory underwriting assessment and is generated as of ${created}.` +
+        (missing.length ? `\n\n⚠️ **Missing information** — complete this before the proposal can be submitted: ${missing.join(", ")}.` : "")
+      );
+    }
+    if (state === "submitted") {
+      return `**Submitted proposal** · ${ref}\n\n${figures}\n- **Customer:** ${d.customer_name} (${d.customer_cnic})\n\nIt is now waiting for review.`;
+    }
+    if (state === "review") {
+      return (
+        `**Proposal under review** · ${ref}\n\n${figures}\n` +
+        `- **Assigned underwriter:** ${d.assigned_underwriter_name || "Unassigned"}\n\n` +
+        `_Sending to underwriting opens an underwriting case for this exact proposal — documents, AI risk scoring and the final decision all happen there._`
+      );
+    }
+    if (state === "info") {
+      return (
+        `**Information requested** · ${ref}\n\n${figures}\n\n` +
+        (missing.length
+          ? `**Information still needed:** ${missing.join(", ")}. Complete it on the customer's profile, then re-submit.`
+          : `No customer fields are missing — re-submit once the requested information has been received.`)
+      );
+    }
+    return `**Rejected proposal** · ${ref}\n\n${figures}\n- **Customer:** ${d.customer_name} (${d.customer_cnic})`;
+  };
+
+  const startProposalJourney = useCallback(async (customerId: string, name: string) => {
+    // The quote row is written by a background worker just after the plan is
+    // saved, so look for it for a short while.
+    let quote: Awaited<ReturnType<typeof listQuotes>>[number] | undefined;
+    for (let i = 0; i < 15 && !quote; i++) {
+      try {
+        quote = (await listQuotes()).find((q) => q.customer_id === customerId && !q.quote_id.startsWith("draft-"));
+      } catch { /* retry */ }
+      if (!quote) await new Promise((r) => setTimeout(r, 2000));
+    }
+    if (!quote) {
+      addAssistantMessage(
+        `✅ **${name}** has been registered, but the proposal isn't ready yet. Open **Proposal** in a moment to continue it.`,
+        [{ label: "Open Proposals", actionType: "navigate", payload: "proposal" }]
+      );
+      return;
+    }
+    const detail = await getQuote(quote.quote_id).catch(() => null);
+    const base: ProposalBase = {
+      customerId, quoteId: quote.quote_id, policyId: quote.policy_id, name,
+      hasMissing: detail ? missingCustomerFields(detail).length > 0 : false,
+    };
+    addAssistantMessage(
+      `✅ **${name}** has been registered and the proposal is created as a **Draft**.\n\n` +
+        (detail ? `${proposalSummary(detail, "draft")}\n\n` : "") +
+        PROPOSAL_OPTIONS.draft.next,
+      proposalActions("draft", base)
+    );
+  }, [addAssistantMessage]);
+
+  startProposalJourneyRef.current = startProposalJourney;
+
+  const runProposalStep = useCallback(async (p: ProposalStep) => {
+    const { step, from, ...base } = p;
+    try {
+      if (step === "underwrite") {
+        const tenantId = localStorage.getItem("tenant_id");
+        const res = await api.post(`/tenants/${tenantId}/cases`, {
+          customer_id: p.customerId,
+          policy_id: p.policyId,
+          caseType: "Underwriting",
+          sourceChannel: "Online",
+        });
+        const caseId = res.data.caseld;
+        const caseNo = res.data.caseNumber || p.name;
+        // Two ways to carry on, both ending in the same underwriting. Named for
+        // what the user gets rather than how it is built.
+        addAssistantMessage(
+          `**${p.name}**'s proposal has been **sent to underwriting** — case **${caseNo}** is open.\n\n` +
+            `Underwriting has 7 requirements (documents, e-application, agent report, PEP & sanctions screening, initial premium, insurance history and medical examination). How would you like to work through them?\n\n` +
+            `- **Guide me step by step** — I'll take you through them one at a time, explaining each.\n` +
+            `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
+          [
+            { label: "Guide me step by step", actionType: "uw_requirements", payload: JSON.stringify({ caseId, caseNo }) },
+            { label: "Open the case workspace", actionType: "embed", payload: `case/${caseId}?autoRun=true` },
+          ]
+        );
+        return;
+      }
+      const def = PROPOSAL_STEPS[step];
+      if (step === "reject" && !window.confirm(`Reject ${p.name}'s proposal? This cannot be undone.`)) {
+        addAssistantMessage(`Okay — **${p.name}**'s proposal was not rejected. ${PROPOSAL_OPTIONS[from].next}`, proposalActions(from, base));
+        return;
+      }
+      await updateQuote(p.quoteId, { status: def.status });
+      const detail = await getQuote(p.quoteId).catch(() => null);
+      const fresh: ProposalBase = { ...base, hasMissing: detail ? missingCustomerFields(detail).length > 0 : base.hasMissing };
+      if (def.to) {
+        addAssistantMessage(
+          `**${p.name}**'s proposal ${def.done}\n\n` +
+            (detail ? `${proposalSummary(detail, def.to)}\n\n` : "") +
+            PROPOSAL_OPTIONS[def.to].next,
+          proposalActions(def.to, fresh)
+        );
+      } else {
+        addAssistantMessage(`**${p.name}**'s proposal ${def.done}\n\n${detail ? `${proposalSummary(detail, "rejected")}\n\n` : ""}No further steps for this proposal.`, [
+          { label: "Add another customer", actionType: "submit", payload: "Add a new customer" },
+          { label: "View Proposals", actionType: "navigate", payload: "proposal" },
+        ]);
+      }
+    } catch (err: any) {
+      addAssistantMessage(
+        `⚠️ Couldn't complete that step: ${err?.response?.data?.detail ?? err?.message ?? "unknown error"}. You can try again.`,
+        [{ label: step === "underwrite" ? "Send to Underwriting" : PROPOSAL_STEPS[step].label, actionType: "proposal_step", payload: JSON.stringify(p) }]
+      );
+    }
+  }, [addAssistantMessage]);
 
   // Reverse direction of the sync above: the embedded case page (see
   // case/[id]/page.tsx's notifyParentPortal) posts a message here whenever
@@ -529,6 +733,12 @@ export function CopilotInterface() {
             { label: "View Leads", actionType: "navigate", payload: "admin/leads" },
           ]
         );
+      } else if (event.data.type === "customer_saved") {
+        // The form's job ends here — it only collected the details (including
+        // the plan). Close it and run the proposal in the chat, step by step.
+        setCasePanel(null);
+        const { id, name } = event.data as { id?: string; name?: string };
+        if (id) startProposalJourney(id, name || "The customer");
       } else if (event.data.type === "document_uploaded") {
         send("I've uploaded a document for this case in the case view. Please re-check the document checklist and tell me what's next.");
       } else if (event.data.type === "gates_cleared") {
@@ -554,7 +764,7 @@ export function CopilotInterface() {
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
-  }, [casePanel, isLoading, send, addAssistantMessage]);
+  }, [casePanel, isLoading, send, addAssistantMessage, startProposalJourney]);
 
   useEffect(() => {
     if (selectedFile && selectedFile.type.startsWith("image/")) {
@@ -597,6 +807,101 @@ export function CopilotInterface() {
   const pendingUploadRef = useRef<
     { document_type: string; cnic?: string; claim_id?: string; claim_number?: string } | null
   >(null);
+
+  // ── Underwriting requirements, shown from the chat ────────────────────────
+  // The 7 prerequisites the case page's checklist shows (documents + the six
+  // clearance gates), read straight from the case and rendered here with the
+  // next one's button — not relayed through the model, so the list and its
+  // buttons are always there. Gate actions still run as normal chat requests.
+  const showUnderwritingRequirements = useCallback(async (caseId: string, caseNo?: string) => {
+    try {
+      const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
+      const res = await api.get(`/tenants/${tenantId}/cases/${caseId}/detail`);
+      const d = res.data;
+      const no: string = caseNo || d.case?.caseNumber || caseId;
+      const pre = d.pre_underwriting_status || {};
+      const missingDocs: string[] = d.document_checklist?.missing ?? [];
+      const eApp = pre.e_application ?? "NotStarted", acr = pre.acr ?? "NotStarted", comp = pre.compliance ?? "NotRun";
+      const ipp = pre.ipp ?? "NotStarted", hist = pre.insurance_history ?? "NotStarted", med = pre.medical_exam ?? "NotAssessed";
+
+      const reqs: { name: string; status: string; ok: boolean; detail: string }[] = [
+        { name: "Mandatory Documents Checklist", status: missingDocs.length ? `Missing (${missingDocs.length})` : "Complete", ok: missingDocs.length === 0,
+          detail: missingDocs.length ? `Missing required document(s): ${missingDocs.join(", ")}.` : "All required documents are uploaded." },
+        { name: "Customer E-Application Questionnaire", status: eApp, ok: eApp === "Verified",
+          detail: "The customer's health disclosures questionnaire — send the link, then verify it once submitted." },
+        { name: "Agent's Confidential Report (ACR)", status: acr, ok: acr === "Submitted",
+          detail: "The agent's own confidential assessment of the applicant, to be filed." },
+        { name: "PEP & Sanctions Screening", status: comp, ok: ["Passed", "Cleared"].includes(comp),
+          detail: "PEP and AML screening of the applicant against watchlists." },
+        { name: "Initial Premium Payment (IPP)", status: ipp, ok: ipp === "Realized",
+          detail: "Collect the initial premium payment so cover can start." },
+        { name: "Insurance History Clearance", status: hist, ok: ["Clear", "Cleared"].includes(hist),
+          detail: "Prior policy coverage and over-insurance history check." },
+        { name: "Medical Examination / NML Grid", status: med, ok: ["Completed", "Waived", "NotRequired"].includes(med),
+          detail: "Non-medical limit grid or panel diagnostic check, depending on the cover amount." },
+      ];
+      const doneCount = reqs.filter((r) => r.ok).length;
+      const icon = (r: { ok: boolean; status: string }) => (r.ok ? "✅" : /flag|fail|reject/i.test(r.status) ? "❌" : "⏳");
+      const list = reqs.map((r, i) => `${icon(r)} **${i + 1}. ${r.name}** — \`${r.status}\`  \n   _${r.detail}_`).join("\n\n");
+
+      const workspace: QuickAction = { label: "Open the case workspace", actionType: "embed", payload: `case/${caseId}` };
+      const act = (label: string, payload: string): QuickAction => ({ label, actionType: "submit", payload });
+      let actions: QuickAction[];
+      let footer: string;
+      if (reqs.every((r) => r.ok)) {
+        footer = "**All 7 requirements are complete.** The case is ready for AI underwriting.";
+        actions = [act("Run AI Underwriting", `Run risk assessment for case ${no}`), workspace];
+      } else if (!reqs[0].ok) {
+        footer = "👉 **Next — requirement 1 of 7:** upload the missing documents.";
+        actions = [{
+          label: "Upload Documents", actionType: "upload",
+          payload: JSON.stringify({ document_types: missingDocs, case_id: caseId, case_number: no, cnic: d.customer?.cnic || "" }),
+        }, workspace];
+      } else if (!reqs[1].ok) {
+        footer = "👉 **Next — requirement 2 of 7:** send the e-application link to the customer.";
+        actions = [act("Generate E-App Link", `Generate e-application link for case ${no}`)];
+        if (eApp === "Submitted") actions.push(act("Verify E-Application", `Verify e-application for case ${no} action verify`));
+        actions.push(workspace);
+      } else if (!reqs[2].ok) {
+        footer = "👉 **Next — requirement 3 of 7:** file the agent's confidential report.";
+        actions = [act("File ACR", `Submit agent confidential report for case ${no}`), workspace];
+      } else if (!reqs[3].ok) {
+        footer = "👉 **Next — requirement 4 of 7:** run the PEP and sanctions screening.";
+        actions = [act("Run PEP Check", `Run compliance screening for case ${no}`), workspace];
+      } else if (!reqs[4].ok) {
+        footer = "👉 **Next — requirement 5 of 7:** collect the initial premium payment.\n\n⚠️ **Choose carefully** — a collected premium can't be undone from here.";
+        actions = [act("Collect Premium", `Process initial premium payment for case ${no}`), workspace];
+      } else if (!reqs[5].ok) {
+        footer = "👉 **Next — requirement 6 of 7:** run the insurance history check.";
+        actions = [act("Run History Check", `Run insurance history check for case ${no}`), workspace];
+      } else {
+        footer = "👉 **Next — requirement 7 of 7:** assess the medical examination requirement.";
+        actions = [act("Assess Medical", `Assess medical examination for case ${no}`), workspace];
+      }
+      addAssistantMessage(`### Underwriting requirements for case **${no}** — ${doneCount} / 7 ready\n\n${list}\n\n${footer}`, actions);
+    } catch (err: any) {
+      addAssistantMessage(`⚠️ Couldn't load the underwriting requirements: ${err?.response?.data?.detail ?? err?.message ?? "unknown error"}.`, [
+        { label: "Try again", actionType: "uw_requirements", payload: JSON.stringify({ caseId, caseNo }) },
+      ]);
+    }
+  }, [addAssistantMessage]);
+
+  // Popup for a case's required documents (one slot per document type), opened
+  // by an "Upload Documents" button whose payload lists the types.
+  const [docDialog, setDocDialog] = useState<{ case_id: string; case_number?: string; document_types: string[] } | null>(null);
+
+  const handleDocDialogDone = useCallback(async (result: DocumentUploadResult) => {
+    const d = docDialog;
+    setDocDialog(null);
+    if (!d) return;
+    if (result.uploaded.length) setUploadedDocs((prev) => [...prev, ...result.uploaded]);
+    const lines: string[] = [];
+    if (result.uploaded.length) lines.push(`✅ Uploaded: ${result.uploaded.join(", ")}.`);
+    if (result.failed.length) lines.push(`⚠️ Couldn't upload: ${result.failed.map((f) => `${f.type} (${f.reason})`).join("; ")}.`);
+    if (lines.length) addAssistantMessage(lines.join("\n\n"));
+    // Then straight on to whatever is next (or the remaining documents).
+    await showUnderwritingRequirements(d.case_id, d.case_number);
+  }, [docDialog, addAssistantMessage, showUnderwritingRequirements]);
 
   useEffect(() => { selectedFileRef.current = selectedFile; }, [selectedFile]);
 
@@ -1065,8 +1370,30 @@ export function CopilotInterface() {
       const path = action.payload.startsWith('/') ? action.payload : `/${action.payload}`;
       const sep = path.includes('?') ? '&' : '?';
       setCasePanel({ url: `${window.location.origin}${path}${sep}_portal=1`, title: routeLabel(action.payload) });
+    } else if (action.actionType === "proposal_step") {
+      runProposalStep(JSON.parse(action.payload));
+    } else if (action.actionType === "uw_requirements") {
+      const { caseId, caseNo } = JSON.parse(action.payload);
+      showUnderwritingRequirements(caseId, caseNo);
+    } else if (action.actionType === "submit" && /^Check pre-underwriting status for case (\S+)/.test(action.payload)) {
+      // The "Check Gate Status" button every gate result ends with — answer it
+      // here rather than asking the model, so the list and its buttons are
+      // always shown. Falls back to a normal request if the case can't be found.
+      const caseNo = action.payload.match(/^Check pre-underwriting status for case (\S+)/)![1];
+      const tenantId = localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
+      api.get(`/tenants/${tenantId}/cases`)
+        .then((r) => {
+          const c = (r.data || []).find((x: any) => x.caseNumber === caseNo);
+          if (c) showUnderwritingRequirements(c.caseld || c.id, caseNo);
+          else handleSubmit(undefined, action.payload);
+        })
+        .catch(() => handleSubmit(undefined, action.payload));
     } else if (action.actionType === "upload") {
       const data = JSON.parse(action.payload);
+      if (Array.isArray(data.document_types) && data.document_types.length && data.case_id) {
+        setDocDialog({ case_id: data.case_id, case_number: data.case_number, document_types: data.document_types });
+        return;
+      }
       pendingUploadRef.current = data;
       fileInputRef.current?.click();
     } else if (action.actionType === "confirm") {
@@ -1076,7 +1403,7 @@ export function CopilotInterface() {
     } else {
       handleSubmit(undefined, action.payload);
     }
-  }, [router, resolveInterrupt, handleSubmit]);
+  }, [router, resolveInterrupt, handleSubmit, runProposalStep, showUnderwritingRequirements]);
 
   const handleDownloadPDF = async (caseId: string) => {
     try {
@@ -1145,7 +1472,7 @@ export function CopilotInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, messages]);
 
-  const [sessions, setSessions] = useState<{id: string, date: number, title: string, messages: any[], actions: any[], pinned?: boolean}[]>(() => {
+  const [sessions, setSessions] = useState<{id: string, date: number, title: string, messages: any[], actions: any[], pinned?: boolean, titleStage?: number, titleLocked?: boolean}[]>(() => {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem(STORAGE_KEY + "_sessions");
@@ -1154,7 +1481,24 @@ export function CopilotInterface() {
     }
     return [];
   });
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  // Which sidebar entry the open conversation belongs to. Kept across reloads:
+  // the conversation itself is restored from storage, and without this the page
+  // treated it as a brand-new chat each time and gave it a fresh sidebar entry
+  // (and a fresh generic title).
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const id = localStorage.getItem(STORAGE_KEY + "_active_session");
+      if (id && JSON.parse(localStorage.getItem(STORAGE_KEY + "_sessions") || "[]").some((x: any) => x.id === id)) return id;
+    } catch { /* fall through */ }
+    return null;
+  });
+  useEffect(() => {
+    try {
+      if (activeSessionId) localStorage.setItem(STORAGE_KEY + "_active_session", activeSessionId);
+      else localStorage.removeItem(STORAGE_KEY + "_active_session");
+    } catch { /* storage unavailable */ }
+  }, [activeSessionId]);
   const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>("");
@@ -1175,6 +1519,95 @@ export function CopilotInterface() {
       localStorage.setItem(STORAGE_KEY + "_sessions", JSON.stringify(sessions));
     }
   }, [sessions]);
+
+  // Chats that start the same way ("Add a new customer") get the same title from
+  // their first exchange, and the list can't tell them apart. So titles are
+  // refreshed as a chat progresses — from a condensed transcript, told what the
+  // other chats are called, leading with the specific detail (a name, a case
+  // number) — and a title already in use gets a number.
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const makeUniqueTitle = (title: string, id: string) => {
+    const others = new Set(sessionsRef.current.filter((x) => x.id !== id && x.title).map((x) => x.title.trim().toLowerCase()));
+    if (!others.has(title.trim().toLowerCase())) return title;
+    for (let n = 2; n < 100; n++) {
+      if (!others.has(`${title} (${n})`.toLowerCase())) return `${title} (${n})`;
+    }
+    return title;
+  };
+  const refreshSessionTitle = useCallback(async (id: string, msgs: { role: string; text: string }[]) => {
+    const firstUser = msgs.find((m) => m.role === "user");
+    const firstReply = msgs.slice(msgs.findIndex((m) => m.role === "user") + 1).find((m) => m.role === "assistant" && m.text);
+    if (!firstUser) return;
+    const transcript = msgs
+      .filter((m) => m.text)
+      .slice(0, 30)
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.text.replace(/\s+/g, " ").slice(0, 220)}`)
+      .join("\n");
+    const avoid = sessionsRef.current.filter((x) => x.id !== id && x.title).map((x) => x.title);
+    try {
+      const res = await api.post("/chat/title", {
+        first_user_message: firstUser.text,
+        first_assistant_reply: firstReply?.text || "",
+        transcript,
+        avoid,
+      });
+      const title = res.data?.title?.trim();
+      if (title) {
+        const unique = makeUniqueTitle(title, id);
+        setSessions((prev) => prev.map((x) => (x.id === id && !x.titleLocked ? { ...x, title: unique } : x)));
+      }
+    } catch { /* keep the current title */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Retitle the open chat as it grows (once it has real content, and again once
+  // it is well under way) so its name reflects what actually happened in it.
+  useEffect(() => {
+    if (isLoading || !activeSessionId) return;
+    const session = sessionsRef.current.find((x) => x.id === activeSessionId);
+    if (!session || !session.title || session.titleLocked) return;
+    const stage = session.titleStage ?? 0;
+    const target = messages.length >= 24 ? 2 : messages.length >= 10 ? 1 : 0;
+    if (target <= stage) return;
+    setSessions((prev) => prev.map((x) => (x.id === activeSessionId ? { ...x, titleStage: target } : x)));
+    refreshSessionTitle(activeSessionId, messages);
+  }, [messages, isLoading, activeSessionId, refreshSessionTitle]);
+
+  // One-time clean-up of chats saved before this: give each one that shares its
+  // title with another a distinct name, one at a time.
+  const titleBackfillDone = useRef(false);
+  useEffect(() => {
+    if (titleBackfillDone.current) return;
+    titleBackfillDone.current = true;
+
+    // The open conversation was saved before the active chat was remembered:
+    // find the sidebar entry it already has (it holds the same first message)
+    // and re-attach to it instead of creating a duplicate.
+    if (!activeSessionId) {
+      const firstId = messages.find((m) => m.role === "user")?.id;
+      const own = firstId && sessionsRef.current.find((x) => x.messages.some((m: any) => m.id === firstId));
+      if (own) setActiveSessionId(own.id);
+    }
+    // A title still blank because the page was closed while it was being
+    // generated would show a loading skeleton forever — generate it now.
+    sessionsRef.current
+      .filter((x) => !x.title && x.messages.length >= 2)
+      .forEach((x) => refreshSessionTitle(x.id, x.messages));
+    const seen = new Map<string, number>();
+    sessionsRef.current.forEach((x) => { const k = x.title.trim().toLowerCase(); if (k) seen.set(k, (seen.get(k) || 0) + 1); });
+    const dupes = sessionsRef.current.filter(
+      (x) => x.title && !x.titleLocked && x.titleStage === undefined && (seen.get(x.title.trim().toLowerCase()) || 0) > 1 && x.messages.length >= 4
+    ).slice(0, 25);
+    if (!dupes.length) return;
+    (async () => {
+      for (const d of dupes) {
+        setSessions((prev) => prev.map((x) => (x.id === d.id ? { ...x, titleStage: 1 } : x)));
+        await refreshSessionTitle(d.id, d.messages);
+      }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // AI-generated sidebar titles: as soon as a brand-new conversation has its
   // first exchange (one real user message + the assistant's first reply —
@@ -1205,12 +1638,16 @@ export function CopilotInterface() {
     api.post("/chat/title", {
       first_user_message: firstUserMessage.text,
       first_assistant_reply: firstAssistantReply.text,
+      avoid: sessionsRef.current.filter(x => x.title).map(x => x.title),
     })
       .then(res => {
         const title = res.data?.title?.trim();
         // Only apply if still pending — the user may have already renamed it
         // by hand while the call was in flight.
-        if (title) setSessions(prev => prev.map(s => s.id === newSessionId && !s.title ? { ...s, title } : s));
+        if (title) {
+          const unique = makeUniqueTitle(title, newSessionId);
+          setSessions(prev => prev.map(s => s.id === newSessionId && !s.title ? { ...s, title: unique } : s));
+        }
       })
       .catch(() => {
         // Fall back to the same naive truncation saveCurrentSession used to
@@ -1286,7 +1723,8 @@ export function CopilotInterface() {
   const handleSaveRename = (id: string, e?: React.FormEvent | React.FocusEvent | React.KeyboardEvent) => {
     if (e) e.stopPropagation();
     if (editingTitle.trim()) {
-      setSessions(prev => prev.map(s => s.id === id ? { ...s, title: editingTitle.trim() } : s));
+      // A name the user typed is theirs — never retitle it automatically.
+      setSessions(prev => prev.map(s => s.id === id ? { ...s, title: editingTitle.trim(), titleLocked: true } : s));
     }
     setEditingSessionId(null);
   };
@@ -1446,7 +1884,17 @@ export function CopilotInterface() {
               }}
             />
           )}
-          {acrModalCase && (
+          {docDialog && (
+        <DocumentUploadDialog
+          tenantId={localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID}
+          caseId={docDialog.case_id}
+          caseNumber={docDialog.case_number}
+          documentTypes={docDialog.document_types}
+          onClose={() => setDocDialog(null)}
+          onDone={handleDocDialogDone}
+        />
+      )}
+      {acrModalCase && (
             <ACRModal
               caseId={acrModalCase.caseId}
               initial={null}
@@ -2073,7 +2521,7 @@ export function CopilotInterface() {
                        rather than a stale snapshot from when it first loaded. */}
                    {casePanel && (
                      <div className="w-full px-4 py-4">
-                       <div className="max-w-3xl mx-auto">
+                       <div className="max-w-5xl mx-auto">
                          <div className="rounded-2xl border border-slate-200 shadow-sm bg-white flex flex-col overflow-hidden">
                            <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200 bg-slate-50 shrink-0">
                              <div className="flex items-center gap-2 min-w-0">
@@ -2081,6 +2529,24 @@ export function CopilotInterface() {
                                <span className="font-bold text-xs text-slate-800 truncate">{casePanel.title}</span>
                              </div>
                              <div className="flex items-center gap-1 shrink-0">
+                               {/* Sideways scroll for the embedded page. Overlay scrollbars (Firefox on
+                                   Linux, macOS) stay hidden until hovered, so these are always there. */}
+                               <button
+                                 type="button"
+                                 onClick={() => scrollCasePanel(-1)}
+                                 title="Scroll left"
+                                 className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                               >
+                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                               </button>
+                               <button
+                                 type="button"
+                                 onClick={() => scrollCasePanel(1)}
+                                 title="Scroll right"
+                                 className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition-colors"
+                               >
+                                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                               </button>
                                <a
                                  href={casePanel.url}
                                  target="_blank"
@@ -2100,13 +2566,22 @@ export function CopilotInterface() {
                                </button>
                              </div>
                            </div>
-                           <iframe
-                             key={`${casePanel.url}#${casePanelRefresh}`}
-                             src={casePanel.url}
-                             className="w-full border-0"
-                             style={{ height: "70vh" }}
-                             title={casePanel.title}
-                           />
+                           {/* The embedded pages are laid out for a desktop width, so the frame
+                               keeps a minimum width and the panel scrolls sideways when the chat
+                               column is narrower — instead of cutting the right-hand side off. */}
+                           <div
+                             ref={casePanelScrollRef}
+                             className="overflow-x-auto overflow-y-hidden [scrollbar-width:thin] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-track]:bg-slate-100"
+                           >
+                             <iframe
+                               ref={casePanelFrameRef}
+                               key={casePanel.url}
+                               src={casePanel.url}
+                               className="w-full border-0 block"
+                               style={{ height: "70vh", minWidth: 980 }}
+                               title={casePanel.title}
+                             />
+                           </div>
                          </div>
                        </div>
                      </div>
@@ -2309,6 +2784,16 @@ export function CopilotInterface() {
 
       {showVoice && <VoiceOverlay onClose={() => setShowVoice(false)} />}
 
+      {docDialog && (
+        <DocumentUploadDialog
+          tenantId={localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID}
+          caseId={docDialog.case_id}
+          caseNumber={docDialog.case_number}
+          documentTypes={docDialog.document_types}
+          onClose={() => setDocDialog(null)}
+          onDone={handleDocDialogDone}
+        />
+      )}
       {acrModalCase && (
         <ACRModal
           caseId={acrModalCase.caseId}

@@ -428,8 +428,11 @@ function Spinner({ className = "w-3.5 h-3.5" }: { className?: string }) {
   return <span className={`inline-block animate-spin rounded-full border-2 border-white/30 border-t-white ${className}`} />;
 }
 
-function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
-  tenantId: string; caseId: string; docTypes: string[]; onClose: () => void; onUploaded: () => void;
+function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, onUploaded }: {
+  tenantId: string; caseId: string; docTypes: string[];
+  // Required documents the case still lacks — handed out to new files first.
+  missingTypes?: string[];
+  onClose: () => void; onUploaded: () => void;
 }) {
   const [docType, setDocType] = useState(docTypes[0] ?? "Other");
   const [fileItems, setFileItems] = useState<{ file: File, type: string }[]>([]);
@@ -437,6 +440,20 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Preview of a chosen file, read locally — nothing is uploaded to view it.
+  const [preview, setPreview] = useState<{ url: string; name: string; isPdf: boolean } | null>(null);
+  const openPreview = (file: File) => {
+    const isPdf = file.name.toLowerCase().endsWith(".pdf") || file.type === "application/pdf";
+    setPreview({ url: URL.createObjectURL(file), name: file.name, isPdf });
+  };
+  const closePreview = () => {
+    setPreview((p) => {
+      if (p) URL.revokeObjectURL(p.url);
+      return null;
+    });
+  };
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview.url); }, [preview]);
 
   const addFiles = (newFiles: FileList | File[]) => {
     setErr("");
@@ -450,7 +467,20 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
       }
       valid.push({ file: f, type: docType });
     }
-    setFileItems(prev => [...prev, ...valid]);
+    setFileItems(prev => {
+      // Label each new file with the next required document nobody has claimed
+      // yet (still-missing ones first), so choosing several files covers the
+      // checklist instead of filing all of them under the same default type.
+      const taken = new Set(prev.map(i => i.type));
+      const order = [...missingTypes, ...docTypes].filter((t, i, a) => a.indexOf(t) === i);
+      const labelled = valid.map(item => {
+        const free = order.find(t => !taken.has(t));
+        const type = free ?? item.type;
+        taken.add(type);
+        return { ...item, type };
+      });
+      return [...prev, ...labelled];
+    });
   };
 
   const submit = async () => {
@@ -512,6 +542,15 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
               {fileItems.map((item, i) => (
                 <li key={i} className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
                   <span className="truncate text-slate-700 flex-1" title={item.file.name}>{item.file.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => openPreview(item.file)}
+                    title={`View ${item.file.name}`}
+                    className="flex-shrink-0 flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-blue-700 bg-white border border-blue-200 rounded-md hover:bg-blue-50 transition-colors"
+                  >
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z" /><circle cx="12" cy="12" r="3" /></svg>
+                    View
+                  </button>
                   <select
                     value={item.type}
                     onChange={e => {
@@ -540,6 +579,31 @@ function UploadModal({ tenantId, caseId, docTypes, onClose, onUploaded }: {
           </div>
         </div>
       </div>
+
+      {preview && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/70 p-4"
+          onClick={(e) => { e.stopPropagation(); closePreview(); }}
+        >
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-slate-800 truncate" title={preview.name}>{preview.name}</p>
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <a href={preview.url} target="_blank" rel="noopener noreferrer" className="text-xs font-semibold text-blue-700 hover:underline">Open in new tab</a>
+                <button type="button" onClick={closePreview} className="text-slate-400 hover:text-slate-600 p-1" title="Close preview">✕</button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto bg-slate-100 flex items-center justify-center min-h-[40vh]">
+              {preview.isPdf ? (
+                <iframe src={preview.url} title={preview.name} className="w-full h-[70vh] border-0 bg-white" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={preview.url} alt={preview.name} className="max-w-full max-h-[70vh] object-contain" />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -938,6 +1002,27 @@ export default function CasePage({ params }: { params: { id: string } }) {
       fetchCompliance();
     }
   }, [detail?.policy?.id, detail?.case?.policy_id, fetchCompliance]);
+
+  // When this page is open inside the Copilot's panel, the chat asks it to
+  // re-read its data after something happens in the conversation (a gate run, a
+  // document uploaded…) instead of reloading the whole frame — so the user's
+  // place and any open dialog are kept.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.source !== "insurance-ai-copilot" || event.data?.type !== "refresh") return;
+      fetchDetail();
+      fetchArtifacts();
+      fetchEApplication();
+      fetchAcr();
+      fetchIpp();
+      fetchHistory();
+      fetchMedical();
+      fetchCompliance();
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical, fetchCompliance]);
 
   // Poll every 3s while any artifact is still being OCR'd, so status/ocr_result
   // update without a manual refresh — same pattern as the /cases explorer.
@@ -2274,6 +2359,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
           tenantId={tenantId}
           caseId={caseId}
           docTypes={docs.required}
+          missingTypes={docs.missing}
           onClose={() => setShowUpload(false)}
           onUploaded={() => {
             setShowUpload(false);
