@@ -22,6 +22,13 @@ interface ConfigResponse {
 
 interface TestResult {
   ok: boolean;
+  status?:
+    | "responding"
+    | "no_credits"
+    | "rate_limited"
+    | "invalid_key"
+    | "bad_model"
+    | "error";
   detail: string;
   latency_ms: number;
 }
@@ -279,10 +286,25 @@ function ProviderCard({
             className={`text-xs rounded-lg px-3 py-2 border ${
               test.ok
                 ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                : "bg-red-50 border-red-200 text-red-600"
+                : test.status === "no_credits" || test.status === "rate_limited"
+                  ? "bg-amber-50 border-amber-200 text-amber-700"
+                  : "bg-red-50 border-red-200 text-red-600"
             }`}
           >
-            {test.ok ? "✓ " : "✕ "}
+            <span className="font-semibold">
+              {test.ok
+                ? "✓ Responding"
+                : test.status === "no_credits"
+                  ? "⚠ 429 · No credits"
+                  : test.status === "rate_limited"
+                    ? "⚠ 429 · Rate limited"
+                    : test.status === "invalid_key"
+                      ? "✕ Invalid key"
+                      : test.status === "bad_model"
+                        ? "✕ Model not found"
+                        : "✕ Failed"}
+            </span>
+            {" — "}
             {test.detail}
             {test.latency_ms > 0 && (
               <span className="opacity-60"> ({test.latency_ms} ms)</span>
