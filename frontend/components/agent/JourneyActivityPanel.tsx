@@ -4,6 +4,7 @@ import React from "react";
 import ReactMarkdown from "react-markdown";
 import type { AgentMessage, ProcessStep, QuickAction } from "@/lib/agent/types";
 import { QuickActionSelect } from "./QuickActionSelect";
+import { isPassiveAction } from "@/lib/agent/quickActions";
 
 /**
  * Floating status card on the journey map. A step started from the map runs in
@@ -117,7 +118,7 @@ export function JourneyActivityPanel({
               );
             }
             const chosen = usedIdx === idx;
-            const locked = action.actionType !== "upload" && usedIdx !== undefined && !chosen;
+            const locked = !isPassiveAction(action) && usedIdx !== undefined && !chosen;
             return (
               <button
                 key={`${action.actionType}-${idx}`}

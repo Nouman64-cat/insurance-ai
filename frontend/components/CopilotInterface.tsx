@@ -13,6 +13,7 @@ import { journeyFromCase, journeyFromChat } from "@/lib/agent/journey";
 import type { CaseDetail, Journey, JourneyContext, ProposalState } from "@/lib/agent/journey";
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import type { CaseEvent } from "@/lib/agent/useCaseEvents";
+import { isPassiveAction } from "@/lib/agent/quickActions";
 import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
@@ -2470,7 +2471,7 @@ export function CopilotInterface() {
                      actions={runActions}
                      usedIdx={runMsg ? usedActions[runMsg.id] : undefined}
                      onAction={(idx, action) => {
-                       if (runMsg && action.actionType !== "upload") {
+                       if (runMsg && !isPassiveAction(action)) {
                          setUsedActions((prev) => ({ ...prev, [runMsg!.id]: idx }));
                        }
                        if (action.actionType === "embed") setShowJourneyMap(false);
@@ -2763,13 +2764,13 @@ export function CopilotInterface() {
                                  const isUploaded = checkIsUploaded(action, uploadedDocs);
                                  const usedIdx = usedActions[msg.id];
                                  const isChosen = usedIdx === idx;
-                                 const isLocked = action.actionType !== "upload" && usedIdx !== undefined && !isChosen;
+                                 const isLocked = !isPassiveAction(action) && usedIdx !== undefined && !isChosen;
                                  return (
                                    <button
                                      key={`${action.actionType}-${action.label}-${idx}`}
                                      disabled={isLocked}
                                      onClick={() => {
-                                       if (action.actionType !== "upload") {
+                                       if (!isPassiveAction(action)) {
                                          setUsedActions(prev => ({ ...prev, [msg.id]: idx }));
                                        }
                                        handleQuickAction(action);
@@ -3377,13 +3378,13 @@ export function CopilotInterface() {
                             const isUploaded = checkIsUploaded(action, uploadedDocs);
                             const usedIdx = usedActions[msg.id];
                             const isChosen = usedIdx === idx;
-                            const isLocked = action.actionType !== "upload" && usedIdx !== undefined && !isChosen;
+                            const isLocked = !isPassiveAction(action) && usedIdx !== undefined && !isChosen;
                             return (
                             <button
                               key={`${action.actionType}-${action.label}-${idx}`}
                               disabled={isLocked}
                               onClick={() => {
-                                if (action.actionType !== "upload") {
+                                if (!isPassiveAction(action)) {
                                   setUsedActions(prev => ({ ...prev, [msg.id]: idx }));
                                 }
                                 handleQuickAction(action);
