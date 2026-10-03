@@ -7,6 +7,12 @@ import { useRouter } from "next/navigation";
 import api from "../app/services/api";
 import { useNotify } from "./NotificationContext";
 import { ProcessGraph } from "./ProcessGraph";
+import { JourneyMap } from "./agent/JourneyMap";
+import { JourneyActivityPanel } from "./agent/JourneyActivityPanel";
+import { journeyFromCase, journeyFromChat } from "@/lib/agent/journey";
+import type { CaseDetail, Journey, JourneyContext, ProposalState } from "@/lib/agent/journey";
+import { useCaseEvents } from "@/lib/agent/useCaseEvents";
+import type { CaseEvent } from "@/lib/agent/useCaseEvents";
 import { useAgentChat } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
@@ -1472,6 +1478,166 @@ export function CopilotInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoading, messages]);
 
+  // ── Case journey graph + live case events ─────────────────────────────────
+  // What the chat is currently working on, read from the newest message that
+  // names it: a case (tool result or requirements/embed button), else a
+  // proposal (its step buttons carry the state they were offered in), else a
+  // freshly onboarded customer.
+  const journeyContext = React.useMemo<JourneyContext | null>(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.actionResult?.entityType === "case" && m.actionResult.entityId) {
+        return { kind: "case", caseId: m.actionResult.entityId };
+      }
+      for (const qa of m.quickActions ?? []) {
+        if (qa.actionType === "uw_requirements") {
+          try { return { kind: "case", caseId: JSON.parse(qa.payload).caseId }; } catch { /* ignore */ }
+        }
+        if (qa.actionType === "embed") {
+          const match = /^\/?case\/([0-9a-f-]{36})/i.exec(qa.payload);
+          if (match) return { kind: "case", caseId: match[1] };
+        }
+      }
+      const proposalActions = (m.quickActions ?? []).filter((qa) => qa.actionType === "proposal_step");
+      if (proposalActions.length) {
+        try {
+          const p = JSON.parse(proposalActions[0].payload);
+          return { kind: "proposal", state: p.from as ProposalState, name: p.name, actions: proposalActions };
+        } catch { /* ignore */ }
+      }
+      if (m.role === "assistant" && /proposal has been \*\*Rejected\*\*/.test(m.text)) {
+        return { kind: "proposal", state: "rejected", actions: [] };
+      }
+      if (m.actionResult?.entityType === "customer") return { kind: "customer" };
+    }
+    return null;
+  }, [messages]);
+
+  const journeyCaseId = journeyContext?.kind === "case" ? journeyContext.caseId : null;
+  const [caseDetail, setCaseDetail] = useState<CaseDetail | null>(null);
+  const [journeyLoading, setJourneyLoading] = useState(false);
+
+  const refreshJourney = useCallback(async (caseId: string | null) => {
+    if (!caseId) { setCaseDetail(null); return; }
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setJourneyLoading(true);
+    try {
+      const res = await api.get(`/tenants/${tenantId}/cases/${caseId}/detail`);
+      setCaseDetail(res.data);
+    } catch {
+      /* keep the last good snapshot */
+    } finally {
+      setJourneyLoading(false);
+    }
+  }, []);
+
+  // Re-read the case when the chat moves to another one and after every turn.
+  useEffect(() => {
+    if (caseDetail && caseDetail.case.caseld !== journeyCaseId) setCaseDetail(null);
+    if (!isLoading) refreshJourney(journeyCaseId);
+    // messages.length: client-side steps (proposal / requirements buttons) add
+    // replies without a loading phase, and still change the case.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [journeyCaseId, isLoading, messages.length]);
+
+  const journey: Journey | null = React.useMemo(() => {
+    if (journeyContext?.kind === "case") {
+      return caseDetail && caseDetail.case.caseld === journeyContext.caseId ? journeyFromCase(caseDetail) : null;
+    }
+    return journeyContext ? journeyFromChat(journeyContext) : null;
+  }, [journeyContext, caseDetail]);
+
+  // Steps queued by live events, run once the chat is idle — never while a
+  // turn is streaming or a clarify/confirm question is waiting, where a prompt
+  // would be taken as the answer to that question.
+  const [autoActions, setAutoActions] = useState<QuickAction[]>([]);
+  const seenEventIds = useRef<Set<string>>(new Set());
+
+  const handleCaseEvent = useCallback(async (evt: CaseEvent) => {
+    if (seenEventIds.current.has(evt.event_id)) return;
+    seenEventIds.current.add(evt.event_id);
+
+    const caseNo = evt.case_number || evt.case_id;
+    const who = evt.customer_name || "The customer";
+    const inThisChat =
+      evt.case_id === journeyCaseId ||
+      (!!evt.case_number && messages.some((m) => m.text?.includes(evt.case_number!)));
+    if (evt.case_id === journeyCaseId) refreshJourney(journeyCaseId);
+
+    if (evt.event_type === "EApplicationSubmitted") {
+      if (!inThisChat) {
+        notify(`📨 ${who} submitted the e-application for ${caseNo}`, true, `case/${evt.case_id}`);
+        return;
+      }
+      setMapRun({ startIndex: messages.length, nodeId: "e_application", title: "Verify e-application" });
+      addAssistantMessage(`📨 **${who}** just submitted the e-application for case **${caseNo}** — starting verification.`);
+      setAutoActions((q) => [...q, { label: "Verify e-application", actionType: "submit", payload: `Verify e-application for case ${caseNo} action verify` }]);
+      return;
+    }
+
+    if (evt.event_type === "MedicalExamCompleted") {
+      const outcome = (evt.detail?.outcome as string | undefined) ?? null;
+      if (!inThisChat) {
+        notify(`🩺 Medical examination completed for ${caseNo}`, true, `case/${evt.case_id}`);
+        return;
+      }
+      // The chat's own "assess medical examination" tool records results too —
+      // that turn already reports the outcome and offers the next step, so
+      // don't move the workflow forward a second time.
+      const selfInflicted =
+        isLoading ||
+        messages.slice(-3).some((m) => m.actionResult?.toolName === "assess_medical_examination" && m.actionResult.entityId === evt.case_id);
+      if (selfInflicted) return;
+
+      setMapRun({ startIndex: messages.length, nodeId: "medical_exam", title: "Medical examination completed" });
+      addAssistantMessage(
+        `🩺 The medical examination for case **${caseNo}** is complete${outcome ? ` — outcome **${outcome}**` : ""}. Moving on to the next step.`
+      );
+      // All requirements clear → straight to the risk assessment; otherwise
+      // show the requirements list, which points at the next one.
+      let ready = false;
+      try {
+        const tenantId = localStorage.getItem("tenant_id");
+        const res = await api.get(`/tenants/${tenantId}/cases/${evt.case_id}/detail`);
+        ready = !!res.data?.pre_underwriting_status?.is_ready;
+      } catch { /* fall back to the status check */ }
+      setAutoActions((q) => [
+        ...q,
+        ready
+          ? { label: "Run risk assessment", actionType: "submit", payload: `Run risk assessment for case ${caseNo}` }
+          : { label: "Check requirements", actionType: "submit", payload: `Check pre-underwriting status for case ${caseNo}` },
+      ]);
+    }
+  }, [journeyCaseId, messages, isLoading, refreshJourney, addAssistantMessage, notify]);
+
+  const eventsLive = useCaseEvents(handleCaseEvent);
+
+  // Header toggle between the conversation and the full-page journey map.
+  const [showJourneyMap, setShowJourneyMap] = useState(false);
+  // A step started from the map runs in this same conversation, but the user
+  // stays on the map: `mapRun` marks where in the transcript the step began,
+  // so the map's activity card can show just this step's progress, reply and
+  // follow-up questions. Null when nothing is being tracked.
+  const [mapRun, setMapRun] = useState<{ startIndex: number; nodeId?: string; title?: string } | null>(null);
+  const handleMapAction = useCallback((action: QuickAction, nodeId?: string) => {
+    if (action.actionType === "embed") {
+      // The case workspace only renders inline in the conversation.
+      setShowJourneyMap(false);
+      handleQuickAction(action);
+      return;
+    }
+    setMapRun({ startIndex: messages.length, nodeId, title: action.label });
+    handleQuickAction(action);
+  }, [handleQuickAction, messages.length]);
+
+  useEffect(() => {
+    if (autoActions.length === 0 || isLoading || isUploading || pendingInterrupt) return;
+    const [next, ...rest] = autoActions;
+    setAutoActions(rest);
+    handleQuickAction(next);
+  }, [autoActions, isLoading, isUploading, pendingInterrupt, handleQuickAction]);
+
   const [sessions, setSessions] = useState<{id: string, date: number, title: string, messages: any[], actions: any[], pinned?: boolean, titleStage?: number, titleLocked?: boolean}[]>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -1686,6 +1852,7 @@ export function CopilotInterface() {
   };
 
   const handleClearChat = () => {
+    setMapRun(null);
     saveCurrentSession();
     setActiveSessionId(null);
     clearChat();
@@ -1694,6 +1861,7 @@ export function CopilotInterface() {
   };
 
   const handleLoadSession = (session: any) => {
+    setMapRun(null);
     saveCurrentSession();
     setActiveSessionId(session.id);
     loadChat(session.messages, session.actions || []);
@@ -1711,6 +1879,59 @@ export function CopilotInterface() {
     e.stopPropagation();
     setSessions(prev => prev.map(s => s.id === id ? { ...s, pinned: !s.pinned } : s));
     setOpenMenuSessionId(null);
+  };
+
+  const handleExportSession = (
+    session: { id: string; title: string; date: number; messages: AgentMessage[] },
+    format: "md" | "json",
+    e: React.MouseEvent,
+  ) => {
+    e.stopPropagation();
+    setOpenMenuSessionId(null);
+    // The open chat's saved copy can lag behind what's on screen.
+    const msgs: AgentMessage[] = session.id === activeSessionId ? messages : session.messages;
+    const title = session.title || "Chat";
+    const exportedAt = new Date();
+
+    let content: string;
+    let mime: string;
+    if (format === "json") {
+      content = JSON.stringify(
+        { title, created: new Date(session.date).toISOString(), exported: exportedAt.toISOString(), messages: msgs },
+        null,
+        2,
+      );
+      mime = "application/json";
+    } else {
+      const lines = [
+        `# ${title}`,
+        "",
+        `_Created ${new Date(session.date).toLocaleString()} · Exported ${exportedAt.toLocaleString()}_`,
+        "",
+      ];
+      for (const m of msgs) {
+        if (!m.text && !m.attachments?.length) continue;
+        lines.push("---", "", `**${m.role === "user" ? "You" : "Rizviz Copilot"}**`, "");
+        if (m.text) lines.push(m.text, "");
+        for (const a of m.attachments ?? []) lines.push(`📎 [${a.name}](${a.url})`);
+        if (m.attachments?.length) lines.push("");
+        const picked = Object.values(m.selections ?? {});
+        if (picked.length) lines.push(`> Selected: ${picked.join(", ")}`, "");
+      }
+      content = lines.join("\n");
+      mime = "text/markdown";
+    }
+
+    const safeName = title.replace(/[^\w\- ]+/g, "").trim().replace(/\s+/g, "-").slice(0, 60) || "chat";
+    const blob = new Blob([content], { type: `${mime};charset=utf-8` });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${safeName}-${exportedAt.toISOString().slice(0, 10)}.${format}`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   };
 
   const handleStartRename = (session: { id: string, title: string }, e: React.MouseEvent) => {
@@ -1774,20 +1995,6 @@ export function CopilotInterface() {
     mediaRecorderRef.current?.stop();
     setIsRecording(false);
   };
-
-  // Force disable global dark mode while in automation mode so the chat retains its designed theme
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (isAutomationMode) {
-      const wasDark = document.documentElement.classList.contains("dark");
-      if (wasDark) {
-        document.documentElement.classList.remove("dark");
-        return () => {
-          document.documentElement.classList.add("dark");
-        };
-      }
-    }
-  }, [isAutomationMode]);
 
   if (isAutomationMode) {
     return (
@@ -1999,23 +2206,23 @@ export function CopilotInterface() {
         />
 
         {/* Sidebar */}
-        <div className="w-[260px] flex-shrink-0 bg-[#0f1115] border-r border-slate-800 flex-col hidden md:flex relative overflow-hidden">
-          <div className="absolute top-0 left-0 w-full h-48 bg-gradient-to-b from-blue-500/10 to-transparent pointer-events-none" />
+        <div className="w-[260px] flex-shrink-0 bg-zinc-50 border-r border-zinc-200 dark:bg-[#0f1115] dark:border-zinc-800 flex-col hidden md:flex relative overflow-hidden">
+          <div className="absolute top-0 left-0 w-full h-48 bg-gradient-to-b from-blue-500/5 dark:from-blue-500/10 to-transparent pointer-events-none" />
           
-          <div className="p-5 flex items-center gap-3 font-bold text-lg text-white relative z-10">
+          <div className="p-5 flex items-center gap-3 font-bold text-lg text-zinc-900 dark:text-white relative z-10">
              <div className="w-8 h-8 flex items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 shadow-[0_0_15px_rgba(99,102,241,0.4)]">
                <img src="/rizvi.png" alt="Rizviz" className="w-5 h-5 object-contain brightness-0 invert" />
              </div>
-             <span className="tracking-wide">Rizviz<span className="text-blue-400">.ai</span></span>
+             <span className="tracking-wide">Rizviz<span className="text-blue-600 dark:text-blue-400">.ai</span></span>
           </div>
           <div className="px-4 pb-3 mt-2 relative z-10 space-y-2">
-            <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-slate-200 bg-white/5 hover:bg-white/10 rounded-xl transition-all border border-white/5 shadow-sm">
-              <svg className="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
+            <button onClick={handleClearChat} className="flex items-center gap-3 w-full px-4 py-3 text-sm font-semibold text-zinc-800 bg-white hover:bg-zinc-100 border-zinc-200 dark:text-zinc-200 dark:bg-white/5 dark:hover:bg-white/10 rounded-xl transition-all border dark:border-white/5 shadow-sm">
+              <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4"/></svg>
               New chat
             </button>
             {/* Search input */}
             <div className="relative">
-              <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
               </svg>
               <input
@@ -2023,10 +2230,10 @@ export function CopilotInterface() {
                 value={chatSearch}
                 onChange={e => setChatSearch(e.target.value)}
                 placeholder="Search chats…"
-                className="w-full pl-8 pr-3 py-2 text-xs bg-white/5 border border-white/10 rounded-xl text-slate-300 placeholder:text-slate-600 focus:outline-none focus:border-blue-500/60 focus:bg-white/8 transition-all"
+                className="w-full pl-8 pr-3 py-2 text-xs bg-white border border-zinc-200 text-zinc-700 placeholder:text-zinc-400 dark:bg-white/5 dark:border-white/10 dark:text-zinc-300 dark:placeholder:text-zinc-600 rounded-xl focus:outline-none focus:border-blue-500/60 transition-all"
               />
               {chatSearch && (
-                <button onClick={() => setChatSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
+                <button onClick={() => setChatSearch("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-700 dark:text-zinc-500 dark:hover:text-zinc-300 transition-colors">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               )}
@@ -2042,7 +2249,7 @@ export function CopilotInterface() {
                 })
                 .filter(s => !chatSearch.trim() || s.title.toLowerCase().includes(chatSearch.trim().toLowerCase()));
               if (filtered.length === 0) return (
-                <div className="text-center py-8 text-slate-600 text-xs">
+                <div className="text-center py-8 text-zinc-500 dark:text-zinc-600 text-xs">
                   No chats match &ldquo;{chatSearch}&rdquo;
                 </div>
               );
@@ -2057,8 +2264,8 @@ export function CopilotInterface() {
                         onClick={() => handleLoadSession(session)}
                         className={`w-full text-left px-3 py-2.5 rounded-xl transition-all cursor-pointer flex items-center justify-between border ${
                           activeSessionId === session.id
-                            ? 'bg-white/10 border-white/10 text-white shadow-sm'
-                            : 'border-transparent hover:bg-white/5 text-slate-300 hover:text-white'
+                            ? 'bg-white border-zinc-200 text-zinc-900 dark:bg-white/10 dark:border-white/10 dark:text-white shadow-sm'
+                            : 'border-transparent text-zinc-600 hover:bg-zinc-200/60 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-white/5 dark:hover:text-white'
                         }`}
                       >
                         <div className="flex-1 min-w-0 pr-2">
@@ -2074,12 +2281,12 @@ export function CopilotInterface() {
                               onBlur={(e) => handleSaveRename(session.id, e)}
                               autoFocus
                               onClick={(e) => e.stopPropagation()}
-                              className="w-full bg-slate-800 text-white text-[13px] px-2 py-0.5 rounded border border-blue-500/80 outline-none"
+                              className="w-full bg-white text-zinc-900 dark:bg-zinc-800 dark:text-white text-[13px] px-2 py-0.5 rounded border border-blue-500/80 outline-none"
                             />
                           ) : session.title ? (
                             <div className="flex items-center gap-1.5 text-[13px] font-medium truncate">
                               {session.pinned && (
-                                <svg className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
                                   <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
                                 </svg>
                               )}
@@ -2087,11 +2294,11 @@ export function CopilotInterface() {
                             </div>
                           ) : (
                             // Empty title = the AI title-gen call is still in flight.
-                            <div className="h-3.5 w-[70%] rounded bg-white/10 animate-pulse" title="Generating title…" />
+                            <div className="h-3.5 w-[70%] rounded bg-zinc-200 dark:bg-white/10 animate-pulse" title="Generating title…" />
                           )}
-                          <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-2">
+                          <div className="text-[11px] text-zinc-500 mt-0.5 flex items-center gap-2">
                             <span>{new Date(session.date).toLocaleDateString()}</span>
-                            {session.pinned && <span className="text-[10px] text-blue-400 font-semibold uppercase tracking-wider">Pinned</span>}
+                            {session.pinned && <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wider">Pinned</span>}
                           </div>
                         </div>
 
@@ -2101,8 +2308,8 @@ export function CopilotInterface() {
                             e.stopPropagation();
                             setOpenMenuSessionId(openMenuSessionId === session.id ? null : session.id);
                           }}
-                          className={`p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-all ${
-                            openMenuSessionId === session.id ? "opacity-100 bg-white/10 text-white" : "opacity-0 group-hover:opacity-100"
+                          className={`p-1 rounded-lg text-zinc-400 hover:text-zinc-900 hover:bg-zinc-200 dark:hover:text-white dark:hover:bg-white/10 transition-all ${
+                            openMenuSessionId === session.id ? "opacity-100 bg-zinc-200 text-zinc-900 dark:bg-white/10 dark:text-white" : "opacity-0 group-hover:opacity-100"
                           }`}
                           title="Chat options"
                         >
@@ -2116,13 +2323,13 @@ export function CopilotInterface() {
                       {openMenuSessionId === session.id && (
                         <div
                           ref={menuRef}
-                          className="absolute right-2 top-10 w-44 bg-[#181b21] border border-white/15 rounded-xl shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs backdrop-blur-xl"
+                          className="absolute right-2 top-10 w-44 bg-white border border-zinc-200 dark:bg-[#181b21] dark:border-white/15 rounded-xl shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100 text-xs backdrop-blur-xl"
                         >
                           <button
                             onClick={(e) => handleTogglePinSession(session.id, e)}
-                            className="flex items-center gap-2.5 w-full px-3 py-2 text-slate-300 hover:text-white hover:bg-white/10 transition-colors font-medium text-left"
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
                           >
-                            <svg className="w-3.5 h-3.5 text-blue-400" fill="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" fill="currentColor" viewBox="0 0 24 24">
                               <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z"/>
                             </svg>
                             {session.pinned ? "Unpin chat" : "Pin chat"}
@@ -2130,22 +2337,42 @@ export function CopilotInterface() {
 
                           <button
                             onClick={(e) => handleStartRename(session, e)}
-                            className="flex items-center gap-2.5 w-full px-3 py-2 text-slate-300 hover:text-white hover:bg-white/10 transition-colors font-medium text-left"
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
                           >
-                            <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
                             </svg>
                             Rename
                           </button>
 
-                          <div className="my-1 border-t border-white/10" />
+                          <button
+                            onClick={(e) => handleExportSession(session, "md", e)}
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
+                          >
+                            <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            Export as Markdown
+                          </button>
+
+                          <button
+                            onClick={(e) => handleExportSession(session, "json", e)}
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
+                          >
+                            <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                            </svg>
+                            Export as JSON
+                          </button>
+
+                          <div className="my-1 border-t border-zinc-200 dark:border-white/10" />
 
                           <button
                             onClick={(e) => {
                               setOpenMenuSessionId(null);
                               handleDeleteSession(session.id, e);
                             }}
-                            className="flex items-center gap-2.5 w-full px-3 py-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors font-medium text-left"
+                            className="flex items-center gap-2.5 w-full px-3 py-2 text-red-500 hover:text-red-600 dark:text-red-400 dark:hover:text-red-300 hover:bg-red-500/10 transition-colors font-medium text-left"
                           >
                             <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -2161,8 +2388,8 @@ export function CopilotInterface() {
             })()}
 
           </div>
-          <div className="p-4 mt-auto border-t border-white/5 bg-black/20 relative z-10">
-            <button onClick={() => setAutomationMode(false)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-slate-400 hover:text-white hover:bg-white/5 rounded-xl transition-colors">
+          <div className="p-4 mt-auto border-t border-zinc-200 bg-zinc-100/60 dark:border-white/5 dark:bg-black/20 relative z-10">
+            <button onClick={() => setAutomationMode(false)} className="flex items-center gap-3 w-full px-4 py-2.5 text-sm font-medium text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/60 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/5 rounded-xl transition-colors">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
               Back to Dashboard
             </button>
@@ -2171,13 +2398,13 @@ export function CopilotInterface() {
         
         {/* Main Chat Area + Right Suggestions Panel */}
         <div className="flex-1 flex flex-row relative h-full min-w-0 min-h-0">
-        <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0 bg-[#fdfdfe]">
+        <div className="flex-1 flex flex-col relative h-full min-w-0 min-h-0 bg-[#fdfdfe] dark:bg-[#0f172a]">
            {/* Subtle ambient glowing orbs */}
            <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] bg-blue-400/10 rounded-full blur-[100px] pointer-events-none" />
            <div className="absolute bottom-[-10%] right-[-5%] w-[400px] h-[400px] bg-fuchsia-400/10 rounded-full blur-[120px] pointer-events-none" />
            
            {/* Chat Header */}
-           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200/60 bg-white/40 backdrop-blur-md relative z-20">
+           <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-200/60 bg-white/40 dark:bg-zinc-900/40 backdrop-blur-md relative z-20">
              <div className="flex items-center gap-3">
                <button onClick={() => setAutomationMode(false)} className="md:hidden p-2 -ml-2 text-slate-600 hover:text-blue-600 transition-colors">
                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
@@ -2189,6 +2416,26 @@ export function CopilotInterface() {
                </div>
              </div>
              <div className="flex items-center gap-3">
+               <button
+                 onClick={() => setShowJourneyMap((v) => !v)}
+                 aria-pressed={showJourneyMap}
+                 title={showJourneyMap ? "Back to chat" : "Journey map"}
+                 className={`relative text-sm font-semibold transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg ${
+                   showJourneyMap
+                     ? "bg-indigo-600 text-white hover:bg-indigo-500"
+                     : "text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10"
+                 }`}
+               >
+                 {showJourneyMap ? (
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M8 10h8M8 14h5m-9 6l2.5-3H19a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v14z" /></svg>
+                 ) : (
+                   <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><circle cx="5" cy="6" r="2.25" /><circle cx="19" cy="6" r="2.25" /><circle cx="12" cy="18" r="2.25" /><path strokeLinecap="round" d="M7.25 6h9.5M6.2 8l4.6 8M17.8 8l-4.6 8" /></svg>
+                 )}
+                 <span className="hidden sm:inline">{showJourneyMap ? "Chat" : "Journey"}</span>
+                 {!showJourneyMap && journey && journey.gates.concat(journey.before, journey.after).some((n) => n.state === "next" || n.state === "failed") && (
+                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-indigo-500 ring-2 ring-white dark:ring-zinc-900" />
+                 )}
+               </button>
                <button onClick={handleClearChat} className="text-sm font-semibold text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-100">
                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
                  <span className="hidden sm:inline">Clear</span>
@@ -2196,8 +2443,51 @@ export function CopilotInterface() {
              </div>
            </div>
            
-           {/* Messages */}
-           <div className="flex-1 overflow-y-auto custom-scrollbar" ref={scrollContainerRef}>
+           {showJourneyMap && (
+             <JourneyMap
+               journey={journey}
+               onAction={handleMapAction}
+               disabled={isLoading || isUploading || !!pendingInterrupt}
+               loading={journeyLoading}
+               live={eventsLive}
+               runningNodeId={isLoading || isUploading ? mapRun?.nodeId ?? null : null}
+               activity={mapRun && (() => {
+                 let runMsg: AgentMessage | null = null;
+                 for (let i = messages.length - 1; i >= mapRun.startIndex; i--) {
+                   if (messages[i].role === "assistant") { runMsg = messages[i]; break; }
+                 }
+                 const isLatest = !!runMsg && runMsg.id === messages[messages.length - 1]?.id;
+                 const runActions = runMsg?.quickActions?.length
+                   ? runMsg.quickActions
+                   : isLatest ? turnActions : [];
+                 return (
+                   <JourneyActivityPanel
+                     title={mapRun.title}
+                     working={isLoading || isUploading}
+                     awaitingInput={!!pendingInterrupt}
+                     steps={isLoading ? steps : []}
+                     message={runMsg}
+                     actions={runActions}
+                     usedIdx={runMsg ? usedActions[runMsg.id] : undefined}
+                     onAction={(idx, action) => {
+                       if (runMsg && action.actionType !== "upload") {
+                         setUsedActions((prev) => ({ ...prev, [runMsg!.id]: idx }));
+                       }
+                       if (action.actionType === "embed") setShowJourneyMap(false);
+                       handleQuickAction(action);
+                     }}
+                     onSelectRun={(text) => handleSubmit(undefined, text)}
+                     onSelected={(idx, label) => runMsg && recordSelection(runMsg.id, idx, label)}
+                     onOpenChat={() => setShowJourneyMap(false)}
+                     onDismiss={() => setMapRun(null)}
+                   />
+                 );
+               })()}
+             />
+           )}
+
+           {/* Messages — kept mounted under the map so scroll position survives */}
+           <div className={`flex-1 overflow-y-auto custom-scrollbar ${showJourneyMap ? "hidden" : ""}`} ref={scrollContainerRef}>
              <div className="w-full">
                {messages.length === 1 && messages[0].id === "1" && messages[0].role === "assistant" ? (
                  <div className="flex flex-col items-center justify-center h-full min-h-[60vh] px-4">
@@ -2208,7 +2498,7 @@ export function CopilotInterface() {
                      </h2>
                      
                      {/* Input Box - Perplexity style */}
-                     <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all duration-300">
+                     <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.04)] rounded-2xl bg-white/70 dark:bg-zinc-800/70 backdrop-blur-xl border border-white/60 dark:border-white/10 focus-within:border-blue-300 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all duration-300">
                        {selectedFile && (
                          <div className="px-4 pt-4 pb-0 flex items-center gap-2">
                            <div className="relative group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3 p-2 pr-3 min-w-[160px] max-w-[260px]">
@@ -2228,7 +2518,7 @@ export function CopilotInterface() {
                              <button
                                type="button"
                                onClick={() => setSelectedFile(null)}
-                               className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-500 hover:text-red-500"
+                               className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white dark:bg-zinc-700/80 dark:hover:bg-zinc-700 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-500 hover:text-red-500"
                              >
                                <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                              </button>
@@ -2259,7 +2549,7 @@ export function CopilotInterface() {
                              </button>
                            </div>
                            <div className="flex items-center gap-2">
-                             <button type="submit" disabled={(!input.trim() && !selectedFile) || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
+                             <button type="submit" disabled={(!input.trim() && !selectedFile) || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
                                <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
                              </button>
                            </div>
@@ -2283,7 +2573,7 @@ export function CopilotInterface() {
                          <button
                            key={idx}
                            onClick={() => handleQuickAction(action)}
-                           className="flex flex-col items-start p-4 bg-white/60 backdrop-blur-sm hover:bg-white border border-white/60 hover:border-blue-100 hover:shadow-[0_8px_20px_rgb(99,102,241,0.08)] rounded-2xl transition-all text-left group"
+                           className="flex flex-col items-start p-4 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-sm hover:bg-white dark:hover:bg-zinc-800 border border-white/60 dark:border-white/10 hover:border-blue-100 hover:shadow-[0_8px_20px_rgb(99,102,241,0.08)] rounded-2xl transition-all text-left group"
                          >
                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 mb-1 group-hover:text-blue-600 transition-colors">
                              {action.actionType === "navigate" ? (
@@ -2324,7 +2614,7 @@ export function CopilotInterface() {
                                <>
                                  {msg.text && (
                                    <div className="group/usermsg relative">
-                                     <div className="bg-[#f3f4f6] text-slate-900 px-5 py-3 rounded-[24px] rounded-tr-md text-[15px] leading-relaxed whitespace-pre-wrap">
+                                     <div className="bg-[#f3f4f6] dark:bg-zinc-700 text-slate-900 px-5 py-3 rounded-[24px] rounded-tr-md text-[15px] leading-relaxed whitespace-pre-wrap">
                                        {msg.text}
                                      </div>
                                      <button
@@ -2610,8 +2900,8 @@ export function CopilotInterface() {
            </div>
 
            {/* Bottom Input Area for ongoing chat (when not empty state) */}
-           {messages.length > 1 || (messages.length === 1 && messages[0].role !== "assistant") ? (
-             <div className="w-full px-4 z-20 pb-4 bg-[#fdfdfe]">
+           {!showJourneyMap && (messages.length > 1 || (messages.length === 1 && messages[0].role !== "assistant") ? (
+             <div className="w-full px-4 z-20 pb-4 bg-[#fdfdfe] dark:bg-[#0f172a]">
                <div className="max-w-3xl mx-auto relative flex flex-col gap-2">
                  
                  {/* Suggestions are now shown in the right panel (below) */}
@@ -2636,7 +2926,7 @@ export function CopilotInterface() {
                          <button
                            key={`${action.actionType}-${idx}`}
                            onClick={() => handleQuickAction(action)}
-                           className="px-3.5 py-1.5 text-xs font-semibold rounded-full bg-white/90 backdrop-blur-md border border-slate-200/80 hover:bg-white hover:border-indigo-300 hover:text-indigo-700 hover:shadow-sm text-slate-700 transition-all flex items-center gap-1.5 shadow-[0_2px_8px_rgb(0,0,0,0.04)]"
+                           className="px-3.5 py-1.5 text-xs font-semibold rounded-full bg-white/90 dark:bg-zinc-800/90 backdrop-blur-md border border-slate-200/80 hover:bg-white dark:hover:bg-zinc-700 hover:border-indigo-300 hover:text-indigo-700 hover:shadow-sm text-slate-700 transition-all flex items-center gap-1.5 shadow-[0_2px_8px_rgb(0,0,0,0.04)]"
                          >
                            {action.actionType === "navigate" ? (
                              <svg className="w-3.5 h-3.5 text-indigo-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
@@ -2652,7 +2942,7 @@ export function CopilotInterface() {
                    );
                  })()}
 
-                 <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl bg-white/70 backdrop-blur-xl border border-white/60 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
+                 <div className="w-full relative shadow-[0_8px_30px_rgb(0,0,0,0.06)] rounded-2xl bg-white/70 dark:bg-zinc-800/70 backdrop-blur-xl border border-white/60 dark:border-white/10 focus-within:border-indigo-300 focus-within:ring-4 focus-within:ring-indigo-500/10 transition-all duration-300">
                    {selectedFile && (
                      <div className="px-4 pt-4 pb-0 flex items-center gap-2">
                        <div className="relative group overflow-hidden rounded-xl border border-slate-200 bg-slate-50 flex items-center gap-3 p-2 pr-3 min-w-[160px] max-w-[260px]">
@@ -2672,7 +2962,7 @@ export function CopilotInterface() {
                          <button
                            type="button"
                            onClick={() => setSelectedFile(null)}
-                           className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-500 hover:text-red-500"
+                           className="absolute top-1 right-1 p-1 bg-white/80 hover:bg-white dark:bg-zinc-700/80 dark:hover:bg-zinc-700 rounded-full shadow-sm opacity-0 group-hover:opacity-100 transition-all text-slate-500 hover:text-red-500"
                          >
                            <svg className="w-3 h-3" fill="none" stroke="currentColor" strokeWidth="3" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
                          </button>
@@ -2703,7 +2993,7 @@ export function CopilotInterface() {
                          </button>
                        </div>
                        <div className="flex items-center">
-                         <button type="submit" disabled={(!input.trim() && !selectedFile) || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
+                         <button type="submit" disabled={(!input.trim() && !selectedFile) || isLoading} className="p-2 bg-[#1a1a1a] hover:bg-black dark:bg-blue-600 dark:hover:bg-blue-500 text-white rounded-full disabled:bg-slate-100 disabled:text-slate-300 transition-colors flex items-center justify-center h-10 w-10">
                            <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5M5 12l7-7 7 7"/></svg>
                          </button>
                        </div>
@@ -2712,13 +3002,13 @@ export function CopilotInterface() {
                  </div>
                </div>
              </div>
-           ) : null}
+           ) : null)}
         </div>
         </div>
         {/* Right sidebar: static — stays mounted for the whole conversation so
             the pipeline's live/settled status is always visible alongside chat,
             instead of scrolling away as part of one message bubble. */}
-        {!(messages.length <= 1 && messages[0]?.role === "assistant") && (() => {
+        {!showJourneyMap && !(messages.length <= 1 && messages[0]?.role === "assistant") && (() => {
           const actionsToShow = turnActions.length > 0
             ? turnActions
             : (messages[messages.length - 1]?.role === "assistant"
@@ -2729,7 +3019,7 @@ export function CopilotInterface() {
             .map((s) => ({ label: s, actionType: "submit", payload: s } as QuickAction));
           const finalActions = [...actionsToShow, ...extraActions];
           return (
-            <div className="hidden xl:flex flex-col w-[260px] flex-shrink-0 bg-white/60 backdrop-blur-sm border-l border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-4">
+            <div className="hidden xl:flex flex-col w-[260px] flex-shrink-0 bg-white/60 dark:bg-zinc-900/60 backdrop-blur-sm border-l border-slate-200/60 h-full overflow-y-auto custom-scrollbar py-5 px-3 gap-4">
               <div>
                 <div className="text-[10px] font-bold uppercase tracking-widest text-slate-400 px-2 pb-2">Pipeline</div>
                 {steps.length > 0 ? (

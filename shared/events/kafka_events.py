@@ -206,3 +206,34 @@ class PolicyLifecycleEvent(BaseModel):
     timestamp: datetime = Field(default_factory=_utcnow)
     tenant_id: UUID
     payload: PolicyLifecyclePayload
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Topic: insurance.case.events.v1
+#
+# Published by the tenant-service when something happens on an underwriting
+# case OUTSIDE a staff member's own session — e.g. the customer submitting
+# their e-application through the public link. The API Gateway's case event
+# hub fans these out to connected browsers over SSE (GET /events/stream), so
+# the copilot can react the moment it happens instead of waiting to be asked.
+#
+# event_type examples: "EApplicationSubmitted".
+# ─────────────────────────────────────────────────────────────────────────────
+
+CASE_EVENTS_TOPIC = "insurance.case.events.v1"
+
+
+class CaseEventPayload(BaseModel):
+    case_id: UUID
+    case_number: Optional[str] = None
+    customer_id: Optional[UUID] = None
+    customer_name: Optional[str] = None
+    detail: Optional[dict] = None
+
+
+class CaseEvent(BaseModel):
+    event_id: UUID = Field(default_factory=uuid4)
+    event_type: str
+    timestamp: datetime = Field(default_factory=_utcnow)
+    tenant_id: UUID
+    payload: CaseEventPayload

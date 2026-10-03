@@ -38,7 +38,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -67,6 +67,8 @@ from shared.models.core import (
     RequirementTypeEnum,
     Tenant,
 )
+
+from services.case_events import publish_case_event
 
 router = APIRouter(tags=["Pre-Underwriting — Medical Examination"])
 
@@ -604,6 +606,7 @@ async def record_medical_result(
     tenant_id: UUID,
     case_id: UUID,
     body: ResultRequest,
+    request: Request,
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
@@ -652,6 +655,13 @@ async def record_medical_result(
 
     await session.commit()
     await session.refresh(order)
+
+    await publish_case_event(
+        request, session,
+        event_type="MedicalExamCompleted",
+        tenant_id=order.tenant_id, case_id=order.case_id, customer_id=order.customer_id,
+        detail={"outcome": _v(order.outcome), "source": "underwriter"},
+    )
 
     payload = await _order_with_clinic(session, order)
     payload["unrated_tests"] = verdict["unrated_tests"]
@@ -830,6 +840,7 @@ async def public_book_medical_exam(
 @router.post("/public/medical-exam/{raw_token}/complete")
 async def public_complete_medical_exam(
     raw_token: str,
+    request: Request,
     session: AsyncSession = Depends(get_session),
 ):
     order = await _resolve_by_token(session, raw_token)
@@ -861,6 +872,13 @@ async def public_complete_medical_exam(
 
     await session.commit()
     await session.refresh(order)
+
+    await publish_case_event(
+        request, session,
+        event_type="MedicalExamCompleted",
+        tenant_id=order.tenant_id, case_id=order.case_id, customer_id=order.customer_id,
+        detail={"outcome": _v(order.outcome), "source": "clinic"},
+    )
     return {
         "status": _v(order.status),
         "completed_at": order.completed_at.isoformat() if order.completed_at else None,

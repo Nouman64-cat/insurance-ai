@@ -136,3 +136,6 @@ local-tests
 # Generated policy document PDFs
 services/tenant-service/media/
 *.pdf
+
+
+test-data

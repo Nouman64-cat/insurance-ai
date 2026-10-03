@@ -25,7 +25,9 @@ from database import create_db_and_tables
 from kafka_producer import create_producer
 from quote_worker import start_quote_worker
 from risk_result_worker import start_risk_result_worker
+from case_event_hub import start_case_event_hub
 from routers.chat import router as chat_router
+from routers.events import router as events_router
 from routers.evaluate import router as evaluate_router
 from routers.quote import router as quote_router
 from routers.suggest import router as suggest_router
@@ -57,6 +59,7 @@ async def lifespan(app: FastAPI):
     worker_tasks = [
         start_quote_worker(stop_event),
         start_risk_result_worker(stop_event),
+        start_case_event_hub(stop_event),
     ]
 
     yield
@@ -123,6 +126,7 @@ app.include_router(evaluate_router)
 app.include_router(quote_router)
 app.include_router(suggest_router)
 app.include_router(chat_router)
+app.include_router(events_router)
 
 
 # ── Proxy routing to tenant-service ───────────────────────────────────────────

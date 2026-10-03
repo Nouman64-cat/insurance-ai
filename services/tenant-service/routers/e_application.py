@@ -35,6 +35,7 @@ from shared.models.core import (
     Policy,
     Tenant,
 )
+from services.case_events import publish_case_event
 
 router = APIRouter(tags=["Pre-Underwriting — E-Application"])
 
@@ -384,4 +385,11 @@ async def public_submit_e_application(
 
     session.add(e_app)
     await session.commit()
+
+    await publish_case_event(
+        request, session,
+        event_type="EApplicationSubmitted",
+        tenant_id=e_app.tenant_id, case_id=e_app.case_id, customer_id=e_app.customer_id,
+    )
     return {"status": e_app.status, "submitted_at": now}
+
