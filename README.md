@@ -82,6 +82,7 @@ Data Stores
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) ≥ 4.x (includes Docker Compose v2)
 - A **running PostgreSQL instance** reachable from your machine (local install, Postgres.app, a managed cloud DB, etc.) — **not** provided by docker-compose. Create an empty database for the app to migrate into.
 - A **Gemini API key** from [Google AI Studio](https://aistudio.google.com/)
+- [Node.js](https://nodejs.org/) ≥ 18 — for the git commit/branch lint hooks (see [Git Branch & Commit Conventions](#git-branch--commit-conventions))
 
 ---
 
@@ -462,6 +463,69 @@ PostgreSQL is external, so `docker compose down -v` no longer touches it (that o
 docker compose down
 docker compose up --build -d
 ```
+
+---
+
+## Git Branch & Commit Conventions
+
+Full guide: [Git Branch and Commit Naming Convention](https://doc.clickup.com/90182858897/d/2kzn2e4h-818/git-branchand-commit-naming-convention)
+
+### Enable the git hooks (once per clone)
+
+```bash
+npm install   # at the repo root — installs Husky + Commitlint and activates the hooks
+```
+
+| Hook | Checks | Runs on |
+|---|---|---|
+| `commit-msg` | Commit message format (`commitlint.config.mjs`) | `git commit` |
+| `pre-push` | Branch name format (`scripts/lint-branch-name.mjs`) | `git push` |
+
+A PR workflow (`.github/workflows/naming-lint.yml`) runs the same checks on GitHub when Actions are available.
+
+### Branch naming
+
+```
+<type>/<short-kebab-case-description>
+<type>/<ticket-id>-<short-description>      # when a task/ticket ID exists
+```
+
+Allowed types: `feat`, `fix`, `hotfix`, `refactor`, `docs`, `test`, `perf`, `ci`, `chore`
+
+```
+feat/user-authentication
+fix/login-token-expiry
+refactor/vector-retrieval
+feat/AI-142-rag-evaluation
+fix/CU-12345-login-token-expiry
+```
+
+`main`, `dev` and `gh-pages` are exempt. To rename a branch: `git branch -m <new-name>`.
+
+### Commit messages
+
+```
+<type>(<scope>): <description>
+```
+
+Allowed types: `feat`, `fix`, `refactor`, `docs`, `test`, `perf`, `ci`, `chore`, `build`, `style`
+
+Rules:
+- Scope is required and kebab-case — e.g. `auth`, `rag`, `agent`, `api`, `deps`
+- Description is short, clear, imperative, and starts lowercase — no trailing period
+- Header (first line) is at most 72 characters; put extra detail in the body (`git commit -m "<header>" -m "<body>"`)
+
+```
+feat(auth): add JWT authentication
+fix(rag): prevent duplicate documents
+refactor(agent): simplify state management
+docs(readme): add setup instructions
+chore(deps): update dependencies
+```
+
+Avoid: `updated code`, `fix`, `changes`, `final changes`, `feat(auth): Add thing`
+
+Check a branch name manually: `npm run lint:branch`
 
 ---
 
