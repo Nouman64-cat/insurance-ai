@@ -216,6 +216,7 @@ async def confirm_ipp(
     reference = body.reference or ipp.reference
     method = body.method or ipp.method
     try:
+        payment_gateway.require_payer_reference(body.reference, ipp.reference)
         intent = payment_gateway.confirm_payment(reference, ipp.amount, method, realize=body.realize)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

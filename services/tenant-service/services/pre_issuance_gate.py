@@ -17,13 +17,13 @@ In production every one of these is a hard blocker:
   • any facultative reinsurance cession is placed — the excess over retention
     must sit with a reinsurer before this insurer writes the cover.
 
-In DEMO mode (the default — see DEMO_MODE below) only the first is enforced.
+In DEMO mode (ENV_VAR=demo — see services/env_mode.py) only the first is enforced.
 The other FOUR — requirements, compliance, beneficiaries and reinsurance — are
 downgraded to warnings: the issue proceeds, the UI shows an orange alert, and
 each bypass is recorded in ``demo_bypass_flags`` on the policy so Stage B and
 audit know what still needs backfilling.
 
-Set DEMO_MODE=false to enforce all five, which is what a real deployment does.
+Any other ENV_VAR enforces all five, which is what a real deployment does.
 (The docstring here used to describe all five as enforced while the code only
 ever blocked on the counter-offer, and mentioned the demo downgrade for two of
 the four gates that are actually downgraded.)
@@ -60,12 +60,7 @@ from shared.models.core import (
 from services import compliance_engine
 from services.underwriting_limits import age_from_dob, compute_cession
 
-# Whether the four mandatory-but-demo-bypassed gates block an issue. Defaults to
-# demo behaviour (warnings only) to preserve the existing walkthrough; set
-# DEMO_MODE=false in a real deployment so requirements, compliance,
-# beneficiaries and reinsurance become hard blockers like the counter-offer.
-DEMO_MODE: bool = os.environ.get("DEMO_MODE", "true").lower() not in ("false", "0", "no")
-
+from services.env_mode import is_demo
 
 def _gate(blockers: list[str], warnings: list[str], message: str) -> bool:
     """Record an unmet mandatory gate and report whether it was bypassed.
@@ -73,7 +68,7 @@ def _gate(blockers: list[str], warnings: list[str], message: str) -> bool:
     In production it lands in ``blockers`` and stops the issue; in demo mode it
     lands in ``warnings`` and is flagged on the policy instead.
     """
-    if DEMO_MODE:
+    if is_demo():
         warnings.append(f"{message} (demo bypass — required in production)")
         return True
     blockers.append(message)

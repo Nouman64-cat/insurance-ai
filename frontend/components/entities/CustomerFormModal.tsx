@@ -187,6 +187,9 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   // the user fills it in.
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [extracting, setExtracting] = useState(false);
+  // 0-100 progress for the document upload; the first half is the real byte
+  // upload, the second half creeps while the server reads the document.
+  const [extractProgress, setExtractProgress] = useState(0);
   const [extractNotice, setExtractNotice] = useState<{ tone: "ok" | "warn" | "error"; text: string } | null>(null);
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
 
@@ -273,13 +276,32 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       return;
     }
     setExtracting(true);
+    setExtractProgress(0);
     setExtractNotice(null);
+    let creep: ReturnType<typeof setInterval> | undefined;
     try {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch(`${OCR_BASE_URL}/extract-customer`, { method: "POST", body });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || `Extraction failed (${res.status}).`);
+      const { ok, status, data } = await new Promise<{ ok: boolean; status: number; data: any }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `${OCR_BASE_URL}/extract-customer`);
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) setExtractProgress(Math.round((e.loaded / e.total) * 50));
+        };
+        xhr.upload.onload = () => {
+          setExtractProgress((p) => Math.max(p, 50));
+          creep = setInterval(() => setExtractProgress((p) => (p < 95 ? p + 1 : p)), 400);
+        };
+        xhr.onload = () => {
+          let parsed: any = {};
+          try { parsed = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
+          resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, data: parsed });
+        };
+        xhr.onerror = () => reject(new Error("Could not reach the document reader."));
+        xhr.send(body);
+      });
+      setExtractProgress(100);
+      if (!ok) throw new Error(data.detail || `Extraction failed (${status}).`);
 
       const f = data.fields || {};
       const opts = { shouldDirty: true, shouldValidate: false };
@@ -455,6 +477,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
     } catch (err: any) {
       setExtractNotice({ tone: "error", text: err?.message || "Could not extract details from this document." });
     } finally {
+      if (creep) clearInterval(creep);
       setExtracting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
@@ -863,8 +886,21 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             >
               {extracting ? (
                 <>
-                  <span className="w-3 h-3 rounded-full border-2 border-blue-300 border-t-blue-700 animate-spin" />
-                  Reading document…
+                  <span className="relative w-7 h-7 shrink-0">
+                    <svg className="w-7 h-7 -rotate-90" viewBox="0 0 28 28" aria-hidden="true">
+                      <circle cx="14" cy="14" r="12" fill="none" stroke="#dbeafe" strokeWidth="3" />
+                      <circle
+                        cx="14" cy="14" r="12" fill="none" stroke="#1d4ed8" strokeWidth="3" strokeLinecap="round"
+                        strokeDasharray={2 * Math.PI * 12}
+                        strokeDashoffset={2 * Math.PI * 12 * (1 - extractProgress / 100)}
+                        style={{ transition: "stroke-dashoffset 0.3s ease" }}
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-[8px] font-bold tabular-nums text-blue-800">
+                      {extractProgress}%
+                    </span>
+                  </span>
+                  {extractProgress < 50 ? "Uploading…" : "Reading document…"}
                 </>
               ) : (
                 <>

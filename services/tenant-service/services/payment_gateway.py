@@ -132,6 +132,20 @@ def confirm_payment(
     return intent
 
 
+def require_payer_reference(supplied: Optional[str], expected: Optional[str]) -> None:
+    """Outside demo mode a payment is only realized against the transaction
+    reference the payer was given at initiation — it is never settled on the
+    caller's say-so alone. Demo mode keeps the auto-settling mock."""
+    from services.env_mode import is_demo
+    if is_demo():
+        return
+    if not supplied or not expected or supplied.strip() != expected.strip():
+        raise ValueError(
+            "Payment cannot be confirmed without the transaction reference issued for this payment. "
+            "Complete the payment, then confirm with that reference."
+        )
+
+
 def refund_payment(amount: float, method=None) -> PaymentIntent:
     """Simulate a reversal of a settled payment back to the original payer.
 

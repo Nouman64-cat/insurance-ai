@@ -36,6 +36,7 @@ import httpx
 from pages import build_route, page_for_record, page_for_route
 from langgraph.types import interrupt
 from langgraph.errors import GraphInterrupt
+from env_mode import is_demo, strip_demo_args
 
 TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
 API_GATEWAY_URL = os.environ.get("API_GATEWAY_URL", "http://api-gateway:8000")
@@ -278,6 +279,17 @@ def _action(tool: str, entity_type: str, entity_id: str, route: str, label: str)
 # ═══════════════════════════════════════════════════════════════════════════
 # Navigation & discovery
 # ═══════════════════════════════════════════════════════════════════════════
+
+def _anyway_hint() -> str:
+    if is_demo():
+        return "You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
+    return "Complete the earlier step first — it can't be skipped."
+
+
+def _anyway_chip(payload: str) -> list:
+    """The demo-only "continue anyway" chip; nothing outside demo mode."""
+    return [{"label": "Yes, continue anyway", "actionType": "submit", "payload": payload}] if is_demo() else []
+
 
 @handles("navigate_to_page")
 async def _navigate(args: dict, ctx: Ctx) -> dict:
@@ -1727,7 +1739,7 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
         }
 
     # If action is auto_submit (used in bulk/demo journey runs)
-    if action == "auto_submit":
+    if action == "auto_submit" and is_demo():
         if token:
             try:
                 demo_payload = {
@@ -1822,12 +1834,11 @@ async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
                 f"⚠️ **Gate 2 (ACR) is not ready yet for Case {case.get('caseNumber')}**\n\n"
                 f"**Required first:** Gate 1 (E-Application Verification) must be completed before filing the Agent Confidential Report.\n"
                 f"Current E-Application Status: `{e_app}`.\n\n"
-                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
+                f"{_anyway_hint()}"
             ),
             "status": "Locked",
             "quick_actions": [
-                {"label": "Yes, continue anyway", "actionType": "submit",
-                 "payload": f"Submit agent confidential report for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
+                *_anyway_chip(f"Submit agent confidential report for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
                 {"label": "1. Generate E-App Link", "actionType": "submit",
                  "payload": f"Generate e-application link for case {case.get('caseNumber')}"},
                 {"label": "Verify E-Application", "actionType": "submit",
@@ -1845,7 +1856,7 @@ async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
     #
     # Not a hard stop: for a demo the user can confirm ("Yes, continue anyway"),
     # which files a standard ACR on the agent's behalf like the demo journey does.
-    if not args.get("auto_fill"):
+    if not (args.get("auto_fill") and is_demo()):
         role = (ctx.exec_ctx.role or "").strip().lower()
         if role != "agent" and not args.get("bypass_prerequisites"):
             return {
@@ -1853,12 +1864,15 @@ async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
                 "message": (
                     f"⚠️ **Gate 2 (ACR) is normally filled by the assigned Agent** for case **{case.get('caseNumber')}**.\n\n"
                     f"The Agent who met the proposer in person should complete the Agent's Confidential Report — it is required for underwriting. "
-                    f"You can continue anyway (for example in a demo) and a standard report will be filed on the agent's behalf."
+                    + (
+                        "You can continue anyway (for example in a demo) and a standard report will be filed on the agent's behalf."
+                        if is_demo() else
+                        "It can't be filed on their behalf — ask the assigned Agent to complete it, then continue."
+                    )
                 ),
                 "status": "RequiresAgent",
                 "quick_actions": [
-                    {"label": "Yes, continue anyway", "actionType": "submit",
-                     "payload": f"Submit agent confidential report for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
+                    *_anyway_chip(f"Submit agent confidential report for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
                     {"label": "Check Gate Status", "actionType": "submit",
                      "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
                 ],
@@ -1949,12 +1963,11 @@ async def _run_compliance_screening(args: dict, ctx: Ctx) -> dict:
                 f"⚠️ **Gate 3 (PEP / Sanctions Screening) is not ready yet for Case {case.get('caseNumber')}**\n\n"
                 f"**Required first:** Gate 2 (Agent Confidential Report) must be filed and submitted before running PEP / Sanctions Compliance Screening.\n"
                 f"Current ACR Status: `{acr_status}`.\n\n"
-                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
+                f"{_anyway_hint()}"
             ),
             "status": "Locked",
             "quick_actions": [
-                {"label": "Yes, continue anyway", "actionType": "submit",
-                 "payload": f"Run compliance screening for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
+                *_anyway_chip(f"Run compliance screening for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
                 {"label": "2. Submit ACR (Gate 2)", "actionType": "submit",
                  "payload": f"Submit agent confidential report for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -2089,12 +2102,11 @@ async def _process_initial_premium_payment(args: dict, ctx: Ctx) -> dict:
                 f"⚠️ **Gate 4 (Initial Premium Payment) is not ready yet for Case {case.get('caseNumber')}**\n\n"
                 f"**Required first:** Gate 3 (PEP / Sanctions Screening) must be cleared before collecting Section 30 Initial Premium Payment.\n"
                 f"Current Compliance Status: `{comp_status}`.\n\n"
-                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
+                f"{_anyway_hint()}"
             ),
             "status": "Locked",
             "quick_actions": [
-                {"label": "Yes, continue anyway", "actionType": "submit",
-                 "payload": f"Process initial premium payment for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
+                *_anyway_chip(f"Process initial premium payment for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
                 {"label": "3. Compliance Screen (Gate 3)", "actionType": "submit",
                  "payload": f"Run compliance screening for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -2113,10 +2125,56 @@ async def _process_initial_premium_payment(args: dict, ctx: Ctx) -> dict:
         if e.response.status_code != 409:
             raise
 
-    # Step 2: Confirm and realize payment
-    conf_res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/ipp/confirm"), json={"method": method, "realize": True})
-    conf_res.raise_for_status()
-    data = conf_res.json()
+    # Step 2: Confirm and realize payment. Demo mode settles the mock gateway on
+    # the spot; otherwise the premium is only realized once the payer comes back
+    # with the transaction reference they were issued.
+    if is_demo():
+        confirm_body = {"method": method, "realize": True}
+    else:
+        paid_ref = (args.get("payment_reference") or "").strip()
+        ipp_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/ipp"))
+        ipp_res.raise_for_status()
+        ipp_now = ipp_res.json()
+        if (ipp_now.get("status") or "") == "Realized":
+            paid_ref = ipp_now.get("reference") or paid_ref
+            confirm_body = None
+        elif not paid_ref:
+            amt = ipp_now.get("amount") or 0.0
+            issued_ref = ipp_now.get("reference") or "—"
+            return {
+                "success": False,
+                "message": (
+                    f"💳 **Gate 4: Initial Premium Payment is awaiting payment** for case **{case.get('caseNumber')}**.\n\n"
+                    f"- **Amount due**: PKR {amt:,.2f}\n"
+                    f"- **Payment method**: {method}\n"
+                    f"- **Payment reference**: `{issued_ref}`\n\n"
+                    f"Pay this amount using the reference above. Once the payment has gone through, reply with the "
+                    f"transaction reference (for example “Confirm payment, reference {issued_ref}”) — the case moves on only after that."
+                ),
+                "status": "AwaitingPayment",
+                "amount": amt,
+                "reference": issued_ref,
+                "quick_actions": [
+                    {"label": "I've paid — confirm payment", "actionType": "submit",
+                     "payload": f"Confirm the initial premium payment for case {case.get('caseNumber')} with payment reference {issued_ref}"},
+                    {"label": "Check Gate Status", "actionType": "submit",
+                     "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
+                ],
+            }
+        else:
+            confirm_body = {"method": method, "reference": paid_ref}
+    if confirm_body is None:
+        data = ipp_now
+    else:
+        conf_res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/ipp/confirm"), json=confirm_body)
+        if conf_res.status_code in (400, 402, 409):
+            return {
+                "success": False,
+                "message": f"⚠️ **Payment could not be confirmed**: {conf_res.json().get('detail', 'rejected')}",
+                "status": "AwaitingPayment",
+            }
+        conf_res.raise_for_status()
+        data = conf_res.json()
 
     amount = data.get("amount") or 0.0
     ref = data.get("reference") or "IPP-CONFIRMED"
@@ -2164,12 +2222,11 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
                 f"⚠️ **Gate 5 (SECP Insurance History) is not ready yet for Case {case.get('caseNumber')}**\n\n"
                 f"**Required first:** Gate 4 (Initial Premium Payment) must be realized under Section 30 before conducting cross-industry insurance history screening.\n"
                 f"Current IPP Status: `{ipp_status}`.\n\n"
-                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
+                f"{_anyway_hint()}"
             ),
             "status": "Locked",
             "quick_actions": [
-                {"label": "Yes, continue anyway", "actionType": "submit",
-                 "payload": f"Run insurance history check for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
+                *_anyway_chip(f"Run insurance history check for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
                 {"label": "4. Initial Premium (Gate 4)", "actionType": "submit",
                  "payload": f"Process initial premium payment for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -2215,7 +2272,7 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
 async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
     case_id = _case_id(case)
-    auto_complete = args.get("auto_complete", False)
+    auto_complete = bool(args.get("auto_complete", False)) and is_demo()
 
     # Prerequisite check: Gate 5 must be Clear or Cleared
     detail_res = await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))
@@ -2231,12 +2288,11 @@ async def _assess_medical_examination(args: dict, ctx: Ctx) -> dict:
                 f"⚠️ **Gate 6 (Medical Examination) is not ready yet for Case {case.get('caseNumber')}**\n\n"
                 f"**Required first:** Gate 5 (Insurance History Check) must be completed before assessing Non-Medical Limits (NML) and diagnostic exams.\n"
                 f"Current History Status: `{hist_status}`.\n\n"
-                f"You can continue anyway (for example in a demo) — choose **Yes, continue anyway** below, or complete the earlier step first."
+                f"{_anyway_hint()}"
             ),
             "status": "Locked",
             "quick_actions": [
-                {"label": "Yes, continue anyway", "actionType": "submit",
-                 "payload": f"Assess medical examination for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"},
+                *_anyway_chip(f"Assess medical examination for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
                 {"label": "5. Insurance History (Gate 5)", "actionType": "submit",
                  "payload": f"Run insurance history check for case {case.get('caseNumber')}"},
                 {"label": "Check Gate Status", "actionType": "submit",
@@ -2428,13 +2484,15 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
     case_id = _case_id(case)
     case_no = case.get("caseNumber")
 
-    # Sequentially execute all 6 gates
-    await _verify_e_application({"case_number": case_no, "action": "auto_submit"}, ctx)
-    await _submit_agent_confidential_report({"case_number": case_no, "auto_fill": True}, ctx)
-    await _run_compliance_screening({"case_number": case_no}, ctx)
-    await _process_initial_premium_payment({"case_number": case_no}, ctx)
-    await _run_insurance_history_check({"case_number": case_no}, ctx)
-    await _assess_medical_examination({"case_number": case_no, "auto_complete": True}, ctx)
+    # Demo only: fabricate and clear all 6 gates in one go. Otherwise this is a
+    # status report — every gate has to be completed for real, one at a time.
+    if is_demo():
+        await _verify_e_application({"case_number": case_no, "action": "auto_submit"}, ctx)
+        await _submit_agent_confidential_report({"case_number": case_no, "auto_fill": True}, ctx)
+        await _run_compliance_screening({"case_number": case_no}, ctx)
+        await _process_initial_premium_payment({"case_number": case_no}, ctx)
+        await _run_insurance_history_check({"case_number": case_no}, ctx)
+        await _assess_medical_examination({"case_number": case_no, "auto_complete": True}, ctx)
 
     # Verify final status — each gate call above returns its own success/
     # failure but was fired without checking it (some gates have hard
@@ -2486,9 +2544,19 @@ async def _run_pre_underwriting_clearance(args: dict, ctx: Ctx) -> dict:
     # Report the real state and the real next step instead of the blanket
     # "completed" claim this used to make regardless of what happened.
     qa = []
-    if comp not in ("Passed", "Cleared"):
-        qa.append({"label": "Clear Flagged Compliance Check", "actionType": "submit",
-                   "payload": f"Proceed anyway despite compliance flags for case {case_no}"})
+    if e_app != "Verified":
+        qa.append({"label": "1. Generate E-App Link", "actionType": "submit",
+                   "payload": f"Generate e-application link for case {case_no}"})
+    elif acr != "Submitted":
+        qa.append({"label": "2. Submit ACR", "actionType": "submit",
+                   "payload": f"Submit agent confidential report for case {case_no}"})
+    elif comp not in ("Passed", "Cleared"):
+        if is_demo():
+            qa.append({"label": "Clear Flagged Compliance Check", "actionType": "submit",
+                       "payload": f"Proceed anyway despite compliance flags for case {case_no}"})
+        else:
+            qa.append({"label": "3. Compliance Screen", "actionType": "submit",
+                       "payload": f"Run compliance screening for case {case_no}"})
     elif ipp != "Realized":
         qa.append({"label": "4. Process IPP Payment", "actionType": "submit",
                    "payload": f"Process initial premium payment for case {case_no}"})
@@ -2643,7 +2711,7 @@ async def _get_pre_issuance_status(args: dict, ctx: Ctx) -> dict:
         if blockers:
             lines.append(f"\n⚠️ Blockers: {', '.join(blockers)}")
         if warnings:
-            lines.append(f"ℹ️ Warnings (demo bypass): {'; '.join(warnings)}")
+            lines.append(f"ℹ️ Warnings{' (demo bypass)' if is_demo() else ''}: {'; '.join(warnings)}")
 
     qa = []
     if not ready or warnings:
@@ -2691,14 +2759,15 @@ async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
     except httpx.HTTPError:
         completed_steps.append("Requirements already seeded")
 
-    # Fetch all requirements and verify/waive them
+    # Fetch all requirements and verify/waive them. Demo only: outside it each
+    # requirement has to be verified by the person who actually reviews it.
     try:
         reqs_res = await ctx.client.get(ctx.tsvc(f"/policies/{policy_id}/requirements"))
         reqs_res.raise_for_status()
         reqs = reqs_res.json()
         verified_count = 0
         for req in reqs:
-            if req.get("status") not in ("Verified", "Waived"):
+            if is_demo() and req.get("status") not in ("Verified", "Waived"):
                 try:
                     await ctx.client.post(
                         ctx.tsvc(f"/requirements/{req['id']}/verify"),
@@ -2707,8 +2776,11 @@ async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
                     verified_count += 1
                 except httpx.HTTPError:
                     pass
+        pending_reqs = [r for r in reqs if r.get("status") not in ("Verified", "Waived")]
         if verified_count:
             completed_steps.append(f"{verified_count} requirement(s) verified")
+        elif pending_reqs:
+            completed_steps.append(f"{len(pending_reqs)} requirement(s) still need to be verified")
         else:
             completed_steps.append("All requirements already cleared")
     except httpx.HTTPError as e:
@@ -2724,7 +2796,7 @@ async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
         # Clear any flagged checks
         cleared_count = 0
         for check in checks:
-            if check.get("status") in ("Flagged", "Failed"):
+            if is_demo() and check.get("status") in ("Flagged", "Failed"):
                 try:
                     await ctx.client.post(
                         ctx.tsvc(f"/compliance/{check['id']}/clear"),
@@ -2735,6 +2807,8 @@ async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
                     pass
         if cleared_count:
             completed_steps.append(f"{cleared_count} compliance flag(s) cleared")
+        elif not is_demo() and any(c.get("status") in ("Flagged", "Failed") for c in checks):
+            completed_steps.append("Flagged compliance checks need a compliance officer's review")
     except httpx.HTTPError as e:
         completed_steps.append(f"Compliance: {e}")
 
@@ -2764,16 +2838,19 @@ async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
         )
         if blockers:
             message += f"⚠️ Remaining blockers: {', '.join(blockers)}\n"
-        if warnings:
+        if warnings and is_demo():
             message += f"ℹ️ Demo warnings (will be bypassed): {'; '.join(warnings)}\n"
-        message += "\n**Ready to issue** (demo mode allows bypass of warnings)."
+        if is_demo():
+            message += "\n**Ready to issue** (demo mode allows bypass of warnings)."
+        else:
+            message += "\n**Not ready to issue yet** — complete the remaining items above, then run verification again."
 
-    qa = [
-        {"label": "Issue Policy Now", "actionType": "submit",
-         "payload": f"Issue the policy for case {case.get('caseNumber')}"},
-        {"label": "View Readiness", "actionType": "submit",
-         "payload": f"Check pre-issuance status for case {case.get('caseNumber')}"},
-    ]
+    qa = []
+    if ready or is_demo():
+        qa.append({"label": "Issue Policy Now", "actionType": "submit",
+                   "payload": f"Issue the policy for case {case.get('caseNumber')}"})
+    qa.append({"label": "View Readiness", "actionType": "submit",
+               "payload": f"Check pre-issuance status for case {case.get('caseNumber')}"})
 
     return {
         "success": True,
@@ -3333,7 +3410,7 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
             tenant_id=ctx.effective_tenant_id,
             exec_ctx=ctx,
         )
-        return await handler(args, scoped)
+        return await handler(strip_demo_args(args), scoped)
     except ChoiceNeeded as exc:
         # A "couldn't find it, but here's what does exist" path — offered as
         # chips instead of a dead-end string the user has to retype from.

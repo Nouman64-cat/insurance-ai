@@ -24,6 +24,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from services import payment_gateway
+from services.env_mode import is_demo
 from services.policy_documents import generate_and_store_documents, generate_and_store_premium_notice
 from services.pre_issuance_gate import NotReadyToIssue, assert_ready_to_issue, compute_readiness
 from services.pricing_engine import GRACE_PERIOD_DAYS, PricingEngine
@@ -738,11 +739,13 @@ async def issue_policy(
     # ── Pre-flight checks (outside transaction — read-only) ──────────────────
     policy = await _get_policy(session, tenant_id, policy_id)
     status_val = _st(policy)
-    if status_val not in ("Approved", "AcceptedWithLoadings", "Issued", "UnderReview"):
+    # An undecided (UnderReview) policy is only waved through to issue in demo mode.
+    issuable = ("Approved", "AcceptedWithLoadings", "Issued") + (("UnderReview",) if is_demo() else ())
+    if status_val not in issuable:
         raise HTTPException(
             400,
-            "Policy must be Approved, AcceptedWithLoadings, Issued, or UnderReview to issue "
-            f"(current: {status_val})",
+            f"Policy must be {', '.join(issuable)} to issue (current: {status_val})"
+            + ("" if is_demo() else " — an underwriting decision is required first"),
         )
     if policy.policy_number:
         raise HTTPException(400, "Policy already issued")
@@ -979,6 +982,7 @@ async def confirm_payment(
         payment_gateway.PaymentMethodEnum.JAZZCASH
     )
     try:
+        payment_gateway.require_payer_reference(body.reference, schedule.payment_reference)
         intent = payment_gateway.confirm_payment(reference, amount, body.method, realize=body.realize)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc

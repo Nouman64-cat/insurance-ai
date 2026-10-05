@@ -30,6 +30,7 @@ import { IssuanceModal, SuccessModal, PaymentModal } from "./policy/IssuanceModa
 import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/policies";
 import { ACRModal } from "./entities/ACRModal";
 import RuleBuilderModal from "./rule-engine/RuleBuilderModal";
+import { IS_DEMO } from "@/lib/envMode";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -2067,6 +2068,24 @@ export function CopilotInterface() {
   };
 
   const [chatSearch, setChatSearch] = useState("");
+  // Chat history renders in windows: 15 up front, 10 more each time the user
+  // scrolls to the bottom, so a very long history is never mounted at once.
+  const CHAT_PAGE_FIRST = 15;
+  const CHAT_PAGE_NEXT = 10;
+  const [visibleChats, setVisibleChats] = useState(CHAT_PAGE_FIRST);
+  const chatListRef = useRef<HTMLDivElement | null>(null);
+  const chatSentinelRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { setVisibleChats(CHAT_PAGE_FIRST); }, [chatSearch]);
+  useEffect(() => {
+    const el = chatSentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => { if (entries[0]?.isIntersecting) setVisibleChats((n) => n + CHAT_PAGE_NEXT); },
+      { root: chatListRef.current, rootMargin: "0px 0px 120px 0px" },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [visibleChats, chatSearch, sessions.length, isAutomationMode]);
 
   // Once one button in a message's quick-action group is clicked, the whole
   // group locks — the clicked one stays highlighted, the rest grey out —
@@ -2355,7 +2374,7 @@ export function CopilotInterface() {
               )}
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+          <div ref={chatListRef} className="flex-1 overflow-y-auto p-4 custom-scrollbar">
             {sessions.length > 0 && (() => {
               const filtered = [...sessions]
                 .sort((a, b) => {
@@ -2371,7 +2390,7 @@ export function CopilotInterface() {
               );
               return (
                 <div className="space-y-1">
-                  {filtered.map(session => (
+                  {filtered.slice(0, visibleChats).map(session => (
                     <div
                       key={session.id}
                       className="relative group"
@@ -2461,25 +2480,29 @@ export function CopilotInterface() {
                             Rename
                           </button>
 
-                          <button
-                            onClick={(e) => handleExportSession(session, "md", e)}
-                            className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
-                          >
-                            <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                            </svg>
-                            Export as Markdown
-                          </button>
+                          {IS_DEMO && (
+                            <>
+                              <button
+                                onClick={(e) => handleExportSession(session, "md", e)}
+                                className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
+                              >
+                                <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                                Export as Markdown
+                              </button>
 
-                          <button
-                            onClick={(e) => handleExportSession(session, "json", e)}
-                            className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
-                          >
-                            <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-                            </svg>
-                            Export as JSON
-                          </button>
+                              <button
+                                onClick={(e) => handleExportSession(session, "json", e)}
+                                className="flex items-center gap-2.5 w-full px-3 py-2 text-zinc-700 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:text-white dark:hover:bg-white/10 transition-colors font-medium text-left"
+                              >
+                                <svg className="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+                                </svg>
+                                Export as JSON
+                              </button>
+                            </>
+                          )}
 
                           <div className="my-1 border-t border-zinc-200 dark:border-white/10" />
 
@@ -2499,6 +2522,11 @@ export function CopilotInterface() {
                       )}
                     </div>
                   ))}
+                  {visibleChats < filtered.length && (
+                    <div ref={chatSentinelRef} className="py-3 text-center text-[11px] text-zinc-400">
+                      Loading more chats…
+                    </div>
+                  )}
               </div>
               );
             })()}

@@ -750,6 +750,11 @@ class ProcessIPPArgs(BaseModel):
     applicant_name: Optional[str] = None
     cnic: Optional[str] = None
     payment_method: Optional[str] = Field(default="JazzCash", description="Payment method: JazzCash, Easypaisa, Card, BankTransfer.")
+    payment_reference: Optional[str] = Field(
+        default=None,
+        description="The transaction reference the payer was issued, once they say the payment is done "
+        "(e.g. 'Confirm payment, reference JC-1A2B3C4D'). Leave unset on the first request.",
+    )
     bypass_prerequisites: Optional[bool] = Field(
         default=False,
         description="Set true ONLY when the user has just confirmed they want to continue anyway "

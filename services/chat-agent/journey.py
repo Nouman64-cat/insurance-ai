@@ -31,6 +31,7 @@ from langchain_core.messages import ToolMessage
 from pages import build_route
 from state import ChatState
 from tool_executor import API_GATEWAY_URL, ExecCtx, execute_tool, upload_documents_action
+from env_mode import is_demo
 
 # Stage metadata: node -> (stage id, UI label). Order matters for the
 # "what comes next" markers.
@@ -496,6 +497,7 @@ async def j_finish(state: ChatState) -> dict:
                 {"label": "Open Case", "actionType": "embed", "payload": route},
                 {"label": "Check gate status", "actionType": "submit",
                  "payload": f"Check pre-underwriting status for case {case_no or cnic}"},
+                {"label": "Resume journey", "actionType": "submit", "payload": "Continue the underwriting journey"},
             ]
     elif outcome == "Pending Documents":
         missing = state.get("journey_missing_documents", [])
@@ -542,7 +544,8 @@ async def j_finish(state: ChatState) -> dict:
             "message": f"Underwriting journey complete — {case_no} finished as **{outcome or 'Closed'}**.",
             "quick_actions": [
                 {"label": "View Case", "actionType": "embed", "payload": route},
-                {"label": "Start another journey", "actionType": "submit", "payload": "Run the underwriting journey with demo data"},
+                *([{"label": "Start another journey", "actionType": "submit", "payload": "Run the underwriting journey with demo data"}]
+                  if is_demo() else []),
             ],
         })
         if r:
