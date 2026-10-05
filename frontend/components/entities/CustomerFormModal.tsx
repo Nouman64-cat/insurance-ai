@@ -37,6 +37,9 @@ interface Props {
     // Set only when a new customer was created (not on edit).
     created?: { id: string; isNew: true; name: string; cnic: string | null; hasProposal: boolean }
   ) => void;
+  /** Create mode: acquisition source to record on the new customer (set when the
+   *  form is opened from the Copilot after the user picked one there). */
+  defaultAcquisitionSourceId?: string | null;
 }
 
 // Form fields that can be auto-filled from an uploaded document, with the tab
@@ -116,7 +119,7 @@ const EXTRACT_FIELDS: { key: ExtractKey; label: string; tab: string }[] = [
   { key: "policyTerm", label: "Policy Term", tab: "insurance_plan" },
 ];
 
-export default function CustomerFormModal({ open, mode, customer, onClose, onSaved }: Props) {
+export default function CustomerFormModal({ open, mode, customer, onClose, onSaved, defaultAcquisitionSourceId }: Props) {
   const isCreate = mode === "create";
 
   const [error, setError] = useState("");
@@ -690,6 +693,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         province: province || null,
         branch_id: branchId || null,
         assigned_agent_id: assignedAgentId || null,
+        ...(defaultAcquisitionSourceId ? { acquisition_source_id: defaultAcquisitionSourceId } : {}),
         details: payloadDetails,
       });
 

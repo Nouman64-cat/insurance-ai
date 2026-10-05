@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { ClawbackTransaction, listClawbacks } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 export default function ClawbackEnginePage() {
   const [clawbacks, setClawbacks] = useState<ClawbackTransaction[]>([]);
@@ -22,6 +23,8 @@ export default function ClawbackEnginePage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const { pageItems: pagedClawbacks, pagination } = usePagination(clawbacks);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -76,7 +79,7 @@ export default function ClawbackEnginePage() {
               ) : clawbacks.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">No clawback transactions found.</td></tr>
               ) : (
-                clawbacks.map((c) => (
+                pagedClawbacks.map((c) => (
                   <tr key={c.clawbackId} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3">
                       <div className="font-medium text-slate-900">{c.policyNumber}</div>
@@ -112,6 +115,7 @@ export default function ClawbackEnginePage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="clawbacks" inline />
       </div>
     </div>
   );

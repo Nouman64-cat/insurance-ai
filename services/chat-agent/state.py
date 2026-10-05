@@ -20,6 +20,16 @@ class ChatState(TypedDict, total=False):
     # applied to the create call that follows and then cleared. Only ever set
     # for non-Agent roles — an Agent is auto-assigned as their own lead's owner.
     lead_agent: Optional[str]
+    # Acquisition source picked at the very start of intake, same lifecycle as
+    # lead_agent. {"id": <uuid or None>, "name": <label>} — id None means the user
+    # chose "Direct" (no source). None = never asked.
+    lead_source: Optional[dict[str, Any]]
+    # True once the customer-intake questions (source / agent / type) have been
+    # answered and until the customer is created. Lets later steps know they are part
+    # of that guided flow — which, for demo data, means the proposal steps, never the
+    # automated full journey — even for an Agent login, who is asked neither source
+    # nor agent.
+    lead_intake: Optional[bool]
 
     # ── Autonomous underwriting journey (agentic pipeline) ──────────────────
     # The tool_call that launched the pipeline — j_finish answers it with a

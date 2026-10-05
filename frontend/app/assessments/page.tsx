@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { MetricCard } from "@/components/MetricCard";
 import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } from "@/components/SegmentDropdown";
 import type { AIDecision } from "@/lib/mock-data";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -358,6 +359,8 @@ export default function AssessmentHistoryPage() {
     return true;
   });
 
+  const { pageItems: pagedAssessments, pagination } = usePagination(visible);
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-slate-50/50">
       {/* Page header */}
@@ -455,6 +458,7 @@ export default function AssessmentHistoryPage() {
         )}
 
         {visible.length > 0 && (
+          <>
           <table className="w-full text-xs bg-white">
             <thead className="sticky top-0 bg-slate-50/90 backdrop-blur border-b border-slate-200 z-10">
               <tr>
@@ -469,7 +473,7 @@ export default function AssessmentHistoryPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {visible.map((a) => {
+              {pagedAssessments.map((a) => {
                 const isSelected = selected?.id === a.id;
                 return (
                   <tr
@@ -569,6 +573,8 @@ export default function AssessmentHistoryPage() {
               })}
             </tbody>
           </table>
+          <Pagination pagination={pagination} noun="assessments" inline />
+          </>
         )}
 
         {/* Load more */}

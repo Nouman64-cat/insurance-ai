@@ -726,6 +726,32 @@ class Top5PlansOutput(BaseModel):
 # Above this many options, chips stop being a menu and become a wall of text.
 _CHIP_LIMIT = 6
 
+# Acquisition source types as the platform names them (AcquisitionSourceType),
+# in the order they should be offered.
+_SOURCE_TYPE_ORDER = ["AGENT", "BROKER", "BANCASSURANCE", "CORPORATE_AGENT", "DIRECT", "DIGITAL"]
+_SOURCE_TYPE_LABELS = {
+    "AGENT": "Agent",
+    "BROKER": "Broker",
+    "BANCASSURANCE": "Bancassurance",
+    "CORPORATE_AGENT": "Corporate Agent",
+    "DIRECT": "Walk-in",
+    "DIGITAL": "Digital",
+}
+
+
+def _source_covers_agent(source: dict | None) -> bool:
+    """Once a specific acquisition source has been picked (an Agent, a Broker, …) it
+    stands in for "who owns this customer", so that isn't asked as a third question.
+    Only when the user chose "No acquisition source" is an agent still asked for."""
+    return bool(source) and bool(source.get("id"))
+
+
+def _source_echo(source: dict) -> str:
+    """"Source selected: Agent — Arslan Amjad (67678)." — says what was picked, since
+    a dropdown selection adds no chat bubble of its own."""
+    kind = f"{source['type']} — " if source.get("type") else ""
+    return f"Source selected: **{kind}{source['name']}**."
+
 
 def _ask_choice(
     name: str,
@@ -1224,10 +1250,31 @@ async def permission_gate(state: ChatState) -> Command:
     # An agent picked at the start of intake rides along on the create call.
     # Cleared once consumed so a later, unrelated "add a customer" asks again.
     consumed_lead_agent = False
-    if name in LEAD_INTAKE_TOOLS and state.get("lead_agent"):
+    if name in LEAD_INTAKE_TOOLS and (
+        state.get("lead_agent") or state.get("lead_source") is not None or state.get("lead_intake")
+    ):
         consumed_lead_agent = True
-        if not args.get("agent_name") and not args.get("agent_email"):
+        # "Add demo data" in the guided intake creates the demo customer with a Draft
+        # proposal and hands over to the proposal steps. The model sometimes sets
+        # full_journey, which instead auto-runs case, proposal and all six gates and
+        # lands on risk assessment — a different, shorter route that depended on its
+        # mood. Inside the intake it is never wanted, so it is never allowed.
+        if name == "quick_start_workflow":
+            args["full_journey"] = False
+        if state.get("lead_agent") and not args.get("agent_name") and not args.get("agent_email"):
             args["agent_name"] = state["lead_agent"]
+        # (Only individual customers carry an acquisition source; the id is ignored
+        # by the organization / family create calls.)
+        source_id = (state.get("lead_source") or {}).get("id")
+        if source_id and not args.get("acquisition_source_id"):
+            args["acquisition_source_id"] = source_id
+        # A chosen source stands in for the agent: use its login account if it has
+        # one, otherwise leave the lead unassigned rather than asking again.
+        if _source_covers_agent(state.get("lead_source")) and not (args.get("agent_name") or args.get("agent_email")):
+            if (state.get("lead_source") or {}).get("user_id"):
+                args["agent_id"] = state["lead_source"]["user_id"]
+            else:
+                args["no_agent"] = True
 
     # ── Customer intake: which kind of customer, as chips rather than prose ──
     #
@@ -1244,12 +1291,31 @@ async def permission_gate(state: ChatState) -> Command:
         # Who owns this customer is the first thing asked — before the type and
         # before any details — rather than surfacing as a picker only once the
         # create tool runs. An Agent is their own lead's owner, so never asked.
-        agent_choices: list = []
+        is_agent_role = (ctx.role or "").strip().lower() == "agent"
+
+        # Where the customer came from is the very first question, then who owns
+        # them, then what kind of customer. Each is skipped when it doesn't apply
+        # (an Agent is their own lead's owner; roles that can't read the sources
+        # list get no source question).
+        source_rows: list = []
         agent_rows: list = []
-        if (ctx.role or "").strip().lower() != "agent":
-            listed = await execute_tool("list_agent_users", {}, ctx)
-            agent_rows = listed.get("agents") or []
-            agent_choices = [(f"{a['name']} ({a['email']})", a["name"] or a["email"]) for a in agent_rows]
+        if not is_agent_role:
+            source_rows = (await execute_tool("list_acquisition_sources", {}, ctx)).get("sources") or []
+            agent_rows = (await execute_tool("list_agent_users", {}, ctx)).get("agents") or []
+        no_source_label = "No acquisition source"
+        # Active sources grouped by their type (Agent, Broker, …), in a stable order.
+        sources_by_type: dict[str, list] = {}
+        for r in source_rows:
+            sources_by_type.setdefault(r.get("type") or "OTHER", []).append(r)
+        type_choices = [
+            (_SOURCE_TYPE_LABELS.get(t, t.replace("_", " ").title()), t)
+            for t in _SOURCE_TYPE_ORDER if t in sources_by_type
+        ] + [
+            (_SOURCE_TYPE_LABELS.get(t, t.replace("_", " ").title()), t)
+            for t in sources_by_type if t not in _SOURCE_TYPE_ORDER
+        ]
+        source_choices = (type_choices + [(no_source_label, "")]) if type_choices else []
+        agent_choices = [(f"{a['name']} ({a['email']})", a["name"] or a["email"]) for a in agent_rows]
 
         # (display, tool to call next, url slug for the leads-page form chooser)
         choices = [
@@ -1257,51 +1323,125 @@ async def permission_gate(state: ChatState) -> Command:
             ("Corporate (Organization)", "add_organization", "corporate"),
             ("Family group", "add_family_group", "family"),
         ]
-        # "Go back" from the type question returns to the agent question. It is
-        # offered only when an agent was asked at all, and the question simply
-        # repeats (interrupts replay in order, so each pass is a fresh pick).
         go_back_chip = {"label": "← Go back", "actionType": "submit", "payload": "Go back"}
-        # Coming back from the next step ("How would you like to proceed?") the
-        # agent is already chosen — keep it for the first pass.
-        reuse_agent = state.get("lead_agent") if args.get("keep_agent") else None
+        order = [k for k, present in (("source", bool(source_choices)), ("agent", bool(agent_choices)), ("type", True)) if present]
 
+        # Coming back from the next step ("How would you like to proceed?") what was
+        # already picked is kept for the first pass; going back further re-asks.
+        reuse = {"source": None, "agent": None}
+        if args.get("keep_agent"):
+            reuse = {"source": state.get("lead_source"), "agent": state.get("lead_agent")}
+
+        lead_source: dict | None = None   # {"id": uuid-or-None, "name": label}
         lead_agent = None
         lead_agent_email = None
-        while True:
-            lead_agent = None
-            lead_agent_email = None
-            if agent_choices:
-                if reuse_agent:
-                    lead_agent = reuse_agent
-                    reuse_agent = None
+        answer = ""
+        i = 0
+        while i < len(order):
+            kind = order[i]
+            # Go back returns one step; the question repeats (interrupts replay in
+            # order, so each pass is a fresh pick). Never offered on the first step.
+            extras = [go_back_chip] if i > 0 else None
+
+            def went_back(text: str) -> bool:
+                return i > 0 and text.strip().lower() in ("go back", "← go back")
+
+            def step_back() -> int:
+                # One step back — past the agent question when it was skipped.
+                j = i - 1
+                while j > 0 and order[j] == "agent" and _source_covers_agent(lead_source):
+                    j -= 1
+                return j
+
+            if kind == "source":
+                if reuse["source"] is not None:
+                    lead_source, reuse["source"] = reuse["source"], None
                 else:
+                    # First the type of source (Agent, Broker, …). A customer is tied
+                    # to one specific source, so then pick it: automatic when the type
+                    # has just one, a short list otherwise (with a way back to the type).
+                    while True:
+                        picked_type = _ask_choice(
+                            name, args,
+                            "What type of acquisition source brought this customer in?",
+                            source_choices,
+                        )
+                        t = _match_choice(picked_type, source_choices)
+                        if not t:                       # "No acquisition source"
+                            lead_source = {"id": None, "name": None, "type": None}
+                            break
+                        type_label = next((d for d, v in source_choices if v == t), t)
+                        rows = sources_by_type.get(t) or []
+                        if len(rows) == 1:
+                            row = rows[0]
+                        else:
+                            name_choices = [
+                                (f"{r['name']} ({r['code']})" if r.get("code") else r["name"], r["id"]) for r in rows
+                            ]
+                            picked = _ask_choice(
+                                name, args,
+                                f"Which {type_label} is it?",
+                                name_choices,
+                                select_label=type_label,
+                                placeholder=f"Choose a {type_label.lower()}…",
+                                force_select=True,
+                                extra_actions=[go_back_chip],
+                            )
+                            if picked.strip().lower() in ("go back", "← go back"):
+                                continue
+                            sid = _match_choice(picked, name_choices)
+                            row = next((r for r in rows if r["id"] == sid), rows[0])
+                        lead_source = {
+                            "id": row["id"],
+                            "name": f"{row['name']} ({row['code']})" if row.get("code") else row["name"],
+                            "type": type_label,
+                            "type_code": t,
+                            "user_id": row.get("user_id"),
+                        }
+                        break
+                i += 1
+            elif kind == "agent":
+                if _source_covers_agent(lead_source):
+                    lead_agent, lead_agent_email = None, None
+                    i += 1
+                    continue
+                if reuse["agent"]:
+                    lead_agent, reuse["agent"] = reuse["agent"], None
+                else:
+                    q = "Which agent is this customer assigned to?"
+                    if lead_source and lead_source.get("name"):
+                        q = f"{_source_echo(lead_source)} {q}"
                     picked = _ask_choice(
-                        name, args,
-                        "Which agent is this customer assigned to?",
-                        agent_choices,
-                        select_label="Agent",
-                        placeholder="Choose an agent…",
-                        force_select=True,
+                        name, args, q, agent_choices,
+                        select_label="Agent", placeholder="Choose an agent…",
+                        force_select=True, extra_actions=extras,
                     )
+                    if went_back(picked):
+                        i = step_back()
+                        continue
                     lead_agent = _match_choice(picked, agent_choices) or picked
                 lead_agent_email = next(
                     (a["email"] for a in agent_rows if lead_agent in (a["name"], a["email"])), None
                 )
-
-            # Echo the pick back — selecting from the dropdown adds no chat bubble
-            # of its own, so without this nothing says who was chosen.
-            type_question = "Is this an Individual, a Corporate (Organization), or a Family group?"
-            if lead_agent:
-                type_question = f"Agent selected: **{lead_agent}**. {type_question}"
-            answer = _ask_choice(
-                name, args,
-                type_question,
-                [(display, tool) for display, tool, _ in choices],
-                extra_actions=[go_back_chip] if agent_choices else None,
-            )
-            if agent_choices and answer.strip().lower() in ("go back", "← go back"):
-                continue
-            break
+                i += 1
+            else:  # type
+                # Echo earlier picks back — a dropdown selection adds no bubble of
+                # its own, so without this nothing says what was chosen.
+                echo = ""
+                if lead_agent:
+                    echo = f"Agent selected: **{lead_agent}**. "
+                elif lead_source and lead_source.get("name"):
+                    echo = f"{_source_echo(lead_source)} "
+                answer = _ask_choice(
+                    name, args,
+                    f"{echo}Is this an Individual, a Corporate (Organization), or a Family group?",
+                    [(display, tool) for display, tool, _ in choices],
+                    extra_actions=extras,
+                )
+                if went_back(answer):
+                    i = step_back()
+                    continue
+                i += 1
 
         resolved = next((c for c in choices if c[1] == _match_choice(answer, [(d, t) for d, t, _ in choices])), None)
         if resolved:
@@ -1311,12 +1451,18 @@ async def permission_gate(state: ChatState) -> Command:
             form_path = f"admin/leads?add={slug}"
             if lead_agent_email:
                 form_path += f"&agent_email={quote(lead_agent_email)}"
+            if lead_source and lead_source.get("id"):
+                form_path += f"&source_id={quote(str(lead_source['id']))}"
+            if _source_covers_agent(lead_source) and lead_source.get("user_id"):
+                form_path += f"&agent_id={quote(str(lead_source['user_id']))}"
             result = {
                 "success": True,
                 "message": f"Customer type resolved: {display}. "
+                           + (f"Acquisition source already chosen: {lead_source.get('type') + ' — ' if lead_source.get('type') else ''}{lead_source['name']} — applied automatically, so do NOT ask for or pass it. " if lead_source and lead_source.get("name") else "")
+                           + ("The chosen source stands in for the agent, so no separate agent is asked or needed — do NOT ask for or pass agent_name. " if _source_covers_agent(lead_source) else "")
                            + (f"Assigned agent already chosen: {lead_agent} — it is applied automatically, so do NOT ask for or pass agent_name. " if lead_agent else "")
                            + f"Now call `{resolved_tool}` "
-                           "with the applicant's details to register them. Do NOT ask the user if they want to add demo data or fill the form manually, and do NOT list or describe those two choices in your reply (e.g. as a bulleted list) — the UI renders them as clickable buttons below your message. Reply with a short acknowledgement only, e.g. \"Got it — Individual customer" + (f", assigned to {lead_agent}" if lead_agent else "") + ". How would you like to proceed?\" and add this warning on its own line: \"⚠️ Choose carefully — Add demo data creates the customer straight away, and you can't go back after that.\"",
+                           "with the applicant's details to register them. Do NOT ask the user if they want to add demo data or fill the form manually, and do NOT list or describe those two choices in your reply (e.g. as a bulleted list) — the UI renders them as clickable buttons below your message. Reply with a short acknowledgement only, e.g. \"Got it — Individual customer" + (f", assigned to {lead_agent}" if lead_agent else "") + (f", source {lead_source['name']}" if lead_source and lead_source.get("name") else "") + ". How would you like to proceed?\" and add this warning on its own line: \"⚠️ Choose carefully — Add demo data creates the customer straight away, and you can't go back after that.\"",
                 # Offer the two ways this normally goes from here — generated demo
                 # data (fast, for a test run) or the portal's own multi-step form
                 # (for a real applicant) — instead of only listing fields to type.
@@ -1336,6 +1482,8 @@ async def permission_gate(state: ChatState) -> Command:
         return back_to_agent({
             "messages": [_tool_result_message(name, call_id, result)],
             "lead_agent": lead_agent,
+            "lead_source": lead_source,
+            "lead_intake": True,
         })
 
     if name == "create_proposal":
@@ -2149,7 +2297,7 @@ async def permission_gate(state: ChatState) -> Command:
                 "journey_risk": None, "journey_outcome": None,
                 "requires_human_intervention": False,
                 "journey_audit": [], "journey_error": None,
-                "lead_agent": None,
+                "lead_agent": None, "lead_source": None, "lead_intake": None,
             })
         return Command(goto="j_resume", update={"pending_call": pending, "journey_error": None})
 
@@ -2193,6 +2341,8 @@ async def permission_gate(state: ChatState) -> Command:
     update: dict = {"messages": [_tool_result_message(name, call_id, result)]}
     if consumed_lead_agent:
         update["lead_agent"] = None
+        update["lead_source"] = None
+        update["lead_intake"] = None
     if result.get("last_action"):
         update["last_action"] = result["last_action"]
     if result.get("assessment"):

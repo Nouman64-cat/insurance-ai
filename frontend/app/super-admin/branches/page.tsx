@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 interface Tenant {
   id: string;
@@ -259,6 +260,8 @@ function BranchManagementContent() {
     }
   };
 
+  const { pageItems: pagedBranches, pagination } = usePagination(branches);
+
   if (!authorized) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center font-sans min-h-screen">
@@ -378,6 +381,7 @@ function BranchManagementContent() {
               </button>
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -391,7 +395,7 @@ function BranchManagementContent() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {branches.map((branch) => (
+                  {pagedBranches.map((branch) => (
                     <tr key={branch.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-5 py-3.5">
                         <span className="inline-flex px-2 py-0.5 rounded text-xs font-mono font-semibold bg-slate-100 text-slate-600 border border-slate-200">
@@ -435,6 +439,8 @@ function BranchManagementContent() {
                 </tbody>
               </table>
             </div>
+          <Pagination pagination={pagination} noun="branches" inline />
+            </>
           )}
         </div>
       )}

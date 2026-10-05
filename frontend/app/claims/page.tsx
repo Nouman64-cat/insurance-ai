@@ -6,6 +6,7 @@ import { listClaims, createClaim, Claim, CreateClaimRequest } from "@/app/servic
 import { listPolicies, getPolicyDetail, PolicyListItem, PolicyDetail } from "@/app/services/policies";
 import { formatCnic } from "@/lib/cnic";
 import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "@/components/commissions/DateRangeFilter";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 function getEligibleClaimTypes(policy?: PolicyListItem): string[] {
   if (!policy) {
@@ -308,6 +309,8 @@ export default function ClaimsPage() {
 
   // KPIs
   const total = claims.length;
+  const { pageItems: pagedClaims, pagination } = usePagination(claims);
+
   const inProgress = claims.filter(c => ["New", "Triaged", "Under Investigation", "Pending Documents"].includes(c.status)).length;
   const totalApproved = claims.filter(c => ["Approved", "Partial Approval", "Settled"].includes(c.status)).reduce((s, c) => s + (c.approved_amount || 0), 0);
   const highRisk = claims.filter(c => c.fraud_probability >= 0.5 || c.duplicate_flag).length;
@@ -557,7 +560,7 @@ export default function ClaimsPage() {
                   </td>
                 </tr>
               ) : (
-                claims.map(c => (
+                pagedClaims.map(c => (
                   <tr
                     key={c.id}
                     className={`transition-colors duration-1000 ${highlightId === c.id || highlightId === c.claim_number
@@ -623,6 +626,7 @@ export default function ClaimsPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="claims" inline />
       </div>
 
       {/* Modal */}

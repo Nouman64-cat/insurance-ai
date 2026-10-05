@@ -119,6 +119,11 @@ async def j_intake(state: ChatState) -> dict:
             add_args["agent_name"] = args["agent_name"]
         if args.get("agent_email"):
             add_args["agent_email"] = args["agent_email"]
+        if args.get("acquisition_source_id"):
+            add_args["acquisition_source_id"] = args["acquisition_source_id"]
+        for key in ("agent_id", "no_agent"):
+            if args.get(key):
+                add_args[key] = args[key]
         res = await execute_tool("add_customer", add_args, ctx)
         if not res.get("success"):
             return _fail(state, "j_intake", res.get("error") or res.get("message") or "Could not register the applicant.")

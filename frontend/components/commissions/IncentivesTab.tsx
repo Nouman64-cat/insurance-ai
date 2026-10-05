@@ -15,6 +15,7 @@ import {
 } from "../../app/services/commissions";
 import { DateRangeFilter, resolvePreset, type DatePreset, type DateRange } from "./DateRangeFilter";
 import { Card, EmptyState, Field, PayeeTypeBadge, fmtPKR, inputClass, selectClass } from "./shared";
+import { Pagination, usePagination } from "../Pagination";
 
 type IncentiveSubTab = "schemes" | "qualified" | "shortfall";
 const PAYEE_TYPES = Object.keys(PAYEE_TYPE_LABELS) as PayeeType[];
@@ -109,6 +110,10 @@ export default function IncentivesTab({
       q.scheme.name.toLowerCase().includes(query)
     );
   });
+
+  const { pageItems: pagedSchemes, pagination: schemePagination } = usePagination(filteredSchemes);
+  const { pageItems: pagedQualified, pagination: qualifiedPagination } = usePagination(filteredQualified);
+  const { pageItems: pagedShortfall, pagination: shortfallPagination } = usePagination(filteredShortfall);
 
   return (
     <div className="space-y-4">
@@ -208,7 +213,7 @@ export default function IncentivesTab({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredSchemes.map((s) => (
+                {pagedSchemes.map((s) => (
                   <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
                     <td className="p-3">
                       <p className="font-bold text-slate-900">{s.name}</p>
@@ -279,6 +284,7 @@ export default function IncentivesTab({
               </tbody>
             </table>
           </div>
+          <Pagination pagination={schemePagination} noun="bonus plans" inline />
         </Card>
       )}
 
@@ -301,7 +307,7 @@ export default function IncentivesTab({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredQualified.map((q) => (
+                  {pagedQualified.map((q) => (
                     <tr key={`${q.payee.id}-${q.scheme.id}`} className="hover:bg-slate-50/70">
                       <td className="p-3">
                         <p className="font-bold text-slate-900">{q.payee.name}</p>
@@ -333,6 +339,7 @@ export default function IncentivesTab({
               </table>
             </div>
           )}
+          {filteredQualified.length > 0 && <Pagination pagination={qualifiedPagination} noun="qualified payees" inline />}
         </Card>
       )}
 
@@ -354,7 +361,7 @@ export default function IncentivesTab({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredShortfall.map((q) => {
+                  {pagedShortfall.map((q) => {
                     const pct = q.scheme.threshold > 0 ? Math.min(100, (q.metricValue / q.scheme.threshold) * 100) : 0;
                     const isPersistency = q.scheme.kind === "PERSISTENCY_BONUS";
                     return (
@@ -384,6 +391,7 @@ export default function IncentivesTab({
               </table>
             </div>
           )}
+          {filteredShortfall.length > 0 && <Pagination pagination={shortfallPagination} noun="payees" inline />}
         </Card>
       )}
 

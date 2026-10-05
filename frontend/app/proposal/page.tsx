@@ -14,6 +14,7 @@ import { updateQuote } from "../services/quotes";
 import { listUnderwriters, Agent } from "../services/agents";
 import { listAcquisitionSources, AcquisitionSource } from "../services/acquisitionSources";
 import { updateCustomer } from "../services/customers";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,7 @@ const SOURCE_TYPE_LABELS: Record<string, string> = {
   BROKER: "Broker",
   BANCASSURANCE: "Bancassurance",
   CORPORATE_AGENT: "Corporate Agent",
-  DIRECT: "Direct",
+  DIRECT: "Walk-in",
   DIGITAL: "Digital",
 };
 
@@ -876,6 +877,11 @@ export default function QuotePage() {
   }, [segmentQuotes, search]);
 
   const totalResults = organizationGroups.length + familyGroups.length + individualGroups.length;
+
+  // Individual customers' proposals are the long list here, so they are paged; the
+  // corporate / family folders are already grouped and open on demand.
+  const individualQuotes = useMemo(() => individualGroups.flatMap((g) => g.quotes), [individualGroups]);
+  const { pageItems: pagedIndividualQuotes, pagination: individualPagination } = usePagination(individualQuotes);
   const activeTabLabel = STATUS_TABS.find((t) => t.id === activeTab)?.label ?? activeTab;
   const activeFilterCount = [dateFrom, dateTo, agentFilter, sourceFilter].filter(Boolean).length;
   const clearFilters = () => {
@@ -1244,7 +1250,7 @@ export default function QuotePage() {
                 )}
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                   {(() => {
-                    const allIndividualQuotes = individualGroups.flatMap(g => g.quotes);
+                    const allIndividualQuotes = individualQuotes;
                     const selectedQuotes = allIndividualQuotes.filter(q => selectedQuoteIds.has(q.quote_id));
                     const selectedIndividualCount = selectedQuotes.length;
                     const allSelected = allIndividualQuotes.length > 0 && selectedIndividualCount === allIndividualQuotes.length;
@@ -1276,7 +1282,7 @@ export default function QuotePage() {
                         {viewMode === 'grid' ? (
                           <div className="p-4 bg-slate-50/30">
                             <ProposalsGrid
-                              quotes={allIndividualQuotes}
+                              quotes={pagedIndividualQuotes}
                               selectedQuoteIds={selectedQuoteIds}
                               toggleSelection={toggleSelection}
                               toggleAllInFolder={toggleAllInFolder}
@@ -1285,13 +1291,14 @@ export default function QuotePage() {
                           </div>
                         ) : (
                           <ProposalsTable
-                            quotes={allIndividualQuotes}
+                            quotes={pagedIndividualQuotes}
                             selectedQuoteIds={selectedQuoteIds}
                             toggleSelection={toggleSelection}
                             toggleAllInFolder={toggleAllInFolder}
                             openQuote={openQuote}
                           />
                         )}
+                        <Pagination pagination={individualPagination} noun="proposals" inline />
                       </div>
                     );
                   })()}

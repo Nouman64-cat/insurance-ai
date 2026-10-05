@@ -24,6 +24,7 @@ import {
   inputClass,
   selectClass,
 } from "./shared";
+import { Pagination, usePagination } from "../Pagination";
 
 const PAYEE_TYPES = Object.keys(PAYEE_TYPE_LABELS) as PayeeType[];
 const CHANNELS = Object.keys(CHANNEL_LABELS) as DistributionChannel[];
@@ -94,6 +95,7 @@ export default function PayeesTab({
     }
   };
 
+  const { pageItems: pagedPayees, pagination: payeePagination } = usePagination(filtered);
   const counts = PAYEE_TYPES.map((t) => ({ type: t, count: payees.filter((p) => p.type === t).length })).filter(
     (c) => c.count > 0,
   );
@@ -191,6 +193,7 @@ export default function PayeesTab({
         ) : */} {filtered.length === 0 ? (
           <EmptyState message="No payees match these filters." />
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-500 font-medium uppercase tracking-wider text-[10px] border-b border-slate-200">
@@ -203,7 +206,7 @@ export default function PayeesTab({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-800">
-                {filtered.map((p) => {
+                {pagedPayees.map((p) => {
                   return (
                     <tr key={p.id} className="hover:bg-slate-50/80">
                       <td className="p-3">
@@ -238,6 +241,8 @@ export default function PayeesTab({
               </tbody>
             </table>
           </div>
+          <Pagination pagination={payeePagination} noun="payees" inline />
+          </>
         )}
       </Card>
 

@@ -35,6 +35,7 @@ import {
   acknowledgeOnboarding,
   FreeLookStatus,
 } from "@/app/services/postIssuance";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 /** The subset of a reinsurer the placement modal renders — shared by the live
  *  panel from tenant-service and the illustrative fallback below. */
@@ -777,6 +778,8 @@ export default function PostUnderwritingPage() {
     notify("SECP Welcome call verified! 14-Day Free-Look period activated.", true);
   };
 
+  const { pageItems: pagedPolicies, pagination } = usePagination(filtered);
+
   return (
     <div className="px-6 py-4 space-y-6 max-w-screen-2xl mx-auto w-full animate-in fade-in duration-300">
       {/* Executive Header Banner matching Pre-Underwriting */}
@@ -897,7 +900,7 @@ export default function PostUnderwritingPage() {
             <p className="text-xs text-slate-400 mt-1">Check "Show fully-cleared post-underwriting cases" or try another search.</p>
           </div>
         ) : (
-          filtered.map((p) => {
+          pagedPolicies.map((p) => {
             const gates = getPolicyGates(p);
             const courier = courierLogs[p.id];
             const call = welcomeCalls[p.id];
@@ -1300,6 +1303,7 @@ export default function PostUnderwritingPage() {
             );
           })
         )}
+        {!loading && <Pagination pagination={pagination} noun="cases" />}
       </div>
 
       {/* Verification Drawer / Modal matching Pre-Underwriting */}

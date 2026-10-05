@@ -59,6 +59,7 @@ from routers.insurance_plans import router as insurance_plans_router
 from routers.tokens import router as tokens_router
 from routers.llm_config import router as llm_config_router
 from routers.acquisition_sources import router as acquisition_sources_router
+from routers.roles import router as roles_router
 from routers.agent import router as agent_router
 from routers.policies import router as policies_router
 from routers.pre_issuance import router as pre_issuance_router
@@ -81,15 +82,7 @@ KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 
 # ── Standard RBAC roles seeded once at startup ────────────────────────────────
 
-_SEED_ROLES = [
-    ("SuperAdmin",  "Platform-level access — create tenants and bootstrap their first Admin."),
-    ("Admin",       "Full tenant access — manage that tenant's users and all resources."),
-    ("Underwriter", "Evaluate proposals, review risk assessments, and make decisions."),
-    ("ClaimsAdjuster", "Triage claims, verify documentation, evaluate benefit eligibility and issue payouts."),
-    ("ClaimsManager",  "Oversee claims department, approve high-value claims, manage adjusters and fraud reviews."),
-    ("Agent",       "Submit proposals and track their status."),
-    ("Viewer",      "Read-only access to dashboards and reports."),
-]
+from role_seed import SEED_ROLES as _SEED_ROLES
 
 
 async def _seed_roles(session: AsyncSession) -> None:
@@ -185,6 +178,7 @@ app.include_router(insurance_plans_router)
 app.include_router(tokens_router)
 app.include_router(llm_config_router)
 app.include_router(acquisition_sources_router)
+app.include_router(roles_router)
 app.include_router(agent_router)
 app.include_router(policies_router)
 app.include_router(pre_issuance_router)

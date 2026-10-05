@@ -1,4 +1,7 @@
+"use client";
+
 import { MetricCard } from "@/components/MetricCard";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const KPIS = [
   { title: "Pending Submissions", value: "14", subtitle: "awaiting underwriter review", accent: "blue" as const, trend: { value: "+3 since yesterday", direction: "up" as const } },
@@ -29,6 +32,8 @@ const PRIORITY_STYLE: Record<string, string> = {
 };
 
 export default function SubmissionsPage() {
+  const { pageItems: pagedRows, pagination } = usePagination(ROWS);
+
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div className="flex items-start justify-between">
@@ -64,7 +69,7 @@ export default function SubmissionsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {ROWS.map(r => (
+              {pagedRows.map(r => (
                 <tr key={r.ref} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.ref}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{r.customer}</td>
@@ -82,6 +87,7 @@ export default function SubmissionsPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="submissions" inline />
       </div>
     </div>
   );

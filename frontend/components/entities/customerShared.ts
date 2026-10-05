@@ -127,7 +127,7 @@ export const SOURCE_TYPE_LABELS: Record<string, string> = {
   BROKER: "Broker",
   BANCASSURANCE: "Bancassurance",
   CORPORATE_AGENT: "Corporate Agent",
-  DIRECT: "Direct",
+  DIRECT: "Walk-in",
   DIGITAL: "Digital",
 };
 

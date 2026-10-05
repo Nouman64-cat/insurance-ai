@@ -5,6 +5,7 @@ generate a username/password on the caller's behalf and email them rather
 than accepting them as input.
 """
 
+import os
 import secrets
 import string
 
@@ -14,7 +15,20 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from shared.models.core import User
 
 
+# Password given to every auto-provisioned account when ENV_VAR=demo, so demo
+# environments can be signed into without reading an email. Never used otherwise.
+DEMO_PASSWORD = "12345678"
+
+
 def generate_password(length: int = 16) -> str:
+    """A random password — or the fixed DEMO_PASSWORD when ENV_VAR=demo.
+
+    Read at call time rather than import time so the switch follows the
+    environment the process is actually running in. This is the single source of
+    every generated credential (users, tenant admins, acquisition-source logins,
+    the SuperAdmin bootstrap), so the demo rule can't be missed in one of them."""
+    if os.environ.get("ENV_VAR", "").strip().lower() == "demo":
+        return DEMO_PASSWORD
     alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
     while True:
         pwd = "".join(secrets.choice(alphabet) for _ in range(length))

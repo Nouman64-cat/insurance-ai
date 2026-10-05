@@ -1,4 +1,7 @@
+"use client";
+
 import { MetricCard } from "@/components/MetricCard";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const KPIS = [
   { title: "Active Agents", value: "156", subtitle: "across all branches", accent: "blue" as const },
@@ -34,6 +37,7 @@ function ScoreBar({ score }: { score: number }) {
 }
 
 export default function AgentsPage() {
+  const { pageItems: pagedRows, pagination } = usePagination(ROWS);
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div>
@@ -85,7 +89,7 @@ export default function AgentsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {ROWS.map(r => (
+              {pagedRows.map(r => (
                 <tr key={r.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.id}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{r.name}</td>
@@ -105,6 +109,7 @@ export default function AgentsPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="agents" inline />
       </div>
     </div>
   );

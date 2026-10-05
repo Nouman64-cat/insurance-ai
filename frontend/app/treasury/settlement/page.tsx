@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { SettlementRecord, listSettlementRecords } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 export default function SettlementPage() {
   const [records, setRecords] = useState<SettlementRecord[]>([]);
@@ -22,6 +23,8 @@ export default function SettlementPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const { pageItems: pagedRecords, pagination } = usePagination(records);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -68,7 +71,7 @@ export default function SettlementPage() {
               ) : records.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">No settlement records found.</td></tr>
               ) : (
-                records.map((r) => (
+                pagedRecords.map((r) => (
                   <tr key={r.settlementId} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3">
                       <div className="font-medium text-slate-900">{r.settlementId}</div>
@@ -107,6 +110,7 @@ export default function SettlementPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="settlement records" inline />
       </div>
     </div>
   );

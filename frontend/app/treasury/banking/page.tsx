@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { PayoutDispatchBatch, listPayoutDispatchBatches } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 export default function BankingGatewayPage() {
   const [batches, setBatches] = useState<PayoutDispatchBatch[]>([]);
@@ -22,6 +23,8 @@ export default function BankingGatewayPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const { pageItems: pagedBatches, pagination } = usePagination(batches);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -89,7 +92,7 @@ export default function BankingGatewayPage() {
               ) : batches.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">No payout batches found.</td></tr>
               ) : (
-                batches.map((b) => (
+                pagedBatches.map((b) => (
                   <tr key={b.batchId} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3">
                       <div className="font-medium text-slate-900">{b.batchId}</div>
@@ -124,6 +127,7 @@ export default function BankingGatewayPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="payment batches" inline />
       </div>
     </div>
   );

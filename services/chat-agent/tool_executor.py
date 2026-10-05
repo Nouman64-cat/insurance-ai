@@ -727,6 +727,9 @@ def _customer_payload(src: dict) -> dict:
     }
     if src.get("assigned_agent_id"):
         payload["assigned_agent_id"] = src["assigned_agent_id"]
+    # Who brought the customer in — picked at the start of intake, if at all.
+    if src.get("acquisition_source_id"):
+        payload["acquisition_source_id"] = src["acquisition_source_id"]
     return payload
 
 
@@ -804,11 +807,24 @@ async def _resolve_lead_agent(args: dict, ctx: Ctx) -> tuple[Optional[dict], Opt
     inventing a placeholder despite being told not to), offer the real list
     to pick from rather than leaving the lead unowned or dead-ending in text.
 
-    Returns (agent, error_response) — exactly one of the two is set.
+    Returns (agent, error_response). Normally exactly one is set; (None, None) means
+    the lead is deliberately left unassigned (an Agent-type acquisition source with
+    no login account).
     """
     role = (ctx.exec_ctx.role or "").strip().lower()
     if role == "agent":
         return await _current_user(ctx), None
+
+    # The acquisition source picked at the start of intake was an Agent: that source
+    # is the agent, so nothing is asked. Assign its login account when it has one
+    # (looked up by id — a not-yet-signed-in invite is hidden from the agent
+    # lists); otherwise leave the lead unassigned, as the Leads portal allows.
+    if args.get("agent_id"):
+        res = await ctx.client.get(ctx.tsvc(f"/users/{args['agent_id']}"))
+        if res.status_code == 200:
+            return res.json(), None
+    if args.get("no_agent") and not (args.get("agent_name") or args.get("agent_email")):
+        return None, None
 
     query = args.get("agent_name") or args.get("agent_email")
     if not query:
@@ -831,7 +847,7 @@ async def _add_customer(args: dict, ctx: Ctx) -> dict:
         return error
 
     payload = _customer_payload(args)
-    payload["assigned_agent_id"] = agent.get("id")
+    payload["assigned_agent_id"] = agent.get("id") if agent else None
     try:
         res = await ctx.client.post(ctx.tsvc("/customers"), json=payload)
         res.raise_for_status()
@@ -860,7 +876,7 @@ async def _add_customer(args: dict, ctx: Ctx) -> dict:
     return {
         "success": True,
         "customer_id": data.get("id"),
-        "message": f"Customer **{name}** registered, assigned to agent **{agent.get('full_name')}**.",
+        "message": f"Customer **{name}** registered" + (f", assigned to agent **{agent.get('full_name')}**." if agent else "."),
         "last_action": _action("add_customer", "customer", cnic or data.get("id", ""), route, f"Customer {name} added"),
         "quick_actions": [
             {"label": "View Lead", "actionType": "navigate", "payload": route},
@@ -960,6 +976,27 @@ async def _list_roles(args: dict, ctx: Ctx) -> dict:
     return {"success": True, "roles": res.json()}
 
 
+@handles("list_acquisition_sources")
+async def _list_acquisition_sources(args: dict, ctx: Ctx) -> dict:
+    """Not model-facing — exists so permission_gate can ask where a new customer
+    came from before anything else. The endpoint is Admin-only: for any role that
+    can't read it, return no sources so the question is simply skipped."""
+    try:
+        res = await ctx.client.get(ctx.tsvc("/acquisition-sources"))
+        res.raise_for_status()
+    except httpx.HTTPError:
+        return {"success": True, "sources": []}
+    return {
+        "success": True,
+        "sources": [
+            {"id": str(s.get("id")), "name": s.get("name"), "code": s.get("code"), "type": s.get("source_type"),
+             "user_id": str(s["user_id"]) if s.get("user_id") else None}
+            for s in res.json()
+            if s.get("is_active", True)
+        ],
+    }
+
+
 @handles("list_agent_users")
 async def _list_agents(args: dict, ctx: Ctx) -> dict:
     """Not model-facing — exists so permission_gate can ask who owns a new
@@ -1033,7 +1070,7 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
         "contact_person": args.get("contact_person"),
         "contact_email": args.get("contact_email"),
         "contact_phone": args.get("contact_phone"),
-        "assigned_agent_id": agent.get("id"),
+        "assigned_agent_id": agent.get("id") if agent else None,
     })
     res.raise_for_status()
     data = res.json()
@@ -1041,7 +1078,7 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
     return {
         "success": True,
         "organization_id": data["id"],
-        "message": f"Organization **{args['name']}** created, assigned to agent **{agent.get('full_name')}**.",
+        "message": f"Organization **{args['name']}** created" + (f", assigned to agent **{agent.get('full_name')}**." if agent else "."),
         "last_action": _action("add_organization", "organization", data["id"], route, f"Organization {args['name']} added"),
         "quick_actions": [
             {"label": "View Organization", "actionType": "navigate", "payload": route},
@@ -1066,11 +1103,11 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
         "contact_email": args.get("contact_email"),
         "contact_phone": args.get("contact_phone"),
         "household_declared_income": _as_float(args.get("household_declared_income")),
-        "assigned_agent_id": agent.get("id"),
+        "assigned_agent_id": agent.get("id") if agent else None,
     })
     res.raise_for_status()
     family_id = res.json()["id"]
-    message = f"Family group **{name}** created, assigned to agent **{agent.get('full_name')}**."
+    message = f"Family group **{name}** created" + (f", assigned to agent **{agent.get('full_name')}**." if agent else ".")
 
     enrolled_members = None
     case_numbers: list[str] = []
@@ -3159,13 +3196,15 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
         return error
 
     demo = _demo_customer()
+    if args.get("acquisition_source_id"):
+        demo["acquisition_source_id"] = args["acquisition_source_id"]
     if args.get("applicant_name"):
         parts = args["applicant_name"].strip().split(maxsplit=1)
         demo["first_name"] = parts[0]
         demo["last_name"] = parts[1] if len(parts) > 1 else parts[0]
 
     birth_year = demo.pop("_birth_year")
-    demo["assigned_agent_id"] = agent.get("id")
+    demo["assigned_agent_id"] = agent.get("id") if agent else None
 
     cust_res = await ctx.client.post(ctx.tsvc("/customers"), json=_customer_payload(demo))
     cust_res.raise_for_status()
@@ -3178,7 +3217,7 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
         f"- Age: {date.today().year - birth_year}\n"
         f"- Occupation: {demo['occupation']}\n"
         f"- Declared income: PKR {demo['declared_income']:,}\n"
-        f"- Agent: {agent.get('full_name')}"
+        f"- Agent: {agent.get('full_name') if agent else 'Unassigned'}"
     )
 
     if not args.get("full_journey"):

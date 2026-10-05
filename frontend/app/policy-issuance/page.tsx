@@ -465,6 +465,7 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
 
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 function PolicyIssuanceContent() {
   const searchParams = useSearchParams();
@@ -581,6 +582,8 @@ function PolicyIssuanceContent() {
       p.product_name.toLowerCase().includes(q)
     );
   }, [tab, queue, active, search, segment, filterStatus, dateFrom, dateTo]);
+
+  const { pageItems: pagedPolicies, pagination } = usePagination(filtered, 12, tab);
 
   const segmentCounts = useMemo(() => {
     const list = tab === "queue" ? queue : active;
@@ -734,6 +737,7 @@ function PolicyIssuanceContent() {
             </p>
           </div>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -750,7 +754,7 @@ function PolicyIssuanceContent() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map(p => (
+                {pagedPolicies.map(p => (
                   <tr
                     key={p.id}
                     className="hover:bg-slate-50 transition-colors cursor-pointer"
@@ -855,6 +859,8 @@ function PolicyIssuanceContent() {
               </tbody>
             </table>
           </div>
+          <Pagination pagination={pagination} noun="policies" inline />
+          </>
         )}
       </div>
 

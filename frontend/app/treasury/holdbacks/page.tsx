@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { CommissionHoldbackLien, listHoldbacks } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 export default function HoldbacksPage() {
   const [holdbacks, setHoldbacks] = useState<CommissionHoldbackLien[]>([]);
@@ -22,6 +23,8 @@ export default function HoldbacksPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const { pageItems: pagedHoldbacks, pagination } = usePagination(holdbacks);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -68,7 +71,7 @@ export default function HoldbacksPage() {
               ) : holdbacks.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">No active holdbacks found.</td></tr>
               ) : (
-                holdbacks.map((h) => (
+                pagedHoldbacks.map((h) => (
                   <tr key={h.holdbackId} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3">
                       <div className="font-medium text-slate-900">{h.category.replace(/_/g, ' ')}</div>
@@ -115,6 +118,7 @@ export default function HoldbacksPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="holdbacks" inline />
       </div>
     </div>
   );

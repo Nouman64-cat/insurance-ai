@@ -30,6 +30,7 @@ import {
   inputClass,
   selectClass,
 } from "./shared";
+import { Pagination, usePagination } from "../Pagination";
 
 const RUN_STATUS_STYLES: Record<PayoutRunStatus, string> = {
   DRAFT: "bg-slate-50 text-slate-600 border-slate-200",
@@ -124,6 +125,8 @@ export default function PayoutRunsTab({
     }
   };
 
+  const { pageItems: pagedRuns, pagination: runPagination } = usePagination(runs);
+
   return (
     <div className="space-y-4">
       <Card title="Create Payout Run">
@@ -177,7 +180,7 @@ export default function PayoutRunsTab({
           <EmptyState message="No payout runs yet. Create one above to batch the payable entries." />
         ) : (
           <div className="divide-y divide-slate-100">
-            {runs.map((run) => {
+            {pagedRuns.map((run) => {
               // Resolve the run's lines back to (entry, stage) pairs: an entry
               // may have one tranche here and another in a later run.
               const runLines = run.lines
@@ -373,6 +376,7 @@ export default function PayoutRunsTab({
             })}
           </div>
         )}
+        {runs.length > 0 && <Pagination pagination={runPagination} noun="payout runs" inline />}
       </Card>
     </div>
   );

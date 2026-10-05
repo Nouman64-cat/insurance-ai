@@ -12,6 +12,7 @@ import {
 } from "@/app/services/policies";
 import { fmtCoverage } from "@/lib/mock-data";
 import { MetricCard } from "@/components/MetricCard";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const URGENCY_CONFIG = {
   "90d": { label: "90 Days", color: "bg-slate-100 text-slate-600 border-slate-200", dot: "bg-slate-400", header: "bg-slate-50 border-slate-200" },
@@ -157,6 +158,20 @@ export default function RenewalsPage() {
     return groups;
   }, [renewals, search, filter]);
 
+  // The pipeline is paged as one list in urgency order (grace, 15d, 30d, …), and each
+  // page is regrouped under its urgency headings.
+  const RENEWAL_ORDER: UrgencyKey[] = ["grace", "15d", "30d", "60d", "90d"];
+  const flatRenewals = useMemo(
+    () => RENEWAL_ORDER.flatMap((k) => grouped[k].map((r) => ({ r, k }))),
+    [grouped] // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const { pageItems: pagedRenewals, pagination } = usePagination(flatRenewals);
+  const pagedGrouped = useMemo(() => {
+    const g: Record<UrgencyKey, UpcomingRenewal[]> = { "15d": [], "30d": [], "60d": [], "90d": [], grace: [] };
+    for (const { r, k } of pagedRenewals) g[k].push(r);
+    return g;
+  }, [pagedRenewals]);
+
   const totalRenewing = renewals.length;
   const graceCount = renewals.filter(r => r.urgency === "grace").length;
   const urgentCount = renewals.filter(r => ["15d", "30d"].includes(r.urgency)).length;
@@ -227,20 +242,23 @@ export default function RenewalsPage() {
         </div>
       ) : (
         /* Pipeline columns */
+        <>
         <div className="space-y-8">
           {(["grace", "15d", "30d", "60d", "90d"] as UrgencyKey[]).map(key => {
             const cfg = URGENCY_CONFIG[key];
-            const cards = grouped[key];
-            if (cards.length === 0 && filter !== "all" && filter !== key) return null;
+            const cards = pagedGrouped[key];
+            const total = grouped[key].length;
+            if (total === 0 && filter !== "all" && filter !== key) return null;
+            if (cards.length === 0 && total > 0) return null;   // all of this window is on another page
             return (
               <div key={key}>
                 {/* Column header */}
                 <div className={`flex items-center gap-2 px-4 py-2 rounded-xl border ${cfg.header} mb-3`}>
                   <span className={`w-2.5 h-2.5 rounded-full ${cfg.dot}`} />
                   <h3 className="text-sm font-bold text-slate-700">{cfg.label} Out</h3>
-                  <span className="ml-auto text-xs font-semibold text-slate-500">{cards.length} {cards.length === 1 ? "policy" : "policies"}</span>
+                  <span className="ml-auto text-xs font-semibold text-slate-500">{total} {total === 1 ? "policy" : "policies"}</span>
                 </div>
-                {cards.length === 0 ? (
+                {total === 0 ? (
                   <p className="text-xs text-slate-400 pl-4">No policies in this window.</p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -258,6 +276,8 @@ export default function RenewalsPage() {
             );
           })}
         </div>
+        <Pagination pagination={pagination} noun="renewals" />
+        </>
       )}
     </div>
   );

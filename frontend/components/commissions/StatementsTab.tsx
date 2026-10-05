@@ -21,6 +21,7 @@ import {
   fmtPKR,
   fmtPKRSigned,
 } from "./shared";
+import { Pagination, usePagination } from "../Pagination";
 
 function filterStatementByDate(statement: PayeeStatement, range: DateRange): PayeeStatement {
   if (!range.from || !range.to) return statement;
@@ -133,6 +134,8 @@ export default function StatementsTab({
   // Extract unique payee types present in statements for filter dropdown
   const availableRoles = Array.from(new Set(statements.map((s) => s.payee.type)));
 
+  const { pageItems: pagedStatements, pagination: statementPagination } = usePagination(filteredStatements);
+
   return (
     <div className="space-y-4">
       {/* Informational Guidance Banner */}
@@ -205,7 +208,7 @@ export default function StatementsTab({
             {filteredStatements.length === 0 ? (
               <div className="p-6 text-center text-xs text-slate-400">No payees match your search criteria.</div>
             ) : (
-              filteredStatements.map((s) => {
+              pagedStatements.map((s) => {
                 const isSelected = selected?.payee.id === s.payee.id;
                 return (
                   <button
@@ -235,6 +238,7 @@ export default function StatementsTab({
               })
             )}
           </div>
+          <Pagination pagination={statementPagination} noun="statements" inline />
         </Card>
 
         {/* Right Column: Statement Details & Itemized Lines */}

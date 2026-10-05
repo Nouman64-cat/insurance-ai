@@ -1,4 +1,7 @@
+"use client";
+
 import { MetricCard } from "@/components/MetricCard";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const KPIS = [
   { title: "Reports Generated MTD", value: "48", subtitle: "across all modules", accent: "blue" as const },
@@ -39,6 +42,8 @@ const STATUS_STYLE: Record<string, string> = {
 };
 
 export default function ReportsPage() {
+  const { pageItems: pagedReports, pagination } = usePagination(REPORTS);
+
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div>
@@ -70,7 +75,7 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {REPORTS.map(r => (
+              {pagedReports.map(r => (
                 <tr key={r.name} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 font-medium text-slate-800">{r.name}</td>
                   <td className="px-5 py-3">
@@ -95,6 +100,7 @@ export default function ReportsPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="reports" inline />
       </div>
     </div>
   );

@@ -46,6 +46,9 @@ async def _get_current_user(token: str, session: AsyncSession) -> User:
     user = await session.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    if user.is_deleted:
+        # A removed account's existing sessions stop working too.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
     return user
 
 
@@ -92,12 +95,20 @@ async def login_for_access_token(
 ):
     # Retrieve user by email (username field in form_data maps to email)
     user = (await session.exec(select(User).where(User.email == form_data.username))).first()
-    if not user or not _pwd.verify(form_data.password, user.hashed_password):
+    if not user or user.is_deleted or not _pwd.verify(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # A successful sign-in is the invitee acknowledging their credentials email:
+    # record it. Accounts issued to acquisition sources stay hidden from User
+    # Management until this is set (see routers/users.py).
+    user.last_login = datetime.utcnow()
+    user.is_verified = True
+    session.add(user)
+    await session.commit()
 
     # Generate payload
     payload = {

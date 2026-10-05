@@ -181,6 +181,25 @@ class RoleRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class RoleCreate(BaseModel):
+    name: str
+    description: str = ""
+
+
+class RoleUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+
+
+class RoleManageRead(BaseModel):
+    """A role as the SuperAdmin management page sees it."""
+    id: UUID
+    name: str
+    description: str
+    is_system: bool      # built-in: fixed name, can't be deleted
+    user_count: int = 0  # users currently holding the role
+
+
 # ── User ──────────────────────────────────────────────────────────────────────
 
 class SeedAdminCreate(BaseModel):
@@ -413,6 +432,13 @@ class AcquisitionSourceFull(BaseModel):
     is_active:        bool
     created_at:       datetime
     customer_count:   int = 0    # how many customers this source has brought in
+    user_id:          Optional[UUID] = None   # login account issued to this source, if any
+    # Login account issued to this source: None (no account), "invited"
+    # (credentials sent, not signed in yet) or "active" (has signed in).
+    login_status:     Optional[str] = None
+    login_role:       Optional[str] = None   # role the login account holds (follows the source type)
+    # Set only on the create / resend responses: did the credentials email go out?
+    credentials_email_sent: Optional[bool] = None
 
     model_config = {"from_attributes": True}
 

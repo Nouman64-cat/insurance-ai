@@ -1753,6 +1753,15 @@ export function CopilotInterface() {
       else localStorage.removeItem(STORAGE_KEY + "_active_session");
     } catch { /* storage unavailable */ }
   }, [activeSessionId]);
+  // Chat-history sidebar open/closed. Remembered across reloads; closing it gives the
+  // conversation the full width.
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try { return localStorage.getItem("copilot_sidebar_open") !== "false"; } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("copilot_sidebar_open", String(sidebarOpen)); } catch { /* storage unavailable */ }
+  }, [sidebarOpen]);
   const [openMenuSessionId, setOpenMenuSessionId] = useState<string | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>("");
@@ -2313,7 +2322,7 @@ export function CopilotInterface() {
         />
 
         {/* Sidebar */}
-        <div className="w-[260px] flex-shrink-0 bg-zinc-50 border-r border-zinc-200 dark:bg-[#0f1115] dark:border-zinc-800 flex-col hidden md:flex relative overflow-hidden">
+        <div className={`w-[260px] flex-shrink-0 bg-zinc-50 border-r border-zinc-200 dark:bg-[#0f1115] dark:border-zinc-800 flex-col hidden ${sidebarOpen ? "md:flex" : ""} relative overflow-hidden`}>
           <div className="absolute top-0 left-0 w-full h-48 bg-gradient-to-b from-blue-500/5 dark:from-blue-500/10 to-transparent pointer-events-none" />
           
           <div className="p-5 flex items-center gap-3 font-bold text-lg text-zinc-900 dark:text-white relative z-10">
@@ -2515,6 +2524,21 @@ export function CopilotInterface() {
              <div className="flex items-center gap-3">
                <button onClick={() => setAutomationMode(false)} className="md:hidden p-2 -ml-2 text-slate-600 hover:text-blue-600 transition-colors">
                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+               </button>
+               <button
+                 type="button"
+                 onClick={() => setSidebarOpen((v) => !v)}
+                 aria-label={sidebarOpen ? "Hide chat history" : "Show chat history"}
+                 aria-expanded={sidebarOpen}
+                 title={sidebarOpen ? "Hide chat history" : "Show chat history"}
+                 className="hidden md:flex p-2 -ml-2 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 dark:text-zinc-400 dark:hover:text-white dark:hover:bg-white/10 transition-colors"
+               >
+                 <svg className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+                   <rect x="3" y="4" width="18" height="16" rx="2.5" />
+                   <path strokeLinecap="round" d="M9 4v16" />
+                   {sidebarOpen && <path strokeLinecap="round" strokeLinejoin="round" d="M16 10l-2 2 2 2" />}
+                   {!sidebarOpen && <path strokeLinecap="round" strokeLinejoin="round" d="M14 10l2 2-2 2" />}
+                 </svg>
                </button>
                <div className="flex items-center gap-2">
                  <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
@@ -2888,7 +2912,7 @@ export function CopilotInterface() {
                                  return (
                                    <button
                                      key={`${action.actionType}-${action.label}-${idx}`}
-                                     disabled={isLocked}
+                                     disabled={isLocked || isChosen}
                                      onClick={() => {
                                        if (!isPassiveAction(action)) {
                                          setUsedActions(prev => ({ ...prev, [msg.id]: idx }));
@@ -2899,7 +2923,7 @@ export function CopilotInterface() {
                                        isUploaded
                                          ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600 font-bold"
                                          : isChosen
-                                         ? "bg-blue-600 text-white border-blue-600 font-bold"
+                                         ? "bg-blue-600 text-white border-blue-600 font-bold cursor-default"
                                          : isLocked
                                          ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                                          : "bg-white border-slate-200 hover:bg-slate-50 hover:border-blue-200 hover:text-blue-700"
@@ -3502,7 +3526,7 @@ export function CopilotInterface() {
                             return (
                             <button
                               key={`${action.actionType}-${action.label}-${idx}`}
-                              disabled={isLocked}
+                              disabled={isLocked || isChosen}
                               onClick={() => {
                                 if (!isPassiveAction(action)) {
                                   setUsedActions(prev => ({ ...prev, [msg.id]: idx }));
@@ -3513,7 +3537,7 @@ export function CopilotInterface() {
                                 isUploaded
                                   ? "bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-600"
                                   : isChosen
-                                    ? "bg-blue-600 hover:bg-blue-600 text-white border-blue-600"
+                                    ? "bg-blue-600 hover:bg-blue-600 text-white border-blue-600 cursor-default"
                                     : isLocked
                                       ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
                                       : action.actionType === "navigate"

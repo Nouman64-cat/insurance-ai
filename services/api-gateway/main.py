@@ -802,9 +802,15 @@ async def proxy_tenant_rules(tenant_id: UUID, path: str, request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/rules{path}")
 
 
-@app.api_route("/roles", methods=["GET", "OPTIONS"], include_in_schema=False)
+@app.api_route("/roles", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)
 async def proxy_roles(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles")
+
+
+# Role management (SuperAdmin-only; enforced by the tenant service).
+@app.api_route("/roles/{path:path}", methods=["GET", "PUT", "DELETE", "OPTIONS"], include_in_schema=False)
+async def proxy_roles_management(path: str, request: Request):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/roles/{path}")
 
 
 @app.api_route("/tokens/usage", methods=["GET", "POST", "OPTIONS"], include_in_schema=False)

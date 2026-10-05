@@ -19,6 +19,7 @@ import { runInsuranceHistory } from "@/app/services/insuranceHistory";
 import { assessMedicalExam, inviteMedicalExam, recordMedicalResult, MEDICAL_CLEARED } from "@/app/services/medicalExam";
 import api from "@/app/services/api";
 import FiltersPanel from "@/components/FiltersPanel";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const CASE_STATUS_STYLE: Record<string, string> = {
   New: "bg-slate-100 text-slate-600 border-slate-200",
@@ -569,6 +570,10 @@ function UnderwritingMainContent() {
     ];
   }, [folders]);
 
+  // Both lists are paged: the pre-underwriting proposals queue and the risk-engine folders.
+  const { pageItems: pagedPre, pagination: prePagination } = usePagination(preFiltered);
+  const { pageItems: pagedFolders, pagination: folderPagination } = usePagination(folders);
+
   return (
     <div className="px-6 py-4 space-y-4 max-w-screen-2xl mx-auto w-full">
 
@@ -664,7 +669,7 @@ function UnderwritingMainContent() {
                 <p className="text-xs text-slate-400 mt-1">Check "Show fully-cleared proposals" or try another search.</p>
               </div>
             ) : (
-              preFiltered.map((c) => {
+              pagedPre.map((c) => {
                 const cleared = isFullyReady(c);
                 const g1Done = c.e_application_status === "Verified";
                 const g2Done = c.acr_status === "Submitted";
@@ -1136,6 +1141,7 @@ function UnderwritingMainContent() {
                 );
               })
             )}
+            {!loading && <Pagination pagination={prePagination} noun="proposals" />}
           </div>
         </div>
       )}
@@ -1214,7 +1220,7 @@ function UnderwritingMainContent() {
               </div>
             ) : (
               <div className={viewMode === "grid" ? "p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" : "p-4 flex flex-col gap-3"}>
-                {folders.map((folder) => {
+                {pagedFolders.map((folder) => {
                   const isExpanded = expandedCustomerId === folder.customer_id;
                   const decidedCount = folder.cases.filter((c) => c.latest_ai_decision).length;
                   return (
@@ -1312,6 +1318,7 @@ function UnderwritingMainContent() {
                 })}
               </div>
             )}
+            {!loading && <Pagination pagination={folderPagination} noun="customer folders" />}
           </div>
         </div>
       )}

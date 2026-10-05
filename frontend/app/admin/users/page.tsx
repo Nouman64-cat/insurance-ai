@@ -6,6 +6,7 @@ import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { useHighlightTarget } from "@/lib/useHighlightTarget";
 import { useNotify } from "@/components/NotificationContext";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 interface User {
   id: string;
@@ -246,6 +247,9 @@ export default function UserManagementPage() {
     }
   };
 
+  const visibleUsers = users.filter((u) => u.email !== currentUserEmail);
+  const { pageItems: pagedUsers, pagination } = usePagination(visibleUsers);
+
   if (!authorized) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center font-sans min-h-screen">
@@ -268,7 +272,6 @@ export default function UserManagementPage() {
     );
   }
 
-  const visibleUsers = users.filter((u) => u.email !== currentUserEmail);
   useHighlightTarget("userId", !loading && visibleUsers.length > 0);
 
   return (
@@ -326,6 +329,7 @@ export default function UserManagementPage() {
             </button>
           </div>
         ) : (
+          <>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -341,7 +345,7 @@ export default function UserManagementPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {visibleUsers.map((user) => (
+                {pagedUsers.map((user) => (
                   <tr key={user.id} data-entity-id={user.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-3.5 font-medium text-slate-700">{user.username}</td>
                     <td className="px-5 py-3.5 font-semibold text-slate-800">{user.full_name}</td>
@@ -401,6 +405,8 @@ export default function UserManagementPage() {
               </tbody>
             </table>
           </div>
+          <Pagination pagination={pagination} noun="users" inline />
+          </>
         )}
       </div>
 

@@ -353,6 +353,18 @@ const NAV_ITEMS = [
         superAdminOnly: true,
       },
       {
+        href: "/super-admin/roles",
+        label: "Role Management",
+        icon: (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+            <path d="M12 2l8 3v6c0 5-3.5 9-8 11-4.5-2-8-6-8-11V5l8-3z" />
+            <path d="M9 12l2 2 4-4" />
+          </svg>
+        ),
+        badge: null,
+        superAdminOnly: true,
+      },
+      {
         href: "/super-admin/tokens",
         label: "Token Economy",
         icon: (
@@ -605,7 +617,7 @@ export function Sidebar() {
   }));
 
   const workingHrefs = ["/profile", "/cases", "/artifacts", "/live-evaluation", "/case-summarizer", "/assessments", "/underwriting", "/admin/users", "/admin/leads", "/admin/policyholders", "/financial", "/claims", "/claims/dashboard", "/claims/register"];
-  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/tokens", "/super-admin/llm-config"];
+  const superAdminHrefs = ["/super-admin/tenants", "/super-admin/admins", "/super-admin/branches", "/super-admin/roles", "/super-admin/tokens", "/super-admin/llm-config"];
 
   const displayGroups = (userRole === "SuperAdmin"
     ? [

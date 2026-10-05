@@ -35,6 +35,46 @@ interface UnifiedLead {
   /** The list endpoints return only the id — the name comes from the directory. */
   assignedAgentId?: string | null;
   assignedAgentName?: string | null;
+  /** Who brought the lead in (individual customers): the source's name and its type. */
+  sourceName?: string | null;
+  sourceType?: string | null;
+}
+
+const SOURCE_TYPE_LABELS: Record<string, string> = {
+  AGENT: "Agent",
+  BROKER: "Broker",
+  BANCASSURANCE: "Bancassurance",
+  CORPORATE_AGENT: "Corporate Agent",
+  DIRECT: "Walk-in",
+  DIGITAL: "Digital",
+};
+
+/**
+ * The Agent column: the type first, with the name beneath it — an acquisition source
+ * shows as "BROKER / Nouman Ejaz"; a lead with only an assigned agent shows "AGENT /
+ * <name>". When both exist, the assigned agent is noted underneath. Compact is the
+ * card-view size.
+ */
+function AgentCell({ lead, compact = false }: { lead: UnifiedLead; compact?: boolean }) {
+  const primary = lead.sourceName || lead.assignedAgentName;
+  if (!primary) return <span className={compact ? "text-slate-400 italic" : "text-xs text-slate-400 italic"}>Unassigned</span>;
+  const typeLabel = lead.sourceName
+    ? SOURCE_TYPE_LABELS[lead.sourceType ?? ""] ?? lead.sourceType ?? null
+    : "Agent";
+  const alsoAssigned = lead.sourceName && lead.assignedAgentName && lead.assignedAgentName !== lead.sourceName
+    ? lead.assignedAgentName
+    : null;
+  return (
+    <div className="flex flex-col items-start gap-1 min-w-0">
+      {typeLabel && (
+        <span className="inline-flex px-1.5 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wide bg-slate-100 text-slate-600 border border-slate-200">
+          {typeLabel}
+        </span>
+      )}
+      <span className={`truncate max-w-full ${compact ? "text-slate-600" : "text-xs font-medium text-slate-700"}`}>{primary}</span>
+      {alsoAssigned && <span className="text-[10px] text-slate-400 truncate max-w-full">Assigned to {alsoAssigned}</span>}
+    </div>
+  );
 }
 
 type FilterType = "ALL" | "INDIVIDUAL" | "FAMILY" | "CORPORATE";
@@ -322,6 +362,8 @@ export default function LeadsHubPage() {
             primaryIdentifier: c.cnic,
             assignedAgentId: c.assigned_agent_id ?? null,
             assignedAgentName: agentNameFor(c.assigned_agent_id),
+            sourceName: c.acquisition_source?.name ?? null,
+            sourceType: c.acquisition_source?.source_type ?? null,
           });
         }
       });
@@ -1001,16 +1043,7 @@ export default function LeadsHubPage() {
                                   </span>
                                 </td>
                                 <td className="px-6 py-4">
-                                  {lead.assignedAgentName ? (
-                                    <span className="inline-flex items-center gap-1.5 text-xs text-slate-700">
-                                      <span className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-[9px] font-bold text-blue-700 border border-blue-200">
-                                        {lead.assignedAgentName.charAt(0).toUpperCase()}
-                                      </span>
-                                      <span className="font-medium">{lead.assignedAgentName}</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-xs text-slate-400 italic">Unassigned</span>
-                                  )}
+                                  <AgentCell lead={lead} />
                                 </td>
                                 <td className="px-6 py-4 text-slate-600 text-xs">{lead.contact_info}</td>
                                 <td className="px-6 py-4 text-slate-500 font-mono text-xs">{lead.primaryIdentifier || "-"}</td>
@@ -1137,6 +1170,8 @@ export default function LeadsHubPage() {
       <CustomerQuickLeadModal
         open={activeAdd?.type === "INDIVIDUAL" && activeAdd.mode === "quick"}
         defaultAgentEmail={searchParams.get("agent_email")}
+        defaultSourceId={searchParams.get("source_id")}
+        defaultAgentId={searchParams.get("agent_id")}
         onClose={() => setActiveAdd(null)}
         onSaved={(message) => {
           handleAddSaved(message);
@@ -1149,6 +1184,7 @@ export default function LeadsHubPage() {
       <CustomerFormModal
         open={activeAdd?.type === "INDIVIDUAL" && activeAdd.mode === "full"}
         mode="create"
+        defaultAcquisitionSourceId={searchParams.get("source_id")}
         onClose={() => setActiveAdd(null)}
         onSaved={(message, created) => {
           handleAddSaved(message, created);
@@ -1283,17 +1319,8 @@ function LeadCard({
         {lead.contact_info}
       </div>
 
-      <div className="text-xs font-medium flex items-center gap-1.5 mb-2">
-        {lead.assignedAgentName ? (
-          <>
-            <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-blue-50 text-[8px] font-bold text-blue-700 border border-blue-200">
-              {lead.assignedAgentName.charAt(0).toUpperCase()}
-            </span>
-            <span className="text-slate-600 truncate">{lead.assignedAgentName}</span>
-          </>
-        ) : (
-          <span className="text-slate-400 italic">Unassigned</span>
-        )}
+      <div className="text-xs font-medium mb-2">
+        <AgentCell lead={lead} compact />
       </div>
 
       {lead.primaryIdentifier && (

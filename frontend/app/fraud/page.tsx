@@ -1,4 +1,7 @@
+"use client";
+
 import { MetricCard } from "@/components/MetricCard";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const KPIS = [
   { title: "Active Alerts", value: "17", subtitle: "pending investigation", accent: "red" as const, trend: { value: "+3 today", direction: "up" as const } },
@@ -40,6 +43,8 @@ const INV_STYLE: Record<string, string> = {
 };
 
 export default function FraudPage() {
+  const { pageItems: pagedRows, pagination } = usePagination(ROWS);
+
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div className="flex items-start justify-between">
@@ -90,7 +95,7 @@ export default function FraudPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {ROWS.map(r => (
+              {pagedRows.map(r => (
                 <tr key={r.ref} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.ref}</td>
                   <td className="px-5 py-3">
@@ -109,6 +114,7 @@ export default function FraudPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="fraud cases" inline />
       </div>
     </div>
   );

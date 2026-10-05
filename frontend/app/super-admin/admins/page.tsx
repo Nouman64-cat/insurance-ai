@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 interface Tenant {
   id: string;
@@ -285,6 +286,8 @@ function AdminManagementContent() {
     }
   };
 
+  const { pageItems: pagedAdmins, pagination } = usePagination(admins);
+
   if (!authorized) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-8 bg-slate-950 text-center font-sans min-h-screen">
@@ -468,6 +471,7 @@ function AdminManagementContent() {
                 <p className="text-sm">No Admin has been provisioned for this tenant yet.</p>
               </div>
             ) : (
+              <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -481,7 +485,7 @@ function AdminManagementContent() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {admins.map((admin) => (
+                    {pagedAdmins.map((admin) => (
                       <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-5 py-3.5 font-semibold text-slate-800">{admin.full_name}</td>
                         <td className="px-5 py-3.5 text-slate-600">{admin.email}</td>
@@ -536,6 +540,8 @@ function AdminManagementContent() {
                   </tbody>
                 </table>
               </div>
+          <Pagination pagination={pagination} noun="admins" inline />
+              </>
             )}
           </div>
         </div>

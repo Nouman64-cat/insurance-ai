@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { workflowStore } from "../case-summarizer/workflowStore";
 import api from "@/app/services/api";
 import { useNotify } from "@/components/NotificationContext";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -1132,6 +1133,11 @@ export default function CasesPage() {
     return "";
   })();
 
+  // Explorer grids hold small folder tiles, so they page at 24 rather than 12.
+  const { pageItems: pagedCustomers, pagination: customerPagination } = usePagination(filteredCustomers, 24);
+  const { pageItems: pagedCasesForCustomer, pagination: casePagination } = usePagination(filteredCasesForCustomer, 24);
+  const { pageItems: pagedAllCases, pagination: allCasePagination } = usePagination(filteredAllCases, 24);
+
   return (
     <div className="flex flex-col h-full bg-slate-50">
 
@@ -1286,8 +1292,9 @@ export default function CasesPage() {
                   subtitle={search ? `No customer matches "${search}".` : "Create a customer first to start managing cases."}
                 />
               ) : (
+                <>
                 <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))" }}>
-                  {filteredCustomers.map(app => {
+                  {pagedCustomers.map(app => {
                     const count = cases.filter(c => c.customer_id === app.id).length;
                     return (
                       <ExplorerItem
@@ -1304,6 +1311,8 @@ export default function CasesPage() {
                     );
                   })}
                 </div>
+                <Pagination pagination={customerPagination} noun="customers" />
+                </>
               )
             )}
 
@@ -1324,8 +1333,9 @@ export default function CasesPage() {
                   }
                 />
               ) : (
+                <>
                 <div className="grid gap-1" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))" }}>
-                  {filteredCasesForCustomer.map(c => {
+                  {pagedCasesForCustomer.map(c => {
                     const fc = caseFolderColor(c.caseStatus);
                     const statusCls = STATUS_CHIP[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200";
                     const priCls = PRIORITY_COLOR[c.priorityLevel] ?? "text-slate-500";
@@ -1367,6 +1377,8 @@ export default function CasesPage() {
                     );
                   })}
                 </div>
+                <Pagination pagination={casePagination} noun="cases" />
+                </>
               )
             )}
 
@@ -1379,8 +1391,9 @@ export default function CasesPage() {
                   subtitle={search ? `No cases match "${search}". Try clearing your search filter.` : "No cases registered yet."}
                 />
               ) : (
+                <>
                 <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
-                  {filteredAllCases.map(c => {
+                  {pagedAllCases.map(c => {
                     const fc = caseFolderColor(c.caseStatus);
                     const statusCls = STATUS_CHIP[c.caseStatus] ?? "bg-slate-100 text-slate-600 border-slate-200";
                     const priCls = PRIORITY_COLOR[c.priorityLevel] ?? "text-slate-500";
@@ -1417,6 +1430,8 @@ export default function CasesPage() {
                     );
                   })}
                 </div>
+                <Pagination pagination={allCasePagination} noun="cases" />
+                </>
               )
             )}
 

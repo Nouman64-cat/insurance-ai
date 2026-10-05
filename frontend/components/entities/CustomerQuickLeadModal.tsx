@@ -12,9 +12,14 @@ interface Props {
   // Agent to preselect (matched by email) — set when the form is opened from
   // the Copilot after the user already picked who owns the lead.
   defaultAgentEmail?: string | null;
+  // Acquisition source to preselect (by id) — the one picked in the Copilot.
+  defaultSourceId?: string | null;
+  // Agent to preselect by user id — an Agent-type source's own login, which the
+  // Copilot passes instead of asking for an agent a second time.
+  defaultAgentId?: string | null;
 }
 
-export default function CustomerQuickLeadModal({ open, onClose, onSaved, defaultAgentEmail }: Props) {
+export default function CustomerQuickLeadModal({ open, onClose, onSaved, defaultAgentEmail, defaultSourceId, defaultAgentId }: Props) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [phone, setPhone] = useState("");
@@ -53,6 +58,18 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
     const match = agentOptions.find((a) => a.email?.toLowerCase() === defaultAgentEmail.toLowerCase());
     if (match) setAssignedAgentId(match.id);
   }, [open, agentOptions, defaultAgentEmail]);
+
+  useEffect(() => {
+    if (!open || !defaultAgentId) return;
+    if (agentOptions.some((a) => a.id === defaultAgentId)) setAssignedAgentId(defaultAgentId);
+  }, [open, agentOptions, defaultAgentId]);
+
+  // Same for the source: its list loads after the form opens, so preselect when
+  // it arrives (and never override a later manual change).
+  useEffect(() => {
+    if (!open || !defaultSourceId) return;
+    if (sources.some((src) => src.id === defaultSourceId)) setAcquisitionSourceId(defaultSourceId);
+  }, [open, sources, defaultSourceId]);
 
   if (!open) return null;
 

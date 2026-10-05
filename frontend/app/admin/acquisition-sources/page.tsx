@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { MetricCard } from "@/components/MetricCard";
 import FiltersPanel from "@/components/FiltersPanel";
 import { formatCnic } from "@/lib/cnic";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -26,6 +27,13 @@ interface AcquisitionSource {
   is_active: boolean;
   created_at: string;
   customer_count: number;
+  // Login issued to this source's contact email: "invited" until they sign in
+  // with the emailed credentials, then "active" (and listed in User Management).
+  login_status?: "invited" | "active" | null;
+  // The role that login holds — it follows the source type (Broker → "Broker").
+  login_role?: string | null;
+  // Only on the create / resend responses.
+  credentials_email_sent?: boolean | null;
 }
 
 const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
@@ -33,7 +41,7 @@ const SOURCE_TYPE_LABELS: Record<SourceType, string> = {
   BROKER: "Broker",
   BANCASSURANCE: "Bancassurance",
   CORPORATE_AGENT: "Corporate Agent",
-  DIRECT: "Direct",
+  DIRECT: "Walk-in",
   DIGITAL: "Digital",
 };
 
@@ -159,6 +167,7 @@ export default function AcquisitionSourcesPage() {
       code: form.code.trim(),
       partner_name: form.partner_name.trim() || null,
       contact_person: form.contact_person.trim() || null,
+      contact_phone: form.contact_phone.trim() || null,
       contact_email: form.contact_email.trim() || null,
       city: form.city.trim() || null,
       cnic: form.cnic.trim() || null,
@@ -170,8 +179,20 @@ export default function AcquisitionSourcesPage() {
         await api.put(`/tenants/${tenantId}/acquisition-sources/${editingId}`, payload);
         setSuccess("Acquisition source updated.");
       } else {
-        await api.post(`/tenants/${tenantId}/acquisition-sources`, payload);
-        setSuccess("Acquisition source created.");
+        const res = await api.post<AcquisitionSource>(`/tenants/${tenantId}/acquisition-sources`, payload);
+        if (!payload.contact_email) {
+          setSuccess("Acquisition source created.");
+        } else if (res.data.credentials_email_sent) {
+          setSuccess(
+            `Acquisition source created. Login credentials were emailed to ${payload.contact_email}${res.data.login_role ? ` (role: ${res.data.login_role})` : ""} — they'll appear in User Management once they sign in.`
+          );
+        } else {
+          // The account exists but the email didn't go out (mail not configured or
+          // rejected) — the password was never shown, so say how to get it sent.
+          setSuccess(
+            `Acquisition source created, but the credentials email to ${payload.contact_email} could not be sent. Use "Resend login" on the row to try again.`
+          );
+        }
       }
       setShowModal(false);
       fetchSources();
@@ -182,15 +203,40 @@ export default function AcquisitionSourcesPage() {
     }
   };
 
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const handleResend = async (s: AcquisitionSource) => {
+    setError("");
+    setSuccess("");
+    const tenantId = localStorage.getItem("tenant_id");
+    if (!tenantId) return;
+    setResendingId(s.id);
+    try {
+      const res = await api.post<AcquisitionSource>(`/tenants/${tenantId}/acquisition-sources/${s.id}/send-credentials`);
+      if (res.data.credentials_email_sent) {
+        setSuccess(`New login credentials were emailed to ${s.contact_email}.`);
+      } else {
+        setError(`A new password was issued for ${s.contact_email}, but the email could not be sent. Check the email settings and try again.`);
+      }
+      fetchSources();
+    } catch (err: any) {
+      setError(err.response?.data?.detail ?? err.message ?? "Failed to resend credentials.");
+    } finally {
+      setResendingId(null);
+    }
+  };
+
   const handleDelete = async (s: AcquisitionSource) => {
-    if (!confirm(`Delete acquisition source "${s.name}"?`)) return;
+    const loginNote = s.login_status
+      ? `\n\nIts login (${s.contact_email}) will also be removed from User Management and can no longer sign in.`
+      : "";
+    if (!confirm(`Delete acquisition source "${s.name}"?${loginNote}`)) return;
     setError("");
     setSuccess("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) return;
     try {
       await api.delete(`/tenants/${tenantId}/acquisition-sources/${s.id}`);
-      setSuccess(`"${s.name}" deleted.`);
+      setSuccess(`"${s.name}" deleted${s.login_status ? " along with its login." : "."}`);
       fetchSources();
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to delete acquisition source.");
@@ -230,6 +276,8 @@ export default function AcquisitionSourcesPage() {
   const activeSources = sources.filter(s => s.is_active);
   const totalCustomers = sources.reduce((sum, s) => sum + s.customer_count, 0);
   const topChannel = sources.length > 0 ? [...sources].sort((a, b) => b.customer_count - a.customer_count)[0] : null;
+
+  const { pageItems: pagedSources, pagination } = usePagination(filtered);
 
   if (!authorized) {
     return (
@@ -454,7 +502,7 @@ export default function AcquisitionSourcesPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100/80">
-                {filtered.map((s) => (
+                {pagedSources.map((s) => (
                   <tr key={s.id} className="hover:bg-blue-50/30 transition-colors group">
                     <td className="px-5 py-4">
                       <p className="font-bold text-slate-800">{s.name}</p>
@@ -485,6 +533,36 @@ export default function AcquisitionSourcesPage() {
                           {s.contact_person && <span className="text-xs font-semibold text-slate-700">{s.contact_person}</span>}
                           {s.contact_phone && <span className="text-[11px] text-slate-500 font-medium">{s.contact_phone}</span>}
                           {s.contact_email && <span className="text-[11px] text-slate-500 font-medium">{s.contact_email}</span>}
+                          {s.login_status === "invited" && (
+                            <span className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200"
+                                title="Credentials were emailed. They become a user once they sign in."
+                              >
+                                Invite sent · not signed in
+                              </span>
+                              {s.login_role && (
+                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                  {s.login_role}
+                                </span>
+                              )}
+                              <button
+                                onClick={() => handleResend(s)}
+                                disabled={resendingId === s.id}
+                                className="text-[10px] font-bold text-blue-600 hover:underline disabled:opacity-50"
+                              >
+                                {resendingId === s.id ? "Sending…" : "Resend login"}
+                              </button>
+                            </span>
+                          )}
+                          {s.login_status === "active" && (
+                            <span
+                              className="inline-flex w-fit px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                              title="Signed in — listed in User Management."
+                            >
+                              Signed in · {s.login_role || "user"}
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <span className="text-slate-300">—</span>
@@ -534,6 +612,7 @@ export default function AcquisitionSourcesPage() {
               </tbody>
             </table>
           </div>
+          <Pagination pagination={pagination} noun="acquisition sources" inline />
         </div>
       )}
 
@@ -650,6 +729,11 @@ export default function AcquisitionSourcesPage() {
                     onChange={(e) => setForm((f) => ({ ...f, contact_email: e.target.value }))}
                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                   />
+                  {!editingId && (
+                    <p className="text-[11px] text-slate-400">
+                      With an email, a login is created with the role that matches the type (Broker → Broker role) and its credentials are emailed here. They join User Management once they sign in.
+                    </p>
+                  )}
                 </div>
                 <div className="flex items-center gap-2 md:col-span-2 pt-2 bg-slate-50/50 p-3 rounded-xl border border-slate-100">
                   <input

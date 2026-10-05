@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { PayeeTaxProfile, listTaxProfiles } from "../../services/commissions";
 import DemoDataBanner from "@/components/DemoDataBanner";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 export default function TaxRegimesPage() {
   const [profiles, setProfiles] = useState<PayeeTaxProfile[]>([]);
@@ -22,6 +23,8 @@ export default function TaxRegimesPage() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const { pageItems: pagedProfiles, pagination } = usePagination(profiles);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 p-6 space-y-6">
@@ -68,7 +71,7 @@ export default function TaxRegimesPage() {
               ) : profiles.length === 0 ? (
                 <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-400 text-xs">No tax profiles found.</td></tr>
               ) : (
-                profiles.map((p) => (
+                pagedProfiles.map((p) => (
                   <tr key={p.payeeId} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3 font-medium text-slate-900">{p.payeeId}</td>
                     <td className="px-5 py-3 font-mono text-xs text-slate-600">
@@ -102,6 +105,7 @@ export default function TaxRegimesPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="tax profiles" inline />
       </div>
     </div>
   );

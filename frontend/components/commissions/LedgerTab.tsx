@@ -37,6 +37,7 @@ import {
   fmtPKRSigned,
   fmtPct,
 } from "./shared";
+import { Pagination, usePagination } from "../Pagination";
 
 /**
  * Clean interactive Policy Lifecycle Bar to record milestone events.
@@ -157,6 +158,7 @@ export default function LedgerTab({
   });
 
   const groups = groupLedgerByPolicy(filtered);
+  const { pageItems: pagedGroups, pagination: groupPagination } = usePagination(groups);
 
   // Summary Metrics calculation
   const totalGross = filtered.reduce((acc, item) => acc + item.grossCommission, 0);
@@ -312,7 +314,7 @@ export default function LedgerTab({
           </div>
 
           <div className="divide-y divide-slate-100 bg-white">
-          {groups.map((group) => {
+          {pagedGroups.map((group) => {
             const isOpen = openPolicyIds.has(group.policyId);
             return (
               <div key={group.policyId} className="transition-all">
@@ -442,6 +444,7 @@ export default function LedgerTab({
             );
           })}
           </div>
+          <Pagination pagination={groupPagination} noun="policies" inline />
         </Card>
       ) : view === "finance" ? (
         <Card className="overflow-hidden border border-slate-200 shadow-2xs">

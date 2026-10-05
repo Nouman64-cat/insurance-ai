@@ -599,6 +599,14 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS branch_id UUID REFERENCES branches(id)",
     ),
     (
+        "acq-src-login-a — link acquisition_sources to the login account issued to them",
+        "ALTER TABLE acquisition_sources ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE SET NULL",
+    ),
+    (
+        "acq-src-login-b — index acquisition_sources.user_id",
+        "CREATE INDEX IF NOT EXISTS ix_acquisition_sources_user_id ON acquisition_sources(user_id)",
+    ),
+    (
         "v24b — add assigned_agent_id to customers",
         "ALTER TABLE customers ADD COLUMN IF NOT EXISTS assigned_agent_id UUID REFERENCES users(id)",
     ),

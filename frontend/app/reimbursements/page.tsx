@@ -1,4 +1,7 @@
+"use client";
+
 import { MetricCard } from "@/components/MetricCard";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const KPIS = [
   { title: "Requests MTD", value: "34", subtitle: "health rider reimbursements", accent: "blue" as const },
@@ -36,6 +39,7 @@ function FraudBar({ pct }: { pct: string }) {
 }
 
 export default function ReimbursementsPage() {
+  const { pageItems: pagedRows, pagination } = usePagination(ROWS);
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div>
@@ -85,7 +89,7 @@ export default function ReimbursementsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {ROWS.map(r => (
+              {pagedRows.map(r => (
                 <tr key={r.ref} className="hover:bg-slate-50 transition-colors">
                   <td className="px-5 py-3 font-mono text-xs text-slate-500">{r.ref}</td>
                   <td className="px-5 py-3 font-medium text-slate-800">{r.holder}</td>
@@ -104,6 +108,7 @@ export default function ReimbursementsPage() {
             </tbody>
           </table>
         </div>
+          <Pagination pagination={pagination} noun="reimbursements" inline />
       </div>
     </div>
   );

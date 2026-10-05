@@ -4,6 +4,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from passlib.context import CryptContext
+from sqlalchemy import exists
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -13,12 +15,23 @@ from database import get_session
 from email_utils import send_credentials_email
 from provisioning import generate_password, generate_unique_username, split_full_name
 from schemas import SeedAdminCreate, UserCreate, UserRead, UserUpdate
-from shared.models.core import Branch, Role, Tenant, User, UserProfile, UserStatus
+from shared.models.core import AcquisitionSource, Branch, Role, Tenant, User, UserProfile, UserStatus
 from routers.auth import _get_current_user, decode_access_token, oauth2_scheme, verify_superadmin
 
 router = APIRouter(prefix="/tenants", tags=["Users"])
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+def _not_pending_invite():
+    """SQL condition for the user lists: not removed (is_deleted), and not an account
+    issued to an acquisition source that has never signed in. Those become real users —
+    and show up in User Management and the agent pickers — only once the entity logs in
+    with the emailed credentials."""
+    return User.is_deleted.is_(False) & ~(
+        User.last_login.is_(None)
+        & exists().where(AcquisitionSource.user_id == User.id)
+    )
 
 
 def to_user_read(user: User, profile: Optional[UserProfile]) -> UserRead:
@@ -44,6 +57,40 @@ def to_user_read(user: User, profile: Optional[UserProfile]) -> UserRead:
         cnic=profile.cnic if profile else None,
         location=profile.location if profile else None,
     )
+
+
+async def remove_user(user_id: UUID, session: AsyncSession) -> None:
+    """Take a user account out of the system (User Management delete, and the login of a
+    deleted acquisition source).
+
+    Deleted outright when nothing refers to it. A user who has acted in the system
+    (comments, case history, assigned leads, uploads…) is referenced from many tables,
+    so a real delete would fail — that account is instead deactivated and hidden
+    (is_deleted), its email and username freed for reuse, so it can no longer sign in,
+    isn't listed in User Management and the address can be given a new login."""
+    user = await session.get(User, user_id)
+    if user is None:
+        return
+    try:
+        async with session.begin_nested():
+            await session.delete(user)
+            await session.flush()
+        return
+    except IntegrityError:
+        pass   # referenced elsewhere — fall through to the soft removal
+    user = await session.get(User, user_id)
+    tag = user.id.hex[:8]
+    user.is_deleted = True
+    user.is_active = False
+    user.status = UserStatus.INACTIVE
+    # Drop to the least-privileged built-in role so the hidden account holds nothing
+    # sensitive and doesn't block its old role from being deleted later.
+    viewer = (await session.exec(select(Role).where(Role.name == "Viewer"))).first()
+    if viewer is not None:
+        user.role_id = viewer.id
+    user.email = f"deleted-{tag}-{user.email}"[:255]
+    user.username = f"deleted-{tag}-{user.username}"[:255]
+    session.add(user)
 
 
 def _verify_tenant(tenant: Tenant | None, tenant_id: UUID) -> Tenant:
@@ -286,7 +333,7 @@ async def list_users(
     _verify_tenant(tenant, tenant_id)
 
     result = await session.exec(
-        select(User).where(User.tenant_id == tenant_id).options(selectinload(User.profile))
+        select(User).where(User.tenant_id == tenant_id, _not_pending_invite()).options(selectinload(User.profile))
     )
     users = result.all()
     return [to_user_read(u, u.profile) for u in users]
@@ -309,7 +356,9 @@ async def list_directory_users(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     result = await session.exec(
-        select(User).where(User.tenant_id == tenant_id, User.is_active == True).options(selectinload(User.profile))
+        select(User)
+        .where(User.tenant_id == tenant_id, User.is_active == True, _not_pending_invite())
+        .options(selectinload(User.profile))
     )
     users = result.all()
     return [to_user_read(u, u.profile) for u in users]
@@ -437,5 +486,7 @@ async def delete_user(
     if user is None or user.tenant_id != tenant_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found.")
 
-    await session.delete(user)
+    # A real delete when nothing refers to the account; otherwise it is deactivated and
+    # hidden (see remove_user) instead of failing with a 500 on the foreign key.
+    await remove_user(user_id, session)
     await session.commit()

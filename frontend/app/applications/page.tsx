@@ -8,6 +8,7 @@ import { SegmentDropdown, SegmentFilter, SEGMENT_LABEL, SEGMENT_BADGE_STYLE } fr
 import { fmtCoverage } from "@/lib/mock-data";
 import { listCases, CaseQueueItem } from "@/app/services/cases";
 import api from "@/app/services/api";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const CASE_STATUS_STYLE: Record<string, string> = {
   New: "bg-slate-100 text-slate-600 border-slate-200",
@@ -143,6 +144,8 @@ export default function ApplicationsPage() {
     ];
   }, [segmentCases]);
 
+  const { pageItems: pagedFolders, pagination } = usePagination(folders);
+
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full">
       <div>
@@ -199,7 +202,7 @@ export default function ApplicationsPage() {
           </div>
         ) : (
           <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {folders.map((folder) => {
+            {pagedFolders.map((folder) => {
               const isExpanded = expandedCustomerId === folder.customer_id;
               const readyCount = folder.cases.filter((c) => c.latest_ai_decision).length;
               return (
@@ -322,6 +325,7 @@ export default function ApplicationsPage() {
             })}
           </div>
         )}
+        {folders.length > 0 && <Pagination pagination={pagination} noun="customer folders" inline />}
       </div>
     </div>
   );

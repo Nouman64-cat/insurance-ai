@@ -432,6 +432,11 @@ class AcquisitionSource(SQLModel, table=True):
     is_active: bool = Field(default=True, nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
+    # The login account issued to this source when it was created with a contact
+    # email. The account stays out of User Management until the entity first signs
+    # in (User.last_login is set), which is what "acknowledged the invite" means.
+    user_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="acquisition_sources")
     customers: List["Customer"] = Relationship(back_populates="acquisition_source")

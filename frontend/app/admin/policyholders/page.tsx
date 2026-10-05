@@ -13,6 +13,7 @@ import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 
@@ -253,6 +254,8 @@ export default function PolicyholdersPage() {
     }
   };
 
+  const { pageItems: pagedPolicyholders, pagination } = usePagination(getFilteredData());
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50">
@@ -439,6 +442,7 @@ export default function PolicyholdersPage() {
               <p>No policy holders found for the selected filter.</p>
             </div>
           ) : (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm whitespace-nowrap">
                 <thead className="bg-slate-50 text-slate-500 font-medium">
@@ -453,7 +457,7 @@ export default function PolicyholdersPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {getFilteredData().map(p => (
+                  {pagedPolicyholders.map(p => (
                     <React.Fragment key={p.id}>
                       <tr 
                         className="hover:bg-slate-50 transition-colors cursor-pointer"
@@ -570,6 +574,8 @@ export default function PolicyholdersPage() {
                 </tbody>
               </table>
             </div>
+            <Pagination pagination={pagination} noun="policyholders" inline />
+            </>
           )}
         </div>
         

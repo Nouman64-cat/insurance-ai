@@ -11,6 +11,7 @@ import {
   seedDefaultPlans,
   updateInsurancePlan,
 } from "../services/insurancePlans";
+import { Pagination, usePagination } from "@/components/Pagination";
 
 const COLOR_CLASSES: Record<string, { badge: string; accent: string }> = {
   blue: { badge: "bg-blue-50 text-blue-700 border-blue-200", accent: "border-t-blue-500" },
@@ -262,6 +263,8 @@ export default function InsurancePlansPage() {
     setStatusFilter(ALL);
   }
 
+  const { pageItems: pagedPlans, pagination: planPagination } = usePagination(filteredPlans);
+
   return (
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
       {/* Header */}
@@ -336,16 +339,15 @@ export default function InsurancePlansPage() {
             )}
           </div>
 
-          <p className="text-xs text-slate-500">
-            Showing <span className="font-semibold text-slate-700">{filteredPlans.length}</span> of {plans.length} plans
-          </p>
-
           {filteredPlans.length === 0 ? (
             <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-10 text-center text-sm text-slate-500">
               No plans match your search/filters.
             </div>
           ) : (
-            <PlansTable plans={filteredPlans} onView={setViewingPlan} />
+            <>
+              <PlansTable plans={pagedPlans} onView={setViewingPlan} />
+              <Pagination pagination={planPagination} noun="plans" />
+            </>
           )}
         </>
       )}
