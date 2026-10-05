@@ -6,7 +6,7 @@ sidebar_position: 7
 
 # Artifact Upload & OCR
 
-The artifact system lets users attach physical documents (CNIC scans, salary slips, medical reports, X-rays, policy forms) to a **case** and automatically extract their contents via the **OCR Engine** (Gemini 2.5 Flash). Results are stored in the `artifacts` table and can be retrieved with a fresh presigned download URL at any time.
+The artifact system lets users attach physical documents (CNIC scans, salary slips, medical reports, X-rays, policy forms) to a **case** and automatically extract their contents via the **OCR Engine** (the platform's configured multimodal LLM, Gemini 2.5 Flash by default). Results are stored in the `artifacts` table and can be retrieved with a fresh presigned download URL at any time.
 
 ---
 
@@ -17,29 +17,35 @@ sequenceDiagram
     participant Client
     participant Gateway as API Gateway :8010
     participant Tenant as Tenant Service :8011
-    participant S3 as AWS S3<br/>insurance-ai-dev
-    participant OCR as OCR Engine :8014<br/>(Gemini 2.5 Flash)
-    participant PG as PostgreSQL
+    participant S3 as AWS S3
+    participant KF as Kafka
+    participant W as ocr_worker
+    participant OCR as OCR Engine :8014
 
     Client->>Gateway: POST /tenants/{tenant_id}/cases/{case_id}/artifacts<br/>multipart: document_type + file
     Gateway->>Tenant: proxy (Bearer token forwarded)
     Tenant->>Tenant: validate tenant + case ownership
     Tenant->>S3: put_object → {tenant_id}/cases/{case_id}/{artifact_id}/{filename}
-    S3-->>Tenant: 200 OK
-    Tenant->>OCR: POST /extract (multipart, same bytes)
-    OCR->>OCR: Gemini 2.5 Flash multimodal inference
-    OCR-->>Tenant: { extracted_text, token_usage }
-    Tenant->>PG: INSERT INTO artifacts (storage_url, ocr_result, confidence, status, …)
-    PG-->>Tenant: artifact row
-    Tenant-->>Gateway: artifact JSON + presigned download_url
+    Tenant->>Tenant: INSERT artifact (status "Uploaded", ocr_result null)
+    Tenant->>KF: ArtifactOCRRequestedEvent
+    Tenant-->>Gateway: artifact JSON
     Gateway-->>Client: 201 Created
+    KF->>W: consume (group tenant-service-ocr-group)
+    W->>S3: download
+    W->>OCR: POST /extract
+    OCR-->>W: { extracted_text, token_usage }
+    W->>Tenant: UPDATE artifact (ocr_result, ocr_confidence_score, status)
 ```
+
+OCR runs **asynchronously**: the upload returns as soon as the file is in S3 and the row exists. Poll the artifact (or the case's artifact list) until `ocr_result` is populated. Offsets are committed only after the DB write; if OCR fails the artifact becomes `Re-submission Requested` with confidence `0.0`.
+
+Artifacts can also be attached to a **claim**: `POST/GET /tenants/{tenant_id}/claims/{claim_id}/artifacts`.
 
 ---
 
 ## API endpoints
 
-All three endpoints require a **Bearer token** in the `Authorization` header.
+All endpoints require a **Bearer token** in the `Authorization` header.
 
 ### Upload a document
 
@@ -65,7 +71,7 @@ curl -X POST "http://localhost:8010/tenants/{tenant_id}/cases/{case_id}/artifact
   -F "file=@/path/to/salary_slip.pdf"
 ```
 
-**Response (201)**
+**Response (201)** — shown after OCR has completed; immediately after upload `ocr_result` is `null` and `status` is `Uploaded`.
 
 ```json
 {
@@ -111,6 +117,14 @@ Authorization: Bearer <token>
 ```
 
 Returns the artifact with a **fresh presigned `download_url`** (1-hour expiry). Use this endpoint whenever you need to re-download a file.
+
+### Other artifact endpoints
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/tenants/{tenant_id}/artifacts/{artifact_id}/view` · `/download` | Stream the file through the service (inline / attachment) |
+| `PATCH` | `/tenants/{tenant_id}/artifacts/{artifact_id}` | Update metadata (e.g. `document_type`) |
+| `DELETE` | `/tenants/{tenant_id}/artifacts/{artifact_id}` | Delete the artifact |
 
 ---
 
@@ -184,7 +198,9 @@ Key columns added in v4 migrations:
 |---|---|---|
 | `AWS_ACCESS_KEY_ID` | Tenant Service | IAM access key |
 | `AWS_SECRET_ACCESS_KEY` | Tenant Service | IAM secret |
-| `AWS_REGION` | Tenant Service | S3 bucket region (default `us-east-1`) |
+| `AWS_S3_REGION` | Tenant Service | S3 bucket region |
 | `S3_BUCKET_NAME` | Tenant Service | Bucket name (default `insurance-ai-dev`) |
 | `OCR_ENGINE_URL` | Tenant Service | Internal OCR service URL (default `http://ocr-engine:8004`) |
-| `GEMINI_API_KEY` | OCR Engine | Google AI Studio key used by Gemini 2.5 Flash |
+| `KAFKA_BOOTSTRAP_SERVERS` | Tenant Service | Broker for the OCR job topic |
+
+The OCR model and key come from the platform [LLM configuration](/llm-providers).

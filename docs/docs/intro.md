@@ -7,81 +7,84 @@ sidebar_position: 1
 
 # insurance-ai
 
-**insurance-ai** is an AI-powered, multi-tenant insurance underwriting platform built for Pakistani insurance companies. It automates the risk evaluation pipeline — from proposal submission to an explainable AI decision — using a microservices architecture backed by LLMs, a graph database, and an event-driven Kafka bus.
+**insurance-ai** is an AI-powered, multi-tenant life-insurance platform built for Pakistani insurers. It covers the full policy journey — lead intake, quotation, pre-underwriting clearance, AI underwriting, issuance, in-force servicing, and claims — on a FastAPI microservice backend with LLMs, a Memgraph fraud graph, and a Kafka event bus.
 
 ## What it does
 
-1. An agent (or the frontend) submits an insurance proposal (customer + policy) to the API Gateway.
-2. The **Risk Engine** runs a LangGraph workflow powered by **Google Gemini 2.5 Flash** that scores the customer across three dimensions:
-   - **Medical risk** — age, gender, occupation hazard
-   - **Financial risk** — income-to-coverage ratio, policy term, occupation stability
-   - **Fraud probability** — graph ring detection via Memgraph + LLM evaluation
-3. A deterministic **decision aggregation** step combines the scores into a composite risk score and emits one of four verdicts: `Auto Approve`, `Approve with Loading`, `Human Review`, or `Decline`.
-4. Results are persisted to **PostgreSQL** and returned to the caller with an explainability chain — ordered human-readable reasons for the underwriter UI.
+1. **Lead → quote.** An agent (web portal, mobile app, or the AI copilot) adds a customer. A `CustomerCreated` Kafka event triggers the gateway's quote worker, which prices every eligible plan so indicative quotes are ready immediately (`POST /quote` does the same on demand — pure actuarial math, no LLM).
+2. **Case + pre-underwriting gates.** An underwriting case collects the evidence a decision needs: the customer's tokenised **E-Application**, the agent's **Confidential Report (ACR)**, **PEP/sanctions compliance**, **Initial Premium Payment**, an **insurance-history** check and, above the non-medical limit, a **medical exam** booked at a panel clinic. The deterministic **Requirements Engine** keeps the case in `Pending Documents` until mandatory requirements are satisfied or waived.
+3. **AI underwriting.** The **Risk Engine** runs a LangGraph workflow that scores medical, financial, and fraud risk in parallel (LLM + deterministic floors/ceilings + Memgraph ring queries), then a rule-based `decision_engine` picks the verdict: `Auto Approve`, `Approve with Loading`, `Human Review`, `Request Additional Evidence`, `Fraud Investigation`, `Postpone`, or `Decline`.
+4. **Post-underwriting → issuance.** Counter-offers, facultative reinsurance referral, compliance, beneficiaries and policy documents gate issuance; every policy status change goes through a single state machine with an immutable `PolicyEvent` audit trail.
+5. **In-force life.** Free-look, onboarding/welcome kit, premium schedules and reminders, endorsements, renewals, and claims (FNOL → adjudication → payout → reinsurance recovery).
 
-## Local ports
+## Local URLs
 
-| Service | Host port | Description |
+| Service | URL / host port | Notes |
 |---|---|---|
-| Frontend (Next.js) | 3000 | Underwriter UI |
-| Memgraph Lab | 3001 | Graph DB browser |
-| **Docs (this site)** | 4991 | Documentation |
-| API Gateway | 8010 | Single public entry point |
-| Tenant Service | 8011 | Auth, users, tenants |
+| Frontend (Next.js) | http://localhost:3000 | Operations / admin portal |
+| **Docs (this site)** | http://localhost:4991/insurance-ai/ | Docusaurus |
+| API Gateway | http://localhost:8010 — Swagger at `/docs` | Single public entry point |
+| Tenant Service | 8011 | Tenants, users, cases, policies, claims, rules |
 | Risk Engine | 8012 | LangGraph underwriting |
-| Decision Engine | 8013 | (WIP) |
+| Decision Engine | 8013 | Stub (health check only) |
 | OCR Engine | 8014 | Document extraction |
-| Text Summarizer | 8015 | OCR summary generation |
-| Kafka UI | 8090 | Topic browser |
-| PostgreSQL | *(external)* | Not run via docker-compose — point `DATABASE_URL` at your own instance |
-| Memgraph (Bolt) | 7688 | Graph store |
+| Text Summarizer | 8015 | Summaries and underwriter notes |
+| Chat Agent | 8016 | AI copilot (LangGraph) |
+| Kafka UI | http://localhost:8090 | Topic browser |
+| Memgraph Lab | http://localhost:3001 | Graph browser (Bolt on 7688) |
+| Kafka | 9092 (internal) / 9094 (host) | KRaft, single broker |
+| PostgreSQL | *(external)* | Point `DATABASE_URL` at your own instance |
 
 ## Quick start
 
 ```bash
-# 1. Copy env template, fill in GEMINI_API_KEY and DATABASE_URL
-#    (PostgreSQL is external — see "PostgreSQL is external" note below)
+# 1. Copy the env template and fill in DATABASE_URL, JWT_SECRET_KEY,
+#    CONFIG_ENCRYPTION_KEY and an LLM key (see below)
 cp .env.example .env
 
-# 2. Start all services
-docker compose up --build
+# 2. Start everything
+docker compose up --build -d
 
 # 3. Bootstrap a SuperAdmin (creates the "Platform" tenant + SuperAdmin user,
 #    emails the generated credentials)
 docker compose exec tenant-service python create_superadmin.py --email you@yourdomain.com
 
-# 4. Log in as SuperAdmin, then create a tenant (name + a short unique code)
-TOKEN=$(curl -s -X POST http://localhost:8010/auth/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data-urlencode "username=you@yourdomain.com" \
-  --data-urlencode "password=<password from step 3>" | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
+# 4. Sign in at http://localhost:3000, then:
+#    • Platform → LLM Configuration — set the primary/fallback model + API key
+#    • Super Admin → Tenants — create a tenant (name + unique code)
+#    • Super Admin → Admins — bootstrap the tenant's first Admin
+```
 
-curl -X POST http://localhost:8010/tenants \
-  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
-  -d '{"name": "Acme Insurance", "code": "ACME"}'
+**PostgreSQL is external.** It is not a docker-compose service — run your own instance, create an empty database, and point `DATABASE_URL` at it. Tables and additive migrations are applied on service startup (`services/tenant-service/migrate.py`). From Docker Desktop, a host-installed Postgres is reachable at `host.docker.internal`.
 
-# 5. Submit a proposal (sync evaluate) — insurance_type is required
-curl -X POST http://localhost:8010/evaluate \
+**LLM keys.** Provider keys are normally configured in the UI (**Platform → LLM Configuration**) and stored Fernet-encrypted; env vars are only the fallback. See [LLM Providers & Token Usage](/llm-providers).
+
+### Try an evaluation from the command line
+
+```bash
+# Streams one SSE event per LangGraph node, then persists the RiskAssessment.
+# Optional "case_id" runs the requirements/evidence gate first (see Data Flow).
+# (POST /evaluate is the async Kafka variant — it returns 202 immediately.)
+curl -N -X POST http://localhost:8010/evaluate/stream \
+  -H "X-Tenant-Id: <tenant_id>" \
   -H "Content-Type: application/json" \
-  -H "X-Tenant-Id: <tenant_id from step 4>" \
   -d '{
     "customer": {
-      "cnic": "3520112345671",
-      "name": "Muhammad Ali Khan",
-      "dob": "1985-06-15",
-      "gender": "Male",
-      "occupation": "Software Engineer",
-      "declared_income": 1200000
+      "cnic": "3520112345671", "name": "Muhammad Ali Khan", "dob": "1985-06-15",
+      "gender": "Male", "occupation": "Software Engineer", "declared_income": 1200000
     },
     "policy": {
-      "product_name": "Term Life 20",
-      "insurance_type": "TERM_LIFE",
-      "coverage_amount": 5000000,
-      "term_years": 20
+      "product_name": "Term Life 20", "insurance_type": "TERM_LIFE",
+      "coverage_amount": 5000000, "term_years": 20
     }
   }'
 ```
 
-**PostgreSQL is external.** It is not a docker-compose service — run your own instance (local install, managed cloud DB, etc.), create an empty database, and point `DATABASE_URL` at it. On macOS/Windows Docker Desktop, containers reach a host-installed Postgres via `host.docker.internal`.
+## Where to go next
 
-Swagger UI is available at `http://localhost:8010/docs`.
+- [Architecture](/architecture) — services, workers, and how they talk
+- [Services Reference](/services) — every endpoint, grouped by domain
+- [Underwriting & Policy Lifecycle](/policy-lifecycle) — pre-underwriting gates through claims
+- [Data Flow](/data-flow) — evaluation paths, Kafka events, LangGraph internals
+- [AI Copilot](/chat-agent) — the conversational agent and its permission gate
+- [Contributing](/contributing) — branch and commit conventions

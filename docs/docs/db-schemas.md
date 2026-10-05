@@ -436,6 +436,98 @@ Field-level compliance log. The `caseld` column is intentionally **not** a FK so
 
 ---
 
+## Additional tables
+
+Column-level detail for these lives in `shared/models/core.py` (each class carries a docstring). Additive migrations are in `services/tenant-service/migrate.py`.
+
+### Organisation & distribution
+
+| Table | Model | Purpose |
+|---|---|---|
+| `branches` | `Branch` | One row per physical office of a Tenant. branch_code is unique per tenant (not globally) since codes are tenant-issued, e.g. "LHR-01". |
+| `acquisition_sources` | `AcquisitionSource` | The distribution channel or intermediary credited with bringing a customer to the insurer — an individual agent, a brokerage firm, a partner bank's bancassurance … |
+| `organizations` | `Organization` | A small/medium business (or any employer) that insures its employees under one or more MasterPolicy contracts, rather than individuals shopping for their own coverage. |
+| `master_policies` | `MasterPolicy` | The single contract issued to an Organization covering its employees (e.g. Group Life). Each covered employee gets their own Policy row (their Certificate of … |
+| `family_groups` | `FamilyGroup` | An admin/underwriter-created household. Members are Customer rows with family_group_id set (same nullable-FK-on-Customer pattern Organization already uses via … |
+| `family_policies` | `FamilyPolicy` | The contract issued under a FamilyGroup — either a shared health floater (one pooled Policy for the whole family) or a life-bundle wrapper (each member keeps their … |
+
+### Products & quotation
+
+| Table | Model | Purpose |
+|---|---|---|
+| `insurance_plans` | `InsurancePlan` | Per-tenant product catalogue: entry-age/term bands, max maturity age, income multiple, base premium rate, smoker factor. |
+| `premium_quotes` | `PremiumQuote` | Indicative premium for a customer/plan, from `POST /quote` or the quote worker. |
+
+### Pre-underwriting gates
+
+| Table | Model | Purpose |
+|---|---|---|
+| `customer_e_applications` | `CustomerEApplication` | The customer-facing E-Application: medical/health questionnaire, family history, lifestyle habits, existing-insurance declaration, and the proposer's own … |
+| `agent_confidential_reports` | `AgentConfidentialReport` | The selling agent's non-medical risk control: moral hazard, financial standing, and general lifestyle observations that data fields alone miss. Filled by the agent … |
+| `initial_premium_payments` | `InitialPremiumPayment` | Initial Premium Payment (IPP) — Section 30 of the Insurance Ordinance 2000 ("no premium, no risk"). Per Adamjee's actual proposal flow, this is collected at … |
+| `insurance_history_checks` | `InsuranceHistoryCheck` | One insurance-history screen for a pre-underwriting case. |
+| `panel_clinics` | `PanelClinic` | A diagnostic lab/clinic on the insurer's panel. Seeded per tenant with the Pakistani labs insurers actually contract with; a tenant can add its own. |
+| `medical_exam_orders` | `MedicalExamOrder` | The medical requirement raised for one pre-underwriting case: why it was raised (which NML rule fired), which tests are mandated, where and when the customer is … |
+
+### Post-underwriting & pre-issuance
+
+| Table | Model | Purpose |
+|---|---|---|
+| `counter_offers` | `CounterOffer` | Revised underwriting terms the customer must explicitly accept before the policy can bind. Created when underwriting is not a clean accept — loading, exclusions, … |
+| `reinsurers` | `Reinsurer` | A reinsurance counterparty and the commercial terms of its relationship with this insurer. `treaty_capacity` is the automatic (obligatory) capacity per life; … |
+| `reinsurance_referrals` | `ReinsuranceReferral` | One cession decision for a policy: how much this insurer keeps, how much is ceded, to whom, on what terms — and whether those terms have been written back onto the … |
+| `compliance_checks` | `ComplianceCheck` | Result of one mandatory regulatory screening for a policy — AML, sanctions, or SECP verification. Produced by services/compliance_engine.py at the pre-issuance … |
+| `beneficiaries` | `Beneficiary` | A nominee on a policy's death benefit. Multiple beneficiaries per policy; the sum of share_pct across a policy's beneficiaries must equal 100. Replaces the single … |
+| `beneficiary_versions` | `BeneficiaryVersion` | History of beneficiary changes (powers `/beneficiaries/history`). |
+
+### Policy contract & audit
+
+| Table | Model | Purpose |
+|---|---|---|
+| `policy_versions` | `PolicyVersion` | Immutable ledger of policy terms at each contract event. Version 1.0 = initial issuance. Version 1.x = mid-term endorsements (coverage changes, address updates). … |
+| `policy_events` | `PolicyEvent` | Append-only ledger of every lifecycle action on a Policy — issuance, payment confirmation, lapse, cancellation, renewal, endorsement, etc. |
+| `policy_documents` | `PolicyDocument` | Metadata record for each legal document generated at issuance or renewal. storage_url points to the object-store path (or a /api download endpoint). Phase 2 will … |
+| `policy_riders` | `PolicyRider` | An optional benefit attached to a policy (e.g. Accidental Death, Waiver of Premium). Added/removed via an endorsement; carries its own annual premium. |
+| `policy_endorsements` | `PolicyEndorsement` | One approved mid-term change. The immutable servicing ledger — nominee, address, sum-assured and rider changes each create a row here plus a new PolicyVersion … |
+| `renewal_transactions` | `RenewalTransaction` | One row per renewal cycle (year N → year N+1). Progresses through INITIATED → QUOTED → BOUND (STP path) or INITIATED → UNDERWRITING_REVIEW → QUOTED → BOUND … |
+
+### Premiums & onboarding
+
+| Table | Model | Purpose |
+|---|---|---|
+| `premium_schedules` | `PremiumSchedule` | One row per billing installment. Created at issuance (and at each renewal binding). The scheduler marks rows OVERDUE once due_date passes unpaid; the payment … |
+| `premium_receipts` | `PremiumReceipt` | A payment receipt for one collected installment, incl. any grace surcharge and the agent commission earned on that collection. |
+| `premium_reminders` | `PremiumReminder` | One row per premium reminder sent — the reminder history/audit log. |
+| `policy_onboarding` | `PolicyOnboarding` | Per-policy Stage B onboarding record: welcome kit + delivery + acknowledgment. |
+| `customer_portal_accounts` | `CustomerPortalAccount` | Simulated self-service portal account for a customer (one per customer). |
+
+### Claims
+
+| Table | Model | Purpose |
+|---|---|---|
+| `claim_status_histories` | `ClaimStatusHistory` | Status transition log for a claim. |
+| `claim_payouts` | `ClaimPayout` | Disbursement records for a settled claim. |
+
+### Rule engine
+
+| Table | Model | Purpose |
+|---|---|---|
+| `rule_categories` | `Category` | Top level of the rule-engine hierarchy. |
+| `rule_subcategories` | `SubCategory` | Second level of the rule-engine hierarchy. |
+| `eligibility_profiles` | `EligibilityProfile` | Eligibility profile attached to a rule subcategory. |
+| `rule_sets` | `RuleSet` | A named group of rules governing a specific functional area. Can be tenant-specific or global (tenant_id is None). |
+| `rule_versions` | `RuleVersion` | Effective-dated version container for a RuleSet. Allows draft-authoring and audit reproducibility. |
+| `business_rules` | `ActualRule` | Single decision rule within a RuleVersion. Its RuleCriteria are grouped by group_id: conditions within a group are AND'd, distinct groups are OR'd. Evaluated in … |
+| `rule_criteria` | `RuleCriteria` | One atomic condition within an ActualRule's group_id group. Groups are OR'd together; conditions within the same group_id are AND'd. |
+| `rule_evaluation_logs` | `RuleEvaluationLog` | Audit log recorded every time a rule set (or scope) is evaluated against a context payload — full hierarchical scoping, cumulative TSAR, matched rule codes, and … |
+
+### Platform
+
+| Table | Model | Purpose |
+|---|---|---|
+| `llm_provider_config` | `LLMProviderConfig` | Platform-wide LLM provider settings, managed by a SuperAdmin. |
+| `token_usage` | `TokenUsage` | One LLM call's token consumption. |
+
 ## Memgraph (Graph DB)
 
 Memgraph is used exclusively by the **Risk Engine** for fraud ring detection. It stores one node type (`Customer`) with two relationship types (`SAME_AREA`, `SAME_OCCUPATION_CLUSTER`), all scoped per tenant.

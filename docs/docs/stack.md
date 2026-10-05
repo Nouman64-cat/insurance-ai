@@ -16,82 +16,56 @@ sidebar_position: 3
 | DB driver | `asyncpg` | Async PostgreSQL |
 | HTTP client | `httpx` | Async proxy calls in the gateway |
 | Auth | `python-jose` + `passlib[bcrypt]` | JWT tokens, bcrypt password hashing |
+| Secrets at rest | `cryptography` (Fernet) | Encrypts stored LLM API keys (`CONFIG_ENCRYPTION_KEY`) |
 | Server | Uvicorn | ASGI server with `--reload` in dev |
 
 ## AI / ML
 
 | Component | Technology | Notes |
 |---|---|---|
-| LLM | Google Gemini 2.5 Flash | `gemini-2.5-flash` via `langchain-google-genai` |
-| Workflow orchestration | [LangGraph](https://langchain-ai.github.io/langgraph/) | Stateful DAG for the risk pipeline |
+| LLM providers | Gemini, OpenAI, Anthropic | Primary + fallback chosen by a SuperAdmin at runtime — default `gemini-2.5-flash`. See [LLM Providers](/llm-providers) |
+| LLM clients | `langchain-google-genai`, `langchain-openai`, `langchain-anthropic` | Resolved per call from `GET /internal/llm-config` (cached ~60 s, env-var fallback) |
+| Workflow orchestration | [LangGraph](https://langchain-ai.github.io/langgraph/) | Risk Engine underwriting DAG; Chat Agent tool loop with `interrupt()` |
 | Structured output | LangChain `.with_structured_output()` | Pydantic schemas as LLM output contracts |
-| Fraud graph queries | Neo4j Python driver | Targeting Memgraph's Bolt-compatible API |
+| Fraud graph queries | Neo4j Python driver | Against Memgraph's Bolt-compatible API |
+| Deterministic engines | `shared/underwriting/*`, `shared/pricing/calculator.py` | Requirements, verification, decision chain, pricing — no LLM |
 
 ## Databases
 
 | Database | Use case | Port |
 |---|---|---|
-| **PostgreSQL** | Relational store — all business entities (tenants, users, customers, policies, assessments, claims, artifacts, commissions). **External** — not a docker-compose container; point `DATABASE_URL` at your own instance. | *(external)* |
-| **Memgraph** | Graph store — customer fraud ring detection. Nodes: `Customer`, `Policy`. Edges: `APPLIED_FOR`. | 7688 (Bolt) / 7445 (Lab UI) |
+| **PostgreSQL** | Relational store — all business entities (tenants, users, customers, cases, policies, assessments, claims, artifacts, rules, LLM config, token usage). Schema in `shared/models/core.py`; additive migrations in `services/tenant-service/migrate.py`. **External** — not a docker-compose container; point `DATABASE_URL` at your own instance. | *(external)* |
+| **Memgraph** | Graph store — fraud ring detection over `Customer` nodes linked by `SAME_AREA` / `SAME_OCCUPATION_CLUSTER` (see [Fraud Layer](/fraud-layer)). | 7688 (Bolt) / 7445 (Lab UI) |
 
 ## Messaging
 
-| Technology | Mode | Notes |
-|---|---|---|
-| Apache Kafka | KRaft (no Zookeeper) | Single broker, auto topic creation enabled |
-| `aiokafka` | Producer | API Gateway publishes `ProposalSubmittedEvent` |
-| `aiokafka` | Consumer | Risk Engine consumes and publishes `RiskEvaluatedEvent` |
+| Technology | Notes |
+|---|---|
+| Apache Kafka (KRaft, no Zookeeper) | Single broker, auto topic creation; `9092` internal, `9094` for host tools |
+| `aiokafka` | Producers and consumers in api-gateway, tenant-service, risk-engine |
 
-### Kafka topics
-
-| Topic | Schema | Direction |
-|---|---|---|
-| `insurance.proposal.submitted.v1` | `ProposalSubmittedEvent` | Gateway → Risk Engine |
-| `insurance.risk.evaluated.v1` | `RiskEvaluatedEvent` | Risk Engine → downstream |
-
-Both event envelopes are defined in `shared/events/kafka_events.py` and imported by both producer and consumer to prevent on-wire contract drift.
+Six topics carry proposals, risk results, customer creation, OCR jobs, case events and policy lifecycle events — see the [Kafka topics table](/data-flow#kafka-topics). Envelopes are defined once in `shared/events/kafka_events.py`.
 
 ## Frontend
 
-| Technology | Notes |
-|---|---|
-| Next.js 14+ (App Router) | Underwriter UI |
-| TypeScript | Strict mode |
-| Tailwind CSS | Styling |
-| Axios / Fetch | API calls to `http://localhost:8010` |
+| App | Technology | Notes |
+|---|---|---|
+| Web portal (`frontend/`) | Next.js 14.2 (App Router), React 18, TypeScript, Tailwind CSS 3 | Operations / admin / super-admin portal on `:3000` |
+| Agent app (`agent-app/`) | Expo 54, React Native 0.81 | Field-agent mobile app — see [Client Apps](/client-apps) |
+| Docs (`docs/`) | Docusaurus 3 + Mermaid | This site, `:4991` |
 
 ## Infrastructure
 
 | Technology | Notes |
 |---|---|
-| Docker Compose | All services, databases, and tooling |
+| Docker Compose | All services, Kafka, Memgraph, tooling and the docs site (PostgreSQL is external) |
+| AWS S3 | Artifact and policy-document storage |
+| AWS SES | Credential and notification email (`EMAIL_PROVIDER`) |
 | Docker bridge network `insurance-net` | Single shared network for inter-service DNS |
-| Named volumes | `postgres-data`, `memgraph-data`, `kafka-data` — data survives restarts |
+| Named volumes | `memgraph-data`, `kafka-data` — data survives restarts (PostgreSQL is external) |
 | `WATCHFILES_FORCE_POLLING=true` | Enables Uvicorn `--reload` on macOS Docker Desktop (inotify workaround) |
 | `CHOKIDAR_USEPOLLING=true` | Same workaround for Next.js HMR |
 
 ## Risk scoring & decision rules
 
-`decision_engine` (no LLM) picks the final decision from a rule chain over three
-**independent** results — medical/financial/fraud — not a weighted sum. A composite score is
-still computed for the dashboard only:
-
-```
-composite = (0.40 × medical_score) + (0.40 × financial_score) + (0.20 × fraud_probability × 100)
-```
-
-Decision rules (`shared/underwriting/decision_rules.py`), evaluated in order — first match wins:
-
-| Condition | Decision |
-|---|---|
-| mandatory requirements unmet | `Request Additional Evidence` |
-| fraud severity High/Critical | `Fraud Investigation` |
-| medical classification Decline | `Decline` |
-| medical classification Postpone | `Postpone` |
-| financial not justified | `Decline` or `Human Review` |
-| medical Substandard/Rated | `Approve with Loading` |
-| unresolved discrepancies / referral flags | `Human Review` |
-| everything clears | `Auto Approve` |
-
-Because it's a sequential chain, a severe medical or fraud result can't be averaged away by
-good scores elsewhere — see `shared/underwriting/decision_rules.py` for the exact logic.
+The final decision is a **sequential rule chain** over three independent structured results (medical, financial, fraud) in `shared/underwriting/decision_rules.py` — not a weighted sum. A composite score (`0.40×medical + 0.40×financial + 0.20×fraud×100`) is still computed for the dashboard but never branched on. The full ordered chain is on the [Data Flow page](/data-flow#decision-rules-decision_engine).

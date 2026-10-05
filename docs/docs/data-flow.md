@@ -36,9 +36,9 @@ This is what makes "missing mandatory requirements pause the workflow" true stru
 the Risk Engine is simply never invoked, rather than being invoked and told to produce a
 particular answer.
 
-## Synchronous evaluate (primary path)
+## Streaming evaluate — `POST /evaluate/stream`
 
-The API Gateway calls the Risk Engine directly and waits for the full result before writing to the database and returning to the client. This is the default path for `POST /evaluate`.
+The API Gateway calls the Risk Engine's `/evaluate/stream`, relays each LangGraph node to the client as an SSE event, and persists the result through `risk_persistence.persist_assessment` (the same function the async worker uses, so the two paths cannot drift). The web portal's Live Evaluation and case workbench use this path.
 
 ```mermaid
 sequenceDiagram
@@ -49,10 +49,10 @@ sequenceDiagram
     participant LLM as Gemini 2.5 Flash
     participant PG as PostgreSQL
 
-    C->>GW: POST /evaluate { customer, policy }
+    C->>GW: POST /evaluate/stream { customer, policy, case_id? }
     GW->>GW: Validate X-Tenant-Id header
 
-    GW->>RE: POST /evaluate (httpx)
+    GW->>RE: POST /evaluate/stream (httpx, SSE)
 
     rect rgb(240, 248, 255)
         note over RE: LangGraph workflow
@@ -70,7 +70,8 @@ sequenceDiagram
         RE->>RE: decision_engine (rule-based over the 3 independent results)<br/>composite is computed too, but only for the dashboard
     end
 
-    RE-->>GW: EvaluationResponse
+    RE-->>GW: progress events + final result
+    GW-->>C: SSE progress events (relayed per node)
 
     GW->>PG: UPSERT customer (by cnic + tenant_id)
     GW->>PG: INSERT policy
@@ -78,12 +79,12 @@ sequenceDiagram
     PG-->>GW: assessment_id, customer_id, policy_id
     RE->>MG: graph_writer.py — MERGE Customer node + SAME_AREA / SAME_OCCUPATION_CLUSTER edges
 
-    GW-->>C: EvaluateResponse { scores, ai_decision, reasons, ... }
+    GW-->>C: final SSE event { scores, ai_decision, reasons, ... }
 ```
 
-## Asynchronous evaluate (Kafka path)
+## Asynchronous evaluate — `POST /evaluate` (Kafka path)
 
-The API Gateway immediately returns a `202 Accepted` response and publishes the proposal to Kafka. The Risk Engine consumer picks it up, runs the same LangGraph workflow, and publishes the result to a downstream topic.
+The API Gateway find-or-creates the `Customer`/`Policy` (and uses the `Case`, if given) so the result has stable rows to attach to, publishes the proposal to Kafka, and immediately returns `202 Accepted`. The Risk Engine consumer picks it up, runs the same LangGraph workflow, and publishes the result to a downstream topic.
 
 ```mermaid
 sequenceDiagram
@@ -94,9 +95,10 @@ sequenceDiagram
     participant MG as Memgraph
     participant LLM as Gemini 2.5 Flash
 
-    C->>GW: POST /evaluate/async { customer, policy }
+    C->>GW: POST /evaluate { customer, policy, case_id? }
+    GW->>GW: find-or-create Customer + Policy (ids travel on the event)
     GW->>KF: ProposalSubmittedEvent → insurance.proposal.submitted.v1
-    GW-->>C: 202 { event_id, proposal_id, status: "accepted" }
+    GW-->>C: 202 { event_id, proposal_id, status: "accepted", message }
 
     note over KF,RE: async — decoupled from HTTP request
     KF->>RE: consumer reads ProposalSubmittedEvent
@@ -219,9 +221,48 @@ LangGraph node fails, `decision_engine` falls back to the most conservative stru
 than a numeric default — so a failure still routes to `Human Review`/`Fraud Investigation`,
 never an accidental `Auto Approve`.
 
+## Artifact OCR (Kafka path)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant TS as Tenant Service
+    participant S3 as AWS S3
+    participant KF as Kafka
+    participant W as ocr_worker (Tenant Service)
+    participant OCR as OCR Engine
+
+    C->>TS: POST /tenants/{t}/cases/{c}/artifacts (multipart)
+    TS->>S3: put_object
+    TS->>TS: INSERT artifact (status "Uploaded")
+    TS->>KF: ArtifactOCRRequestedEvent → insurance.artifact.ocr.requested.v1
+    TS-->>C: 201 artifact (OCR pending)
+    KF->>W: consume
+    W->>S3: download bytes
+    W->>OCR: POST /extract
+    W->>TS: UPDATE artifact (ocr_result, confidence, status)
+```
+
+## Live case events (SSE)
+
+Some case progress happens outside any staff session — e.g. a customer submitting their E-Application from the public link. Tenant Service publishes a `CaseEvent` to `insurance.case.events.v1`; the gateway's `case_event_hub` (one consumer group per process, starting at `latest`) fans it out to every browser tab of that tenant connected to `GET /events/stream`, so the copilot can react immediately. Delivery is best-effort; a client that was offline re-reads case status on reconnect.
+
+## Kafka topics
+
+| Topic | Event | Producer | Consumer |
+|---|---|---|---|
+| `insurance.proposal.submitted.v1` | `ProposalSubmittedEvent` | API Gateway (`POST /evaluate`) | Risk Engine `consumer.py` |
+| `insurance.risk.evaluated.v1` | `RiskEvaluatedEvent` | Risk Engine | Gateway `risk_result_worker` |
+| `insurance.customer.created.v1` | `CustomerCreatedEvent` | Tenant Service (`customers.py`, seeds) | Gateway `quote_worker` |
+| `insurance.artifact.ocr.requested.v1` | `ArtifactOCRRequestedEvent` | Tenant Service (`artifacts.py`) | Tenant Service `ocr_worker` |
+| `insurance.case.events.v1` | `CaseEvent` | Tenant Service (`services/case_events.py`) | Gateway `case_event_hub` |
+| `insurance.policy.lifecycle.v1` | `PolicyLifecycleEvent` | Tenant Service (`policies.py`, after commit) | — (audit stream for downstream consumers) |
+
+All envelopes live in `shared/events/kafka_events.py`.
+
 ## Streaming (SSE)
 
-Both the Risk Engine and OCR Engine support `POST /evaluate/stream` and `POST /extract/stream` respectively. Each completed LangGraph node (or Gemini chunk) is emitted as a Server-Sent Event:
+The Risk Engine (`/evaluate/stream`), OCR Engine (`/extract/stream`), Text Summarizer (`/summarize/stream`) and Chat Agent (`/chat/stream`) all stream Server-Sent Events. Each completed LangGraph node (or Gemini chunk) is emitted as a Server-Sent Event:
 
 ```json
 // Progress event (one per LangGraph node)
