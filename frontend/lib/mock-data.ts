@@ -11,7 +11,12 @@ export type AIDecision =
   | "Auto Approve"
   | "Approve with Loading"
   | "Human Review"
-  | "Decline";
+  | "Decline"
+  // Added for the case-driven, evidence-aware underwriting workflow — see
+  // shared/underwriting/results.py::UnderwritingDecision on the backend.
+  | "Postpone"
+  | "Request Additional Evidence"
+  | "Fraud Investigation";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Formatters

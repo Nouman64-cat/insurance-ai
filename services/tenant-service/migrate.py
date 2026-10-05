@@ -1126,6 +1126,28 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v48h — trgm index on claims.claimant_name",
         "CREATE INDEX IF NOT EXISTS ix_trgm_claims_claimant_name ON claims USING gin (claimant_name gin_trgm_ops)",
     ),
+    (
+        # Postgres enum labels don't auto-grow — same reasoning as v8a-enum
+        # for insurancetypeenum. Adds the 3 new case-driven-underwriting
+        # decision values additively; the 4 existing ones are untouched.
+        "v49a-enum — add POSTPONE to aidecision",
+        "ALTER TYPE aidecision ADD VALUE IF NOT EXISTS 'POSTPONE'",
+    ),
+    (
+        "v49b-enum — add REQUEST_ADDITIONAL_EVIDENCE to aidecision",
+        "ALTER TYPE aidecision ADD VALUE IF NOT EXISTS 'REQUEST_ADDITIONAL_EVIDENCE'",
+    ),
+    (
+        "v49c-enum — add FRAUD_INVESTIGATION to aidecision",
+        "ALTER TYPE aidecision ADD VALUE IF NOT EXISTS 'FRAUD_INVESTIGATION'",
+    ),
+    (
+        # Structured medical/financial/fraud results + the requirements/
+        # verification snapshot in effect at decision time — see
+        # shared/underwriting/results.py and RiskAssessment.underwriting_results.
+        "v49d — add underwriting_results to risk_assessments",
+        "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS underwriting_results JSON",
+    ),
 ]
 
 

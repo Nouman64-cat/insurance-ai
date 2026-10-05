@@ -87,7 +87,7 @@ from shared.models.core import (
     User, UserProfile, Organization, Customer, MasterPolicy, Policy,
     RiskAssessment, Claim, Artifact, Commission, PremiumQuote, InsurancePlan,
     Case, CaseWorkflow, CaseAssignment, CaseHistory, CaseEscalation, CaseComment,
-    CaseAttachment, CaseAuditTrail, Branch
+    CaseAttachment, CaseAuditTrail, CaseRequirement, VerificationFinding, Branch
 )
 
 @router.delete(
@@ -120,6 +120,8 @@ async def delete_tenant(
         await session.exec(delete(CaseComment).where(CaseComment.caseld.in_(case_ids)))
         await session.exec(delete(CaseAttachment).where(CaseAttachment.caseld.in_(case_ids)))
         await session.exec(delete(CaseAuditTrail).where(CaseAuditTrail.caseld.in_(case_ids)))
+        await session.exec(delete(CaseRequirement).where(CaseRequirement.case_id.in_(case_ids)))
+        await session.exec(delete(VerificationFinding).where(VerificationFinding.case_id.in_(case_ids)))
 
     # 4. Delete from UserProfile (child of User)
     if user_ids:

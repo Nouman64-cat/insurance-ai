@@ -17,6 +17,7 @@ POST /evaluate/stream is kept intact for synchronous dev/testing workflows.
 
 import json
 import logging
+import os
 from typing import List, Literal, Optional
 from uuid import UUID, uuid4
 
@@ -54,11 +55,43 @@ from shared.models.core import (
 from dependencies import Settings
 # The RiskAssessment write + policy/case advancement, shared with the Kafka
 # result worker so the sync and async evaluation paths cannot drift.
-from risk_persistence import persist_assessment
+from risk_persistence import advance_case_workflow, persist_assessment
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Underwriting"])
+
+TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Requirements/evidence gate — called by both evaluation paths before risk-
+# engine ever runs. A case with unmet mandatory requirements must never reach
+# risk-engine at all (brief §4); a case that does is bundled with the
+# document/e-application/ACR/verification evidence tenant-service assembled
+# (brief §2), not just the bare customer/policy risk-engine saw before.
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _determine_requirements(tenant_id: UUID, case_id: UUID) -> dict:
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        resp = await client.post(
+            f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/requirements/determine",
+            headers={"X-Tenant-Id": str(tenant_id)},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _fetch_evidence_bundle(tenant_id: UUID, case_id: UUID) -> dict:
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        resp = await client.post(
+            f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/underwriting/evidence",
+            headers={"X-Tenant-Id": str(tenant_id)},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -155,7 +188,29 @@ async def evaluate(
 
     await session.commit()
 
-    # ── 3. Build the event ────────────────────────────────────────────────────
+    # ── 3. Requirements gate — never queue a proposal for a case with unmet
+    #      mandatory requirements; bundle evidence for one that's clear.
+    evidence: Optional[dict] = None
+    if case is not None:
+        try:
+            gate = await _determine_requirements(tenant_id, case.caseld)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Requirements check failed: {exc}")
+        if not gate.get("satisfied", True):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": "Mandatory underwriting requirements are not yet satisfied.",
+                    "requirements": gate.get("requirements", []),
+                    "case_status": gate.get("case_status"),
+                },
+            )
+        try:
+            evidence = await _fetch_evidence_bundle(tenant_id, case.caseld)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"Evidence assembly failed: {exc}")
+
+    # ── 4. Build the event ────────────────────────────────────────────────────
     proposal_id = uuid4()
 
     event = ProposalSubmittedEvent(
@@ -180,10 +235,15 @@ async def evaluate(
                 dependent_name=request.policy.dependent_name,
                 dependent_dob=str(request.policy.dependent_dob) if request.policy.dependent_dob else None,
             ),
+            e_application=evidence.get("e_application") if evidence else None,
+            acr=evidence.get("acr") if evidence else None,
+            document_evidence=evidence.get("document_evidence") if evidence else None,
+            verified_facts=evidence.get("verified_facts") if evidence else None,
+            requirements_satisfied=evidence.get("requirements_satisfied", True) if evidence else True,
         ),
     )
 
-    # ── 4. Publish to Kafka ───────────────────────────────────────────────────
+    # ── 5. Publish to Kafka ───────────────────────────────────────────────────
     # Keying by tenant_id ensures all proposals for the same tenant land on the
     # same partition — preserving per-tenant ordering guarantees.
     try:
@@ -198,7 +258,7 @@ async def evaluate(
             detail=f"Failed to publish proposal event: {exc}",
         )
 
-    # ── 5. Return 202 immediately ─────────────────────────────────────────────
+    # ── 6. Return 202 immediately ─────────────────────────────────────────────
     return ProposalAcceptedResponse(
         event_id=event.event_id,
         proposal_id=proposal_id,
@@ -252,13 +312,41 @@ async def evaluate_stream(
     async def generate():
         final_risk: dict | None = None
 
+        # ── Requirements gate (case-scoped only — Live Evaluation's case-less
+        #    what-if check has no case to gate on, and skips straight through) ──
+        evidence: dict | None = None
+        if request.case_id is not None:
+            try:
+                gate = await _determine_requirements(tenant_id, request.case_id)
+            except Exception as exc:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Requirements check failed: {exc}'})}\n\n"
+                return
+            if not gate.get("satisfied", True):
+                yield f"data: {json.dumps({'type': 'pending_requirements', 'data': gate})}\n\n"
+                return
+            try:
+                evidence = await _fetch_evidence_bundle(tenant_id, request.case_id)
+            except Exception as exc:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Evidence assembly failed: {exc}'})}\n\n"
+                return
+
+        risk_request_body: dict = {"customer": customer_payload, "policy": policy_payload}
+        if evidence is not None:
+            risk_request_body.update({
+                "e_application": evidence.get("e_application"),
+                "acr": evidence.get("acr"),
+                "document_evidence": evidence.get("document_evidence"),
+                "verified_facts": evidence.get("verified_facts"),
+                "requirements_satisfied": evidence.get("requirements_satisfied", True),
+            })
+
         # ── Stream from risk engine ───────────────────────────────────────────
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 async with client.stream(
                     "POST",
                     f"{settings.risk_engine_url}/evaluate/stream",
-                    json={"customer": customer_payload, "policy": policy_payload},
+                    json=risk_request_body,
                     headers={"X-Tenant-Id": str(tenant_id)},
                 ) as risk_resp:
                     if risk_resp.status_code != 200:
@@ -383,7 +471,13 @@ async def evaluate_stream(
                 await db.commit()
                 await db.refresh(assessment)
 
-            yield f"data: {json.dumps({'type': 'saved', 'data': {'assessment_id': str(assessment.id), 'customer_id': str(customer.id), 'policy_id': str(policy.id), 'tenant_id': str(tenant_id), 'case_id': str(case.caseld) if case else None, 'policy_status': policy.status.value, 'case_status': case.caseStatus.value if case else None, 'medical_score': assessment.medical_score, 'financial_score': assessment.financial_score, 'fraud_probability': assessment.fraud_probability, 'composite_risk_score': final_risk['composite_risk_score'], 'ai_decision': assessment.ai_decision.value, 'suggested_loading': assessment.suggested_loading, 'reasons': assessment.reasons or [], 'created_at': assessment.created_at.isoformat()}})}\n\n"
+            if case is not None:
+                step = "human_review" if assessment.ai_decision.value in (
+                    "Human Review", "Fraud Investigation", "Postpone", "Request Additional Evidence",
+                ) else "decision"
+                await advance_case_workflow(tenant_id, case.caseld, step)
+
+            yield f"data: {json.dumps({'type': 'saved', 'data': {'assessment_id': str(assessment.id), 'customer_id': str(customer.id), 'policy_id': str(policy.id), 'tenant_id': str(tenant_id), 'case_id': str(case.caseld) if case else None, 'policy_status': policy.status.value, 'case_status': case.caseStatus.value if case else None, 'medical_score': assessment.medical_score, 'financial_score': assessment.financial_score, 'fraud_probability': assessment.fraud_probability, 'composite_risk_score': final_risk['composite_risk_score'], 'ai_decision': assessment.ai_decision.value, 'suggested_loading': assessment.suggested_loading, 'reasons': assessment.reasons or [], 'underwriting_results': assessment.underwriting_results, 'created_at': assessment.created_at.isoformat()}})}\n\n"
 
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'message': f'Database error: {str(exc)}'})}\n\n"

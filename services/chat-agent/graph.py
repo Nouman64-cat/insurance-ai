@@ -1868,7 +1868,7 @@ async def permission_gate(state: ChatState) -> Command:
                     "quick_actions": [
                         {"label": "Run an underwriting journey", "actionType": "submit",
                          "payload": "Start the underwriting journey with demo data"},
-                        {"label": "Open Policy Issuance", "actionType": "navigate", "payload": "policy-issuance"},
+                        {"label": "Open Policy Issuance", "actionType": "embed", "payload": "policy-issuance"},
                     ],
                 }
                 return back_to_agent({"messages": [_tool_result_message(name, call_id, result)]})

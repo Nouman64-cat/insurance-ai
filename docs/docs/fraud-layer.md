@@ -19,8 +19,8 @@ flowchart LR
     C --> D[(Memgraph)]
     D --> C
     C --> E[LLM prompt\nGemini 2.5 Flash]
-    E --> F[fraud_probability\n0.0 – 1.0\n+ reasons]
-    F --> G[decision_aggregation]
+    E --> F[fraud_probability\n0.0 – 1.0\n+ reasons\n+ deterministic severity band]
+    F --> G[decision_engine\nFraud Investigation if\nseverity High/Critical]
 
     H[Successful\nevaluation] --> I[graph_writer.py\nfire-and-forget]
     I --> D

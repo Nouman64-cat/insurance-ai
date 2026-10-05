@@ -154,6 +154,7 @@ interface AssessmentData {
   medical_reasons?: string[];
   financial_reasons?: string[];
   fraud_reasons?: string[];
+  underwriting_results?: UnderwritingResults | null;
   created_at: string;
 }
 
@@ -190,6 +191,30 @@ interface ArtifactData {
   status: string;
 }
 
+// Mirrors GET /tenants/{tenantId}/cases/{id}/requirements and
+// /verification-findings — see services/tenant-service/routers/cases.py.
+interface CaseRequirement {
+  id: string;
+  code: string;
+  category: string;
+  required: boolean;
+  status: "Missing" | "Requested" | "Submitted" | "Satisfied" | "Waived" | "Invalid";
+  reason: string | null;
+  satisfied_by_artifact_id: string | null;
+  updated_at: string;
+}
+
+interface VerificationFinding {
+  id: string;
+  field: string;
+  severity: "Info" | "Low" | "Medium" | "High";
+  declared_value: unknown;
+  observed_value: unknown;
+  source_artifact_id: string | null;
+  explanation: string;
+  created_at: string;
+}
+
 const SUPPORTED_EXTS = ["pdf", "png", "jpg", "jpeg", "tiff", "bmp"];
 
 function fmtFileSize(bytes: number): string {
@@ -205,6 +230,14 @@ export interface RiskFactorObject {
   reason: string;
 }
 
+interface UnderwritingResults {
+  medical?: { risk_score: number; risk_class: string; loading_percentage: number | null; requires_human_review: boolean; reasons: unknown[]; evidence_refs: string[] };
+  financial?: { financially_justified: boolean; declared_income: number; verified_income: number | null; coverage_to_income_ratio: number; maximum_supported_cover: number | null; referral_required: boolean; reasons: unknown[]; evidence_refs: string[] };
+  fraud?: { probability: number; severity: string; investigation_required: boolean; reasons: unknown[] };
+  requirements_satisfied?: boolean;
+  verified_facts?: unknown[];
+}
+
 interface LiveResult {
   completedNodes: string[];
   medicalScore: number | null;
@@ -216,12 +249,14 @@ interface LiveResult {
   compositeScore: number | null;
   aiDecision: AIDecision | null;
   reasons: (string | RiskFactorObject)[];
+  underwritingResults: UnderwritingResults | null;
 }
 
 const EMPTY_LIVE: LiveResult = {
   completedNodes: [], medicalScore: null, medicalReasons: [],
   financialScore: null, financialReasons: [], fraudProbability: null,
   fraudReasons: [], compositeScore: null, aiDecision: null, reasons: [],
+  underwritingResults: null,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -642,6 +677,10 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const [analysisView, setAnalysisView] = useState<"list" | "table">("table");
 
   const [artifacts, setArtifacts] = useState<ArtifactData[]>([]);
+  const [requirements, setRequirements] = useState<CaseRequirement[]>([]);
+  const [verificationFindings, setVerificationFindings] = useState<VerificationFinding[]>([]);
+  const [requirementsBusy, setRequirementsBusy] = useState(false);
+  const [requirementsError, setRequirementsError] = useState<string | null>(null);
   const [showUpload, setShowUpload] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [downloadingApp, setDownloadingApp] = useState(false);
@@ -754,6 +793,49 @@ export default function CasePage({ params }: { params: { id: string } }) {
       setArtifacts(res.data);
     } catch { /* non-fatal — the case shell above still renders */ }
   }, [tenantId, caseId]);
+
+  const fetchRequirements = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const res = await api.get<{ requirements: CaseRequirement[] }>(`/tenants/${tenantId}/cases/${caseId}/requirements`);
+      setRequirements(res.data.requirements ?? []);
+    } catch { /* non-fatal — requirements may not have been determined yet */ }
+  }, [tenantId, caseId]);
+
+  const fetchVerificationFindings = useCallback(async () => {
+    if (!tenantId) return;
+    try {
+      const res = await api.get<{ findings: VerificationFinding[] }>(`/tenants/${tenantId}/cases/${caseId}/verification-findings`);
+      setVerificationFindings(res.data.findings ?? []);
+    } catch { /* non-fatal */ }
+  }, [tenantId, caseId]);
+
+  const runDetermineRequirements = useCallback(async () => {
+    if (!tenantId) return;
+    setRequirementsBusy(true);
+    setRequirementsError(null);
+    try {
+      const res = await api.post<{ requirements: CaseRequirement[]; satisfied: boolean; case_status: string }>(
+        `/tenants/${tenantId}/cases/${caseId}/requirements/determine`
+      );
+      setRequirements(res.data.requirements ?? []);
+      await fetchDetail();
+    } catch (err: any) {
+      setRequirementsError(err?.response?.data?.detail ?? err.message ?? "Failed to determine requirements.");
+    } finally {
+      setRequirementsBusy(false);
+    }
+  }, [tenantId, caseId, fetchDetail]);
+
+  const waiveRequirement = useCallback(async (requirementId: string) => {
+    if (!tenantId) return;
+    try {
+      await api.post(`/tenants/${tenantId}/cases/${caseId}/requirements/${requirementId}/waive`, { note: "Waived by underwriter" });
+      await fetchRequirements();
+    } catch (err: any) {
+      setRequirementsError(err?.response?.data?.detail ?? err.message ?? "Failed to waive requirement.");
+    }
+  }, [tenantId, caseId, fetchRequirements]);
 
   const fetchEApplication = useCallback(async () => {
     if (!tenantId) return;
@@ -994,7 +1076,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
     fetchIpp();
     fetchHistory();
     fetchMedical();
-  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical]);
+    fetchRequirements();
+    fetchVerificationFindings();
+  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical, fetchRequirements, fetchVerificationFindings]);
 
   useEffect(() => {
     const policyId = detail?.policy?.id || detail?.case?.policy_id;
@@ -1019,6 +1103,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
       fetchHistory();
       fetchMedical();
       fetchCompliance();
+      fetchRequirements();
+      fetchVerificationFindings();
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
@@ -1180,13 +1266,23 @@ export default function CasePage({ params }: { params: { id: string } }) {
               if (node === "medical_scoring") { next.medicalScore = data.medical_score ?? null; next.medicalReasons = data.medical_reasons ?? []; }
               else if (node === "financial_scoring") { next.financialScore = data.financial_score ?? null; next.financialReasons = data.financial_reasons ?? []; }
               else if (node === "fraud_detection") { next.fraudProbability = data.fraud_probability ?? null; next.fraudReasons = data.fraud_reasons ?? []; }
-              else if (node === "decision_aggregation") { next.compositeScore = data.composite_risk_score ?? null; next.aiDecision = data.ai_decision ?? null; next.reasons = data.reasons ?? []; }
+              else if (node === "decision_engine") { next.compositeScore = data.composite_risk_score ?? null; next.aiDecision = data.ai_decision ?? null; next.reasons = data.reasons ?? []; next.underwritingResults = data.underwriting_results ?? null; }
               return next;
             });
-            if (node === "decision_aggregation") setStatus("done");
+            if (node === "decision_engine") setStatus("done");
           } else if (evt.type === "invalid") {
             setStatus("error");
             setStreamError(`Validation failed: ${(evt.errors as string[]).join("; ")}`);
+            break outer;
+          } else if (evt.type === "pending_requirements") {
+            // The Requirements Engine found unmet mandatory items — risk-engine
+            // was never called. Surface it as the case's current state rather
+            // than a generic failure.
+            setStatus("error");
+            setStreamError(
+              "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below."
+            );
+            fetchDetail();
             break outer;
           } else if (evt.type === "error") {
             setStatus("error");
@@ -1312,13 +1408,21 @@ export default function CasePage({ params }: { params: { id: string } }) {
               if (node === "medical_scoring") { next.medicalScore = data.medical_score ?? null; next.medicalReasons = data.medical_reasons ?? []; }
               else if (node === "financial_scoring") { next.financialScore = data.financial_score ?? null; next.financialReasons = data.financial_reasons ?? []; }
               else if (node === "fraud_detection") { next.fraudProbability = data.fraud_probability ?? null; next.fraudReasons = data.fraud_reasons ?? []; }
-              else if (node === "decision_aggregation") { next.compositeScore = data.composite_risk_score ?? null; next.aiDecision = data.ai_decision ?? null; next.reasons = data.reasons ?? []; }
+              else if (node === "decision_engine") { next.compositeScore = data.composite_risk_score ?? null; next.aiDecision = data.ai_decision ?? null; next.reasons = data.reasons ?? []; next.underwritingResults = data.underwriting_results ?? null; }
               return { ...s, [targetId]: next };
             });
-            if (node === "decision_aggregation") setGroupStatuses(s => ({ ...s, [targetId]: "done" }));
+            if (node === "decision_engine") setGroupStatuses(s => ({ ...s, [targetId]: "done" }));
           } else if (evt.type === "invalid") {
             setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
             setGroupErrors(s => ({ ...s, [targetId]: `Validation failed: ${(evt.errors as string[]).join("; ")}` }));
+            break outer;
+          } else if (evt.type === "pending_requirements") {
+            setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
+            setGroupErrors(s => ({
+              ...s,
+              [targetId]: "Mandatory underwriting requirements are not yet satisfied — see the Requirements panel below.",
+            }));
+            if (targetId === currentCaseIdRef.current) fetchDetail();
             break outer;
           } else if (evt.type === "error") {
             setGroupStatuses(s => ({ ...s, [targetId]: "error" }));
@@ -1602,6 +1706,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const compositeScore = hasLive ? effLive.compositeScore! : assessment?.composite_risk_score ?? 0;
   const aiDecision = (hasLive ? effLive.aiDecision : assessment?.ai_decision) ?? null;
   const suggestedLoading = hasLive ? null : assessment?.suggested_loading ?? null;
+  const underwritingResults: UnderwritingResults | null =
+    hasLive ? effLive.underwritingResults : (assessment?.underwriting_results ?? null);
   const fraudPct = +((fraudProbability ?? 0) * 100).toFixed(1);
 
   // Per-category explainability reasons — from the live stream when available,
@@ -2224,6 +2330,52 @@ export default function CasePage({ params }: { params: { id: string } }) {
                   <div className="pt-2 border-t border-slate-100">
                     <CompositeScoreRing score={compositeScore} />
                   </div>
+
+                  {underwritingResults && (
+                    <div className="pt-3 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {underwritingResults.medical && (
+                        <div className="bg-slate-50 rounded-lg p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Medical</p>
+                          <p className="text-sm font-bold text-slate-800">{underwritingResults.medical.risk_class}</p>
+                          {underwritingResults.medical.loading_percentage ? (
+                            <p className="text-xs text-amber-700 mt-0.5">+{underwritingResults.medical.loading_percentage}% loading</p>
+                          ) : null}
+                          {underwritingResults.medical.requires_human_review && (
+                            <p className="text-[11px] text-blue-600 mt-0.5">Requires human review</p>
+                          )}
+                        </div>
+                      )}
+                      {underwritingResults.financial && (
+                        <div className="bg-slate-50 rounded-lg p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Financial</p>
+                          <p className="text-sm font-bold text-slate-800">
+                            {underwritingResults.financial.financially_justified ? "Justified" : "Not Justified"}
+                          </p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Ratio {underwritingResults.financial.coverage_to_income_ratio.toFixed(1)}x
+                            {underwritingResults.financial.maximum_supported_cover != null && (
+                              <> · Max cover {fmtCoverage(underwritingResults.financial.maximum_supported_cover)}</>
+                            )}
+                          </p>
+                          {underwritingResults.financial.verified_income != null && (
+                            <p className="text-[11px] text-slate-500">Verified income: {fmtIncome(underwritingResults.financial.verified_income)}</p>
+                          )}
+                        </div>
+                      )}
+                      {underwritingResults.fraud && (
+                        <div className="bg-slate-50 rounded-lg p-3">
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Fraud</p>
+                          <p className="text-sm font-bold text-slate-800">{underwritingResults.fraud.severity}</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Probability {(underwritingResults.fraud.probability * 100).toFixed(0)}%
+                          </p>
+                          {underwritingResults.fraud.investigation_required && (
+                            <p className="text-[11px] text-purple-600 mt-0.5">Investigation required</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </SectionCard>
 
@@ -2314,6 +2466,102 @@ export default function CasePage({ params }: { params: { id: string } }) {
             </>
           )}
 
+          {/* Requirements & Verification — the case-driven underwriting workflow's
+              requirements engine + cross-document verification findings. */}
+          <div className="card p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <p className="section-label">Underwriting Requirements</p>
+              <button
+                onClick={runDetermineRequirements}
+                disabled={requirementsBusy || userRole === "Agent"}
+                className="flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {requirementsBusy ? <Spinner className="w-3 h-3 border-blue-300 border-t-blue-600" /> : null}
+                {requirementsBusy ? "Determining…" : "Determine Requirements"}
+              </button>
+            </div>
+            {requirementsError && (
+              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{requirementsError}</p>
+            )}
+            {requirements.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">
+                No requirements determined yet — click &quot;Determine Requirements&quot; to run the Requirements Engine for this case.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {requirements.map((req) => {
+                  const statusStyle: Record<CaseRequirement["status"], string> = {
+                    Missing: "bg-red-50 text-red-700 border-red-200",
+                    Requested: "bg-amber-50 text-amber-700 border-amber-200",
+                    Submitted: "bg-blue-50 text-blue-700 border-blue-200",
+                    Satisfied: "bg-emerald-50 text-emerald-700 border-emerald-200",
+                    Waived: "bg-slate-100 text-slate-500 border-slate-200",
+                    Invalid: "bg-red-50 text-red-700 border-red-200",
+                  };
+                  return (
+                    <li key={req.id} className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-slate-700">{req.code.replace(/_/g, " ")}</span>
+                          <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide">{req.category}</span>
+                          {req.required && <span className="text-[10px] font-semibold text-red-500">Required</span>}
+                        </div>
+                        {req.reason && <p className="text-xs text-slate-500 mt-0.5">{req.reason}</p>}
+                        {req.satisfied_by_artifact_id && (
+                          <p className="text-[11px] text-blue-600 mt-0.5">Linked document: {req.satisfied_by_artifact_id.slice(0, 8)}…</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border ${statusStyle[req.status]}`}>
+                          {req.status}
+                        </span>
+                        {req.status !== "Waived" && req.status !== "Satisfied" && userRole !== "Agent" && (
+                          <button
+                            onClick={() => waiveRequirement(req.id)}
+                            className="text-[11px] font-semibold text-slate-400 hover:text-slate-600"
+                            title="Waive this requirement"
+                          >
+                            Waive
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            {verificationFindings.length > 0 && (
+              <div className="pt-3 border-t border-slate-100">
+                <p className="text-xs font-bold uppercase tracking-widest text-slate-700 mb-2">Verification Findings</p>
+                <ul className="space-y-2">
+                  {verificationFindings.map((f) => {
+                    const severityStyle: Record<VerificationFinding["severity"], string> = {
+                      Info: "bg-slate-100 text-slate-500 border-slate-200",
+                      Low: "bg-blue-50 text-blue-700 border-blue-200",
+                      Medium: "bg-amber-50 text-amber-700 border-amber-200",
+                      High: "bg-red-50 text-red-700 border-red-200",
+                    };
+                    return (
+                      <li key={f.id} className="flex items-start justify-between gap-3 border border-slate-100 rounded-lg px-3 py-2">
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-slate-700">{f.field.replace(/_/g, " ")}</span>
+                          <p className="text-xs text-slate-500 mt-0.5">{f.explanation}</p>
+                          <p className="text-[11px] text-slate-400 mt-0.5">
+                            Declared: {JSON.stringify(f.declared_value) ?? "—"} &nbsp;·&nbsp; Observed: {JSON.stringify(f.observed_value) ?? "—"}
+                          </p>
+                        </div>
+                        <span className={`inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold border flex-shrink-0 ${severityStyle[f.severity]}`}>
+                          {f.severity}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
+          </div>
+
           {/* Underwriter notes */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
@@ -2365,6 +2613,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
             setShowUpload(false);
             fetchArtifacts();
             fetchDetail();
+            // OCR runs asynchronously; a short delay gives the worker a
+            // chance to finish before re-checking requirement status.
+            setTimeout(() => { fetchRequirements(); fetchVerificationFindings(); }, 4000);
             notifyParentPortal("document_uploaded", { caseId });
           }}
         />

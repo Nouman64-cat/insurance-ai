@@ -6,6 +6,8 @@ from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
 from fastapi.responses import StreamingResponse
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel
 
 import llm_provider
 from llm_provider import NoProviderConfigured, PdfProviderUnavailable
@@ -668,3 +670,88 @@ async def extract_text_from_path(input_path: str, output_path: str | None = None
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Structured document-understanding — per-document-type fact extraction over
+# already-OCR'd text. Used by tenant-service/ocr_worker.py so the Underwriting
+# Profile (shared/underwriting/profile.py) gets real structured evidence
+# instead of the fabricated placeholder entities the old regex extractor
+# returned for any document it couldn't parse.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_MEDICAL_REPORT_PROMPT = (
+    "You are extracting structured clinical facts from an already-OCR'd medical "
+    "document for insurance underwriting. Return ONLY a JSON object with these keys: "
+    '{"conditions": [string], "medications": [string], "blood_pressure": string|null, '
+    '"physician_findings": [string]}. Use an empty list / null for anything not present. '
+    "Never invent a finding that is not supported by the text."
+)
+_INCOME_EVIDENCE_PROMPT = (
+    "You are extracting verified income facts from an already-OCR'd salary slip or bank "
+    "statement for insurance underwriting. Return ONLY a JSON object with these keys: "
+    '{"verified_monthly_income": number|null, "employer": string|null}. '
+    "Use null for anything not present. Never invent a number that is not in the text."
+)
+_IDENTITY_EVIDENCE_PROMPT = (
+    "You are extracting identity facts from an already-OCR'd national ID / CNIC document "
+    'for insurance underwriting. Return ONLY a JSON object: {"cnic": string|null, '
+    '"name": string|null, "dob": string|null}. dob must be YYYY-MM-DD or null. '
+    "Use null for anything not present."
+)
+_GENERIC_EVIDENCE_PROMPT = (
+    "Summarize the key facts in this already-OCR'd document relevant to insurance "
+    'underwriting. Return ONLY a JSON object: {"summary": string}.'
+)
+
+_MEDICAL_KEYWORDS = ("medical", "diagnos", "lab", "physician", "health", "ecg")
+_INCOME_KEYWORDS = ("salary", "income", "bank", "statement", "tax")
+_IDENTITY_KEYWORDS = ("cnic", "identity", "passport", "id card")
+
+
+def _structured_prompt_for(document_type: str) -> tuple[str, list[str]]:
+    lowered = (document_type or "").lower()
+    if any(kw in lowered for kw in _MEDICAL_KEYWORDS):
+        return _MEDICAL_REPORT_PROMPT, ["conditions", "medications", "blood_pressure", "physician_findings"]
+    if any(kw in lowered for kw in _INCOME_KEYWORDS):
+        return _INCOME_EVIDENCE_PROMPT, ["verified_monthly_income", "employer"]
+    if any(kw in lowered for kw in _IDENTITY_KEYWORDS):
+        return _IDENTITY_EVIDENCE_PROMPT, ["cnic", "name", "dob"]
+    return _GENERIC_EVIDENCE_PROMPT, ["summary"]
+
+
+class ExtractStructuredRequest(BaseModel):
+    extracted_text: str
+    document_type: str
+
+
+@app.post("/extract-structured")
+async def extract_structured(body: ExtractStructuredRequest):
+    """Text-only structured extraction — no file, no vision call. Returns
+    empty fields (never a fabricated default) when the text is blank or
+    every configured provider fails, so a caller never mistakes "nothing
+    extracted" for "nothing present"."""
+    keys_for_type = _structured_prompt_for(body.document_type)[1]
+    if not body.extracted_text or not body.extracted_text.strip():
+        return {"fields": {k: None for k in keys_for_type}, "document_type": body.document_type}
+
+    prompt, keys = _structured_prompt_for(body.document_type)
+    try:
+        cfg = await llm_provider.resolve()
+        chain, _ = llm_provider.provider_chain(cfg, mime_type="text/plain")
+    except (NoProviderConfigured, PdfProviderUnavailable) as exc:
+        log.warning("extract-structured: no provider available (%s)", exc)
+        return {"fields": {k: None for k in keys}, "document_type": body.document_type}
+
+    for entry in chain:
+        try:
+            model = llm_provider.build_model(entry)
+            response = await model.ainvoke([SystemMessage(content=prompt), HumanMessage(content=body.extracted_text)])
+            asyncio.create_task(_record_token_usage(llm_provider.usage_of(response), llm_provider.model_of(response)))
+            parsed = _parse_json_object(response.content)
+            return {"fields": {k: parsed.get(k) for k in keys}, "document_type": body.document_type}
+        except Exception as exc:  # noqa: BLE001 — try the next provider in the chain
+            log.warning("extract-structured provider %s failed: %s", entry.get("provider"), exc)
+            continue
+
+    return {"fields": {k: None for k in keys}, "document_type": body.document_type}

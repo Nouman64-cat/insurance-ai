@@ -70,18 +70,28 @@ Both event envelopes are defined in `shared/events/kafka_events.py` and imported
 | `WATCHFILES_FORCE_POLLING=true` | Enables Uvicorn `--reload` on macOS Docker Desktop (inotify workaround) |
 | `CHOKIDAR_USEPOLLING=true` | Same workaround for Next.js HMR |
 
-## Risk scoring formula
+## Risk scoring & decision rules
 
-The composite risk score is computed deterministically in `decision_aggregation` (no LLM):
+`decision_engine` (no LLM) picks the final decision from a rule chain over three
+**independent** results — medical/financial/fraud — not a weighted sum. A composite score is
+still computed for the dashboard only:
 
 ```
 composite = (0.40 × medical_score) + (0.40 × financial_score) + (0.20 × fraud_probability × 100)
 ```
 
-Decision bands:
+Decision rules (`shared/underwriting/decision_rules.py`), evaluated in order — first match wins:
 
 | Condition | Decision |
 |---|---|
-| composite < 30 AND fraud < 0.10 | `Auto Approve` |
-| composite > 75 OR fraud > 0.60 | `Decline` |
-| Everything else | `Human Review` |
+| mandatory requirements unmet | `Request Additional Evidence` |
+| fraud severity High/Critical | `Fraud Investigation` |
+| medical classification Decline | `Decline` |
+| medical classification Postpone | `Postpone` |
+| financial not justified | `Decline` or `Human Review` |
+| medical Substandard/Rated | `Approve with Loading` |
+| unresolved discrepancies / referral flags | `Human Review` |
+| everything clears | `Auto Approve` |
+
+Because it's a sequential chain, a severe medical or fraud result can't be averaged away by
+good scores elsewhere — see `shared/underwriting/decision_rules.py` for the exact logic.

@@ -33,7 +33,7 @@ from pydantic import ValidationError
 from sqlmodel import select
 
 from database import _session_factory
-from risk_persistence import persist_assessment
+from risk_persistence import advance_case_workflow, persist_assessment
 from shared.events.kafka_events import RISK_EVALUATED_TOPIC, RiskEvaluatedEvent
 from shared.models.core import Case, Customer, Policy, RiskAssessment
 
@@ -120,11 +120,21 @@ async def _process(event: RiskEvaluatedEvent) -> None:
                 "medical_reasons": payload.medical_reasons,
                 "financial_reasons": payload.financial_reasons,
                 "fraud_reasons": payload.fraud_reasons,
+                "underwriting_results": payload.underwriting_results,
             },
         )
         assessment.correlation_id = event.correlation_id
         db.add(assessment)
         await db.commit()
+
+    # Advance CaseWorkflow to decision/human_review — best-effort, outside the
+    # DB transaction above (a workflow-step write failing must not undo an
+    # already-committed RiskAssessment).
+    if case is not None:
+        step = "human_review" if payload.ai_decision in (
+            "Human Review", "Fraud Investigation", "Postpone", "Request Additional Evidence",
+        ) else "decision"
+        await advance_case_workflow(payload.tenant_id, case.caseld, step)
 
     logger.info(
         "persisted RiskAssessment | proposal=%s policy=%s decision=%s loading=%s",

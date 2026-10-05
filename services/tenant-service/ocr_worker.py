@@ -29,8 +29,9 @@ from pydantic import ValidationError
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import _session_factory
+from services import underwriting_gate
 from shared.events.kafka_events import ArtifactOCRRequestedEvent
-from shared.models.core import Artifact
+from shared.models.core import Artifact, Case
 
 logger = logging.getLogger("tenant-service.ocr-worker")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -89,6 +90,26 @@ async def _run_ocr(file_bytes: bytes, file_name: str, mime_type: str) -> str:
         return resp.json().get("extracted_text", "")
 
 
+async def _run_structured_extraction(ocr_text: str, document_type: str) -> dict:
+    """Per-document-type structured facts (medical findings / verified
+    income / identity) for the Underwriting Profile — see
+    shared/underwriting/profile.py. Returns {} on blank text or any failure;
+    never fabricates a finding, unlike the regex extractor this replaced."""
+    if not ocr_text or not ocr_text.strip():
+        return {}
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                f"{_OCR_URL}/extract-structured",
+                json={"extracted_text": ocr_text, "document_type": document_type or ""},
+            )
+            resp.raise_for_status()
+            return resp.json().get("fields", {})
+    except Exception as exc:
+        logger.warning("structured extraction failed | document_type=%s error=%s", document_type, exc)
+        return {}
+
+
 def _confidence(ocr_text: str) -> float:
     if not ocr_text or not ocr_text.strip():
         return 0.1
@@ -132,45 +153,6 @@ async def _process(event: ArtifactOCRRequestedEvent) -> None:
     await _update_artifact(p.artifact_id, ocr_text, confidence, final_status)
 
 
-import re
-
-
-def _extract_entities(ocr_text: str) -> dict:
-    """Extract structured entities (diagnosis, onset date, PED detection) from raw OCR text."""
-    if not ocr_text or not ocr_text.strip():
-        return {
-            "diagnosis": "Acute Episode (Pre-Existing Condition)",
-            "onset_date": "2022-04-12",
-            "ped_detected": True,
-        }
-
-    diagnosis = "Acute Episode (Pre-Existing Condition)"
-    onset_date = "2022-04-12"
-    ped_detected = True
-
-    diag_match = re.search(r"(?:diagnosis|condition|impression|icd|finding):\s*([^\n\.,]+)", ocr_text, re.IGNORECASE)
-    if diag_match:
-        diagnosis = diag_match.group(1).strip().title()
-
-    date_match = re.search(r"(?:onset|date|history|since):\s*(\d{4}-\d{2}-\d{2}|\d{2}/\d{2}/\d{4}|\d{4})", ocr_text, re.IGNORECASE)
-    if date_match:
-        matched_date = date_match.group(1)
-        if len(matched_date) == 4:
-            onset_date = f"{matched_date}-01-01"
-        else:
-            onset_date = matched_date
-
-    ped_keywords = ["pre-existing", "chronic", "history of", "prior to", "ped", "onset 2020", "onset 2021", "onset 2022", "onset 2023"]
-    if any(kw in ocr_text.lower() for kw in ped_keywords) or "2022" in onset_date:
-        ped_detected = True
-
-    return {
-        "diagnosis": diagnosis,
-        "onset_date": onset_date,
-        "ped_detected": ped_detected,
-    }
-
-
 async def _update_artifact(artifact_id, ocr_text: str, confidence: float, status: str) -> None:
     from uuid import UUID
     async with _session_factory() as session:
@@ -180,9 +162,22 @@ async def _update_artifact(artifact_id, ocr_text: str, confidence: float, status
             return
         artifact.ocr_result = ocr_text
         artifact.ocr_confidence_score = confidence
-        artifact.extracted_metadata = _extract_entities(ocr_text)
+        artifact.extracted_metadata = await _run_structured_extraction(ocr_text, artifact.document_type)
         artifact.status = status
         session.add(artifact)
+
+        # An accepted document may satisfy an open CaseRequirement — recompute
+        # so the requirement list reflects it without waiting for the next
+        # manual "determine" call. Best-effort: a failure here must not lose
+        # the OCR result itself (already added to the session above).
+        if status == "Accepted" and artifact.case_id is not None:
+            try:
+                case = await session.get(Case, artifact.case_id)
+                if case is not None:
+                    await underwriting_gate.compute_requirements(session, case.tenant_id, case)
+            except Exception:
+                logger.exception("requirement recompute failed | case_id=%s", artifact.case_id)
+
         await session.commit()
     logger.info("artifact updated | id=%s status=%s confidence=%.2f", artifact_id, status, confidence)
 

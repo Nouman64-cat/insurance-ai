@@ -37,6 +37,14 @@ class AIDecision(str, Enum):
     APPROVE_WITH_LOADING = "Approve with Loading"
     HUMAN_REVIEW = "Human Review"
     DECLINE = "Decline"
+    # Added for the case-driven, evidence-aware underwriting workflow — see
+    # shared/underwriting/decision_rules.py. Additive only: the 4 values
+    # above are untouched so every existing reader keeps working. Postgres
+    # enum labels don't auto-grow, so adding these requires the matching
+    # `ALTER TYPE aidecision ADD VALUE ...` entries in migrate.py's MIGRATIONS.
+    POSTPONE = "Postpone"
+    REQUEST_ADDITIONAL_EVIDENCE = "Request Additional Evidence"
+    FRAUD_INVESTIGATION = "Fraud Investigation"
 
 
 class InsuranceTypeEnum(str, Enum):
@@ -856,8 +864,19 @@ class RiskAssessment(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True),
     )
 
-    # Composite weighted score (0–100) computed by the risk engine aggregation node
+    # Composite score (0–100) — kept for dashboard/explainability only. The
+    # decision is no longer derived from this value; see
+    # shared/underwriting/decision_rules.py::decide(), which branches on the
+    # structured results below instead of a weighted sum.
     composite_risk_score: Optional[int] = Field(default=None, ge=0, le=100)
+
+    # The structured MedicalUnderwritingResult / FinancialUnderwritingResult /
+    # FraudAssessment dicts (shared/underwriting/results.py) plus the
+    # requirements/verification snapshot in effect at decision time — what
+    # the UI's Requirements/Verification/Medical/Financial/Fraud panels
+    # render, and what makes the decision auditable beyond a flat reason
+    # list. Added nullable so older rows (predating this column) still load.
+    underwriting_results: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
 
     # Case linkage — optional since Live Evaluation has no case context
     case_id: Optional[UUID] = Field(default=None, foreign_key="cases.caseld", nullable=True)
@@ -1427,6 +1446,83 @@ class CaseAuditTrail(SQLModel, table=True):
     performedBy: UUID = Field(foreign_key="users.id", index=True)
     timestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     ipAddress: Optional[str] = Field(default=None, max_length=45, nullable=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11. CaseRequirement / VerificationFinding — the Requirements Engine and
+# cross-document verification stage (see shared/underwriting/). Case-scoped
+# and PRE-decision — not to be confused with PolicyRequirement/ComplianceCheck
+# further below, which are policy-scoped and run AFTER an underwriting
+# decision, at the Stage A pre-issuance gate. The two intentionally never
+# share a table: a case can need a medical exam before anyone decides
+# anything, while a policy can separately need a notarized nominee form
+# after it is approved — different lifecycle stage, different owner.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class CaseRequirementStatusEnum(str, Enum):
+    MISSING = "Missing"
+    REQUESTED = "Requested"
+    SUBMITTED = "Submitted"
+    SATISFIED = "Satisfied"
+    WAIVED = "Waived"
+    INVALID = "Invalid"
+
+
+class CaseRequirement(SQLModel, table=True):
+    """One piece of evidence the Requirements Engine decided this case needs
+    (shared/underwriting/requirements_rules.py::determine_requirements).
+    `code`/`category` are plain strings, not DB enums, so a new requirement
+    code (e.g. a new document type) never needs a migration — the canonical,
+    documented set lives in shared/underwriting/results.py::RequirementCode.
+    Mandatory requirements that are not Satisfied/Waived keep the case out of
+    an automatic decision (see decision_rules.py)."""
+    __tablename__ = "case_requirements"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, nullable=False)
+
+    code: str = Field(max_length=100)
+    category: str = Field(max_length=50)
+    required: bool = Field(default=True)
+    status: CaseRequirementStatusEnum = Field(default=CaseRequirementStatusEnum.MISSING, max_length=50)
+    reason: Optional[str] = Field(default=None, max_length=500)
+
+    satisfied_by_artifact_id: Optional[UUID] = Field(default=None, foreign_key="artifacts.id", nullable=True)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class VerificationSeverityEnum(str, Enum):
+    INFO = "Info"
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+
+
+class VerificationFinding(SQLModel, table=True):
+    """One structured discrepancy between a declared value and a value
+    evidenced by an uploaded document or other source (shared/underwriting/
+    verification.py::verify_profile). Declared/observed values are stored as
+    JSON rather than coerced to one type, since the fields being compared
+    (income, dates, condition lists, free text) vary in shape."""
+    __tablename__ = "verification_findings"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    case_id: UUID = Field(foreign_key="cases.caseld", index=True, nullable=False)
+
+    field: str = Field(max_length=100)
+    severity: VerificationSeverityEnum = Field(max_length=50)
+    # Any JSON-serializable value, not just an object — declared/observed can
+    # be a number (income), a string (CNIC/DOB), or a list (conditions).
+    declared_value: Optional[Any] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    observed_value: Optional[Any] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    source_artifact_id: Optional[UUID] = Field(default=None, foreign_key="artifacts.id", nullable=True)
+    explanation: str = Field(max_length=1000)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

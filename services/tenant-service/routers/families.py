@@ -45,6 +45,7 @@ from shared.models.core import (
     CaseEscalation,
     CaseHistory,
     CasePriorityEnum,
+    CaseRequirement,
     CaseStatusEnum,
     CaseTypeEnum,
     CaseWorkflow,
@@ -63,6 +64,7 @@ from shared.models.core import (
     SourceChannelEnum,
     Tenant,
     User,
+    VerificationFinding,
 )
 from shared.pricing.calculator import calculate_premium
 from routers.users import verify_admin   # reuse existing Admin guard — tenant-scoped for Admin, cross-tenant for SuperAdmin
@@ -387,6 +389,8 @@ async def delete_family_group(
                 for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
                 for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
                 for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
+                for cr in (await session.exec(select(CaseRequirement).where(CaseRequirement.case_id == case.caseld))).all(): await session.delete(cr)
+                for vf in (await session.exec(select(VerificationFinding).where(VerificationFinding.case_id == case.caseld))).all(): await session.delete(vf)
                 await session.delete(case)
                 
             quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))
@@ -444,6 +448,8 @@ async def delete_family_member(tenant_id: UUID, family_id: UUID, member_id: UUID
             for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
             for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
             for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
+            for cr in (await session.exec(select(CaseRequirement).where(CaseRequirement.case_id == case.caseld))).all(): await session.delete(cr)
+            for vf in (await session.exec(select(VerificationFinding).where(VerificationFinding.case_id == case.caseld))).all(): await session.delete(vf)
             await session.delete(case)
             
         quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))

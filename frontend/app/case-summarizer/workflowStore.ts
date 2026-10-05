@@ -329,7 +329,7 @@ export const workflowStore: WorkflowStoreType = {
             } else if (node === "fraud_detection") {
               next.fraudProbability = data.fraud_probability as number;
               next.fraudReasons     = (data.fraud_reasons as string[]) ?? [];
-            } else if (node === "decision_aggregation") {
+            } else if (node === "decision_engine") {
               next.compositeScore = data.composite_risk_score as number;
               next.aiDecision     = data.ai_decision as string;
               next.reasons        = (data.reasons as string[]) ?? [];
@@ -337,7 +337,7 @@ export const workflowStore: WorkflowStoreType = {
             this.evalResult = next;
             this.notify();
 
-            if (node === "decision_aggregation") {
+            if (node === "decision_engine") {
               this.update({ evalStatus: "done" });
             }
           } else if (type === "invalid") {

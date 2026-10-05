@@ -61,6 +61,17 @@ class ProposalPayload(BaseModel):
     policy_id: Optional[UUID] = None
     case_id: Optional[UUID] = None
 
+    # Evidence bundle (brief §2) — before this, the Kafka path only ever saw
+    # `customer`/`policy`, so an async POST /evaluate proposal was scored on
+    # a fraction of what the synchronous /evaluate/stream path already saw.
+    # All optional/None for a case-less proposal (no case = nothing to gate on).
+    e_application: Optional[dict] = None
+    acr: Optional[dict] = None
+    compliance_screening: Optional[dict] = None
+    document_evidence: Optional[List[dict]] = None
+    verified_facts: Optional[List[dict]] = None
+    requirements_satisfied: bool = True
+
 
 class ProposalSubmittedEvent(BaseModel):
     event_id: UUID = Field(default_factory=uuid4)
@@ -108,6 +119,12 @@ class RiskEvaluatedPayload(BaseModel):
     medical_reasons: List[str] = Field(default_factory=list)
     financial_reasons: List[str] = Field(default_factory=list)
     fraud_reasons: List[str] = Field(default_factory=list)
+
+    # Structured MedicalUnderwritingResult/FinancialUnderwritingResult/
+    # FraudAssessment + the requirements/verification snapshot (brief §17) —
+    # see shared/underwriting/results.py. Optional so an older risk-engine
+    # that predates this still round-trips through the Kafka path.
+    underwriting_results: Optional[dict] = None
 
 
 class RiskEvaluatedEvent(BaseModel):

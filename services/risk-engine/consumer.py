@@ -89,10 +89,23 @@ async def _process(
     policy    = event.payload.policy.model_dump()
     tenant_id = str(event.tenant_id)
 
-    # Run the synchronous LangGraph workflow off the event loop.
+    # Run the synchronous LangGraph workflow off the event loop. Previously
+    # this dropped e_application/acr/compliance_screening/document evidence
+    # entirely — the Kafka path scored on strictly less than the synchronous
+    # /evaluate/stream path saw for the same proposal. Now it carries the same
+    # evidence bundle api-gateway already assembled before publishing.
     loop = asyncio.get_running_loop()
     result: Dict[str, Any] = await loop.run_in_executor(
-        None, run_evaluation, customer, policy, tenant_id
+        None,
+        lambda: run_evaluation(
+            customer, policy, tenant_id,
+            e_application=event.payload.e_application,
+            acr=event.payload.acr,
+            compliance_screening=event.payload.compliance_screening,
+            document_evidence=event.payload.document_evidence,
+            verified_facts=event.payload.verified_facts,
+            requirements_satisfied=event.payload.requirements_satisfied,
+        ),
     )
 
     # Fire-and-forget: persist the evaluated customer into Memgraph before
@@ -138,6 +151,7 @@ async def _process(
             medical_reasons=_coerce_reasons(result.get("medical_reasons", [])),
             financial_reasons=_coerce_reasons(result.get("financial_reasons", [])),
             fraud_reasons=_coerce_reasons(result.get("fraud_reasons", [])),
+            underwriting_results=result.get("underwriting_results"),
         ),
     )
 

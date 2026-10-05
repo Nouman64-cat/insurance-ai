@@ -55,6 +55,15 @@ class EvaluationRequest(BaseModel):
     e_application: Optional[Dict[str, Any]] = None
     acr: Optional[Dict[str, Any]] = None
     compliance_screening: Optional[Any] = None
+    # Evidence bundle api-gateway assembles from tenant-service's Requirements
+    # Engine / document OCR / verification before ever calling risk-engine
+    # (brief §2/§4). requirements_satisfied defaults True for a direct/test
+    # call made with no case context at all — api-gateway itself only ever
+    # sends False when it is deliberately exercising the
+    # Request-Additional-Evidence path.
+    document_evidence: Optional[list[Dict[str, Any]]] = None
+    verified_facts: Optional[list[Dict[str, Any]]] = None
+    requirements_satisfied: bool = True
 
 
 class SuggestPlanRequest(BaseModel):
@@ -79,6 +88,7 @@ class EvaluationResponse(BaseModel):
     ai_decision: str
     suggested_loading: Optional[float]
     reasons: list[str]
+    underwriting_results: Optional[Dict[str, Any]] = None
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -127,6 +137,9 @@ async def evaluate(
         e_application=request.e_application,
         acr=request.acr,
         compliance_screening=request.compliance_screening,
+        document_evidence=request.document_evidence,
+        verified_facts=request.verified_facts,
+        requirements_satisfied=request.requirements_satisfied,
     )
 
     if not result["is_valid"]:
@@ -149,6 +162,7 @@ async def evaluate(
             f"{r.get('parameter', 'Factor')} ({r.get('risk_rating', 'Info')}): {r.get('observation', '')}" if isinstance(r, dict) else str(r)
             for r in result.get("reasons", [])
         ],
+        underwriting_results=result.get("underwriting_results"),
     )
 
 
@@ -170,6 +184,9 @@ async def evaluate_stream(
                 e_application=request.e_application,
                 acr=request.acr,
                 compliance_screening=request.compliance_screening,
+                document_evidence=request.document_evidence,
+                verified_facts=request.verified_facts,
+                requirements_satisfied=request.requirements_satisfied,
             ):
                 if node_name == "__done__":
                     # Persist the fully-scored customer into Memgraph before

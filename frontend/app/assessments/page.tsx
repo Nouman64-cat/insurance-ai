@@ -52,6 +52,9 @@ function decisionColor(d: AIDecision) {
   if (d === "Auto Approve") return "bg-blue-50 text-blue-700 border-blue-200";
   if (d === "Approve with Loading") return "bg-amber-50 text-amber-700 border-amber-200";
   if (d === "Human Review") return "bg-blue-50 text-blue-700 border-blue-200";
+  if (d === "Postpone") return "bg-orange-50 text-orange-700 border-orange-200";
+  if (d === "Request Additional Evidence") return "bg-amber-50 text-amber-700 border-amber-200";
+  if (d === "Fraud Investigation") return "bg-purple-50 text-purple-700 border-purple-200";
   return "bg-red-50 text-red-700 border-red-200";
 }
 
@@ -59,6 +62,9 @@ function decisionLabel(d: AIDecision) {
   if (d === "Auto Approve") return "Approved";
   if (d === "Approve with Loading") return "Approved +L";
   if (d === "Human Review") return "Referred";
+  if (d === "Postpone") return "Postponed";
+  if (d === "Request Additional Evidence") return "Evidence Requested";
+  if (d === "Fraud Investigation") return "Fraud Investigation";
   return "Declined";
 }
 

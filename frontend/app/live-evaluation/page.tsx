@@ -43,11 +43,12 @@ interface EvalState {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const PIPELINE_NODES = [
-  { key: "validate_input",       label: "Input\nValidation",    dotColor: "bg-slate-500"   },
-  { key: "medical_scoring",      label: "Medical\nScoring",     dotColor: "bg-blue-500"    },
-  { key: "financial_scoring",    label: "Financial\nScoring",   dotColor: "bg-blue-500"  },
-  { key: "fraud_detection",      label: "Fraud\nDetection",     dotColor: "bg-red-500"     },
-  { key: "decision_aggregation", label: "Decision\nAggregation",dotColor: "bg-blue-500" },
+  { key: "validate_input",            label: "Input\nValidation",    dotColor: "bg-slate-500"   },
+  { key: "load_underwriting_profile", label: "Profile\nAssembly",    dotColor: "bg-slate-500"   },
+  { key: "medical_scoring",           label: "Medical\nScoring",     dotColor: "bg-blue-500"    },
+  { key: "financial_scoring",         label: "Financial\nScoring",   dotColor: "bg-blue-500"  },
+  { key: "fraud_detection",           label: "Fraud\nDetection",     dotColor: "bg-red-500"     },
+  { key: "decision_engine",           label: "Decision\nEngine",     dotColor: "bg-blue-500" },
 ] as const;
 
 const INITIAL_EVAL: EvalState = {
@@ -92,7 +93,10 @@ const DEFAULT_FORM: FormValues = {
   dependentDob:   "",
 };
 
-const VALID_DECISIONS = new Set<string>(["Auto Approve", "Approve with Loading", "Human Review", "Decline"]);
+const VALID_DECISIONS = new Set<string>([
+  "Auto Approve", "Approve with Loading", "Human Review", "Decline",
+  "Postpone", "Request Additional Evidence", "Fraud Investigation",
+]);
 function asDecision(v: string | null): AIDecision | null {
   return v && VALID_DECISIONS.has(v) ? (v as AIDecision) : null;
 }
@@ -224,7 +228,7 @@ export default function LiveEvaluationPage() {
               } else if (node === "fraud_detection") {
                 next.fraudProbability = (data.fraud_probability as number)   ?? null;
                 next.fraudReasons     = (data.fraud_reasons     as string[]) ?? [];
-              } else if (node === "decision_aggregation") {
+              } else if (node === "decision_engine") {
                 next.compositeScore = (data.composite_risk_score as number)   ?? null;
                 next.aiDecision     = (data.ai_decision          as string)   ?? null;
                 next.reasons        = (data.reasons              as string[]) ?? [];
@@ -232,7 +236,7 @@ export default function LiveEvaluationPage() {
               return next;
             });
 
-            if (node === "decision_aggregation") setStatus("done");
+            if (node === "decision_engine") setStatus("done");
 
           } else if (type === "invalid") {
             setResult(prev => ({ ...prev, validationErrors: (evt.errors as string[]) ?? [] }));

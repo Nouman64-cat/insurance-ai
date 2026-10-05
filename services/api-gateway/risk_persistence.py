@@ -18,9 +18,11 @@ Keeping the write in one place is what stops the two paths drifting again.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Optional
 from uuid import UUID
 
+import httpx
 from sqlmodel import select
 
 from shared.models.core import (
@@ -39,6 +41,23 @@ from shared.services.policy_state_machine import IllegalStateTransition, apply_t
 
 log = logging.getLogger(__name__)
 
+TENANT_SERVICE_URL = os.environ.get("TENANT_SERVICE_URL", "http://tenant-service:8001")
+
+
+async def advance_case_workflow(tenant_id: UUID, case_id: UUID, step: str) -> None:
+    """Best-effort CaseWorkflow step advance, shared by both evaluation paths
+    (brief §5) — a workflow-step write failing must never undo or block an
+    already-persisted RiskAssessment."""
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            await client.post(
+                f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/workflow/advance",
+                json={"step": step},
+                headers={"X-Tenant-Id": str(tenant_id)},
+            )
+    except Exception:
+        log.exception("workflow advance to %s failed | case_id=%s", step, case_id)
+
 
 # AI decision band -> Policy/Case lifecycle status. The AI's decision is only
 # ever a recommendation surfaced to the underwriter (via RiskAssessment.ai_decision
@@ -52,12 +71,24 @@ DECISION_POLICY_STATUS: dict[str, PolicyStatusEnum] = {
     "Approve with Loading": PolicyStatusEnum.UNDER_REVIEW,
     "Human Review":         PolicyStatusEnum.UNDER_REVIEW,
     "Decline":              PolicyStatusEnum.UNDER_REVIEW,
+    # Case-driven underwriting workflow additions — same reasoning as the
+    # four bands above: the AI never finalizes anything, it only parks the
+    # policy somewhere a human reviews it from.
+    "Postpone":                     PolicyStatusEnum.UNDER_REVIEW,
+    "Fraud Investigation":          PolicyStatusEnum.UNDER_REVIEW,
+    "Request Additional Evidence":  PolicyStatusEnum.UNDER_REVIEW,
 }
 DECISION_CASE_STATUS: dict[str, CaseStatusEnum] = {
     "Auto Approve":         CaseStatusEnum.UNDER_REVIEW,
     "Approve with Loading": CaseStatusEnum.UNDER_REVIEW,
     "Human Review":         CaseStatusEnum.UNDER_REVIEW,
     "Decline":              CaseStatusEnum.UNDER_REVIEW,
+    "Postpone":             CaseStatusEnum.UNDER_REVIEW,
+    "Fraud Investigation":  CaseStatusEnum.UNDER_REVIEW,
+    # The one case-status mapping that is NOT Under Review — brief §4: missing
+    # mandatory requirements must pause the workflow, not park it "under
+    # review" as if an underwriter already has everything they need.
+    "Request Additional Evidence": CaseStatusEnum.PENDING_DOCUMENTS,
 }
 
 
@@ -159,6 +190,13 @@ async def persist_assessment(
         financial_reasons=final_risk.get("financial_reasons"),
         fraud_reasons=final_risk.get("fraud_reasons"),
         ai_summary=ai_summary,
+        # Structured MedicalUnderwritingResult/FinancialUnderwritingResult/
+        # FraudAssessment (shared/underwriting/results.py) plus the
+        # requirements/verification snapshot risk-engine decided against —
+        # what the Case Detail UI's Requirements/Verification/Medical/
+        # Financial/Fraud panels render. None for a direct risk-engine call
+        # that predates this (e.g. an older frontend build).
+        underwriting_results=final_risk.get("underwriting_results"),
     )
     db.add(assessment)
 

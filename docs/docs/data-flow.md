@@ -6,6 +6,36 @@ sidebar_position: 7
 
 # Data Flow
 
+## Requirements/evidence gate (runs before either evaluate path below)
+
+For any case-scoped evaluation (a `case_id` is present — a case-less Live Evaluation
+what-if check skips this entirely), api-gateway calls tenant-service **before** ever
+reaching the Risk Engine:
+
+```mermaid
+sequenceDiagram
+    participant GW as API Gateway
+    participant TS as Tenant Service
+    participant RE as Risk Engine
+
+    GW->>TS: POST .../cases/{id}/requirements/determine
+    TS->>TS: Requirements Engine (age, coverage, BMI, smoker, declared conditions)
+    TS-->>GW: { requirements, satisfied, case_status }
+    alt not satisfied
+        TS->>TS: case.caseStatus = "Pending Documents" (system-generated CaseHistory)
+        GW-->>GW: short-circuit — Risk Engine is never called
+    else satisfied
+        GW->>TS: POST .../cases/{id}/underwriting/evidence
+        TS->>TS: re-run verification (declared vs. document-evidenced)
+        TS-->>GW: { document_evidence, e_application, acr, verified_facts }
+        GW->>RE: /evaluate or /evaluate/stream, bundled with the evidence above
+    end
+```
+
+This is what makes "missing mandatory requirements pause the workflow" true structurally —
+the Risk Engine is simply never invoked, rather than being invoked and told to produce a
+particular answer.
+
 ## Synchronous evaluate (primary path)
 
 The API Gateway calls the Risk Engine directly and waits for the full result before writing to the database and returning to the client. This is the default path for `POST /evaluate`.
@@ -37,7 +67,7 @@ sequenceDiagram
         MG-->>RE: coverage_cluster_size
         RE->>LLM: fraud_check prompt + graph context
         LLM-->>RE: { fraud_probability, fraud_reasons }
-        RE->>RE: decision_aggregation (deterministic)<br/>composite = 0.40×medical + 0.40×financial + 0.20×fraud×100
+        RE->>RE: decision_engine (rule-based over the 3 independent results)<br/>composite is computed too, but only for the dashboard
     end
 
     RE-->>GW: EvaluationResponse
@@ -74,10 +104,16 @@ sequenceDiagram
     MG-->>RE: graph intelligence
     RE->>LLM: scoring prompts (medical, financial, fraud)
     LLM-->>RE: scores + reasons
-    RE->>RE: decision_aggregation
+    RE->>RE: decision_engine
     RE->>MG: graph_writer.py — MERGE Customer node + edges (fire-and-forget)
     RE->>KF: RiskEvaluatedEvent → insurance.risk.evaluated.v1
 ```
+
+A downstream consumer, api-gateway's `risk_result_worker.py`, polls
+`insurance.risk.evaluated.v1`, resolves the `Customer`/`Policy`/`Case` the gateway persisted
+before publishing (their ids are echoed back on the payload), and writes the
+`RiskAssessment` — deduping on `RiskEvaluatedEvent.correlation_id` so a redelivered message
+is never persisted twice.
 
 ### Kafka event schemas
 
@@ -107,28 +143,36 @@ class RiskEvaluatedEvent(BaseModel):
 flowchart TD
     START([START]) --> V[validate_input\ndeterministic]
     V -->|invalid| END1([END — 422])
-    V -->|valid| M[medical_scoring\nGemini 2.5 Flash]
-    M --> F[financial_scoring\nGemini 2.5 Flash]
-    F --> FR[fraud_detection\nMemgraph ring query\n+ Gemini 2.5 Flash]
-    FR --> D[decision_aggregation\ndeterministic]
+    V -->|valid| P[load_underwriting_profile\npure — no LLM, no DB]
+    P --> M[medical_scoring\nGemini 2.5 Flash +\ndeterministic BMI/smoker floors]
+    P --> F[financial_scoring\nGemini 2.5 Flash +\ndeterministic income ceiling]
+    P --> FR[fraud_detection\nMemgraph ring query\n+ Gemini 2.5 Flash +\ndeterministic severity bands]
+    M --> D[decision_engine\nrule-based, not weighted]
+    F --> D
+    FR --> D
     D --> END2([END])
 
     style V fill:#f0f4ff
+    style P fill:#f0f4ff
     style M fill:#fff3e0
     style F fill:#fff3e0
     style FR fill:#fce4ec
     style D fill:#e8f5e9
 ```
 
+`medical_scoring`/`financial_scoring`/`fraud_detection` run as parallel branches (LangGraph
+fan-out from `load_underwriting_profile`), then join at `decision_engine`.
+
 ### Node details
 
 | Node | Type | Inputs | Outputs |
 |---|---|---|---|
 | `validate_input` | Deterministic | `customer`, `policy` | `is_valid`, `validation_errors` |
-| `medical_scoring` | LLM (structured output) | `customer` | `medical_score` (0–100), `medical_reasons` |
-| `financial_scoring` | LLM (structured output) | `customer`, `policy` | `financial_score` (0–100), `financial_reasons` |
-| `fraud_detection` | Memgraph + LLM | `customer`, `policy`, `tenant_id` + graph context | `fraud_probability` (0.0–1.0), `fraud_reasons` |
-| `decision_aggregation` | Deterministic | all scores + reasons | `composite_risk_score`, `ai_decision`, `reasons` |
+| `load_underwriting_profile` | Deterministic, pure | `customer`, `policy`, `e_application`, `acr`, `document_evidence`, `verified_facts` | `underwriting_profile` (see `shared/underwriting/profile.py`) |
+| `medical_scoring` | LLM + deterministic floors | `customer`, `underwriting_profile` | `medical_score`, `medical_reasons`, `medical_result` (`MedicalUnderwritingResult`) |
+| `financial_scoring` | LLM + deterministic ceiling | `customer`, `policy`, `underwriting_profile` | `financial_score`, `financial_reasons`, `financial_result` (`FinancialUnderwritingResult`) |
+| `fraud_detection` | Memgraph + LLM + deterministic bands | `customer`, `policy`, `tenant_id` + graph context | `fraud_probability`, `fraud_reasons`, `fraud_result` (`FraudAssessment`) |
+| `decision_engine` | Deterministic, rule-based | `medical_result`, `financial_result`, `fraud_result`, `requirements_satisfied`, `verified_facts` | `ai_decision`, `composite_risk_score` (dashboard only), `reasons`, `underwriting_results` |
 
 ### Validation rules (validate_input)
 
@@ -149,17 +193,31 @@ Common checks across all plans:
 
 Each plan also carries `medical_exam_tiers` (coverage-amount thresholds mapping to `None` / `Paramedical` / `Full medical + financials`) — not yet surfaced in `validation_errors`, informational for a future underwriter-facing rule panel.
 
-### Decision bands (decision_aggregation)
+### Decision rules (decision_engine)
+
+`decision_engine` is a sequential rule chain over the three independent structured results —
+not a weighted sum (see `shared/underwriting/decision_rules.py`):
 
 ```
-composite = (0.40 × medical) + (0.40 × financial) + (0.20 × fraud × 100)
-
-Auto Approve       → composite < 30  AND  fraud < 0.10
-Decline            → composite > 75  OR   fraud > 0.60
-Human Review       → everything else
+1. requirements not satisfied         → Request Additional Evidence
+2. fraud severity High/Critical       → Fraud Investigation
+3. fraud severity Medium              → Human Review
+4. medical classification Decline     → Decline
+5. medical classification Postpone    → Postpone
+6. medical ambiguous/review-required  → Human Review
+7. financial not justified            → Decline (or Human Review if referral_required)
+8. unresolved high-severity finding   → Human Review
+9. medical Substandard/Rated/loading  → Approve with Loading
+10. financial referral / medium finding → Human Review
+11. everything clears                 → Auto Approve
 ```
 
-If any upstream LangGraph node fails, the aggregation node defaults the missing score to 50 / 0.5, keeping the decision safely in the `Human Review` band rather than accidentally auto-approving.
+A composite score (`0.40×medical + 0.40×financial + 0.20×fraud×100`) is still computed and
+returned for the dashboard, but `decision_engine` never branches on it. If any upstream
+LangGraph node fails, `decision_engine` falls back to the most conservative structured result
+(`Medical Review Required`, `financially_justified=False`, fraud severity `Medium`) rather
+than a numeric default — so a failure still routes to `Human Review`/`Fraud Investigation`,
+never an accidental `Auto Approve`.
 
 ## Streaming (SSE)
 

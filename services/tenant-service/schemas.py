@@ -875,6 +875,13 @@ class CaseCommentCreate(BaseModel):
     commentType: CommentTypeEnum
     visibilityLevel: VisibilityLevelEnum
 
+class CaseRequirementWaiveBody(BaseModel):
+    note: Optional[str] = None
+
+class WorkflowAdvanceBody(BaseModel):
+    step: str
+    state: Optional[str] = None
+
 
 # ── Insurance Plans ───────────────────────────────────────────────────────────
 

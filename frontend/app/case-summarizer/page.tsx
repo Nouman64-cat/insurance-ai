@@ -16,14 +16,18 @@ import { workflowStore, INITIAL_EVAL, INITIAL_FORM, INSURANCE_TYPE_OPTIONS, INSU
 import type { Customer, CaseItem, Artifact, TokenUsage, SumStatus, EvalStatus, EvalState, EvalForm } from "./workflowStore";
 
 const PIPELINE_NODES = [
-  { key: "validate_input",       label: "Input\nValidation",     dotColor: "bg-slate-500"   },
-  { key: "medical_scoring",      label: "Medical\nScoring",      dotColor: "bg-blue-500"    },
-  { key: "financial_scoring",    label: "Financial\nScoring",    dotColor: "bg-blue-500"  },
-  { key: "fraud_detection",      label: "Fraud\nDetection",      dotColor: "bg-red-500"     },
-  { key: "decision_aggregation", label: "Decision\nAggregation", dotColor: "bg-blue-500" },
+  { key: "validate_input",            label: "Input\nValidation",     dotColor: "bg-slate-500"   },
+  { key: "load_underwriting_profile", label: "Profile\nAssembly",     dotColor: "bg-slate-500"   },
+  { key: "medical_scoring",           label: "Medical\nScoring",      dotColor: "bg-blue-500"    },
+  { key: "financial_scoring",         label: "Financial\nScoring",    dotColor: "bg-blue-500"  },
+  { key: "fraud_detection",           label: "Fraud\nDetection",      dotColor: "bg-red-500"     },
+  { key: "decision_engine",           label: "Decision\nEngine",      dotColor: "bg-blue-500" },
 ] as const;
 
-const VALID_DECISIONS = new Set(["Auto Approve", "Approve with Loading", "Human Review", "Decline"]);
+const VALID_DECISIONS = new Set([
+  "Auto Approve", "Approve with Loading", "Human Review", "Decline",
+  "Postpone", "Request Additional Evidence", "Fraud Investigation",
+]);
 function asDecision(v: string | null): AIDecision | null {
   return v && VALID_DECISIONS.has(v) ? (v as AIDecision) : null;
 }

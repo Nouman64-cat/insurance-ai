@@ -12,27 +12,41 @@ Browser / Postman
        ▼
  API Gateway :8010          ← single public entry point, tenant auth
        │
-       ├── POST /evaluate        → publishes ProposalSubmittedEvent to Kafka (202 Accepted)
-       └── POST /evaluate/stream → calls Risk Engine directly over HTTP (SSE streaming)
+       ├── POST /evaluate        → Requirements gate, then publishes ProposalSubmittedEvent to Kafka (202 Accepted)
+       └── POST /evaluate/stream → Requirements gate, then calls Risk Engine directly over HTTP (SSE streaming)
+
+Requirements/Evidence gate (api-gateway, before either path reaches Risk Engine)
+  POST .../requirements/determine  → tenant-service's Requirements Engine; case-less calls skip this
+  if NOT satisfied                 → case moves to "Pending Documents", Risk Engine is never called
+  POST .../underwriting/evidence   → document evidence + e-application/ACR + verification findings bundle
 
 Kafka :9092
   insurance.proposal.submitted.v1   ← Gateway publishes here
-  insurance.risk.evaluated.v1       ← Risk Engine consumer publishes here
+  insurance.risk.evaluated.v1       ← Risk Engine consumer publishes here; api-gateway's
+                                        risk_result_worker.py persists the RiskAssessment
+                                        (idempotent on RiskEvaluatedEvent.correlation_id)
+  insurance.case.events.v1          ← tenant-service publishes workflow/requirement/
+                                        verification events here, fanned out live over
+                                        SSE by api-gateway's case_event_hub.py
 
 Risk Engine :8012
   ├── FastAPI server      → POST /evaluate, POST /evaluate/stream (sync HTTP path)
   └── consumer.py daemon  → polls Kafka, runs LangGraph, publishes results
 
-LangGraph Workflow (inside Risk Engine)
-  validate_input        → deterministic field + business-rule validation
-  medical_scoring       → Gemini 2.5 Flash (age, gender, occupation hazard)
-  financial_scoring     → Gemini 2.5 Flash (coverage ratio, term, income stability)
-  fraud_detection       → Memgraph ring query + Gemini 2.5 Flash
-  decision_aggregation  → deterministic (40% medical + 40% financial + 20% fraud)
-                          Auto Approve / Human Review / Decline
+LangGraph Workflow (inside Risk Engine) — see shared/underwriting/ for the rule modules
+  validate_input             → deterministic field + business-rule validation
+  load_underwriting_profile  → assembles customer + policy + e-application + ACR +
+                                 document evidence into one normalized profile
+  medical_scoring            → Gemini 2.5 Flash + deterministic BMI/smoker/condition floors
+  financial_scoring          → Gemini 2.5 Flash + deterministic coverage-vs-income ceiling
+  fraud_detection            → Memgraph ring query + Gemini 2.5 Flash + deterministic severity bands
+  decision_engine            → rule-based over the three independent results (NOT a weighted
+                                 sum — see "Decision Rules" below). Composite score is still
+                                 computed and returned for the dashboard, but never decides.
 
 Data Stores
-  PostgreSQL         → tenants, customers, policies, risk_assessments, claims, artifacts
+  PostgreSQL         → tenants, customers, policies, risk_assessments, claims, artifacts,
+                       case_requirements, verification_findings
                        (external service — NOT a docker-compose container; see below)
   Memgraph   :7688   → fraud ring detection graph (customer network analysis)
 ```
@@ -273,28 +287,71 @@ SSE event types:
 
 | Type         | When                          | Payload                |
 | ------------ | ----------------------------- | ---------------------- |
-| `progress` | each LangGraph node completes | `{node, data}`       |
-| `invalid`  | validation failed             | `{errors: [...]}`    |
-| `saved`    | DB write complete             | full assessment object |
-| `error`    | something failed              | `{message}`          |
+| `progress`             | each LangGraph node completes                        | `{node, data}`                             |
+| `invalid`              | validation failed                                     | `{errors: [...]}`                          |
+| `pending_requirements` | mandatory requirements unmet — Risk Engine never ran  | `{requirements, satisfied, case_status}`   |
+| `saved`                | DB write complete                                     | full assessment object                     |
+| `error`                | something failed                                      | `{message}`                                |
 
 ---
 
-### LangGraph Workflow — Decision Bands
+### Underwriting Requirements Engine
 
-The `decision_aggregation` node is fully deterministic:
+Before either evaluation path reaches the Risk Engine, api-gateway calls tenant-service's
+Requirements Engine (`shared/underwriting/requirements_rules.py`) for any case-scoped call.
+It determines what evidence a case needs — CNIC, salary slip, bank statement, tax document,
+medical questionnaire/examination, ECG, lab reports, physician report — based on age,
+coverage, coverage-to-income ratio, smoker status, BMI, and declared medical conditions, and
+persists the result as `CaseRequirement` rows. If any **required** item is not
+`Satisfied`/`Waived`, the case moves to `Pending Documents` and the Risk Engine is never
+called — there is no automatic decision on an incomplete case. Requirements are
+case-scoped and pre-decision; they are a separate concept from the existing
+policy-scoped, post-decision `PolicyRequirement`/`ComplianceCheck` pre-issuance gate.
+
+A parallel Verification stage (`shared/underwriting/verification.py`) cross-checks declared
+vs. document-evidenced values (income, identity, medical conditions, employer) and persists
+structured `VerificationFinding` rows, which the decision rules below also consult.
+
+### LangGraph Workflow — Decision Rules
+
+The `decision_engine` node is rule-based over the three **independent** results produced by
+`medical_scoring`/`financial_scoring`/`fraud_detection` — it does **not** average them into a
+weighted composite score. A composite is still computed and returned (for the dashboard/
+explainability only):
 
 ```
 composite_score = (40% × medical_score) + (40% × financial_score) + (20% × fraud_probability × 100)
 ```
 
-| Decision               | Condition                                   |
-| ---------------------- | ------------------------------------------- |
-| **Auto Approve** | composite < 30 AND fraud_probability < 0.10 |
-| **Decline**      | composite > 75 OR fraud_probability > 0.60  |
-| **Human Review** | everything else                             |
+...but the actual decision is a sequential rule chain (`shared/underwriting/decision_rules.py`),
+evaluated roughly in this order:
 
-The final `reasons` list includes XAI outputs from all three scoring nodes plus a plain-English math breakdown of the composite calculation.
+| Decision                          | Condition (first match wins)                                          |
+| ---------------------------------- | ----------------------------------------------------------------------- |
+| **Request Additional Evidence** | mandatory requirements not satisfied                                   |
+| **Fraud Investigation**         | fraud severity High/Critical, or `investigation_required`              |
+| **Human Review**                | fraud severity Medium                                                  |
+| **Decline**                     | medical classification is Decline                                      |
+| **Postpone**                    | medical classification is Postpone                                     |
+| **Human Review**                | medical classification is Medical Review Required / ambiguous          |
+| **Decline** / **Human Review**  | financial not justified (Decline, or Human Review if referral_required) |
+| **Human Review**                | unresolved high-severity verification finding                          |
+| **Approve with Loading**        | medical classification is Substandard/Rated, or a loading applies      |
+| **Human Review**                | financial flagged for referral, or medium-severity finding             |
+| **Auto Approve**                | everything else clears                                                 |
+
+Because this is a sequential chain and not a weighted sum, a severe medical or fraud finding
+can never be mathematically cancelled out by good scores elsewhere — each check either
+returns its own decision immediately or falls through to the next one. The AI layer never
+auto-finalizes `Approved`/`Declined`: every decision above still only parks the case/policy at
+`Under Review` (or `Pending Documents` for Request Additional Evidence) — only a human
+underwriter reaches Approved/Rejected, via `PATCH /cases/{id}/status`.
+
+The final `reasons` list includes XAI outputs from all three scoring nodes, which decision
+rule fired, and the composite math breakdown (dashboard-only). The structured
+`MedicalUnderwritingResult`/`FinancialUnderwritingResult`/`FraudAssessment` objects are
+persisted verbatim on `RiskAssessment.underwriting_results` for the Case Detail UI's
+Requirements/Verification/Medical/Financial/Fraud panels.
 
 ---
 
@@ -347,12 +404,19 @@ curl -s -X POST http://localhost:8012/evaluate \
 
 ## Kafka Topics
 
-| Topic                               | Producer        | Consumer                        | Payload                                               |
-| ----------------------------------- | --------------- | ------------------------------- | ----------------------------------------------------- |
-| `insurance.proposal.submitted.v1` | API Gateway     | `consumer.py`                 | `ProposalSubmittedEvent` — customer + policy data |
-| `insurance.risk.evaluated.v1`     | `consumer.py` | *(result consumer — future)* | `RiskEvaluatedEvent` — scores + decision           |
+| Topic                                  | Producer                          | Consumer                                                             | Payload                                                                                      |
+| --------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `insurance.proposal.submitted.v1`     | API Gateway                       | risk-engine `consumer.py`                                            | `ProposalSubmittedEvent` — customer + policy + evidence bundle                             |
+| `insurance.risk.evaluated.v1`         | risk-engine `consumer.py`         | api-gateway `risk_result_worker.py`                                   | `RiskEvaluatedEvent` — scores + decision + structured underwriting_results                |
+| `insurance.artifact.ocr.requested.v1` | tenant-service (artifact upload) | tenant-service `ocr_worker.py`                                        | `ArtifactOCRRequestedEvent`                                                                  |
+| `insurance.customer.created.v1`       | tenant-service                    | api-gateway `quote_worker.py`                                         | `CustomerCreatedEvent`                                                                       |
+| `insurance.policy.lifecycle.v1`       | tenant-service                    | *(none currently)*                                                    | `PolicyLifecycleEvent`                                                                       |
+| `insurance.case.events.v1`            | tenant-service                    | api-gateway `case_event_hub.py` → live SSE to the frontend           | `CaseEvent` — includes `RequirementsDetermined`/`VerificationCompleted` event types now |
 
-Browse both topics live at **http://localhost:8090** (Kafka UI).
+`risk_result_worker.py` dedupes on `RiskEvaluatedEvent.correlation_id` before writing a
+`RiskAssessment`, so a redelivered message never creates a duplicate row.
+
+Browse all topics live at **http://localhost:8090** (Kafka UI).
 
 ---
 

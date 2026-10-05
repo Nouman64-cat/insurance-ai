@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import selectinload
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select, delete
@@ -9,7 +9,7 @@ from datetime import datetime
 from database import get_session
 from document_requirements import get_required_documents
 from routers.auth import oauth2_scheme, _get_current_user, _role_name
-from services import compliance_engine
+from services import compliance_engine, underwriting_gate
 from shared.models.core import (
     Customer,
     Artifact,
@@ -17,8 +17,11 @@ from shared.models.core import (
     CaseHistory,
     CaseAssignment,
     CaseComment,
+    CaseRequirement,
+    CaseRequirementStatusEnum,
     CaseStatusEnum,
     CaseTypeEnum,
+    CaseWorkflow,
     ActionTypeEnum,
     CaseAuditTrail,
     AssignmentTypeEnum,
@@ -29,6 +32,8 @@ from shared.models.core import (
     RiskAssessment,
     User,
     InsurancePlan,
+    VerificationFinding,
+    WorkflowStateEnum,
 )
 from schemas import (
     CustomerRead,
@@ -38,6 +43,8 @@ from schemas import (
     CaseStatusUpdate,
     CaseAssignmentCreate,
     CaseCommentCreate,
+    CaseRequirementWaiveBody,
+    WorkflowAdvanceBody,
     PolicyRead,
 )
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
@@ -613,6 +620,7 @@ async def get_case_detail(
                 "financial_reasons": latest.financial_reasons or [],
                 "fraud_reasons": latest.fraud_reasons or [],
                 "ai_summary": latest.ai_summary,
+                "underwriting_results": latest.underwriting_results,
                 "created_at": latest.created_at.isoformat(),
             }
             if latest else None
@@ -730,7 +738,12 @@ async def delete_case(
     await session.execute(delete(CaseAssignment).where(CaseAssignment.caseld == case_id))
     await session.execute(delete(RiskAssessment).where(RiskAssessment.case_id == case_id))
     await session.execute(delete(Artifact).where(Artifact.case_id == case_id))
-    
+    # Case-driven underwriting workflow tables (brief §4/§5) — also FK'd to
+    # cases.caseld, so they must be cleared before the case row itself.
+    await session.execute(delete(CaseRequirement).where(CaseRequirement.case_id == case_id))
+    await session.execute(delete(VerificationFinding).where(VerificationFinding.case_id == case_id))
+    await session.execute(delete(CaseWorkflow).where(CaseWorkflow.caseld == case_id))
+
     await session.delete(case)
     await session.commit()
     return None
@@ -966,5 +979,189 @@ async def add_case_comment(
     )
     session.add(comment)
     await session.commit()
-    
+
     return {"status": "comment added"}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Underwriting Requirements / Verification / Workflow
+#
+# This is the case-driven underwriting workflow's control surface: api-gateway
+# calls `requirements/determine` before ever invoking risk-engine, and only
+# calls `underwriting/evidence` (which also re-runs verification) once that
+# comes back satisfied=true. See services/underwriting_gate.py for the logic.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _requirement_to_dict(row: CaseRequirement) -> dict:
+    return {
+        "id": str(row.id),
+        "code": row.code,
+        "category": row.category,
+        "required": row.required,
+        "status": row.status.value,
+        "reason": row.reason,
+        "satisfied_by_artifact_id": str(row.satisfied_by_artifact_id) if row.satisfied_by_artifact_id else None,
+        "updated_at": row.updated_at.isoformat(),
+    }
+
+
+def _finding_to_dict(row: VerificationFinding) -> dict:
+    return {
+        "id": str(row.id),
+        "field": row.field,
+        "severity": row.severity.value,
+        "declared_value": row.declared_value,
+        "observed_value": row.observed_value,
+        "source_artifact_id": str(row.source_artifact_id) if row.source_artifact_id else None,
+        "explanation": row.explanation,
+        "created_at": row.created_at.isoformat(),
+    }
+
+
+async def _get_case_or_404(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Case:
+    case = (await session.execute(
+        select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
+    )).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+@router.post("/{case_id}/requirements/determine")
+async def determine_case_requirements(
+    tenant_id: UUID,
+    case_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    case = await _get_case_or_404(session, tenant_id, case_id)
+    rows, satisfied = await underwriting_gate.compute_requirements(session, tenant_id, case, request=request)
+    await session.commit()
+    for row in rows:
+        await session.refresh(row)
+    await session.refresh(case)
+    return {
+        "requirements": [_requirement_to_dict(r) for r in rows],
+        "satisfied": satisfied,
+        "case_status": case.caseStatus.value,
+    }
+
+
+@router.get("/{case_id}/requirements")
+async def list_case_requirements(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_case_or_404(session, tenant_id, case_id)
+    rows = (await session.exec(
+        select(CaseRequirement).where(CaseRequirement.case_id == case_id)
+    )).all()
+    return {"requirements": [_requirement_to_dict(r) for r in rows]}
+
+
+@router.post("/{case_id}/requirements/{requirement_id}/waive")
+async def waive_case_requirement(
+    tenant_id: UUID,
+    case_id: UUID,
+    requirement_id: UUID,
+    body: CaseRequirementWaiveBody,
+    session: AsyncSession = Depends(get_session),
+    token: str = Depends(oauth2_scheme),
+):
+    user = await _get_current_user(token, session)
+    role_name = await _role_name(user, session)
+    if role_name not in _CASE_DECISION_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Waiving a requirement requires one of: {', '.join(sorted(_CASE_DECISION_ROLES))} (you are {role_name}).",
+        )
+    await _get_case_or_404(session, tenant_id, case_id)
+    requirement = (await session.execute(
+        select(CaseRequirement).where(
+            CaseRequirement.id == requirement_id, CaseRequirement.case_id == case_id,
+            CaseRequirement.tenant_id == tenant_id,
+        )
+    )).scalar_one_or_none()
+    if not requirement:
+        raise HTTPException(status_code=404, detail="Requirement not found")
+    await underwriting_gate.waive_requirement(session, requirement, note=body.note)
+    await session.commit()
+    await session.refresh(requirement)
+    return _requirement_to_dict(requirement)
+
+
+@router.get("/{case_id}/verification-findings")
+async def list_verification_findings(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_case_or_404(session, tenant_id, case_id)
+    rows = (await session.exec(
+        select(VerificationFinding).where(VerificationFinding.case_id == case_id)
+    )).all()
+    return {"findings": [_finding_to_dict(r) for r in rows]}
+
+
+@router.post("/{case_id}/underwriting/evidence")
+async def get_underwriting_evidence(
+    tenant_id: UUID,
+    case_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+):
+    """Re-runs verification against current evidence and returns the full
+    bundle api-gateway forwards to risk-engine (document_evidence/
+    e_application/acr/verified_facts) plus whether mandatory requirements
+    are satisfied — api-gateway must not call risk-engine when they are not."""
+    case = await _get_case_or_404(session, tenant_id, case_id)
+    bundle = await underwriting_gate.build_evidence_bundle(session, tenant_id, case, request=request)
+    await session.commit()
+    return bundle
+
+
+@router.get("/{case_id}/workflow")
+async def get_case_workflow(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+):
+    await _get_case_or_404(session, tenant_id, case_id)
+    workflow = (await session.exec(
+        select(CaseWorkflow).where(CaseWorkflow.caseld == case_id)
+    )).first()
+    if not workflow:
+        return {"workflow": None}
+    return {
+        "workflow": {
+            "currentStep": workflow.currentStep,
+            "previousStep": workflow.previousStep,
+            "workflowState": workflow.workflowState.value,
+            "lastUpdatedAt": workflow.lastUpdatedAt.isoformat(),
+            "workflowVersion": workflow.workflowVersion,
+        }
+    }
+
+
+@router.post("/{case_id}/workflow/advance")
+async def advance_case_workflow(
+    tenant_id: UUID,
+    case_id: UUID,
+    body: WorkflowAdvanceBody,
+    session: AsyncSession = Depends(get_session),
+):
+    """Internal, service-to-service step: api-gateway calls this after
+    persisting a RiskAssessment to move the case to `decision`/`human_review`.
+    Not role-gated — mirrors the existing system-driven case-status mutation
+    already performed by risk_persistence.py, which also has no user context."""
+    case = await _get_case_or_404(session, tenant_id, case_id)
+    state = WorkflowStateEnum(body.state) if body.state else WorkflowStateEnum.RUNNING
+    workflow = await underwriting_gate.advance_workflow(session, case, body.step, state=state)
+    await session.commit()
+    await session.refresh(workflow)
+    return {
+        "currentStep": workflow.currentStep,
+        "previousStep": workflow.previousStep,
+        "workflowState": workflow.workflowState.value,
+    }

@@ -139,6 +139,37 @@ The required-document mapping is keyed by `(insurance_type, case_type)` in `serv
 
 ---
 
+## Requirements Engine & CaseWorkflow
+
+The static document-checklist above predates, and is distinct from, a newer per-case
+**Requirements Engine** (`shared/underwriting/requirements_rules.py`) that is deterministic,
+configurable, and actually drives the case through `Pending Documents`:
+
+- `POST /tenants/{tenant_id}/cases/{case_id}/requirements/determine` — computes/upserts
+  `CaseRequirement` rows (CNIC, salary slip, bank statement, tax document, medical
+  questionnaire, medical examination, ECG, lab reports, physician report), based on age,
+  coverage, coverage-to-income ratio, smoker status, BMI, and declared conditions. If any
+  **required** row isn't `Satisfied`/`Waived`, the case is moved to `Pending Documents`
+  (a system-generated `CaseHistory` entry, same pattern as the AI auto-decision path) and
+  `satisfied: false` is returned — api-gateway's evaluation endpoints never call the Risk
+  Engine when this is the case.
+- `GET .../requirements` / `POST .../requirements/{id}/waive` — list / underwriter-waive.
+- `GET .../verification-findings` — structured declared-vs-evidenced discrepancies
+  (`shared/underwriting/verification.py`), persisted as `VerificationFinding` rows.
+- `POST .../underwriting/evidence` — re-runs verification and returns the document-evidence
+  + e-application + ACR + verified-facts bundle api-gateway forwards to the Risk Engine.
+- `GET .../workflow` / `POST .../workflow/advance` — the first real reader/writer of
+  `CaseWorkflow` in the codebase. `currentStep` moves through
+  `requirements_determination → document_collection → document_verification → decision →
+  human_review`/`completed` as the case progresses.
+
+This is **separate** from `PolicyRequirement`/`ComplianceCheck` further below, which are
+policy-scoped and run *after* an underwriting decision (Stage A pre-issuance) — a case can
+need a medical exam before anyone decides anything, and separately a policy can need a
+notarized nominee form after it's approved.
+
+---
+
 ## Database schema
 
 All tables are defined in `shared/models/core.py`. Delete cascades are handled manually in the router (not via FK cascade) to avoid `NotNullViolationError` — the order is: `CaseHistory` → `CaseAuditTrail` → `CaseComment` → `CaseAssignment` → `Case`.

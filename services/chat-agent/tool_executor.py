@@ -2526,9 +2526,9 @@ async def _approve_case(args: dict, ctx: Ctx) -> dict:
         return {
             "success": True,
             "message": f"Case **{case.get('caseNumber')}** is already **Approved** and should be visible in the Policy Issuance queue.",
-            "navigate": _nav("policy-issuance"),
+            "navigate": {**_nav("policy-issuance"), "embed": True},
             "quick_actions": [
-                {"label": "Open Policy Issuance", "actionType": "navigate", "payload": route},
+                {"label": "Open Policy Issuance", "actionType": "embed", "payload": route},
                 {"label": "Check Pre-Issuance Status", "actionType": "submit",
                  "payload": f"Check the pre-issuance status for case {case.get('caseNumber')}"},
             ],
@@ -2615,7 +2615,7 @@ async def _get_pre_issuance_status(args: dict, ctx: Ctx) -> dict:
     if ready:
         qa.append({"label": "Issue Policy", "actionType": "submit",
                     "payload": f"Issue policy for case {case.get('caseNumber')}"})
-    qa.append({"label": "Open Policy Issuance", "actionType": "navigate", "payload": "policy-issuance"})
+    qa.append({"label": "Open Policy Issuance", "actionType": "embed", "payload": "policy-issuance"})
 
     return {
         "success": True,
@@ -2785,7 +2785,7 @@ async def _issue_policy(args: dict, ctx: Ctx) -> dict:
             "success": True,
             "message": f"Policy for **{case.get('caseNumber')}** is already **Active**!",
             "policy_id": policy_id,
-            "navigate": {"route": "policy-management/post-issuance", "entity_id": "", "highlight": False},
+            "navigate": {"route": "policy-management/post-issuance", "entity_id": "", "highlight": False, "embed": True},
             "quick_actions": [
                 {"label": "View Active Policy", "actionType": "submit",
                  "payload": f"Show me the active policy status for case {case.get('caseNumber')}"},
@@ -2826,11 +2826,11 @@ async def _confirm_policy_payment(args: dict, ctx: Ctx) -> dict:
             "success": True,
             "message": f"Policy for **{case.get('caseNumber')}** is already **Active**!",
             "policy_id": policy_id,
-            "navigate": {"route": "policy-management/post-issuance", "entity_id": "", "highlight": False},
+            "navigate": {"route": "policy-management/post-issuance", "entity_id": "", "highlight": False, "embed": True},
             "quick_actions": [
                 {"label": "View Active Policy", "actionType": "submit",
                  "payload": f"Show me the active policy status for case {case.get('caseNumber')}"},
-                {"label": "Open Post-Issuance", "actionType": "navigate", "payload": "policy-management/post-issuance"},
+                {"label": "Open Post-Issuance", "actionType": "embed", "payload": "policy-management/post-issuance"},
             ],
         }
 
@@ -2897,8 +2897,8 @@ async def _get_active_policy_status(args: dict, ctx: Ctx) -> dict:
         )
 
     qa = [
-        {"label": "Open Post-Issuance Detail", "actionType": "navigate", "payload": post_issuance_route},
-        {"label": "Open Post-Issuance List", "actionType": "navigate", "payload": "policy-management/post-issuance"},
+        {"label": "Open Post-Issuance Detail", "actionType": "embed", "payload": post_issuance_route},
+        {"label": "Open Post-Issuance List", "actionType": "embed", "payload": "policy-management/post-issuance"},
     ]
     if status.upper() != "ACTIVE":
         qa.insert(0, {"label": "Confirm Payment", "actionType": "submit",
@@ -2909,7 +2909,7 @@ async def _get_active_policy_status(args: dict, ctx: Ctx) -> dict:
         "message": message,
         "policy_detail": detail,
         "policy_id": policy_id,
-        "navigate": {"route": post_issuance_route, "entity_id": "", "highlight": False},
+        "navigate": {"route": post_issuance_route, "entity_id": "", "highlight": False, "embed": True},
         "quick_actions": qa,
     }
 

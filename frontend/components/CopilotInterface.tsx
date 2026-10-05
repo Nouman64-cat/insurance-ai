@@ -1121,12 +1121,17 @@ export function CopilotInterface() {
                  updateStep("decision", "Calculating composite risk", "active");
                  finalScores.fraud_probability = data.fraud_probability;
                  finalScores.fraud_reasons = data.fraud_reasons ?? [];
-              } else if (node === "decision_aggregation") {
+              } else if (node === "decision_engine") {
                  updateStep("decision", "Calculating composite risk", "done");
                  finalScores.composite_risk_score = data.composite_risk_score;
                  finalDecision = data.ai_decision;
                  finalScores.reasons = data.reasons ?? [];
               }
+            } else if (evt.type === "pending_requirements") {
+               updateStep("decision", "Mandatory requirements not yet satisfied", "error");
+               throw new Error(
+                 "Mandatory underwriting requirements are not yet satisfied for this case — check the Requirements panel on the case page."
+               );
             } else if (evt.type === "invalid" || evt.type === "error") {
                updateStep("error", "Assessment failed", "error");
                const errMsg = evt.errors?.length ? evt.errors.join("; ") : (evt.message || "Validation failed");
@@ -1616,6 +1621,16 @@ export function CopilotInterface() {
 
   // Header toggle between the conversation and the full-page journey map.
   const [showJourneyMap, setShowJourneyMap] = useState(false);
+
+  // The transcript is display:none under the journey map, which drops its
+  // scroll position (and auto-scroll can't run while hidden) — so coming back
+  // to the chat, jump straight to the latest messages.
+  useEffect(() => {
+    if (showJourneyMap) return;
+    const el = scrollContainerRef.current;
+    if (el) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+  }, [showJourneyMap]);
+
   // A step started from the map runs in this same conversation, but the user
   // stays on the map: `mapRun` marks where in the transcript the step began,
   // so the map's activity card can show just this step's progress, reply and
@@ -1631,6 +1646,18 @@ export function CopilotInterface() {
     setMapRun({ startIndex: messages.length, nodeId, title: action.label });
     handleQuickAction(action);
   }, [handleQuickAction, messages.length]);
+
+  // Once the step's turn finishes, it no longer owns the spinner — otherwise
+  // the next turn (a follow-up chip, an auto-action, a chat message) would
+  // show the finished node as "Working" again. The activity card stays.
+  const mapRunLoadingRef = useRef(false);
+  useEffect(() => {
+    const busy = isLoading || isUploading;
+    if (mapRunLoadingRef.current && !busy && !pendingInterrupt) {
+      setMapRun((r) => (r?.nodeId ? { ...r, nodeId: undefined } : r));
+    }
+    mapRunLoadingRef.current = busy;
+  }, [isLoading, isUploading, pendingInterrupt]);
 
   useEffect(() => {
     if (autoActions.length === 0 || isLoading || isUploading || pendingInterrupt) return;
@@ -2054,7 +2081,7 @@ export function CopilotInterface() {
                   },
                   quick_actions: [
                     { label: "Confirm Payment Now", actionType: "submit", payload: `Confirm payment for case ${caseNum}` },
-                    { label: "Open Policy Issuance", actionType: "navigate", payload: "policy-issuance" }
+                    { label: "Open Policy Issuance", actionType: "embed", payload: "policy-issuance" }
                   ]
                 });
               }}
@@ -2086,7 +2113,7 @@ export function CopilotInterface() {
                   },
                   quick_actions: [
                     { label: "View Active Policy", actionType: "submit", payload: `Show me the active policy status for case ${caseNum}` },
-                    { label: "Open Post-Issuance", actionType: "navigate", payload: "policy-management/post-issuance" }
+                    { label: "Open Post-Issuance", actionType: "embed", payload: "policy-management/post-issuance" }
                   ]
                 });
               }}
@@ -2451,7 +2478,12 @@ export function CopilotInterface() {
                disabled={isLoading || isUploading || !!pendingInterrupt}
                loading={journeyLoading}
                live={eventsLive}
-               runningNodeId={isLoading || isUploading ? mapRun?.nodeId ?? null : null}
+               runningNodeId={
+                 (isLoading || isUploading) && mapRun?.nodeId &&
+                 !journey?.before.concat(journey.gates, journey.after).some((n) => n.id === mapRun.nodeId && n.state === "done")
+                   ? mapRun.nodeId
+                   : null
+               }
                activity={mapRun && (() => {
                  let runMsg: AgentMessage | null = null;
                  for (let i = messages.length - 1; i >= mapRun.startIndex; i--) {
@@ -2474,8 +2506,17 @@ export function CopilotInterface() {
                        if (runMsg && !isPassiveAction(action)) {
                          setUsedActions((prev) => ({ ...prev, [runMsg!.id]: idx }));
                        }
-                       if (action.actionType === "embed") setShowJourneyMap(false);
-                       handleQuickAction(action);
+                       if (action.actionType === "embed") {
+                         setShowJourneyMap(false);
+                         handleQuickAction(action);
+                       } else if (isPassiveAction(action)) {
+                         handleQuickAction(action);
+                       } else {
+                         // A follow-up starts a new step — track (and spin) its own node.
+                         const node = journey?.before.concat(journey.gates, journey.after)
+                           .find((n) => n.action?.payload && n.action.payload === action.payload);
+                         handleMapAction(action, node?.id);
+                       }
                      }}
                      onSelectRun={(text) => handleSubmit(undefined, text)}
                      onSelected={(idx, label) => runMsg && recordSelection(runMsg.id, idx, label)}
