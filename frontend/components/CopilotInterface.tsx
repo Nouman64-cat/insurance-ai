@@ -1939,8 +1939,27 @@ export function CopilotInterface() {
     });
   };
 
-  const handleClearChat = () => {
+  // Per-conversation UI that lives outside the message list. Must be reset on
+  // every switch: button selections are keyed by message id and the welcome
+  // message is always id "1", so a stale map pre-selected the new chat's
+  // first chip; and an open embed belonged to the previous conversation.
+  const resetConversationUi = () => {
     setMapRun(null);
+    setCasePanel(null);
+    setUsedActions({});
+    setAutoActions([]);
+  };
+
+  // Belt and braces: whatever path empties the conversation back to the
+  // welcome screen, nothing from the previous one may survive into it.
+  const isFreshConversation = messages.length <= 1;
+  useEffect(() => {
+    if (isFreshConversation) resetConversationUi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isFreshConversation]);
+
+  const handleClearChat = () => {
+    resetConversationUi();
     saveCurrentSession();
     setActiveSessionId(null);
     clearChat();
@@ -1949,7 +1968,7 @@ export function CopilotInterface() {
   };
 
   const handleLoadSession = (session: any) => {
-    setMapRun(null);
+    resetConversationUi();
     saveCurrentSession();
     setActiveSessionId(session.id);
     loadChat(session.messages, session.actions || []);
