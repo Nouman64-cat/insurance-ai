@@ -11,17 +11,26 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from decision_status import DECISION_CASE_STATUS
+from group_benefits import (
+    basic_monthly_salary,
+    member_cover,
+    optional_text,
+    parse_date,
+    validate_benefit_class,
+    validate_scheme_census,
+)
 from group_underwriting import (
     average_age,
     age_from_dob,
     compute_free_cover_limit,
     normalize_cnic,
-    validate_census,
     validate_sum_assured_multiple,
 )
 from risk_client import evaluate_group_member
 from routers.cases import generate_case_number
 from schemas import (
+    BenefitClassCreate,
+    BenefitClassRead,
     CensusConfirmResponse,
     CensusEmployeeOutcome,
     CensusRequest,
@@ -38,6 +47,8 @@ from shared.models.core import (
     ActionTypeEnum,
     AIDecision,
     Artifact,
+    Beneficiary,
+    BeneficiaryVersion,
     Case,
     CaseAssignment,
     CaseAttachment,
@@ -52,10 +63,16 @@ from shared.models.core import (
     CaseWorkflow,
     Claim,
     Customer,
+    GroupBenefitClass,
+    GroupClassCoverage,
+    GroupCoverageType,
+    GroupMember,
+    GroupMemberStatus,
     InsurancePlan,
     InsuranceTypeEnum,
     MasterPolicy,
     Organization,
+    PlanCategoryEnum,
     Policy,
     PolicyStatusEnum,
     PremiumQuote,
@@ -102,13 +119,129 @@ async def _get_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, session
 OrganizationCategory = Literal["active", "in_progress", "new"]
 
 
-async def _employee_counts(tenant_id: UUID, session: AsyncSession) -> Dict[UUID, int]:
-    rows = (await session.execute(
-        select(Customer.organization_id, func.count())
+async def _employee_ids_by_org(tenant_id: UUID, session: AsyncSession) -> Dict[UUID, set]:
+    """Distinct employees per organization: census-created customers
+    (organization_id) plus reused customers enrolled via GroupMember."""
+    members: Dict[UUID, set] = {}
+    for oid, cid in (await session.execute(
+        select(Customer.organization_id, Customer.id)
         .where(Customer.tenant_id == tenant_id, Customer.organization_id.is_not(None))
-        .group_by(Customer.organization_id)
-    )).all()
-    return {oid: cnt for oid, cnt in rows}
+    )).all():
+        members.setdefault(oid, set()).add(cid)
+    for oid, cid in (await session.execute(
+        select(MasterPolicy.organization_id, GroupMember.customer_id)
+        .join(MasterPolicy, MasterPolicy.id == GroupMember.master_policy_id)
+        .where(GroupMember.tenant_id == tenant_id)
+    )).all():
+        members.setdefault(oid, set()).add(cid)
+    return members
+
+
+async def _org_employee_ids(tenant_id: UUID, org_id: UUID, session: AsyncSession) -> set:
+    return (await _employee_ids_by_org(tenant_id, session)).get(org_id, set())
+
+
+async def _org_certificates(tenant_id: UUID, org_id: UUID, session: AsyncSession, customer_id: Optional[UUID] = None) -> List[Policy]:
+    """Certificate Policy rows under any of this organization's master policies."""
+    q = (
+        select(Policy)
+        .join(MasterPolicy, MasterPolicy.id == Policy.master_policy_id)
+        .where(Policy.tenant_id == tenant_id, MasterPolicy.organization_id == org_id)
+    )
+    if customer_id is not None:
+        q = q.where(Policy.customer_id == customer_id)
+    return list((await session.exec(q)).all())
+
+
+async def _delete_policy_cascade(session: AsyncSession, policy: Policy) -> None:
+    """Delete a certificate and everything hanging off it (GroupMember rows go
+    with it via ON DELETE CASCADE)."""
+    cases = await session.exec(select(Case).where(Case.policy_id == policy.id))
+    for case in cases.all():
+        for model in (CaseHistory, CaseWorkflow, CaseAssignment, CaseEscalation, CaseComment, CaseAttachment, CaseAuditTrail):
+            for row in (await session.exec(select(model).where(model.caseld == case.caseld))).all():
+                await session.delete(row)
+        for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
+        for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
+        for cr in (await session.exec(select(CaseRequirement).where(CaseRequirement.case_id == case.caseld))).all(): await session.delete(cr)
+        for vf in (await session.exec(select(VerificationFinding).where(VerificationFinding.case_id == case.caseld))).all(): await session.delete(vf)
+        await session.delete(case)
+
+    for model in (RiskAssessment, PremiumQuote, Beneficiary, BeneficiaryVersion):
+        for row in (await session.exec(select(model).where(model.policy_id == policy.id))).all():
+            await session.delete(row)
+
+    claims = await session.exec(select(Claim).where(Claim.policy_id == policy.id))
+    for c in claims.all():
+        for art in (await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all(): await session.delete(art)
+        await session.delete(c)
+
+    await session.flush()
+    await session.delete(policy)
+    await session.flush()
+
+
+async def _release_employee(session: AsyncSession, customer: Customer, org_id: UUID) -> None:
+    """After an employee's certificates are gone: delete the Customer only if
+    the census created it for this organization and nothing else of theirs
+    remains (another policy, another scheme). A reused customer — e.g. an
+    individual policyholder — is left exactly as it was."""
+    if customer.organization_id != org_id:
+        return
+    remaining_policy = (await session.exec(select(Policy.id).where(Policy.customer_id == customer.id))).first()
+    remaining_member = (await session.exec(select(GroupMember.id).where(GroupMember.customer_id == customer.id))).first()
+    if remaining_policy or remaining_member:
+        customer.organization_id = None
+        session.add(customer)
+        return
+    for model in (Artifact, RiskAssessment):
+        for row in (await session.exec(select(model).where(model.customer_id == customer.id))).all():
+            await session.delete(row)
+    await session.delete(customer)
+
+
+async def _resolve_group_plan(tenant_id: UUID, plan_code: Optional[str], session: AsyncSession) -> Optional[InsurancePlan]:
+    """The Group-category catalog plan a master policy is written under.
+    An explicit plan_code must exist; omitted falls back to GROUP_LIFE, and to
+    None for a tenant whose catalog was never seeded (priced at the fallback rate)."""
+    code = plan_code or "GROUP_LIFE"
+    plan = (await session.exec(
+        select(InsurancePlan).where(InsurancePlan.tenant_id == tenant_id, InsurancePlan.code == code)
+    )).first()
+    if plan is None and plan_code:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Plan '{plan_code}' not found.")
+    if plan is not None:
+        category = plan.category.value if hasattr(plan.category, "value") else plan.category
+        if category != PlanCategoryEnum.GROUP.value:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Plan '{code}' is not a group plan.")
+    return plan
+
+
+async def _master_policy_read(mp: MasterPolicy, session: AsyncSession) -> MasterPolicyRead:
+    dto = MasterPolicyRead.model_validate(mp)
+    plan = await session.get(InsurancePlan, mp.plan_id) if mp.plan_id else None
+    if plan is not None:
+        dto.plan_code = plan.code
+        dto.plan_label = plan.label
+        dto.business_type = plan.product_category.value if hasattr(plan.product_category, "value") else plan.product_category
+    return dto
+
+
+async def _benefit_classes(master_policy_id: UUID, session: AsyncSession) -> List[GroupBenefitClass]:
+    return list((await session.exec(
+        select(GroupBenefitClass)
+        .where(GroupBenefitClass.master_policy_id == master_policy_id)
+        .order_by(GroupBenefitClass.created_at)
+    )).all())
+
+
+async def _enrolled_cnics(master_policy_id: UUID, session: AsyncSession) -> set:
+    rows = await session.exec(
+        select(Customer.cnic)
+        .join(GroupMember, GroupMember.customer_id == Customer.id)
+        .where(GroupMember.master_policy_id == master_policy_id)
+    )
+    return {c for c in rows.all() if c}
 
 
 async def _master_policy_status_map(tenant_id: UUID, session: AsyncSession) -> Dict[UUID, str]:
@@ -136,12 +269,12 @@ def _org_category(dto: OrganizationRead) -> OrganizationCategory:
 
 
 async def _enrich_organizations(tenant_id: UUID, orgs: List[Organization], session: AsyncSession) -> List[OrganizationRead]:
-    emp_counts = await _employee_counts(tenant_id, session)
+    emp_ids = await _employee_ids_by_org(tenant_id, session)
     policy_status = await _master_policy_status_map(tenant_id, session)
     results = []
     for org in orgs:
         dto = OrganizationRead.model_validate(org)
-        dto.employee_count = emp_counts.get(org.id, 0)
+        dto.employee_count = len(emp_ids.get(org.id, ()))
         dto.master_policy_status = policy_status.get(org.id)
         results.append(dto)
     return results
@@ -255,8 +388,11 @@ async def get_organization(tenant_id: UUID, org_id: UUID, session: AsyncSession 
 )
 async def list_organization_employees(tenant_id: UUID, org_id: UUID, session: AsyncSession = Depends(get_session)):
     await _get_organization(tenant_id, org_id, session)
+    employee_ids = await _org_employee_ids(tenant_id, org_id, session)
+    if not employee_ids:
+        return []
     result = await session.exec(
-        select(Customer).where(Customer.tenant_id == tenant_id, Customer.organization_id == org_id)
+        select(Customer).where(Customer.tenant_id == tenant_id, Customer.id.in_(employee_ids))
     )
     return list(result.all())
 
@@ -271,15 +407,22 @@ async def list_organization_cases(tenant_id: UUID, org_id: UUID, session: AsyncS
     they're simply absent from this list."""
     await _get_organization(tenant_id, org_id, session)
 
-    employee_ids = list((await session.exec(
+    # Census-created employees: all their cases (unchanged behaviour). Reused
+    # customers (e.g. individual policyholders): only cases on their group
+    # certificate — their individual underwriting cases aren't this org's.
+    own_ids = list((await session.exec(
         select(Customer.id).where(Customer.tenant_id == tenant_id, Customer.organization_id == org_id)
     )).all())
-    if not employee_ids:
+    certificate_ids = [p.id for p in await _org_certificates(tenant_id, org_id, session)]
+    if not own_ids and not certificate_ids:
         return []
 
     cases = (await session.exec(
         select(Case)
-        .where(Case.tenant_id == tenant_id, Case.customer_id.in_(employee_ids))
+        .where(
+            Case.tenant_id == tenant_id,
+            or_(Case.customer_id.in_(own_ids), Case.policy_id.in_(certificate_ids)),
+        )
         .order_by(Case.createdAt.desc())
     )).all()
 
@@ -304,48 +447,20 @@ async def list_organization_cases(tenant_id: UUID, org_id: UUID, session: AsyncS
     dependencies=[Depends(verify_admin)],
 )
 async def delete_organization_employee(tenant_id: UUID, org_id: UUID, employee_id: UUID, session: AsyncSession = Depends(get_session)):
+    """Remove an employee from this organization's group cover: their group
+    certificates (and memberships) go; the Customer itself goes only if the
+    census created it and nothing else of theirs remains (_release_employee)."""
     await _get_organization(tenant_id, org_id, session)
     customer = await session.get(Customer, employee_id)
-    if not customer or customer.tenant_id != tenant_id or customer.organization_id != org_id:
+    if not customer or customer.tenant_id != tenant_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found.")
+    certificates = await _org_certificates(tenant_id, org_id, session, customer_id=employee_id)
+    if customer.organization_id != org_id and not certificates:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found.")
 
-    # Cascading delete for related records
-    # 1. Artifacts & Risk Assessments (linked to customer)
-    artifacts = await session.exec(select(Artifact).where(Artifact.customer_id == employee_id))
-    for a in artifacts.all(): await session.delete(a)
-
-    assessments = await session.exec(select(RiskAssessment).where(RiskAssessment.customer_id == employee_id))
-    for a in assessments.all(): await session.delete(a)
-
-    # 2. Policies and their downstream dependents
-    policies = await session.exec(select(Policy).where(Policy.customer_id == employee_id))
-    for policy in policies.all():
-        cases = await session.exec(select(Case).where(Case.policy_id == policy.id))
-        for case in cases.all():
-            for h in (await session.exec(select(CaseHistory).where(CaseHistory.caseld == case.caseld))).all(): await session.delete(h)
-            for w in (await session.exec(select(CaseWorkflow).where(CaseWorkflow.caseld == case.caseld))).all(): await session.delete(w)
-            for a in (await session.exec(select(CaseAssignment).where(CaseAssignment.caseld == case.caseld))).all(): await session.delete(a)
-            for e in (await session.exec(select(CaseEscalation).where(CaseEscalation.caseld == case.caseld))).all(): await session.delete(e)
-            for c in (await session.exec(select(CaseComment).where(CaseComment.caseld == case.caseld))).all(): await session.delete(c)
-            for att in (await session.exec(select(CaseAttachment).where(CaseAttachment.caseld == case.caseld))).all(): await session.delete(att)
-            for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
-            for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
-            for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
-            for cr in (await session.exec(select(CaseRequirement).where(CaseRequirement.case_id == case.caseld))).all(): await session.delete(cr)
-            for vf in (await session.exec(select(VerificationFinding).where(VerificationFinding.case_id == case.caseld))).all(): await session.delete(vf)
-            await session.delete(case)
-            
-        quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))
-        for q in quotes.all(): await session.delete(q)
-        
-        claims = await session.exec(select(Claim).where(Claim.policy_id == policy.id))
-        for c in claims.all():
-            for art in (await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all(): await session.delete(art)
-            await session.delete(c)
-            
-        await session.delete(policy)
-
-    await session.delete(customer)
+    for policy in certificates:
+        await _delete_policy_cascade(session, policy)
+    await _release_employee(session, customer, org_id)
     await session.commit()
     return None
 
@@ -384,50 +499,23 @@ async def delete_organization(
 ):
     org = await _get_organization(tenant_id, org_id, session)
 
-    # 1. Cascade delete Master Policies
-    master_policies = await session.exec(select(MasterPolicy).where(MasterPolicy.organization_id == org_id))
-    for mp in master_policies.all():
+    # 1. Every group certificate under this organization's master policies.
+    employee_ids = await _org_employee_ids(tenant_id, org_id, session)
+    employees = list((await session.exec(
+        select(Customer).where(Customer.tenant_id == tenant_id, Customer.id.in_(employee_ids))
+    )).all()) if employee_ids else []
+    for policy in await _org_certificates(tenant_id, org_id, session):
+        await _delete_policy_cascade(session, policy)
+
+    # 2. Employees — census-created ones are deleted, reused customers kept.
+    for employee in employees:
+        await _release_employee(session, employee, org_id)
+    await session.flush()
+
+    # 3. Master policies (benefit classes / members cascade in the DB), then the org.
+    for mp in (await session.exec(select(MasterPolicy).where(MasterPolicy.organization_id == org_id))).all():
         await session.delete(mp)
-
-    # 2. Cascade delete all Employees
-    employees = await session.exec(select(Customer).where(Customer.organization_id == org_id))
-    for employee in employees.all():
-        artifacts = await session.exec(select(Artifact).where(Artifact.customer_id == employee.id))
-        for a in artifacts.all(): await session.delete(a)
-
-        assessments = await session.exec(select(RiskAssessment).where(RiskAssessment.customer_id == employee.id))
-        for a in assessments.all(): await session.delete(a)
-
-        policies = await session.exec(select(Policy).where(Policy.customer_id == employee.id))
-        for policy in policies.all():
-            cases = await session.exec(select(Case).where(Case.policy_id == policy.id))
-            for case in cases.all():
-                for h in (await session.exec(select(CaseHistory).where(CaseHistory.caseld == case.caseld))).all(): await session.delete(h)
-                for w in (await session.exec(select(CaseWorkflow).where(CaseWorkflow.caseld == case.caseld))).all(): await session.delete(w)
-                for a in (await session.exec(select(CaseAssignment).where(CaseAssignment.caseld == case.caseld))).all(): await session.delete(a)
-                for e in (await session.exec(select(CaseEscalation).where(CaseEscalation.caseld == case.caseld))).all(): await session.delete(e)
-                for c in (await session.exec(select(CaseComment).where(CaseComment.caseld == case.caseld))).all(): await session.delete(c)
-                for att in (await session.exec(select(CaseAttachment).where(CaseAttachment.caseld == case.caseld))).all(): await session.delete(att)
-                for audit in (await session.exec(select(CaseAuditTrail).where(CaseAuditTrail.caseld == case.caseld))).all(): await session.delete(audit)
-                for art in (await session.exec(select(Artifact).where(Artifact.case_id == case.caseld))).all(): await session.delete(art)
-                for ra in (await session.exec(select(RiskAssessment).where(RiskAssessment.case_id == case.caseld))).all(): await session.delete(ra)
-                for cr in (await session.exec(select(CaseRequirement).where(CaseRequirement.case_id == case.caseld))).all(): await session.delete(cr)
-                for vf in (await session.exec(select(VerificationFinding).where(VerificationFinding.case_id == case.caseld))).all(): await session.delete(vf)
-                await session.delete(case)
-                
-            quotes = await session.exec(select(PremiumQuote).where(PremiumQuote.policy_id == policy.id))
-            for q in quotes.all(): await session.delete(q)
-            
-            claims = await session.exec(select(Claim).where(Claim.policy_id == policy.id))
-            for c in claims.all():
-                for art in (await session.exec(select(Artifact).where(Artifact.claim_id == c.id))).all(): await session.delete(art)
-                await session.delete(c)
-                
-            await session.delete(policy)
-
-        await session.delete(employee)
-
-    # 3. Finally, delete the Organization itself
+    await session.flush()
     await session.delete(org)
     await session.commit()
 
@@ -445,12 +533,13 @@ async def create_master_policy(
     org_id: UUID,
     body: MasterPolicyCreate,
     session: AsyncSession = Depends(get_session),
-) -> MasterPolicy:
+) -> MasterPolicyRead:
     await _get_organization(tenant_id, org_id, session)
 
     errors = validate_sum_assured_multiple(body.sum_assured_multiple)
     if errors:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+    plan = await _resolve_group_plan(tenant_id, body.plan_code, session)
 
     mp = MasterPolicy(
         tenant_id=tenant_id,
@@ -460,11 +549,12 @@ async def create_master_policy(
         term_years=body.term_years,
         effective_date=body.effective_date,
         status="Pending",
+        plan_id=plan.id if plan is not None else None,
     )
     session.add(mp)
     await session.commit()
     await session.refresh(mp)
-    return mp
+    return await _master_policy_read(mp, session)
 
 
 @router.get(
@@ -477,10 +567,123 @@ async def list_master_policies(tenant_id: UUID, org_id: UUID, session: AsyncSess
     result = await session.exec(
         select(MasterPolicy).where(MasterPolicy.tenant_id == tenant_id, MasterPolicy.organization_id == org_id)
     )
-    return list(result.all())
+    return [await _master_policy_read(mp, session) for mp in result.all()]
+
+
+# ── Benefit classes ─────────────────────────────────────────────────────────────
+# Editable only while the master policy has no members: changing a class after
+# enrolment changes members' cover, which is an endorsement (Phase 4).
+
+async def _benefit_class_read(cls: GroupBenefitClass, session: AsyncSession) -> BenefitClassRead:
+    dto = BenefitClassRead.model_validate(cls)
+    dto.coverages = list((await session.exec(
+        select(GroupClassCoverage).where(GroupClassCoverage.benefit_class_id == cls.id)
+    )).all())
+    return dto
+
+
+async def _require_no_members(master_policy_id: UUID, session: AsyncSession) -> None:
+    if (await session.exec(select(GroupMember.id).where(GroupMember.master_policy_id == master_policy_id))).first():
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Benefit classes can't change once employees are enrolled — use an endorsement.",
+        )
+
+
+@router.post(
+    "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/benefit-classes",
+    response_model=BenefitClassRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(verify_admin)],
+)
+async def create_benefit_class(
+    tenant_id: UUID,
+    org_id: UUID,
+    mp_id: UUID,
+    body: BenefitClassCreate,
+    session: AsyncSession = Depends(get_session),
+) -> BenefitClassRead:
+    await _get_master_policy(tenant_id, org_id, mp_id, session)
+    await _require_no_members(mp_id, session)
+
+    spec = body.model_dump()
+    errors = validate_benefit_class(spec)
+    if errors:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+
+    existing = await _benefit_classes(mp_id, session)
+    if any(c.name.strip().lower() == body.name.strip().lower() for c in existing):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Benefit class '{body.name}' already exists.")
+    if body.is_default and any(c.is_default for c in existing):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This master policy already has a default class.")
+    if body.grades:
+        taken = {str(g).strip().lower(): c.name for c in existing for g in (c.grades or [])}
+        clashes = sorted({g for g in body.grades if g.strip().lower() in taken})
+        if clashes:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Grade(s) already mapped to another class: {', '.join(clashes)}")
+
+    cls = GroupBenefitClass(
+        tenant_id=tenant_id,
+        master_policy_id=mp_id,
+        name=body.name.strip(),
+        basis=body.basis,
+        flat_amount=body.flat_amount,
+        salary_multiple=body.salary_multiple,
+        service_bands=spec["service_bands"],
+        grades=body.grades,
+        min_cover=body.min_cover,
+        max_cover=body.max_cover,
+        is_default=body.is_default,
+    )
+    session.add(cls)
+    await session.flush()
+    session.add(GroupClassCoverage(
+        tenant_id=tenant_id, benefit_class_id=cls.id,
+        coverage_type=GroupCoverageType.LIFE.value, percent_of_base=100.0,
+    ))
+    await session.commit()
+    await session.refresh(cls)
+    return await _benefit_class_read(cls, session)
+
+
+@router.get(
+    "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/benefit-classes",
+    response_model=List[BenefitClassRead],
+    dependencies=[Depends(verify_admin)],
+)
+async def list_benefit_classes(tenant_id: UUID, org_id: UUID, mp_id: UUID, session: AsyncSession = Depends(get_session)):
+    await _get_master_policy(tenant_id, org_id, mp_id, session)
+    return [await _benefit_class_read(c, session) for c in await _benefit_classes(mp_id, session)]
+
+
+@router.delete(
+    "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/benefit-classes/{class_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_benefit_class(tenant_id: UUID, org_id: UUID, mp_id: UUID, class_id: UUID, session: AsyncSession = Depends(get_session)):
+    await _get_master_policy(tenant_id, org_id, mp_id, session)
+    await _require_no_members(mp_id, session)
+    cls = await session.get(GroupBenefitClass, class_id)
+    if not cls or cls.master_policy_id != mp_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Benefit class not found.")
+    await session.delete(cls)
+    await session.commit()
+    return None
 
 
 # ── Employee census ──────────────────────────────────────────────────────────────
+
+async def _census_context(master_policy: MasterPolicy, session: AsyncSession):
+    """(already-enrolled CNICs, benefit classes, plan, min_group_size). The
+    plan's minimum group size applies to a master policy's first census only —
+    a top-up batch for an existing roster can be any size."""
+    enrolled = await _enrolled_cnics(master_policy.id, session)
+    classes = await _benefit_classes(master_policy.id, session)
+    plan = await session.get(InsurancePlan, master_policy.plan_id) if master_policy.plan_id else None
+    min_group_size = plan.min_group_size if plan is not None and not enrolled else None
+    return enrolled, classes, plan, min_group_size
+
 
 @router.post(
     "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}/census/validate",
@@ -494,12 +697,9 @@ async def validate_employee_census(
     body: CensusRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    await _get_master_policy(tenant_id, org_id, mp_id, session)
-
-    existing = await session.exec(select(Customer.cnic).where(Customer.organization_id == org_id))
-    existing_cnics = set(existing.all())
-
-    result = validate_census(existing_cnics, body.employees)
+    master_policy = await _get_master_policy(tenant_id, org_id, mp_id, session)
+    enrolled, classes, _plan, min_group_size = await _census_context(master_policy, session)
+    result = validate_scheme_census(enrolled, body.employees, classes, min_group_size)
 
     # Preview only — nothing persisted. Only computed when the batch is valid;
     # a malformed row (e.g. bad dob) would otherwise crash average_age() before
@@ -528,11 +728,8 @@ async def confirm_employee_census(
     session: AsyncSession = Depends(get_session),
 ):
     master_policy = await _get_master_policy(tenant_id, org_id, mp_id, session)
-
-    existing = await session.exec(select(Customer.cnic).where(Customer.organization_id == org_id))
-    existing_cnics = set(existing.all())
-
-    result = validate_census(existing_cnics, body.employees)
+    enrolled, classes, scheme_plan, min_group_size = await _census_context(master_policy, session)
+    result = validate_scheme_census(enrolled, body.employees, classes, min_group_size)
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
@@ -559,8 +756,12 @@ async def confirm_employee_census(
     else:
         free_cover_limit = master_policy.free_cover_limit
 
+    # Benefit-class cover (or the legacy flat multiple when the scheme has no
+    # classes); service is measured to the scheme's effective date.
     for row in parsed_rows:
-        row["_coverage_amount"] = (row["_declared_income"] / 12) * master_policy.sum_assured_multiple
+        row["_class"], row["_coverage_amount"] = member_cover(
+            row, classes, master_policy.sum_assured_multiple, as_of=master_policy.effective_date,
+        )
 
     above_fcl_rows = [row for row in parsed_rows if row["_coverage_amount"] > free_cover_limit]
 
@@ -597,7 +798,7 @@ async def confirm_employee_census(
         risk_results = {row["cnic"]: res for row, res in zip(above_fcl_rows, results)}
 
     # ── Pass 2: DB-only — build rows and commit once ─────────────────────────
-    group_plan = (await session.exec(
+    group_plan = scheme_plan or (await session.exec(
         select(InsurancePlan).where(
             InsurancePlan.tenant_id == tenant_id,
             InsurancePlan.code == "GROUP_LIFE",
@@ -610,29 +811,43 @@ async def confirm_employee_census(
 
     audit_user = (await session.exec(select(User).where(User.tenant_id == tenant_id))).first()
 
+    # A CNIC that already belongs to this insurer's customer (an individual
+    # policyholder, a family member, an employee of another scheme) is reused —
+    # CNIC is unique per tenant — and that profile is left untouched.
+    batch_cnics = [normalize_cnic(r["cnic"]) or r["cnic"] for r in parsed_rows]
+    existing_customers = {
+        c.cnic: c for c in (await session.exec(
+            select(Customer).where(Customer.tenant_id == tenant_id, Customer.cnic.in_(batch_cnics))
+        )).all()
+    }
+
     outcomes: List[CensusEmployeeOutcome] = []
     customers_to_promote: List[Customer] = []
     for row in parsed_rows:
         is_smoker = bool(row.get("is_smoker", False))
         height_cm = float(row.get("height_cm", 170))
         weight_kg = float(row.get("weight_kg", 70))
+        cnic = normalize_cnic(row["cnic"]) or row["cnic"]
 
-        customer = Customer(
-            tenant_id=tenant_id,
-            organization_id=org_id,
-            cnic=normalize_cnic(row["cnic"]) or row["cnic"],
-            name=row["name"],
-            dob=row["_dob"],
-            gender=row["gender"],
-            occupation=row["occupation"],
-            declared_income=row["_declared_income"],
-            is_smoker=is_smoker,
-            height_cm=height_cm,
-            weight_kg=weight_kg,
-        )
-        session.add(customer)
-        customers_to_promote.append(customer)
-        await session.flush()
+        customer = existing_customers.get(cnic)
+        reused = customer is not None
+        if customer is None:
+            customer = Customer(
+                tenant_id=tenant_id,
+                organization_id=org_id,
+                cnic=cnic,
+                name=row["name"],
+                dob=row["_dob"],
+                gender=row["gender"],
+                occupation=row["occupation"],
+                declared_income=row["_declared_income"],
+                is_smoker=is_smoker,
+                height_cm=height_cm,
+                weight_kg=weight_kg,
+            )
+            session.add(customer)
+            customers_to_promote.append(customer)
+            await session.flush()
 
         coverage_amount = row["_coverage_amount"]
         above_fcl = coverage_amount > free_cover_limit
@@ -645,13 +860,32 @@ async def confirm_employee_census(
             tenant_id=tenant_id,
             customer_id=customer.id,
             master_policy_id=master_policy.id,
-            product_name="Group Life",
+            product_name=group_plan.label if group_plan is not None else "Group Life",
             insurance_type=master_policy.insurance_type,
             coverage_amount=coverage_amount,
             term_years=master_policy.term_years,
             status=PolicyStatusEnum.QUOTED,
         )
         session.add(policy)
+        await session.flush()
+
+        benefit_class = row["_class"]
+        member = GroupMember(
+            tenant_id=tenant_id,
+            master_policy_id=master_policy.id,
+            customer_id=customer.id,
+            policy_id=policy.id,
+            benefit_class_id=benefit_class.id if benefit_class is not None else None,
+            employee_id=optional_text(row.get("employee_id")),
+            designation=optional_text(row.get("designation")),
+            grade=optional_text(row.get("grade")),
+            basic_monthly_salary=basic_monthly_salary(row),
+            joining_date=parse_date(row.get("joining_date")),
+            coverage_amount=coverage_amount,
+            cover_start_date=master_policy.effective_date,
+            status=GroupMemberStatus.PENDING.value,
+        )
+        session.add(member)
         await session.flush()
 
         risk_assessment_id: Optional[UUID] = None
@@ -742,6 +976,9 @@ async def confirm_employee_census(
             premium_total=breakdown.total_premium,
             suggested_loading=suggested_loading,
             risk_assessment_id=risk_assessment_id,
+            group_member_id=member.id,
+            benefit_class=benefit_class.name if benefit_class is not None else None,
+            reused_existing_customer=reused,
         ))
 
     # Confirming the employee census produces a PROPOSAL, not an in-force group

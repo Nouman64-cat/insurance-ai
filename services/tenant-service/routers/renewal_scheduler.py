@@ -73,6 +73,15 @@ async def _run_renewal_job() -> None:
         log.error("Renewal scheduler error: %s", exc, exc_info=True)
 
 
+def renewal_candidates_query():
+    """Policies this scheduler owns. Group-life certificates (master_policy_id
+    set) are excluded: a group scheme renews once at master-policy level, so
+    renewing / lapsing each employee certificate here would be wrong."""
+    from shared.models.core import Policy
+
+    return select(Policy).where(Policy.master_policy_id.is_(None))
+
+
 async def _process_renewals(session) -> None:
     from shared.models.core import (
         Policy, PolicyStatusEnum,
@@ -83,7 +92,7 @@ async def _process_renewals(session) -> None:
 
     # Fetch all non-terminal policies; filter in Python to avoid VARCHAR/enum
     # cast errors (documented in migrate.py v7a).
-    all_res = await session.exec(select(Policy))
+    all_res = await session.exec(renewal_candidates_query())
     all_policies = list(all_res.all())
 
     def st(p):

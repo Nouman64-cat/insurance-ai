@@ -561,12 +561,162 @@ class MasterPolicy(SQLModel, table=True):
     # doesn't retroactively change.
     free_cover_limit: Optional[float] = Field(default=None, ge=0)
 
+    # Catalog product this contract is written under (GROUP_LIFE, GROUP_LIFE_SME,
+    # GROUP_FAMILY_TAKAFUL, ...). Its product_category is what distinguishes
+    # Conventional Group Life from Group Family Takaful, and its min_group_size
+    # gates the first census. Nullable only for rows created before the link
+    # existed (backfilled to the tenant's GROUP_LIFE plan by migration v50c).
+    plan_id: Optional[UUID] = Field(default=None, foreign_key="insurance_plans.id", index=True, nullable=True)
+    # Set at issuance (Phase 2); group cover runs effective_date → expiry_date
+    # and renews annually at master-policy level.
+    policy_number: Optional[str] = Field(default=None, max_length=50, index=True)
+    expiry_date: Optional[date] = Field(default=None)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
     tenant: Optional[Tenant] = Relationship(back_populates="master_policies")
     organization: Optional[Organization] = Relationship(back_populates="master_policies")
     certificates: List["Policy"] = Relationship(back_populates="master_policy")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Group Life scheme structure — benefit classes, members, dependents.
+#
+# Three roles are kept deliberately separate (see GROUP_LIFE_PLAN.md):
+#   GroupMember          — the insured employee (one per person per MasterPolicy)
+#   GroupMemberDependent — a spouse/child covered ONLY because the schedule lists them
+#   Beneficiary          — who receives the benefit; lives on the member's
+#                          certificate Policy, exactly like an individual policy
+# A nominee never implies dependent cover. Status/basis columns are plain
+# strings (like MasterPolicy.status) to avoid new native PG enum types.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class GroupBenefitBasis(str, Enum):
+    """How a benefit class turns a member into a sum assured.
+    FLAT            — every member of the class gets flat_amount (also how
+                      grade/designation schemes are modelled: one class per grade).
+    SALARY_MULTIPLE — salary_multiple × basic monthly salary.
+    SERVICE_BANDED  — amount from service_bands by completed years of service.
+    """
+    FLAT = "Flat"
+    SALARY_MULTIPLE = "SalaryMultiple"
+    SERVICE_BANDED = "ServiceBanded"
+
+
+class GroupCoverageType(str, Enum):
+    LIFE = "Life"
+    ACCIDENTAL_DEATH = "AccidentalDeath"
+    DISABILITY = "Disability"
+    PAY_CONTINUATION = "PayContinuation"
+    FEE_CONTINUATION = "FeeContinuation"
+
+
+class GroupMemberStatus(str, Enum):
+    PENDING = "Pending"     # enrolled from census, master policy not yet issued
+    ACTIVE = "Active"       # covered
+    REMOVED = "Removed"     # left the scheme (deletion endorsement)
+
+
+class GroupBenefitClass(SQLModel, table=True):
+    """One tier of a scheme's benefit structure (e.g. "Management", "Grade 3").
+    A MasterPolicy with no classes keeps its legacy behaviour: every member is
+    covered at MasterPolicy.sum_assured_multiple × monthly salary."""
+    __tablename__ = "group_benefit_classes"
+    __table_args__ = (
+        UniqueConstraint("master_policy_id", "name", name="uq_group_benefit_class_name"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    master_policy_id: UUID = Field(foreign_key="master_policies.id", ondelete="CASCADE", index=True, nullable=False)
+
+    name: str = Field(max_length=120)
+    basis: str = Field(default=GroupBenefitBasis.SALARY_MULTIPLE.value, max_length=30)
+    flat_amount: Optional[float] = Field(default=None, ge=0)
+    salary_multiple: Optional[float] = Field(default=None, ge=0)
+    # SERVICE_BANDED: [{"min_years": 0, "amount": 1000000}, {"min_years": 5, "amount": 2000000}]
+    service_bands: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    # Census rows whose grade is in this list land in this class automatically.
+    grades: Optional[list] = Field(default=None, sa_column=Column(JSON, nullable=True))
+    min_cover: Optional[float] = Field(default=None, ge=0)
+    max_cover: Optional[float] = Field(default=None, ge=0)
+    # Fallback class for rows that name no class and match no grade.
+    is_default: bool = Field(default=False)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class GroupClassCoverage(SQLModel, table=True):
+    """A benefit within a class, as a % of the class's base (life) sum assured.
+    Every class gets a LIFE 100% row on creation; riders are priced in Phase 2+."""
+    __tablename__ = "group_class_coverages"
+    __table_args__ = (
+        UniqueConstraint("benefit_class_id", "coverage_type", name="uq_group_class_coverage_type"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    benefit_class_id: UUID = Field(foreign_key="group_benefit_classes.id", ondelete="CASCADE", index=True, nullable=False)
+
+    coverage_type: str = Field(max_length=30)
+    percent_of_base: float = Field(default=100.0, ge=0, le=1000)
+    max_amount: Optional[float] = Field(default=None, ge=0)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class GroupMember(SQLModel, table=True):
+    """An insured employee under a MasterPolicy. Points at a Customer (reused
+    when the person is already this insurer's customer — e.g. an individual
+    policyholder — rather than duplicated) and at their certificate Policy."""
+    __tablename__ = "group_members"
+    __table_args__ = (
+        UniqueConstraint("master_policy_id", "customer_id", name="uq_group_member_per_master_policy"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    # ON DELETE CASCADE throughout: every pre-existing delete path (customer,
+    # policy, family member, organization) keeps working unchanged — removing
+    # the person or their certificate removes the membership with it.
+    master_policy_id: UUID = Field(foreign_key="master_policies.id", ondelete="CASCADE", index=True, nullable=False)
+    customer_id: UUID = Field(foreign_key="customers.id", ondelete="CASCADE", index=True, nullable=False)
+    policy_id: Optional[UUID] = Field(default=None, foreign_key="policies.id", ondelete="CASCADE", index=True, nullable=True)
+    benefit_class_id: Optional[UUID] = Field(default=None, foreign_key="group_benefit_classes.id", ondelete="SET NULL", index=True, nullable=True)
+
+    employee_id: Optional[str] = Field(default=None, max_length=50)
+    designation: Optional[str] = Field(default=None, max_length=120)
+    grade: Optional[str] = Field(default=None, max_length=50)
+    basic_monthly_salary: Optional[float] = Field(default=None, ge=0)
+    joining_date: Optional[date] = Field(default=None)
+
+    coverage_amount: float = Field(default=0.0, ge=0)
+    cover_start_date: Optional[date] = Field(default=None)
+    cover_end_date: Optional[date] = Field(default=None)
+    status: str = Field(default=GroupMemberStatus.PENDING.value, max_length=20)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class GroupMemberDependent(SQLModel, table=True):
+    """A spouse/child/parent covered under a member — only when the scheme
+    schedule lists them. Not a beneficiary (see Beneficiary)."""
+    __tablename__ = "group_member_dependents"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    group_member_id: UUID = Field(foreign_key="group_members.id", ondelete="CASCADE", index=True, nullable=False)
+
+    name: str = Field(max_length=255)
+    cnic: Optional[str] = Field(default=None, max_length=15)
+    relationship: str = Field(max_length=30)          # Spouse | Child | Parent
+    dob: Optional[date] = Field(default=None)
+    gender: Optional[str] = Field(default=None, max_length=20)
+    covered_amount: float = Field(default=0.0, ge=0)
+    status: str = Field(default=GroupMemberStatus.PENDING.value, max_length=20)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

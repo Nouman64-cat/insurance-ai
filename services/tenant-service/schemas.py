@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 from shared.models.core import (
     UserStatus,
     Gender,
@@ -632,6 +632,9 @@ class MasterPolicyCreate(BaseModel):
     sum_assured_multiple: float
     term_years: int
     effective_date: date
+    # Catalog product (Group category) — e.g. GROUP_LIFE, GROUP_LIFE_SME,
+    # GROUP_FAMILY_TAKAFUL. Omitted → the tenant's GROUP_LIFE plan.
+    plan_code: Optional[str] = None
 
 
 class MasterPolicyRead(BaseModel):
@@ -644,6 +647,57 @@ class MasterPolicyRead(BaseModel):
     effective_date: date
     status: str
     free_cover_limit: Optional[float] = None
+    plan_id: Optional[UUID] = None
+    policy_number: Optional[str] = None
+    expiry_date: Optional[date] = None
+    # Filled from the linked InsurancePlan; business_type is its
+    # product_category ("Conventional" | "Takaful").
+    plan_code: Optional[str] = None
+    plan_label: Optional[str] = None
+    business_type: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ServiceBand(BaseModel):
+    min_years: int = Field(ge=0)
+    amount: float = Field(gt=0)
+
+
+class BenefitClassCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    basis: str                                   # Flat | SalaryMultiple | ServiceBanded
+    flat_amount: Optional[float] = None
+    salary_multiple: Optional[float] = None
+    service_bands: Optional[List[ServiceBand]] = None
+    grades: Optional[List[str]] = None
+    min_cover: Optional[float] = Field(default=None, ge=0)
+    max_cover: Optional[float] = Field(default=None, ge=0)
+    is_default: bool = False
+
+
+class ClassCoverageRead(BaseModel):
+    coverage_type: str
+    percent_of_base: float
+    max_amount: Optional[float] = None
+
+    model_config = {"from_attributes": True}
+
+
+class BenefitClassRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    name: str
+    basis: str
+    flat_amount: Optional[float] = None
+    salary_multiple: Optional[float] = None
+    service_bands: Optional[List[Dict[str, Any]]] = None
+    grades: Optional[List[str]] = None
+    min_cover: Optional[float] = None
+    max_cover: Optional[float] = None
+    is_default: bool
+    coverages: List[ClassCoverageRead] = []
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -675,6 +729,12 @@ class CensusEmployeeOutcome(BaseModel):
     premium_total: float
     suggested_loading: Optional[float] = None
     risk_assessment_id: Optional[UUID] = None
+    group_member_id: Optional[UUID] = None
+    benefit_class: Optional[str] = None
+    # True when the CNIC already belonged to a customer of this insurer (e.g.
+    # an individual policyholder) — reused, not duplicated; their profile and
+    # other policies are left untouched.
+    reused_existing_customer: bool = False
 
 
 class CensusConfirmResponse(BaseModel):

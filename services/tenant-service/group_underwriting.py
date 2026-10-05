@@ -15,15 +15,15 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pydantic import BaseModel
 
-# Flat regardless of catalog entry — the seeded GROUP_LIFE_SME InsurancePlan
-# row declares min_group_size=5, but nothing links a MasterPolicy to a specific
-# InsurancePlan row yet, so a 5-9 employee SME group can never pass validation
-# today. Pre-existing gap, not introduced here; fixing it needs the
-# MasterPolicy -> InsurancePlan linkage this module's callers don't have.
-
 SUM_ASSURED_MULTIPLE_RANGE = (12.0, 36.0)   # x monthly basic salary
 
 REQUIRED_CENSUS_FIELDS = ["cnic", "name", "dob", "gender", "occupation", "declared_income"]
+
+# Optional census columns (the census template — GROUP_LIFE_PLAN.md):
+#   employee_id, designation, grade, joining_date (YYYY-MM-DD),
+#   benefit_class (class name), basic_monthly_salary,
+#   is_smoker, height_cm, weight_kg
+# declared_income is ANNUAL; basic_monthly_salary defaults to declared_income / 12.
 
 _CNIC_RE = re.compile(r"\d{5}-\d{7}-\d")
 
@@ -50,25 +50,59 @@ def _row_missing_fields(row: Dict[str, Any], index: int) -> List[str]:
     return [f"Row {index + 1}: missing {field}" for field in missing]
 
 
+def _row_format_errors(row: Dict[str, Any], index: int) -> List[str]:
+    """Unparseable values that would otherwise crash census confirm mid-batch."""
+    errors: List[str] = []
+    for field in ("dob", "joining_date"):
+        raw = row.get(field)
+        if raw in (None, "") or isinstance(raw, date):
+            continue
+        try:
+            parsed = date.fromisoformat(str(raw))
+        except ValueError:
+            errors.append(f"Row {index + 1}: {field} '{raw}' must be YYYY-MM-DD.")
+            continue
+        if parsed > date.today():
+            errors.append(f"Row {index + 1}: {field} cannot be in the future.")
+    for field in ("declared_income", "basic_monthly_salary"):
+        raw = row.get(field)
+        if raw in (None, ""):
+            continue
+        try:
+            if float(raw) < 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            errors.append(f"Row {index + 1}: {field} must be a non-negative number.")
+    return errors
+
+
 def validate_census(
     existing_cnics: Set[str],
     employees: List[Dict[str, Any]],
+    min_group_size: Optional[int] = None,
 ) -> CensusValidationResult:
     """Validate an employee census batch before it's persisted.
 
-    Checks: minimum group size, required fields per row, duplicate CNICs
-    within the batch, and CNICs that already exist for this organization.
+    Checks: minimum group size (only when given — callers pass the plan's
+    min_group_size for a master policy's first census, not for top-ups),
+    required fields and parseable values per row, duplicate CNICs within the
+    batch, and CNICs already enrolled on this master policy.
     """
     errors: List[str] = []
     missing_fields: List[str] = []
 
-
+    if min_group_size and len(employees) < min_group_size:
+        errors.append(
+            f"This plan needs at least {min_group_size} employees on the first census "
+            f"(got {len(employees)})."
+        )
 
     seen_cnics: Set[str] = set()
     duplicate_cnics: Set[str] = set()
 
     for i, row in enumerate(employees):
         missing_fields.extend(_row_missing_fields(row, i))
+        errors.extend(_row_format_errors(row, i))
 
         raw_cnic = (row.get("cnic") or "").strip()
         if not raw_cnic:
@@ -89,7 +123,7 @@ def validate_census(
     if duplicate_cnics:
         errors.append(
             f"{len(duplicate_cnics)} duplicate CNIC(s) found — either repeated within "
-            f"this batch or already enrolled for this organization."
+            f"this batch or already enrolled on this master policy."
         )
 
     is_valid = not errors and not missing_fields

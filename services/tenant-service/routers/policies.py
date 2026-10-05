@@ -483,7 +483,10 @@ async def upcoming_renewals(
     session: AsyncSession = Depends(get_session),
 ):
     today = date.today()
-    result = await session.exec(select(Policy).where(Policy.tenant_id == tenant_id))
+    # Group-life certificates renew at master-policy level, not one by one.
+    result = await session.exec(
+        select(Policy).where(Policy.tenant_id == tenant_id, Policy.master_policy_id.is_(None))
+    )
     upcoming = []
     for p in result.all():
         # _st() returns the enum *value* ("Active" / "GracePeriod"). Comparing

@@ -1156,6 +1156,81 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v49d — add underwriting_results to risk_assessments",
         "ALTER TABLE risk_assessments ADD COLUMN IF NOT EXISTS underwriting_results JSON",
     ),
+    # ── Group Life Phase 1 (GROUP_LIFE_PLAN.md) — group_benefit_classes,
+    #    group_class_coverages, group_members, group_member_dependents are new
+    #    tables (create_all); only master_policies gains columns here.
+    (
+        "v50a — add plan_id / policy_number / expiry_date to master_policies",
+        "ALTER TABLE master_policies "
+        "ADD COLUMN IF NOT EXISTS plan_id UUID REFERENCES insurance_plans(id), "
+        "ADD COLUMN IF NOT EXISTS policy_number VARCHAR(50), "
+        "ADD COLUMN IF NOT EXISTS expiry_date DATE",
+    ),
+    (
+        "v50b — index master_policies.plan_id",
+        "CREATE INDEX IF NOT EXISTS ix_master_policies_plan_id ON master_policies (plan_id)",
+    ),
+    (
+        # Pre-link rows were always priced against the tenant's GROUP_LIFE plan
+        # (routers/organizations.py census confirm), so that's their product.
+        "v50c — backfill master_policies.plan_id to the tenant's GROUP_LIFE plan",
+        "UPDATE master_policies mp SET plan_id = ip.id "
+        "FROM insurance_plans ip "
+        "WHERE mp.plan_id IS NULL AND ip.tenant_id = mp.tenant_id AND ip.code = 'GROUP_LIFE'",
+    ),
+    (
+        # One GroupMember per pre-existing certificate, so every roster/duplicate
+        # check can read group_members alone. Status follows the master policy.
+        "v50d — backfill group_members from existing group certificates",
+        "INSERT INTO group_members "
+        "(id, tenant_id, master_policy_id, customer_id, policy_id, basic_monthly_salary, "
+        " coverage_amount, cover_start_date, status, created_at) "
+        "SELECT gen_random_uuid(), p.tenant_id, p.master_policy_id, p.customer_id, p.id, "
+        "       c.declared_income / 12.0, p.coverage_amount, mp.effective_date, "
+        "       CASE WHEN mp.status = 'Active' THEN 'Active' ELSE 'Pending' END, p.created_at "
+        "FROM policies p "
+        "JOIN customers c ON c.id = p.customer_id "
+        "JOIN master_policies mp ON mp.id = p.master_policy_id "
+        "WHERE p.master_policy_id IS NOT NULL "
+        "ON CONFLICT (master_policy_id, customer_id) DO NOTHING",
+    ),
+    # Tables from the first Phase 1 create_all predate ondelete= on their FKs;
+    # re-declare them so customer / policy / family deletes cascade (see GroupMember).
+    (
+        "v50e — group_benefit_classes.master_policy_id ON DELETE CASCADE",
+        "ALTER TABLE group_benefit_classes DROP CONSTRAINT IF EXISTS group_benefit_classes_master_policy_id_fkey, "
+        "ADD CONSTRAINT group_benefit_classes_master_policy_id_fkey FOREIGN KEY (master_policy_id) REFERENCES master_policies(id) ON DELETE CASCADE",
+    ),
+    (
+        "v50f — group_class_coverages.benefit_class_id ON DELETE CASCADE",
+        "ALTER TABLE group_class_coverages DROP CONSTRAINT IF EXISTS group_class_coverages_benefit_class_id_fkey, "
+        "ADD CONSTRAINT group_class_coverages_benefit_class_id_fkey FOREIGN KEY (benefit_class_id) REFERENCES group_benefit_classes(id) ON DELETE CASCADE",
+    ),
+    (
+        "v50g — group_members.master_policy_id ON DELETE CASCADE",
+        "ALTER TABLE group_members DROP CONSTRAINT IF EXISTS group_members_master_policy_id_fkey, "
+        "ADD CONSTRAINT group_members_master_policy_id_fkey FOREIGN KEY (master_policy_id) REFERENCES master_policies(id) ON DELETE CASCADE",
+    ),
+    (
+        "v50h — group_members.customer_id ON DELETE CASCADE",
+        "ALTER TABLE group_members DROP CONSTRAINT IF EXISTS group_members_customer_id_fkey, "
+        "ADD CONSTRAINT group_members_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE",
+    ),
+    (
+        "v50i — group_members.policy_id ON DELETE CASCADE",
+        "ALTER TABLE group_members DROP CONSTRAINT IF EXISTS group_members_policy_id_fkey, "
+        "ADD CONSTRAINT group_members_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES policies(id) ON DELETE CASCADE",
+    ),
+    (
+        "v50j — group_members.benefit_class_id ON DELETE SET NULL",
+        "ALTER TABLE group_members DROP CONSTRAINT IF EXISTS group_members_benefit_class_id_fkey, "
+        "ADD CONSTRAINT group_members_benefit_class_id_fkey FOREIGN KEY (benefit_class_id) REFERENCES group_benefit_classes(id) ON DELETE SET NULL",
+    ),
+    (
+        "v50k — group_member_dependents.group_member_id ON DELETE CASCADE",
+        "ALTER TABLE group_member_dependents DROP CONSTRAINT IF EXISTS group_member_dependents_group_member_id_fkey, "
+        "ADD CONSTRAINT group_member_dependents_group_member_id_fkey FOREIGN KEY (group_member_id) REFERENCES group_members(id) ON DELETE CASCADE",
+    ),
 ]
 
 

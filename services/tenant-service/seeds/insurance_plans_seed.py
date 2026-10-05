@@ -381,6 +381,20 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_GROUP}],
         "required_documents": [DOC_CENSUS, DOC_BUSINESS_REG],
     },
+    {
+        "code": "GROUP_FAMILY_TAKAFUL", "label": "Group Family Takaful", "insurance_type": "GROUP_LIFE",
+        "category": "Group", "product_category": "Takaful", "partner_bank": None, "color": "emerald",
+        "description": "The Shariah-compliant counterpart of Group Life: the employer and members contribute Tabarru to a Participants' Takaful Fund (PTF) that pays eligible death benefits under mutual assistance, rather than transferring risk to the insurer. One Master Policy, employees covered as members.",
+        "entry_age_min": 18, "entry_age_max": 65, "entry_age_label": "Employee",
+        "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 70, "max_income_multiple": 36,
+        "min_group_size": 10,
+        "underwriting_basis": "Group-level (size, industry, claims history) — guaranteed issue up to the Free Cover Limit",
+        # Same v1 placeholder contribution rate as GROUP_LIFE until Wakala fee /
+        # PTF split pricing lands (GROUP_LIFE_PLAN.md Phase 6).
+        "base_premium_rate": 3.2, "smoker_factor": 1.4,
+        "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_GROUP}],
+        "required_documents": [DOC_CENSUS, DOC_BUSINESS_REG],
+    },
 
     # ── Family (admin-created FamilyGroup -> shared-pool floater; see the
     #    Family Insurance feature — routers/families.py) ─────────────────────
