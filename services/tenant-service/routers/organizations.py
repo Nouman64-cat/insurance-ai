@@ -74,6 +74,7 @@ from shared.models.core import (
     Organization,
     PlanCategoryEnum,
     Policy,
+    PolicyEvent,
     PolicyStatusEnum,
     PremiumQuote,
     RiskAssessment,
@@ -167,7 +168,7 @@ async def _delete_policy_cascade(session: AsyncSession, policy: Policy) -> None:
         for vf in (await session.exec(select(VerificationFinding).where(VerificationFinding.case_id == case.caseld))).all(): await session.delete(vf)
         await session.delete(case)
 
-    for model in (RiskAssessment, PremiumQuote, Beneficiary, BeneficiaryVersion):
+    for model in (RiskAssessment, PremiumQuote, Beneficiary, BeneficiaryVersion, PolicyEvent):
         for row in (await session.exec(select(model).where(model.policy_id == policy.id))).all():
             await session.delete(row)
 

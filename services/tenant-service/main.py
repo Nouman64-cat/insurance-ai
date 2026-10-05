@@ -54,6 +54,7 @@ from routers.customers import router as customers_router
 from routers.cases import router as cases_router
 from routers.artifacts import router as artifacts_router
 from routers.organizations import router as organizations_router
+from routers.group_policies import router as group_policies_router
 from routers.families import router as families_router
 from routers.insurance_plans import router as insurance_plans_router
 from routers.tokens import router as tokens_router
@@ -173,6 +174,7 @@ app.include_router(customers_router)
 app.include_router(cases_router)
 app.include_router(artifacts_router)
 app.include_router(organizations_router)
+app.include_router(group_policies_router)
 app.include_router(families_router)
 app.include_router(insurance_plans_router)
 app.include_router(tokens_router)

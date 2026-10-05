@@ -742,6 +742,93 @@ class CensusConfirmResponse(BaseModel):
     employees: List[CensusEmployeeOutcome]
 
 
+# ── Group Life Phase 2 — quote → issuance (routers/group_policies.py) ────────
+
+class GroupQuoteRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    version: int
+    status: str
+    business_type: str
+    valid_until: date
+    member_count: int
+    dependent_count: int
+    total_sum_assured: float
+    rate_per_mille: float
+    risk_premium: float
+    policy_fee: float
+    stamp_duty: float
+    total_premium: float
+    breakdown: Dict[str, Any]
+    decided_at: Optional[datetime] = None
+    decided_by: Optional[str] = None
+    decision_notes: Optional[str] = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class GroupQuoteDecision(BaseModel):
+    decided_by: Optional[str] = Field(default=None, max_length=255)   # employer contact who decided
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class GroupPaymentCreate(BaseModel):
+    reference: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+
+
+class GroupIssueResponse(BaseModel):
+    master_policy: MasterPolicyRead
+    certificates_issued: int
+    total_premium: float
+    amount_due: float
+
+
+class GroupDependentCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    relationship: str                     # Spouse | Child | Parent
+    dob: date
+    cnic: Optional[str] = None
+    gender: Optional[str] = None
+    covered_amount: float = Field(gt=0)
+
+
+class GroupDependentRead(BaseModel):
+    id: UUID
+    group_member_id: UUID
+    name: str
+    relationship: str
+    dob: Optional[date] = None
+    cnic: Optional[str] = None
+    gender: Optional[str] = None
+    covered_amount: float
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class GroupMemberRead(BaseModel):
+    id: UUID
+    customer_id: UUID
+    name: str
+    cnic: Optional[str] = None
+    policy_id: Optional[UUID] = None
+    certificate_number: Optional[str] = None
+    certificate_status: Optional[str] = None
+    benefit_class: Optional[str] = None
+    employee_id: Optional[str] = None
+    designation: Optional[str] = None
+    grade: Optional[str] = None
+    basic_monthly_salary: Optional[float] = None
+    coverage_amount: float
+    status: str
+    annual_premium: Optional[float] = None
+    cover_note: Optional[str] = None
+    underwriting_basis: Optional[str] = None   # Guaranteed | Approved | Loaded | Restricted | Pending
+    dependents: int = 0
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Family Insurance Schemas — mirrors the Organization/MasterPolicy/Census
 # schemas above; see services/tenant-service/routers/families.py.

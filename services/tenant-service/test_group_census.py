@@ -9,7 +9,9 @@ Run with: docker compose exec tenant-service python test_group_census.py
 """
 
 import asyncio
+import os
 import random
+import shutil
 from datetime import date
 from uuid import UUID, uuid4
 
@@ -30,7 +32,10 @@ from routers.organizations import (
 )
 from schemas import BenefitClassCreate, CensusRequest, MasterPolicyCreate
 from seeds.insurance_plans_seed import INSURANCE_PLAN_SEED_DATA, seed_insurance_plans
+from services.document_generator import MEDIA_ROOT
 from shared.models.core import (
+    Beneficiary,
+    BeneficiaryVersion,
     Case,
     CaseStatusEnum,
     CaseTypeEnum,
@@ -39,11 +44,13 @@ from shared.models.core import (
     GroupClassCoverage,
     GroupMember,
     GroupMemberDependent,
+    GroupQuote,
     InsurancePlan,
     InsuranceTypeEnum,
     MasterPolicy,
     Organization,
     Policy,
+    PolicyEvent,
     PolicyStatusEnum,
     PremiumQuote,
     RiskAssessment,
@@ -132,9 +139,12 @@ async def _cleanup(test_session, tenant_id: UUID) -> None:
     # --reload server runs meanwhile) without Postgres seeing a deadlock.
     await test_session.close()
     async with _session_factory() as session:
-        for model in (GroupMemberDependent, GroupMember, GroupClassCoverage, GroupBenefitClass,
-                      PremiumQuote, RiskAssessment, Case, Policy, MasterPolicy, Customer,
-                      Organization, InsurancePlan):
+        # Generated quote / schedule PDFs live on the mounted media volume.
+        for mp_id in (await session.exec(select(MasterPolicy.id).where(MasterPolicy.tenant_id == tenant_id))).all():
+            shutil.rmtree(os.path.join(MEDIA_ROOT, "group", str(mp_id)), ignore_errors=True)
+        for model in (GroupMemberDependent, GroupMember, GroupQuote, GroupClassCoverage, GroupBenefitClass,
+                      PremiumQuote, RiskAssessment, PolicyEvent, BeneficiaryVersion, Beneficiary,
+                      Case, Policy, MasterPolicy, Customer, Organization, InsurancePlan):
             await session.exec(delete(model).where(model.tenant_id == tenant_id))
         await session.exec(delete(Tenant).where(Tenant.id == tenant_id))
         await session.commit()

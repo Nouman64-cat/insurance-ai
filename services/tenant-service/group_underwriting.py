@@ -220,3 +220,47 @@ def compute_free_cover_limit(group_size: int, average_age: float) -> float:
     size_factor = _banded_factor(float(group_size), _FCL_SIZE_FACTOR_BANDS)
     age_factor = _banded_factor(average_age, _FCL_AGE_FACTOR_BANDS)
     return _FCL_BASE_AMOUNT * size_factor * age_factor
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Above-FCL outcome — what cover a member actually gets on the quote
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# At or under the FCL a member is guaranteed issue. Above it, the underwriter's
+# decision on the member's case (mirrored onto the certificate Policy.status by
+# routers/cases.py) decides: approved → full cover, approved with loading →
+# full cover priced with the loading, declined → cover restricted to the FCL
+# (standard group practice: the guaranteed-issue part is never lost). Anything
+# still undecided blocks quoting.
+
+class MemberOutcome(BaseModel):
+    basis: str                       # Guaranteed | Approved | Loaded | Restricted | Pending
+    covered_amount: float
+    loading_pct: float = 0.0
+    note: Optional[str] = None
+
+
+_APPROVED = {"Approved"}
+_LOADED = {"AcceptedWithLoadings"}
+_DECLINED = {"Declined"}
+
+
+def member_underwriting_outcome(
+    coverage_amount: float,
+    free_cover_limit: Optional[float],
+    certificate_status: str,
+    suggested_loading: Optional[float] = None,
+) -> MemberOutcome:
+    if free_cover_limit is None or coverage_amount <= free_cover_limit:
+        return MemberOutcome(basis="Guaranteed", covered_amount=coverage_amount)
+    if certificate_status in _APPROVED:
+        return MemberOutcome(basis="Approved", covered_amount=coverage_amount)
+    if certificate_status in _LOADED:
+        return MemberOutcome(basis="Loaded", covered_amount=coverage_amount, loading_pct=float(suggested_loading or 0))
+    if certificate_status in _DECLINED:
+        return MemberOutcome(
+            basis="Restricted", covered_amount=free_cover_limit,
+            note="Restricted to the Free Cover Limit after an underwriting decline",
+        )
+    return MemberOutcome(basis="Pending", covered_amount=coverage_amount,
+                         note="Above the Free Cover Limit — awaiting an underwriting decision")

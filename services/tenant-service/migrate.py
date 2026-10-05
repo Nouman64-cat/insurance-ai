@@ -1231,6 +1231,21 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ALTER TABLE group_member_dependents DROP CONSTRAINT IF EXISTS group_member_dependents_group_member_id_fkey, "
         "ADD CONSTRAINT group_member_dependents_group_member_id_fkey FOREIGN KEY (group_member_id) REFERENCES group_members(id) ON DELETE CASCADE",
     ),
+    # ── Group Life Phase 2 — quote → issuance. group_quotes is a new table (create_all).
+    (
+        "v51a — add issuance / payment / schedule fields to master_policies",
+        "ALTER TABLE master_policies "
+        "ADD COLUMN IF NOT EXISTS issued_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS premium_paid_at TIMESTAMP, "
+        "ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS schedule_document_path VARCHAR(1000)",
+    ),
+    (
+        "v51b — add annual_premium / cover_note to group_members",
+        "ALTER TABLE group_members "
+        "ADD COLUMN IF NOT EXISTS annual_premium DOUBLE PRECISION, "
+        "ADD COLUMN IF NOT EXISTS cover_note VARCHAR(255)",
+    ),
 ]
 
 

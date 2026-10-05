@@ -552,7 +552,10 @@ class MasterPolicy(SQLModel, table=True):
     sum_assured_multiple: float = Field(ge=0)                  # e.g. 24.0 = 24x monthly basic salary
     term_years: int = Field(ge=1, le=40)
     effective_date: date
-    status: str = Field(default="Pending", max_length=50)      # Pending / Active / Review
+    # Pending → Proposed (census confirmed) → Quoted → Accepted → PendingPayment
+    # (issued, premium due) → Active. Declined = employer turned the quote down
+    # (a revised quote can still be generated). See routers/group_policies.py.
+    status: str = Field(default="Pending", max_length=50)
 
     # Guaranteed-issue ceiling — computed from group size + average age the
     # first time a census is confirmed (group_underwriting.compute_free_cover_limit).
@@ -571,6 +574,11 @@ class MasterPolicy(SQLModel, table=True):
     # and renews annually at master-policy level.
     policy_number: Optional[str] = Field(default=None, max_length=50, index=True)
     expiry_date: Optional[date] = Field(default=None)
+    issued_at: Optional[datetime] = Field(default=None)
+    # The employer pays one premium/contribution for the whole scheme.
+    premium_paid_at: Optional[datetime] = Field(default=None)
+    payment_reference: Optional[str] = Field(default=None, max_length=100)
+    schedule_document_path: Optional[str] = Field(default=None, max_length=1000)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -695,6 +703,12 @@ class GroupMember(SQLModel, table=True):
     cover_start_date: Optional[date] = Field(default=None)
     cover_end_date: Optional[date] = Field(default=None)
     status: str = Field(default=GroupMemberStatus.PENDING.value, max_length=20)
+    # This member's share of the scheme premium (set at issuance from the
+    # accepted quote) — the basis for pro-rata endorsement adjustments.
+    annual_premium: Optional[float] = Field(default=None, ge=0)
+    # Why cover differs from the benefit formula, e.g. restricted to the Free
+    # Cover Limit after an above-FCL underwriting decline.
+    cover_note: Optional[str] = Field(default=None, max_length=255)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -715,6 +729,51 @@ class GroupMemberDependent(SQLModel, table=True):
     gender: Optional[str] = Field(default=None, max_length=20)
     covered_amount: float = Field(default=0.0, ge=0)
     status: str = Field(default=GroupMemberStatus.PENDING.value, max_length=20)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class GroupQuoteStatus(str, Enum):
+    OPEN = "Open"               # awaiting the employer
+    ACCEPTED = "Accepted"
+    DECLINED = "Declined"
+    SUPERSEDED = "Superseded"   # replaced by a revised quote
+    EXPIRED = "Expired"
+
+
+class GroupQuote(SQLModel, table=True):
+    """One priced offer for a whole scheme. Versioned per master policy; only
+    the latest Open quote can be accepted. The breakdown is a full snapshot
+    (factors, per-class and per-member allocation) so the accepted terms stay
+    reproducible after the roster changes."""
+    __tablename__ = "group_quotes"
+    __table_args__ = (
+        UniqueConstraint("master_policy_id", "version", name="uq_group_quote_version"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    master_policy_id: UUID = Field(foreign_key="master_policies.id", ondelete="CASCADE", index=True, nullable=False)
+
+    version: int = Field(ge=1)
+    status: str = Field(default=GroupQuoteStatus.OPEN.value, max_length=20)
+    business_type: str = Field(default="Conventional", max_length=30)   # Conventional | Takaful
+    valid_until: date
+
+    member_count: int = Field(ge=0)
+    dependent_count: int = Field(default=0, ge=0)
+    total_sum_assured: float = Field(ge=0)
+    rate_per_mille: float = Field(ge=0)               # effective PKR per 1,000 SA per year
+    risk_premium: float = Field(ge=0)
+    policy_fee: float = Field(default=0.0, ge=0)
+    stamp_duty: float = Field(default=0.0, ge=0)
+    total_premium: float = Field(ge=0)                # annual premium / contribution payable
+    breakdown: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+
+    document_path: Optional[str] = Field(default=None, max_length=1000)
+    decided_at: Optional[datetime] = Field(default=None)
+    decided_by: Optional[str] = Field(default=None, max_length=255)
+    decision_notes: Optional[str] = Field(default=None, max_length=1000)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
