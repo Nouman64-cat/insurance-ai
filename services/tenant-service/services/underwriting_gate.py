@@ -36,6 +36,7 @@ from shared.models.core import (
     CaseWorkflow,
     Customer,
     CustomerEApplication,
+    MedicalExamOrder,
     Policy,
     User,
     VerificationFinding,
@@ -43,7 +44,7 @@ from shared.models.core import (
     WorkflowStateEnum,
 )
 from shared.underwriting.profile import UnderwritingProfile, build_profile
-from shared.underwriting.requirements_rules import determine_requirements
+from shared.underwriting.requirements_rules import apply_medical_exam_order, determine_requirements
 from shared.underwriting.results import VerificationFindingSpec
 from shared.underwriting.verification import verify_profile
 
@@ -231,6 +232,16 @@ async def compute_requirements(
     profile = await build_case_profile(session, tenant_id, case)
     prior = await _prior_findings(session, case.caseld)
     specs = determine_requirements(profile, prior)
+    exam = (await session.exec(
+        select(MedicalExamOrder).where(MedicalExamOrder.case_id == case.caseld)
+    )).first()
+    if exam is not None:
+        specs = apply_medical_exam_order(
+            specs,
+            exam.status.value if hasattr(exam.status, "value") else exam.status,
+            [t.get("code") for t in (exam.required_tests or []) if isinstance(t, dict) and t.get("code")],
+            exam.result_artifact_id,
+        )
 
     existing_rows = {
         row.code: row

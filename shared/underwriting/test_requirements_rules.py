@@ -100,3 +100,30 @@ def test_high_severity_prior_finding_adds_additional_document_requirement():
     )]
     specs = determine_requirements(profile, prior)
     assert any(s.code.startswith("ADDITIONAL_DOCUMENT:") for s in specs)
+
+
+# ── Panel medical exam as evidence ───────────────────────────────────────────
+
+def _missing(code):
+    from shared.underwriting.results import RequirementCategory, RequirementSpec
+    return RequirementSpec(code=code, category=RequirementCategory.MEDICAL, required=True,
+                           status=RequirementStatus.MISSING, reason="r")
+
+
+def test_completed_panel_exam_satisfies_the_tests_it_included():
+    from shared.underwriting.requirements_rules import apply_medical_exam_order
+    specs = [_missing("MEDICAL_EXAMINATION"), _missing("ECG"), _missing("LAB_REPORTS"), _missing("PHYSICIAN_REPORT")]
+    out = {s.code: s.status for s in apply_medical_exam_order(specs, "Completed", ["MER", "ECG"])}
+    assert out["MEDICAL_EXAMINATION"] == RequirementStatus.SATISFIED
+    assert out["ECG"] == RequirementStatus.SATISFIED
+    assert out["LAB_REPORTS"] == RequirementStatus.MISSING  # no lab tests in this exam
+    assert out["PHYSICIAN_REPORT"] == RequirementStatus.MISSING  # never covered by a panel exam
+
+
+def test_waived_exam_waives_and_pending_exam_changes_nothing():
+    from shared.underwriting.requirements_rules import apply_medical_exam_order
+    waived = apply_medical_exam_order([_missing("ECG")], "Waived", ["ECG"])
+    assert waived[0].status == RequirementStatus.WAIVED
+    scheduled = apply_medical_exam_order([_missing("ECG")], "Scheduled", ["ECG"])
+    assert scheduled[0].status == RequirementStatus.MISSING
+    assert requirements_satisfied(apply_medical_exam_order([_missing("ECG")], "Completed", [])) is True

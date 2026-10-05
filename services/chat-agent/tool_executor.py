@@ -1472,8 +1472,8 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
         "__client_execute__": True,
         "kind": "client_execute",
         "tool_call": {
-            "name": "run_risk_assessment", 
-            "args": {"case_id": case_id, "customer": customer, "policy": policy}
+            "name": "run_risk_assessment",
+            "args": {"case_id": case_id, "case_number": case.get("caseNumber"), "customer": customer, "policy": policy}
         }
     }
 

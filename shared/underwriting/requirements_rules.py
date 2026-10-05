@@ -199,3 +199,56 @@ def requirements_satisfied(specs: List[RequirementSpec]) -> bool:
         for spec in specs
         if spec.required
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Panel medical exam (MedicalExamOrder) as evidence
+#
+# A medical exam booked through the panel-clinic flow produces results on the
+# exam order, not necessarily an uploaded artifact per test — so without this
+# a case whose panel exam came back Completed (with an ECG among its tests)
+# was still blocked on "ECG — Missing", while the requirements checklist the
+# user sees reported the exam as done.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Panel test codes (tenant-service underwriting_limits.TEST_CATALOGUE) that
+# each document-style requirement is evidenced by.
+_EXAM_TESTS_FOR_REQUIREMENT: dict[RequirementCode, set[str]] = {
+    RequirementCode.MEDICAL_EXAMINATION: {"MER"},
+    RequirementCode.ECG: {"ECG", "TMT"},
+    RequirementCode.LAB_REPORTS: {"FBS", "URINE_RE", "LIPID", "CBC", "LFT", "RFT", "HBA1C"},
+}
+
+
+def apply_medical_exam_order(
+    specs: List[RequirementSpec],
+    exam_status: Optional[str],
+    test_codes: Optional[List[str]] = None,
+    result_artifact_id: Optional[UUID] = None,
+) -> List[RequirementSpec]:
+    """Mark the medical requirements a panel exam covers as met. A Completed
+    exam satisfies each requirement whose tests were part of it (an exam with
+    no recorded tests is taken as the full panel); a Waived exam waives them.
+    Never downgrades — a requirement already satisfied by a document stays so."""
+    status = (exam_status or "").strip().lower()
+    if status not in ("completed", "waived"):
+        return specs
+    done = {c.upper() for c in (test_codes or [])}
+    out: List[RequirementSpec] = []
+    for spec in specs:
+        try:
+            code = RequirementCode(spec.code)
+        except ValueError:
+            code = None
+        tests = _EXAM_TESTS_FOR_REQUIREMENT.get(code) if code else None
+        covered = tests is not None and (not done or bool(done & tests))
+        if covered and spec.status not in (RequirementStatus.SATISFIED, RequirementStatus.WAIVED):
+            if status == "completed":
+                spec = spec.model_copy(update={
+                    "status": RequirementStatus.SATISFIED,
+                    "satisfied_by_artifact_id": spec.satisfied_by_artifact_id or result_artifact_id,
+                })
+            else:
+                spec = spec.model_copy(update={"status": RequirementStatus.WAIVED})
+        out.append(spec)
+    return out

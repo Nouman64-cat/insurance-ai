@@ -88,6 +88,61 @@ function checkIsUploaded(action: QuickAction, uploadedDocs: string[]): boolean {
   );
 }
 
+// The evidence requirements the risk-assessment gate checks (on top of the
+// 7-step checklist): a readable name, and the document type that satisfies
+// it when it's an upload.
+const EVIDENCE_REQUIREMENTS: Record<string, { label: string; documentType?: string }> = {
+  CNIC: { label: "CNIC", documentType: "CNIC" },
+  SALARY_SLIP: { label: "Salary slip", documentType: "Salary Slip" },
+  BANK_STATEMENT: { label: "Bank statement", documentType: "Bank Statement" },
+  TAX_DOCUMENT: { label: "Tax return", documentType: "Tax Return" },
+  MEDICAL_EXAMINATION: { label: "Medical examination report", documentType: "Medical Report" },
+  ECG: { label: "ECG report", documentType: "ECG Report" },
+  LAB_REPORTS: { label: "Lab reports", documentType: "Lab Report" },
+  PHYSICIAN_REPORT: { label: "Attending physician's report", documentType: "Physician Report" },
+  MEDICAL_QUESTIONNAIRE: { label: "Medical questionnaire (e-application)" },
+};
+
+/** Tool result for a risk assessment the requirements gate refused: names
+ *  each outstanding item and why, and offers the buttons that fix it. */
+function buildRequirementsBlockedResult(gate: any, caseId: string, caseNumber?: string) {
+  const caseRef = caseNumber || caseId;
+  const open = ((gate?.requirements || []) as any[]).filter(
+    (r) => r.required && r.status !== "Satisfied" && r.status !== "Waived"
+  );
+  const nameOf = (code: string) =>
+    EVIDENCE_REQUIREMENTS[code]?.label ||
+    (code.startsWith("ADDITIONAL_DOCUMENT:") ? `Additional document (${code.split(":")[1]})` : code.replace(/_/g, " ").toLowerCase());
+  const lines = open.map((r) => `- **${nameOf(r.code)}** — \`${r.status}\`${r.reason ? `: ${r.reason}` : ""}`);
+  const uploads = Array.from(new Set(open.map((r) => EVIDENCE_REQUIREMENTS[r.code]?.documentType).filter(Boolean))) as string[];
+  const needsQuestionnaire = open.some((r) => r.code === "MEDICAL_QUESTIONNAIRE");
+
+  const message = open.length
+    ? `🚫 **Risk assessment is on hold for case ${caseRef}** — the underwriting evidence check needs ${open.length === 1 ? "one more item" : `${open.length} more items`}:\n\n${lines.join("\n")}\n\n` +
+      `These come from the applicant's age, cover amount and income, on top of the 7-step checklist.\n\n` +
+      `👉 ${uploads.length ? "Upload the missing document" + (uploads.length > 1 ? "s" : "") + " below" : "Resolve the items above"}` +
+      `, or open the case to review them (an underwriter can waive one from the Requirements panel). Then run the assessment again.`
+    : `🚫 **Risk assessment is on hold for case ${caseRef}** — the underwriting evidence check didn't pass. Open the case to see the Requirements panel, then run the assessment again.`;
+
+  const quick_actions: QuickAction[] = [];
+  if (uploads.length) {
+    quick_actions.push({
+      label: uploads.length === 1 ? `Upload ${uploads[0]}` : "Upload missing documents",
+      actionType: "upload",
+      payload: JSON.stringify({ case_id: caseId, case_number: caseNumber, document_types: uploads }),
+    });
+  }
+  if (needsQuestionnaire) {
+    quick_actions.push({ label: "Send e-application link", actionType: "submit", payload: `Generate e-application link for case ${caseRef}` });
+  }
+  quick_actions.push(
+    { label: "Open case requirements", actionType: "embed", payload: `case/${caseId}` },
+    { label: "Run risk assessment again", actionType: "submit", payload: `Run risk assessment for case ${caseRef}` },
+  );
+
+  return { success: false, requirements_pending: true, message, outstanding_requirements: open, quick_actions };
+}
+
 function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickAction[] {
   if (!lastMessage) {
     return [
@@ -1090,7 +1145,8 @@ export function CopilotInterface() {
           });
         };
 
-        while (true) {
+        let blockedGate: any = null;
+        stream: while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           buffer += decoder.decode(value, { stream: true });
@@ -1129,9 +1185,8 @@ export function CopilotInterface() {
               }
             } else if (evt.type === "pending_requirements") {
                updateStep("decision", "Mandatory requirements not yet satisfied", "error");
-               throw new Error(
-                 "Mandatory underwriting requirements are not yet satisfied for this case — check the Requirements panel on the case page."
-               );
+               blockedGate = evt.data || {};
+               break stream;
             } else if (evt.type === "invalid" || evt.type === "error") {
                updateStep("error", "Assessment failed", "error");
                const errMsg = evt.errors?.length ? evt.errors.join("; ") : (evt.message || "Validation failed");
@@ -1140,6 +1195,11 @@ export function CopilotInterface() {
           }
         }
         
+        if (blockedGate) {
+          resolveInterrupt(buildRequirementsBlockedResult(blockedGate, args.case_id, args.case_number));
+          return;
+        }
+
         const summary = `I've completed the underwriting risk assessment for **${args.case_id}**.\n- Medical: ${finalScores.medical_score ?? '—'}/100\n- Financial: ${finalScores.financial_score ?? '—'}/100\n- Fraud: ${finalScores.fraud_probability ?? '—'}\n- **Decision: ${finalDecision}**\n\nWould you like to **proceed** with these results, or **decline**?`;
         const results_route = `case/${args.case_id}`;
 

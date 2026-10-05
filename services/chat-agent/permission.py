@@ -561,8 +561,32 @@ def get_tools_for_role(role: str, platform: str = "web") -> list:
     return [t for t in ALL_TOOLS if is_role_allowed(t.name, role, platform)]
 
 
+# Steps of the guided underwriting → issuance automation. Each one is started
+# by the user clicking that step (a quick action or journey node), so the click
+# *is* the consent — a second "Ready to <step> — proceed?" on every gate just
+# doubles the clicks. They stay in MUTATING_TOOLS, so RBAC is unchanged; the
+# irreversible forks (demo data, send to underwriting) are warned about in the
+# message that offers them, and flagged gates ask their own "continue anyway?".
+WORKFLOW_STEP_TOOLS = {
+    "quick_start_workflow",
+    "verify_e_application",
+    "submit_agent_confidential_report",
+    "run_compliance_screening",
+    "override_compliance_screening",
+    "process_initial_premium_payment",
+    "run_insurance_history_check",
+    "assess_medical_examination",
+    "run_pre_underwriting_clearance",
+    "run_risk_assessment",
+    "approve_case",
+    "run_pre_issuance_verification",
+    "issue_policy",
+    "confirm_policy_payment",
+}
+
+
 def requires_confirmation(tool_name: str) -> bool:
-    if tool_name == "run_risk_assessment":
+    if tool_name in WORKFLOW_STEP_TOOLS:
         return False
     return tool_name in MUTATING_TOOLS
 
