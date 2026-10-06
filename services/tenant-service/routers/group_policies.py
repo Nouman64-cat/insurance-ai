@@ -16,20 +16,21 @@ under it and goes live with the scheme. Individual issuance
 per-policy payment) don't apply to an employer-paid group contract.
 """
 
+import asyncio
 import os
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from group_benefits import completed_years_of_service
-from group_pricing import PricedLife, price_group
+from group_pricing import PricedLife, price_group, takaful_quote_fields, takaful_split
 from group_underwriting import MemberOutcome, member_underwriting_outcome, normalize_cnic
 from routers.organizations import (
     _FALLBACK_GROUP_RATE,
@@ -39,6 +40,7 @@ from routers.organizations import (
     _master_policy_read,
 )
 from routers.pre_issuance import BeneficiariesReplace
+from routers.policies import _publish_policy_event
 from routers.users import verify_admin
 from schemas import (
     GroupDependentCreate,
@@ -49,12 +51,14 @@ from schemas import (
     GroupQuoteDecision,
     GroupQuoteRead,
 )
+from services.group_claims import LIFE, coverage_schedule
 from services.group_documents import generate_group_quote, generate_master_schedule
 from shared.models.core import (
     Beneficiary,
     BeneficiaryVersion,
     Customer,
     GroupBenefitClass,
+    GroupClassCoverage,
     GroupMember,
     GroupMemberDependent,
     GroupMemberStatus,
@@ -63,6 +67,7 @@ from shared.models.core import (
     InsurancePlan,
     MasterPolicy,
     Policy,
+    PolicyEvent,
     PolicyStatusEnum,
     ProfileStatusEnum,
     RiskAssessment,
@@ -132,16 +137,34 @@ async def _latest_loading(policy_id: UUID, session: AsyncSession) -> Optional[fl
     return ra.suggested_loading if ra is not None else None
 
 
+# Certificate statuses after issuance. The underwriting decision has already been
+# applied to member.coverage_amount by then, so these read as "approved" (or
+# "loaded" if the decision carried a loading) rather than "awaiting a decision".
+_IN_FORCE = {PolicyStatusEnum.PENDING_PAYMENT.value, PolicyStatusEnum.ACTIVE.value}
+
+
 async def _outcome(mp: MasterPolicy, member: GroupMember, policy: Optional[Policy], session: AsyncSession) -> MemberOutcome:
     certificate_status = _st(policy) if policy is not None else PolicyStatusEnum.QUOTED.value
-    loading = await _latest_loading(policy.id, session) if policy is not None and certificate_status == "AcceptedWithLoadings" else None
+    loading = None
+    if policy is not None and certificate_status in _IN_FORCE | {"AcceptedWithLoadings"}:
+        loading = await _latest_loading(policy.id, session)
+    if certificate_status in _IN_FORCE:
+        certificate_status = "AcceptedWithLoadings" if loading and loading > 0 else PolicyStatusEnum.APPROVED.value
+    elif certificate_status != "AcceptedWithLoadings":
+        loading = None
     return member_underwriting_outcome(member.coverage_amount, mp.free_cover_limit, certificate_status, loading)
 
 
-async def _scheme_lives(mp: MasterPolicy, session: AsyncSession):
+async def _scheme_lives(mp: MasterPolicy, session: AsyncSession, as_of: Optional[date] = None):
     """(priced lives, per-member outcomes, pending members). Ages are taken at
-    the scheme's effective date; restricted members are priced at the FCL."""
+    the scheme's effective date (or `as_of`, which a renewal sets to the start of
+    the next period); restricted members are priced at the FCL."""
+    as_of = as_of or mp.effective_date
     classes = {c.id: c.name for c in await _benefit_classes(mp.id, session)}
+    coverages: Dict[UUID, list] = {}
+    if classes:
+        for row in (await session.exec(select(GroupClassCoverage).where(GroupClassCoverage.benefit_class_id.in_(list(classes))))).all():
+            coverages.setdefault(row.benefit_class_id, []).append(row)
     lives: List[PricedLife] = []
     outcomes: List[dict] = []
     pending: List[str] = []
@@ -154,8 +177,11 @@ async def _scheme_lives(mp: MasterPolicy, session: AsyncSession):
         class_name = classes.get(member.benefit_class_id)
         lives.append(PricedLife(
             key=str(member.id), kind="member", benefit_class=class_name,
-            age=_age_on(customer.dob, mp.effective_date), sum_assured=outcome.covered_amount,
+            age=_age_on(customer.dob, as_of), sum_assured=outcome.covered_amount,
             occupation=customer.occupation, loading_pct=outcome.loading_pct,
+            # Benefits beyond Life, as a % of the cover this member actually carries (so a member
+            # restricted to the Free Cover Limit has their riders scaled with it).
+            riders={k: v for k, v in coverage_schedule(outcome.covered_amount, coverages.get(member.benefit_class_id, [])).items() if k != LIFE},
         ))
         dependents = (await session.exec(
             select(GroupMemberDependent).where(
@@ -166,7 +192,7 @@ async def _scheme_lives(mp: MasterPolicy, session: AsyncSession):
         for d in dependents:
             lives.append(PricedLife(
                 key=str(d.id), kind="dependent", benefit_class=class_name,
-                age=_age_on(d.dob, mp.effective_date), sum_assured=d.covered_amount,
+                age=_age_on(d.dob, as_of), sum_assured=d.covered_amount,
             ))
     return lives, outcomes, pending
 
@@ -212,6 +238,26 @@ async def _next_master_policy_number(session: AsyncSession, tenant_id: UUID, bus
     return f"{prefix}{highest + 1:04d}"
 
 
+# Concurrent Kafka sends per request: a scheme can have hundreds of certificates.
+_PUBLISH_CONCURRENCY = 20
+
+
+async def _publish_certificate_events(request: Optional[Request], emitted: List[Tuple[Policy, PolicyEvent]]) -> None:
+    """Mirror the certificate transitions of a committed issue/payment onto the
+    policy lifecycle topic, as individual issuance does. Best-effort, after the
+    commit: the PolicyEvent rows are the source of truth, so a broker outage
+    never fails (or rolls back) the issuance."""
+    if not emitted:
+        return
+    gate = asyncio.Semaphore(_PUBLISH_CONCURRENCY)
+
+    async def _one(policy: Policy, event: PolicyEvent) -> None:
+        async with gate:
+            await _publish_policy_event(request, policy, event)
+
+    await asyncio.gather(*(_one(p, e) for p, e in emitted))
+
+
 def _add_years(d: date, years: int) -> date:
     try:
         return d.replace(year=d.year + years)
@@ -247,7 +293,13 @@ async def list_group_members(tenant_id: UUID, org_id: UUID, mp_id: UUID, session
     mp = await _get_master_policy(tenant_id, org_id, mp_id, session)
     classes = {c.id: c.name for c in await _benefit_classes(mp_id, session)}
     out = []
-    for member, customer, policy in await _member_rows(mp, session):
+    rows = await _member_rows(mp, session)
+    certificate_ids = [m.policy_id for m, _c, _p in rows if m.policy_id]
+    nominations = dict((await session.exec(
+        select(Beneficiary.policy_id, func.count()).where(Beneficiary.policy_id.in_(certificate_ids))
+        .group_by(Beneficiary.policy_id)
+    )).all()) if certificate_ids else {}
+    for member, customer, policy in rows:
         outcome = await _outcome(mp, member, policy, session)
         dependents = (await session.exec(
             select(GroupMemberDependent.id).where(GroupMemberDependent.group_member_id == member.id)
@@ -262,6 +314,7 @@ async def list_group_members(tenant_id: UUID, org_id: UUID, mp_id: UUID, session
             basic_monthly_salary=member.basic_monthly_salary, coverage_amount=member.coverage_amount,
             status=member.status, annual_premium=member.annual_premium, cover_note=member.cover_note,
             underwriting_basis=outcome.basis, dependents=len(dependents),
+            nominations=nominations.get(member.policy_id, 0),
         ))
     return out
 
@@ -453,6 +506,8 @@ async def generate_group_quote_endpoint(tenant_id: UUID, org_id: UUID, mp_id: UU
     plan = await _plan_for(mp, session)
     business_type = _business_type(plan)
     pricing = price_group(lives, plan.base_premium_rate if plan is not None else _FALLBACK_GROUP_RATE)
+    split = takaful_split(pricing.risk_premium, plan.wakala_fee_pct if plan is not None else None,
+                          plan.retakaful_share_pct if plan is not None else None) if business_type == "Takaful" else None
 
     previous = (await session.exec(select(GroupQuote).where(GroupQuote.master_policy_id == mp.id))).all()
     for q in previous:
@@ -463,6 +518,8 @@ async def generate_group_quote_endpoint(tenant_id: UUID, org_id: UUID, mp_id: UU
     breakdown = pricing.model_dump()
     breakdown["covered"] = _roster_fingerprint(lives)
     breakdown["adjusted_members"] = [o for o in outcomes if o["basis"] != "Guaranteed"]
+    if split is not None:
+        breakdown["takaful"] = split.model_dump()
     quote = GroupQuote(
         tenant_id=tenant_id, master_policy_id=mp.id,
         version=max((q.version for q in previous), default=0) + 1,
@@ -472,6 +529,7 @@ async def generate_group_quote_endpoint(tenant_id: UUID, org_id: UUID, mp_id: UU
         total_sum_assured=pricing.total_sum_assured, rate_per_mille=pricing.rate_per_mille,
         risk_premium=pricing.risk_premium, policy_fee=pricing.policy_fee,
         stamp_duty=pricing.stamp_duty, total_premium=pricing.total_premium,
+        **takaful_quote_fields(split),
         breakdown=breakdown,
     )
     session.add(quote)
@@ -584,7 +642,8 @@ async def _accepted_quote(mp: MasterPolicy, session: AsyncSession) -> GroupQuote
     response_model=GroupIssueResponse,
     dependencies=[Depends(verify_admin)],
 )
-async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, session: AsyncSession = Depends(get_session)):
+async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID,
+                              session: AsyncSession = Depends(get_session), request: Request = None):  # type: ignore[assignment]
     """Issue the contract on the accepted quote's terms: master policy number,
     one numbered certificate per member, schedule document. Cover is not live
     until the employer's premium is recorded (PendingPayment)."""
@@ -604,6 +663,7 @@ async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, sessio
     classes = await _benefit_classes(mp.id, session)
     class_names = {c.id: c.name for c in classes}
 
+    emitted: List[Tuple[Policy, PolicyEvent]] = []
     try:
         number = await _next_master_policy_number(session, tenant_id, business_type)
         members_doc, dependents_doc = [], []
@@ -613,8 +673,9 @@ async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, sessio
             cover = covered[key]
             certificate = f"{number}/{seq:04d}"
             for step in _ISSUE_PATH.get(_st(policy), []):
-                apply_transition(session, policy, step, event_type="GroupCertificateIssued", actor="system",
-                                 detail={"master_policy_number": number, "certificate": certificate})
+                emitted.append((policy, apply_transition(
+                    session, policy, step, event_type="GroupCertificateIssued", actor="system",
+                    detail={"master_policy_number": number, "certificate": certificate})))
             if _st(policy) != PolicyStatusEnum.PENDING_PAYMENT.value:
                 raise IllegalStateTransition(f"Certificate for {customer.name} is {_st(policy)} and can't be issued.")
             policy.policy_number = certificate
@@ -657,6 +718,7 @@ async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, sessio
             "classes": [{"name": c.name, "basis_text": _basis_text(c)} for c in classes],
             "members": members_doc,
             "dependents": dependents_doc,
+            "takaful": quote.breakdown.get("takaful"),
         })
         session.add(mp)
         await session.commit()
@@ -664,6 +726,7 @@ async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, sessio
         await session.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
+    await _publish_certificate_events(request, emitted)
     await session.refresh(mp)
     return GroupIssueResponse(
         master_policy=await _master_policy_read(mp, session),
@@ -679,7 +742,7 @@ async def issue_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, sessio
     dependencies=[Depends(verify_admin)],
 )
 async def record_group_payment(tenant_id: UUID, org_id: UUID, mp_id: UUID, body: GroupPaymentCreate,
-                               session: AsyncSession = Depends(get_session)):
+                               session: AsyncSession = Depends(get_session), request: Request = None):  # type: ignore[assignment]
     """Record the employer's premium/contribution. Full payment binds cover
     for the whole scheme: master policy, every certificate, member and
     dependant go Active, and the organization becomes a policyholder."""
@@ -694,11 +757,13 @@ async def record_group_payment(tenant_id: UUID, org_id: UUID, mp_id: UUID, body:
             f"Payment of PKR {body.amount:,.2f} is less than the annual amount due (PKR {quote.total_premium:,.2f}).",
         )
 
+    emitted: List[Tuple[Policy, PolicyEvent]] = []
     try:
         rows = await _member_rows(mp, session)
         for member, _customer, policy in rows:
-            apply_transition(session, policy, PolicyStatusEnum.ACTIVE, event_type="GroupCoverBound", actor="system",
-                             detail={"master_policy_number": mp.policy_number, "payment_reference": body.reference})
+            emitted.append((policy, apply_transition(
+                session, policy, PolicyStatusEnum.ACTIVE, event_type="GroupCoverBound", actor="system",
+                detail={"master_policy_number": mp.policy_number, "payment_reference": body.reference})))
             member.status = GroupMemberStatus.ACTIVE.value
             session.add(member)
             for d in (await session.exec(
@@ -716,6 +781,7 @@ async def record_group_payment(tenant_id: UUID, org_id: UUID, mp_id: UUID, body:
         await session.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
 
+    await _publish_certificate_events(request, emitted)
     await session.refresh(mp)
     return GroupIssueResponse(
         master_policy=await _master_policy_read(mp, session),

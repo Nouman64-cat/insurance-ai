@@ -9,10 +9,10 @@ Tracking doc for adding Adamjee-style Group Life and Group Family Takaful automa
 | 0 | Safety net | Done (E2E journey test deferred) |
 | 1 | Data foundation | Done |
 | 2 | Quote → issuance backend | Done |
-| 3 | Agent automation (group journey) | Not started |
-| 4 | Endorsements | Not started |
-| 5 | Claims & renewal | Not started |
-| 6 | Takaful & extra products | Not started |
+| 3 | Agent automation (group journey) | Done (not yet exercised through a live LLM chat) |
+| 4 | Endorsements | Done |
+| 5 | Claims & renewal | Done (renewal scheduler is opt-in) |
+| 6 | Takaful & extra products | Done (rates and splits are placeholders — see decision log) |
 
 ---
 
@@ -100,8 +100,11 @@ docker compose exec tenant-service python test_group_benefits.py
 docker compose exec tenant-service python test_group_census.py
 docker compose exec tenant-service python test_group_pricing.py
 docker compose exec tenant-service python test_group_issuance.py
+docker compose exec tenant-service python test_group_backfill.py
+docker compose exec tenant-service python test_group_census_upload.py
 docker compose exec tenant-service python test_underwriting_gate.py
 docker compose exec chat-agent python test_journey_isolation.py
+docker compose exec chat-agent python test_group_journey.py
 ```
 
 - [x] Guard `renewal_scheduler.py`: new `renewal_candidates_query()` excludes `master_policy_id IS NOT NULL` (the scheduler is currently disabled in `main.py`; the guard is in place for when it's re-enabled)
@@ -114,7 +117,7 @@ docker compose exec chat-agent python test_journey_isolation.py
   - `services/insurance_history.py` → **keep including group cover**: an applicant's group cover is real in-force exposure for individual underwriting
   - per-customer queries in `customers.py`, `families.py`, `organizations.py`, `cases.py` → OK
 - [ ] Not covered (needs full stack + JWT; deferred): end-to-end run of `journey.py` intake→closure, individual quote via `api-gateway/quote_worker.py`, full `routers/families.py` flows. The isolation tests cover the shared touch points these depend on.
-- [ ] `test_registries.py` can't run yet: pytest isn't installed in the chat-agent container or locally
+- [x] `test_registries.py` runs once pytest is installed (`docker compose exec chat-agent pip install pytest` — not in requirements.txt, so it is lost when the image is rebuilt)
 
 ## Phase 1 — Data foundation
 
@@ -129,7 +132,7 @@ docker compose exec chat-agent python test_journey_isolation.py
 - [x] Census confirm reuses an existing `Customer` by CNIC (profile untouched) and writes a `GroupMember` per row; outcome adds `group_member_id`, `benefit_class`, `reused_existing_customer`
 - [x] Roster, employee counts and org case list include reused members (but not their individual cases); employee removal and org deletion keep reused customers and their individual policies
 - [x] `test_group_benefits.py` (9 unit tests) and `test_group_census.py` (6 integration tests)
-- [ ] Frontend census form still sends only the original 6 columns — new columns + plan picker land with the Phase 3 UI tabs
+- [x] Plan picker and the new census columns: delivered in Phase 3 (create-scheme modal + CSV/XLSX upload). The manual census form on the Overview tab still sends only the original 6 columns
 
 ### Census template
 
@@ -162,52 +165,58 @@ Master policy lifecycle: `Pending → Proposed (census) → Quoted → Accepted 
 - [x] Dependants: `POST/GET/DELETE …/members/{id}/dependents` (Spouse/Child/Parent, cover ≤ member's, editable until a quote is accepted; priced and listed on the schedule)
 - [x] Nominations: `PUT/GET …/members/{id}/beneficiaries` — same `Beneficiary`/`BeneficiaryVersion` rows as individual, allowed while cover is in force (the individual endpoint is Stage-A-only, which excluded every group certificate)
 - [x] `GET …/members`: roster with class, certificate number/status, underwriting basis, premium share, dependants
-- [x] `test_group_pricing.py` (7 unit) and `test_group_issuance.py` (5 integration, incl. a full HTTP run through FastAPI)
-- [ ] Takaful Wakala fee / PTF split → Phase 6 (Takaful quotes already say "contribution" and number `GT-`)
-- [ ] Group transitions record `PolicyEvent`s but aren't published to Kafka (individual issuance does via `_publish_policy_event`)
-- [ ] Legacy dev master policies already marked `Active` (seed data) have no policy number / quote — left as is
+- [x] `test_group_pricing.py` (9 unit), `test_group_issuance.py` (8 integration, incl. a full HTTP run through FastAPI, the Takaful split, and Kafka publishing with a fake producer) and `test_group_backfill.py` (6 integration)
+- [x] Takaful Wakala fee / PTF split: `group_pricing.takaful_split()` allocates the **risk contribution** between the operator's Wakala fee and the Participants' Takaful Fund; policy fee and stamp duty are charges and sit outside the split, so the total doesn't change. Rate comes from `InsurancePlan.wakala_fee_pct` (new nullable column, seeded 30% on `GROUP_FAMILY_TAKAFUL` — a **placeholder**, set the real figure per plan), falling back to `TAKAFUL_WAKALA_FEE_PCT` (default 30). Stored on `GroupQuote.wakala_fee_pct / wakala_fee / ptf_allocation` (+ `breakdown["takaful"]`), returned by the quote API, and printed on the quote and schedule PDFs. Migrations v51c–v51e. Retakaful share and surplus/deficit reporting stay in Phase 6.
+- [x] Group transitions published to Kafka: `issue` (`GroupCertificateIssued`) and `payments` (`GroupCoverBound`) publish each certificate's `PolicyEvent` to `insurance.policy.lifecycle.v1` after the commit, through the same `_publish_policy_event` individual issuance uses (up to 20 sends in flight). Best-effort: a broker outage never fails or rolls back an issuance. Quote/accept/decline only change the master policy, which has no `PolicyEvent`, so there is nothing to publish for them.
+- [x] Legacy `Active` master policies: `group_backfill.py` (dry run by default, `--apply` to write) allocates the master policy number and expiry, numbers certificates that have none (existing numbers kept), fills members' `annual_premium`, and reconstructs an Accepted v1 quote (`breakdown["legacy_backfill"]`, `decided_by = "legacy-backfill"`) from the current roster. Cover, status and money are untouched. Schemes with an undecided above-FCL member are skipped; an empty roster is numbered but gets no quote. Idempotent.
+- [x] `_outcome()` now reads certificates in `PendingPayment` / `Active` as already decided (Approved, or Loaded if the decision carried a loading) instead of "awaiting a decision" — without this an issued scheme with above-FCL members couldn't be re-priced, which Phase 4 endorsements and the backfill both need.
 
 ## Phase 3 — Agent automation
 
-- [ ] `state.py`: `group_*` namespace (stage, organization_id, master_policy_id, quote, missing items, outcome, audit, error)
-- [ ] `group_journey.py`: nodes `g_scheme` … `g_enroll`, `g_resume`, `g_finish`, routers, `register_group_journey`
-- [ ] `tools.py`: `start_group_journey`, `continue_group_journey`, granular scheme/census/quote/issue tools
-- [ ] Census upload via `CLIENT_EXECUTED_TOOLS` (CSV/XLSX)
-- [ ] `toolsets.py`: new `group` domain + keywords
-- [ ] `permission.py`: role/platform permissions, required args, progress labels
-- [ ] `graph.py`: `GROUP_JOURNEY_TOOLS` dispatch block, prompt section, registration
-- [ ] After `add_organization`, offer a "Start group scheme" chip
-- [ ] Demo-mode census generator (random, never repeating)
-- [ ] Process-graph markers `stage:group_*` rendered in UI
-- [ ] Frontend `app/admin/organizations/[id]`: tabs for Scheme, Classes, Members, Quote
+- [x] `state.py`: `group_*` namespace (stage, organization, master policy, plan/business type, quote, scheme snapshot, pending members, census errors, missing nominations, outcome, audit, error, blocking chips) + `requires_group_intervention`
+- [x] `group_journey.py`: nodes `g_scheme` … `g_enroll`, `g_resume`, `g_finish`, routers, `register_group_journey`. Every stage reads the scheme's real status and skips itself when the scheme is already past it; `g_resume` re-derives the stage from that status, so a census upload, an underwriting decision, an acceptance or a payment made anywhere (portal, chip, standalone tool) is picked up. A declined quote waits for a revised one — it is never re-quoted automatically
+- [x] `group_tools.py` (new module, registered by import at the foot of `tool_executor.py`) + `tools.py`: `start_group_journey`, `continue_group_journey` and 11 granular tools — `create_group_scheme`, `add_group_benefit_class`, `submit_group_census`, `upload_group_census`, `get_group_scheme_status`, `list_group_members`, `generate_group_quote`, `accept_group_quote`, `decline_group_quote`, `issue_group_policy`, `record_group_payment`
+- [x] Census upload: `upload_group_census` resolves the organization and master policy server-side, then returns the `__client_execute__` marker (the `upload_claim_document` pattern — the browser can't turn a company name into a master policy id, so it isn't in `CLIENT_EXECUTED_TOOLS`). The browser half is `frontend/components/group/GroupCensusClientTool.tsx`: file picker → `POST …/census/parse` → validate → confirm, then hands the outcome back to the agent (a closed picker resumes it too). New tenant-service endpoint `POST …/master-policies/{mp}/census/parse` + `services/census_file.py` read CSV and XLSX with the standard library only (header aliases, Excel date cells, numeric CNICs, 5 MB / 5,000-row limits)
+- [x] `toolsets.py`: `group` domain + keywords (bound only when the conversation is about group schemes)
+- [x] `permission.py`: `GROUP_TOOLS` is **admin-only, read tools included** (tenant-service gates every group endpoint on `verify_admin`; without the guard the read-only tools sit in `SAFE_TOOLS`, which hands them to Viewer). `start_group_journey` is one confirmation like the other journeys; `generate_group_quote` is a guided step; `record_group_payment` requires a bank `reference` outside demo mode (demo generates one). Required args, progress labels added
+- [x] `graph.py`: `GROUP_JOURNEY_TOOLS` dispatch block, `group` prompt section, registration. Employer acceptance is never automatic — the stage always waits
+- [x] After `add_organization`, a "Start group scheme" chip (admins only)
+- [x] Demo-mode census generator (`generate_demo_census`): random names, CNICs, ages, pay and hire dates on every call, never repeating a CNIC; covers sit below the lowest Free Cover Limit a demo group can get, so a demo scheme is guaranteed-issue and never calls the risk engine unless `above_fcl_count` asks for senior staff above it. Demo classes + census are demo-only (`ENV_VAR=demo`); outside it the journey stops for the real census
+- [x] Process-graph markers `stage:group_*`: each node emits `journey_done` / `journey_next`, which `routers/chat.py` already renders as steps (no frontend change was needed)
+- [x] Frontend `app/admin/organizations/[id]`: tabs Overview (the existing page, unchanged) · Scheme · Classes · Members · Quote, deep-linkable with `?tab=` (the chat navigates there). New components in `frontend/components/group/`: scheme pipeline + issue + payment + schedule PDF; benefit-class list/add/delete; members roster (paged, searchable) with a CSV/XLSX census uploader and a drawer for dependants and nominees; quote generate/revise/accept/decline/PDF with the Takaful split. The create-scheme modal now has the plan picker (Group Life / SME / Group Family Takaful)
+- [x] Roster API now returns `nominations` per member (one grouped query) for the "missing nominee" follow-up
+- [x] Tests: `test_group_journey.py` (19, chat-agent: the real graph edges against an in-memory tenant API, demo and prod), `test_registries.py` now runs (324 passing with the isolation tests; install pytest in the container first), `test_journey_isolation.py` pins the group nodes, `test_group_census_upload.py` (6). The journey was also run end to end against a real tenant-service on a scratch database: demo Takaful scheme → quote with the Wakala/PTF split → accept → issue → payment → 12 active members, 48 lifecycle events published; prod stopped at the census as designed
+- [ ] Not covered: a live conversation through the LLM and the chat UI (no model credits / browser session available while building); the browser census picker was verified with a temporary probe page and a stubbed API, the tabs with a stubbed API
+- [ ] The Overview tab's manual census form still sends the original 6 columns — the new columns arrive through file upload
+- [ ] Employer acceptance is an admin action (tab or chat); a link the employer can use themselves is still an open question (below)
 
 ## Phase 4 — Endorsements
 
-- [ ] `services/group_endorsement_engine.py`: ADD / DELETE / CHANGE (salary, grade, class)
-- [ ] Pro-rata premium/contribution delta; FCL check on additions (above-FCL → UW case)
-- [ ] Certificate issue / cancel per member; endorsement document
-- [ ] Agent tools: `add_group_members`, `remove_group_members`, `change_group_member`
-- [ ] Frontend Endorsements tab
+- [x] `services/group_endorsement_engine.py`: ADD / DELETE / CHANGE (salary, grade, designation, class, loan balance). Pure helpers (`pro_rata`, `adjustment_totals`, `next_certificate_sequence`) are unit-tested without a database; `preview_endorsement` prices without writing, `create_endorsement` applies
+- [x] Pro-rata premium/contribution delta (days remaining counted inclusively, stamp duty included, Takaful delta split into Wakala / PTF / retakaful); FCL check on additions and increases — above-FCL lines wait as `PendingUnderwriting` and `resolve_endorsement` applies them once the policy status / Case is decided
+- [x] Certificate issue / cancel per member (certificate numbers are never reused after a removal); endorsement PDF (`generate_group_endorsement`); settlement Due → Settled with a bank reference. Table `group_endorsements`, endpoints under `.../master-policies/{mp}/endorsements` (preview, create, list, detail, resolve, settle, document)
+- [x] Agent tools: `preview_group_endorsement`, `add_group_members`, `remove_group_members`, `change_group_member`, `list_group_endorsements`, `resolve_group_endorsement`, `settle_group_endorsement` (preview first; members are named, never UUIDs)
+- [x] Frontend Endorsements tab (new endorsement with preview, history, settle, resolve, PDF)
+- `enroll_census_rows` was extracted from `confirm_employee_census` so enrolment and ADD share one code path; `confirm_employee_census` behaves as before.
 
 ## Phase 5 — Claims & renewal
 
-- [ ] Claim document requirements branch for group certificates (salary slip, employer certificate, death certificate, CNICs)
-- [ ] Payout split from `Beneficiary.share_pct` with override hook
-- [ ] Dependent claims only when `GroupMemberDependent` covers the person
-- [ ] `services/group_renewal.py`: group renewal scheduler (60 days before expiry)
-- [ ] Census refresh + experience rating (claims ratio) + re-quote → employer acceptance
-- [ ] Agent tool: `start_group_renewal`
-- [ ] Frontend Claims and Renewals tabs
+- [x] Claim document requirements branch for group certificates (`services/group_claims.py`: `GROUP_CLAIM_DOCUMENTS` by benefit — death adds the death certificate, employer certificate, salary slip and the nominees' CNICs; disability / continuation have their own lists), exposed through `GET /claims/{id}/group-context`
+- [x] Payout split from `Beneficiary.share_pct` to the paisa, with `SPLIT_RULES` / `register_split_rule` as the override hook for policy wording, plus a reasoned manual override (must total 100%); minors are paid to a guardian and a minor without one blocks the payout; no nominee on file pays the claimant only after explicit confirmation
+- [x] Dependent claims only when a `GroupMemberDependent` covers the person (and are paid to the employee); eligibility also checks cover dates, certificate status and the rider schedule
+- [x] `services/group_renewal.py`: scheduler opens renewals `GROUP_RENEWAL_LEAD_DAYS` (60) before expiry and lapses forgotten ones; **opt-in** with `GROUP_RENEWAL_SCHEDULER=true`. An admin can also start one up to `GROUP_RENEWAL_WINDOW_DAYS` (120) ahead; `POST /tenants/{t}/group-renewals/run` runs a cycle by hand
+- [x] Census refresh (joiners / changes applied as endorsements, leavers only when asked) + experience rating + re-quote → employer acceptance → payment starts the next period. The renewal quote is tied to the renewal (`GroupQuote.renewal_id`); accepting never changes `MasterPolicy.status`
+- [x] Agent tools: `start_group_renewal` (opens, optionally refreshes the census, prices), `get_group_renewal`, `accept_group_renewal`, `decline_group_renewal`, `record_group_renewal_payment`; claims: `register_group_claim`, `list_group_claims`, `preview_group_claim_payout`, `pay_group_claim`
+- [x] Frontend Claims tab (register for a member or dependant, document checklist, payout split with override, pay) and Renewals tab (experience card, workforce refresh with preview, quote, accept / decline, payment, PDF, history)
+- Claims approval and document upload stay in the existing Claims module; the group tab links to it. `open_claim`, `assert_claim_payable` and `settle_claim_with_payouts` were extracted from `routers/claims.py` and the individual endpoints behave as before.
 
 ## Phase 6 — Takaful & extra products
 
-- [ ] Takaful fields: Wakala fee %, PTF allocation, Retakaful share
-- [ ] Contribution terminology in quotes, schedules and documents
-- [ ] Coverages: Accidental Death, Disability, Pay Continuation, Fee Continuation
-- [ ] Group Credit Life plan
-- [ ] PTF surplus/deficit reporting (stretch)
-
----
+- [x] Takaful fields: Wakala fee %, PTF allocation and Retakaful share (`InsurancePlan.retakaful_share_pct`, `GroupQuote.retakaful_share_pct / retakaful_contribution`; retakaful is a share of the PTF allocation) on the quote, schedule, renewal quote and endorsement deltas
+- [x] Contribution terminology: Takaful quotes, schedules, renewal quotes and endorsement documents say "Contribution", conventional ones "Premium" (covered by a test that reads the generated PDF text)
+- [x] Coverages: Accidental Death, Disability, Pay Continuation, Fee Continuation as `GroupClassCoverage` rows (percent of the member's life cover, optional cap), priced flat per mille (`RIDER_RATES_PER_MILLE`) into the quote, `breakdown.by_coverage`, endorsements and claim eligibility. Endpoints `POST/DELETE .../benefit-classes/{class}/coverages`; adding one withdraws an open quote; locked once the quote is accepted. Classes UI has the rider editor; chat has `add_group_class_coverage` and a `coverages` field on `add_group_benefit_class`
+- [x] Group Credit Life plan (`GROUP_CREDIT_LIFE`, seeded; existing tenants need `python seeds/insurance_plans_seed.py --all`): new `LoanBalance` basis — cover is each borrower's `loan_amount` (census column + `GroupMember.loan_amount`), capped by the class maximum, and a CHANGE endorsement re-bases it after repayments
+- [x] PTF surplus/deficit reporting: `GET .../master-policies/{mp}/ptf-report` (Takaful only) per period — Wakala fee, fund, retakaful, claims incurred / paid / reserved, result — shown on the Scheme tab. Claims are counted gross; Qard Hassan and surplus distribution are noted, not modelled
 
 ## Open questions
 
@@ -227,3 +236,26 @@ Master policy lifecycle: `Pending → Proposed (census) → Quoted → Accepted 
 | 2026-10-06 | Group issuance is its own endpoint; individual `POST /policies/{id}/issue` gates (E-App, IPP, per-policy payment) don't apply to an employer-paid contract |
 | 2026-10-06 | Above-FCL decline restricts cover to the FCL rather than excluding the member |
 | 2026-10-06 | Benefit-class endpoints live in `organizations.py`; no separate `group_schemes.py` |
+| 2026-10-06 | Takaful Wakala fee is a % of the risk contribution only; policy fee and stamp duty are charges outside the split. The fee % lives on the plan (placeholder 30%), not the master policy |
+| 2026-10-06 | Group lifecycle events publish per certificate, after commit, best-effort — same contract as individual issuance |
+| 2026-10-06 | Group tools are admin-only including the read-only ones: tenant-service gates every group endpoint on `verify_admin`, and `SAFE_TOOLS` would otherwise grant reads to Viewer |
+| 2026-10-06 | The group journey is status-driven: each stage skips when the scheme is past it and resume re-derives the stage from the scheme, so work done outside the chat is never repeated or lost |
+| 2026-10-06 | Employer acceptance is never automatic (not even in demo); a declined quote waits for a revised one |
+| 2026-10-06 | Census files are read server-side with the standard library (CSV + XLSX), so no spreadsheet dependency is added to the image or the frontend |
+| 2026-10-06 | Legacy backfill is an explicit script (dry run first), not an automatic startup migration: it writes numbers and a reconstructed quote, so a person should see the report before it runs |
+| 2026-10-06 | Endorsement pro rata counts both the effective and expiry day; a refund mirrors the charge, and certificate numbers are never reused |
+| 2026-10-06 | An above-FCL endorsement line never changes cover until its decision exists; it is applied by an explicit re-check, not a background job |
+| 2026-10-06 | Group claims reuse the individual claim record and payout rows (extended with `group_member_id`, `payee_*`, `share_pct`) rather than a parallel claims table |
+| 2026-10-06 | Experience rating: loss ratio against a 0.60 target, clamped 0.85–1.50, weighted by credibility sqrt(lives/250) — **placeholder bands**, replace with the actuarial table |
+| 2026-10-06 | Placeholder rates pending the real figures: Wakala fee 30%, Retakaful share 20% of the PTF allocation, rider rates in `RIDER_RATES_PER_MILLE`. All sit on the plan or in one table, not in code paths |
+| 2026-10-06 | The renewal scheduler is opt-in (`GROUP_RENEWAL_SCHEDULER=true`) so a new service can't open renewals on a tenant before someone has chosen the lead time |
+| 2026-10-06 | `migrate.py` skips the legacy business-rule column steps once rule-engine v2 is applied; repeated add/drop of those columns had exhausted Postgres' 1600-column limit on `business_rules` and stopped the service starting |
+
+## How to run the group tests
+
+```
+docker compose exec tenant-service python test_group_pricing.py        # pure rules
+docker compose exec tenant-service python test_group_phase6.py         # needs a migrated Postgres
+# every test_group_*.py plus test_migrations.py; chat agent:
+docker compose exec chat-agent python -m pytest -q test_group_journey.py test_registries.py test_journey_isolation.py
+```

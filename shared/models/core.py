@@ -606,10 +606,13 @@ class GroupBenefitBasis(str, Enum):
                       grade/designation schemes are modelled: one class per grade).
     SALARY_MULTIPLE — salary_multiple × basic monthly salary.
     SERVICE_BANDED  — amount from service_bands by completed years of service.
+    LOAN_BALANCE    — the member's outstanding loan balance (Group Credit Life: the
+                      lender is the policyholder, the borrowers are the members).
     """
     FLAT = "Flat"
     SALARY_MULTIPLE = "SalaryMultiple"
     SERVICE_BANDED = "ServiceBanded"
+    LOAN_BALANCE = "LoanBalance"
 
 
 class GroupCoverageType(str, Enum):
@@ -698,6 +701,8 @@ class GroupMember(SQLModel, table=True):
     grade: Optional[str] = Field(default=None, max_length=50)
     basic_monthly_salary: Optional[float] = Field(default=None, ge=0)
     joining_date: Optional[date] = Field(default=None)
+    # Group Credit Life: the borrower's outstanding balance, which is their cover.
+    loan_amount: Optional[float] = Field(default=None, ge=0)
 
     coverage_amount: float = Field(default=0.0, ge=0)
     cover_start_date: Optional[date] = Field(default=None)
@@ -768,6 +773,16 @@ class GroupQuote(SQLModel, table=True):
     policy_fee: float = Field(default=0.0, ge=0)
     stamp_duty: float = Field(default=0.0, ge=0)
     total_premium: float = Field(ge=0)                # annual premium / contribution payable
+    # Takaful only: how the risk contribution splits between the operator's
+    # Wakala fee and the Participants' Takaful Fund. Null on Conventional quotes.
+    wakala_fee_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    wakala_fee: Optional[float] = Field(default=None, ge=0)
+    ptf_allocation: Optional[float] = Field(default=None, ge=0)
+    retakaful_share_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    retakaful_contribution: Optional[float] = Field(default=None, ge=0)     # ceded out of the PTF allocation
+    # Set on a renewal quote (GroupRenewal): it prices the next period of an in-force
+    # scheme and is accepted without touching the master policy's status.
+    renewal_id: Optional[UUID] = Field(default=None, index=True, nullable=True)
     breakdown: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
 
     document_path: Optional[str] = Field(default=None, max_length=1000)
@@ -776,6 +791,113 @@ class GroupQuote(SQLModel, table=True):
     decision_notes: Optional[str] = Field(default=None, max_length=1000)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+
+
+class GroupEndorsementType(str, Enum):
+    ADD = "ADD"          # new members join mid-term
+    DELETE = "DELETE"    # members leave (certificate cancelled)
+    CHANGE = "CHANGE"    # salary / grade / class change
+
+
+class GroupEndorsementStatus(str, Enum):
+    APPLIED = "Applied"
+    PENDING_UNDERWRITING = "PendingUnderwriting"   # some lines wait on an above-FCL decision
+    CANCELLED = "Cancelled"
+
+
+class GroupEndorsement(SQLModel, table=True):
+    """A mid-term change to an in-force group scheme: members added, removed or
+    changed, with the pro-rata premium/contribution adjustment and the effective
+    date. One endorsement carries one type and any number of member lines (kept
+    as JSON — they are a point-in-time record, not something to query by row)."""
+    __tablename__ = "group_endorsements"
+    __table_args__ = (
+        UniqueConstraint("master_policy_id", "number", name="uq_group_endorsement_number"),
+    )
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    master_policy_id: UUID = Field(foreign_key="master_policies.id", ondelete="CASCADE", index=True, nullable=False)
+
+    number: str = Field(max_length=60)                       # END-<master policy no.>-001
+    endorsement_type: str = Field(max_length=10)
+    status: str = Field(default=GroupEndorsementStatus.APPLIED.value, max_length=30)
+    effective_date: date
+    reason: Optional[str] = Field(default=None, max_length=500)
+    requested_by: Optional[str] = Field(default=None, max_length=255)
+
+    # [{action, member_id, name, cnic, certificate_number, status, before, after,
+    #   annual_premium_before, annual_premium_after, risk_delta, note}, ...]
+    lines: list = Field(default_factory=list, sa_column=Column(JSON, nullable=False))
+
+    # Pro-rata basis: the days of cover left from the effective date over the days in the period.
+    days_remaining: int = Field(default=0, ge=0)
+    period_days: int = Field(default=0, ge=0)
+    pro_rata_factor: float = Field(default=1.0, ge=0)
+
+    member_count_delta: int = Field(default=0)
+    sum_assured_delta: float = Field(default=0.0)
+    risk_delta: float = Field(default=0.0)                   # signed: refunds are negative
+    stamp_duty_delta: float = Field(default=0.0)
+    premium_delta: float = Field(default=0.0)                # risk + stamp duty; the amount to collect (+) or refund (−)
+    wakala_fee_delta: Optional[float] = Field(default=None)  # Takaful only
+    ptf_delta: Optional[float] = Field(default=None)
+    retakaful_delta: Optional[float] = Field(default=None)
+
+    settlement_status: str = Field(default="NotDue", max_length=20)   # NotDue | Due | Settled
+    settlement_reference: Optional[str] = Field(default=None, max_length=100)
+    settled_at: Optional[datetime] = Field(default=None)
+    document_path: Optional[str] = Field(default=None, max_length=1000)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    applied_at: Optional[datetime] = Field(default=None)
+
+
+class GroupRenewalStatus(str, Enum):
+    OPEN = "Open"            # started; census being refreshed, not yet quoted
+    QUOTED = "Quoted"        # renewal quote out, waiting for the employer
+    ACCEPTED = "Accepted"    # accepted; waiting for the renewal payment
+    DECLINED = "Declined"
+    RENEWED = "Renewed"      # paid: the scheme now runs the next period
+    LAPSED = "Lapsed"        # the period ended without a renewal
+    CANCELLED = "Cancelled"
+
+
+class GroupRenewal(SQLModel, table=True):
+    """One annual renewal of an in-force group scheme: the experience of the expiring
+    period, the refreshed census, the re-priced quote, the employer's decision and the
+    payment that starts the next period (GROUP_LIFE_PLAN.md Phase 5)."""
+    __tablename__ = "group_renewals"
+
+    id: UUID = Field(default_factory=uuid4, primary_key=True)
+    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    master_policy_id: UUID = Field(foreign_key="master_policies.id", ondelete="CASCADE", index=True, nullable=False)
+
+    period_no: int = Field(default=1, ge=1)                 # 1 = the first renewal (year 1 → year 2)
+    status: str = Field(default=GroupRenewalStatus.OPEN.value, max_length=20)
+    source: str = Field(default="Manual", max_length=20)     # Manual | Scheduler
+
+    current_period_start: date
+    current_period_end: date
+    new_period_start: date
+    new_period_end: date
+
+    # {premium_earned, elapsed_fraction, claims_incurred, claims_paid, open_reserve, claim_count,
+    #  claims_ratio, credibility, raw_factor, target_loss_ratio}
+    experience: dict = Field(default_factory=dict, sa_column=Column(JSON, nullable=False))
+    experience_factor: float = Field(default=1.0, ge=0)
+    # {endorsements: [numbers], added, removed, changed, not_in_file}
+    census_refresh: Optional[dict] = Field(default=None, sa_column=Column(JSON, nullable=True))
+
+    decided_by: Optional[str] = Field(default=None, max_length=255)
+    decided_at: Optional[datetime] = Field(default=None)
+    notes: Optional[str] = Field(default=None, max_length=1000)
+    payment_reference: Optional[str] = Field(default=None, max_length=100)
+    amount_paid: Optional[float] = Field(default=None, ge=0)
+    paid_at: Optional[datetime] = Field(default=None)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    completed_at: Optional[datetime] = Field(default=None)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1162,6 +1284,14 @@ class Claim(SQLModel, table=True):
     claimant_relationship: Optional[str] = Field(default=None, max_length=50) # Self, Spouse, Child, Parent, Legal Heir
     claimant_phone: Optional[str] = Field(default=None, max_length=50)
 
+    # Group certificates (GROUP_LIFE_PLAN.md Phase 5): who the loss is about. The
+    # claimant above is who files; for a dependant's death that is the employee.
+    # SET NULL: removing a member must never delete their claim history.
+    group_member_id: Optional[UUID] = Field(default=None, foreign_key="group_members.id", ondelete="SET NULL", index=True, nullable=True)
+    group_dependent_id: Optional[UUID] = Field(default=None, foreign_key="group_member_dependents.id", ondelete="SET NULL", nullable=True)
+    # Which benefit the claim is under: Life | AccidentalDeath | Disability | PayContinuation | FeeContinuation.
+    coverage_type: Optional[str] = Field(default=None, max_length=30)
+
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
     # Relationships
@@ -1210,6 +1340,11 @@ class ClaimPayout(SQLModel, table=True):
     completed_at: Optional[datetime] = Field(default=None)
     reference_number: Optional[str] = Field(default=None, max_length=100)
     notes: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
+    # Who received this payout — set when one benefit is split between nominees.
+    payee_name: Optional[str] = Field(default=None, max_length=255)
+    payee_cnic: Optional[str] = Field(default=None, max_length=20)
+    payee_relationship: Optional[str] = Field(default=None, max_length=100)
+    share_pct: Optional[float] = Field(default=None, ge=0, le=100)
 
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
 
@@ -1346,6 +1481,12 @@ class InsurancePlan(SQLModel, table=True):
     # Group-specific (optional; only for GROUP plans)
     min_group_size: Optional[int] = Field(default=None, ge=0)
     underwriting_basis: Optional[str] = Field(default=None, max_length=255)
+    # Takaful plans only: the operator's Wakala (agency) fee as a % of the risk
+    # contribution; the rest goes to the Participants' Takaful Fund. Null falls
+    # back to group_pricing.DEFAULT_WAKALA_FEE_PCT.
+    wakala_fee_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    # Takaful plans only: the share of the PTF allocation ceded to the retakaful operator.
+    retakaful_share_pct: Optional[float] = Field(default=None, ge=0, le=100)
 
     # Pricing framework — consumed by the (upcoming) Rating/Pricing Engine.
     # Defaults are neutral (0 rate / 1.0x factor) so existing plans stay valid

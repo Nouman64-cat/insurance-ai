@@ -122,7 +122,7 @@ export type AgentStreamEvent =
   | { type: "quick_actions"; actions: QuickAction[] }
   | { type: "step"; id: string; label: string; status: ProcessStep["status"] }
   | { type: "navigate"; route: string; entity_id: string; highlight: boolean; embed?: boolean }
-  | { type: "proposal_journey"; customer_id: string; name: string }
+  | { type: "proposal_journey"; customer_id: string; name: string; family_group_id?: string; case_numbers?: string[]; cases?: { case_id: string; case_number: string; name: string; relationship: string }[] }
   | { type: "assessment"; assessment: AssessmentScores }
   | { type: "family_members"; family_members: FamilyMember[] }
   | { type: "done"; thread_id: string }

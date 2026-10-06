@@ -340,13 +340,24 @@ def add_organization(**kwargs) -> str:
 
 
 class FamilyMember(BaseModel):
-    cnic: str
+    """One person in the household. Only the head ("Self") and — if the family chooses — the spouse are
+    insured; everyone else is a nominee who receives a share of the head's death benefit."""
+    relationship: Literal["Self", "Spouse", "Child", "Parent", "Sibling", "Other"]
     name: str
-    dob: str
-    gender: Literal["Male", "Female", "Other"]
-    relationship: Literal["Self", "Spouse", "Child", "Parent"]
-    occupation: str
-    declared_income: float
+    is_insured: Optional[bool] = Field(
+        default=None,
+        description="Self is always insured. A Spouse is insured only if the family wants them fully covered "
+        "(then they are underwritten too). Children, parents and others are never insured.",
+    )
+    share_pct: Optional[float] = Field(
+        default=None, description="Their share of the head's death benefit, in %. Every member except Self needs one; all shares total 100.",
+    )
+    # Required only for insured members (the head, an insured spouse):
+    cnic: Optional[str] = None
+    dob: Optional[str] = None
+    gender: Optional[Literal["Male", "Female", "Other"]] = None
+    occupation: Optional[str] = None
+    declared_income: Optional[float] = None
     is_smoker: Optional[bool] = None
     height_cm: Optional[float] = None
     weight_kg: Optional[float] = None
@@ -360,7 +371,9 @@ class AddFamilyGroupArgs(BaseModel):
     household_declared_income: Optional[float] = None
     agent_name: Optional[str] = Field(default=None, description=_AGENT_NAME_DESCRIPTION)
     members: Optional[list[FamilyMember]] = Field(
-        default=None, description="Members to enroll. Exactly one must be 'Self'."
+        default=None,
+        description="Members to enroll. Exactly one must be 'Self'. Ask which relatives are nominees and what share "
+        "of the death benefit each gets (they total 100%); ask whether the spouse is also fully insured.",
     )
     use_demo_data: bool = Field(
         default=False,
@@ -1249,6 +1262,375 @@ def continue_claim_journey(**kwargs) -> str:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Group Life / Group Family Takaful — scheme through issuance
+# (GROUP_LIFE_PLAN.md Phase 3; handlers in group_tools.py, pipeline in group_journey.py)
+# ═══════════════════════════════════════════════════════════════════════════
+
+class GroupSchemeLookupArgs(BaseModel):
+    organization_name: Optional[str] = Field(
+        default=None, description="The employer's company name. Schemes are addressed by company name, never a UUID.")
+    organization_id: Optional[str] = Field(default=None, description="Only when the user or a chip supplied an id.")
+    master_policy_id: Optional[str] = Field(
+        default=None, description="Only for a specific scheme; omit to use the organization's newest.")
+
+
+class StartGroupJourneyArgs(GroupSchemeLookupArgs):
+    plan_code: Optional[Literal["GROUP_LIFE", "GROUP_LIFE_SME", "GROUP_FAMILY_TAKAFUL"]] = Field(
+        default=None, description="Product. Omit for conventional Group Life; GROUP_FAMILY_TAKAFUL for Takaful.")
+    business_type: Optional[Literal["Conventional", "Takaful"]] = None
+    effective_date: Optional[str] = Field(default=None, description="YYYY-MM-DD cover start. Defaults to today.")
+    term_years: Optional[int] = Field(default=None, description="Contract term; group cover is normally 1 year, renewed annually.")
+    sum_assured_multiple: Optional[float] = Field(default=None, description="Default cover as a multiple of monthly salary (12–36). Defaults to 24.")
+    use_demo_data: Optional[bool] = Field(
+        default=False,
+        description="Demo mode only: generate benefit classes and a random employee census instead of asking for them. "
+                    "Set it when the user says 'demo', 'test data' or 'make something up'.",
+    )
+    employee_count: Optional[int] = Field(default=None, description="Size of the generated demo census (default 12).")
+    above_fcl_count: Optional[int] = Field(default=0, description="Demo only: how many senior staff to cover above the Free Cover Limit.")
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    agent_name: Optional[str] = Field(default=None, description=_AGENT_NAME_DESCRIPTION)
+
+
+@tool(args_schema=StartGroupJourneyArgs)
+def start_group_journey(**kwargs) -> str:
+    """Run the ENTIRE group-scheme pipeline autonomously: scheme -> benefit classes
+    -> census -> group underwriting -> quote -> (employer acceptance) -> issuance ->
+    enrolment. It stops only where a person must act: a missing or invalid census,
+    above-limit members awaiting an underwriting decision, the employer's accept /
+    revise / decline, and the employer's payment. Use for "set up a group life scheme
+    for Meridian Textiles", "start a group takaful for ...", "start a group scheme"."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def continue_group_journey(**kwargs) -> str:
+    """Resume a suspended group journey after the census was uploaded, an
+    underwriting decision was made, the quote was accepted or the payment was
+    recorded. Pass the company name when the user names one — the thread may have
+    been started in a different session."""
+    return "{}"
+
+
+class CreateGroupSchemeArgs(StartGroupJourneyArgs):
+    create_if_missing: Optional[bool] = Field(
+        default=False, description="Create the organization too when it doesn't exist. Only set it when the user asked for that.")
+    new_scheme: Optional[bool] = Field(
+        default=False, description="Open a second scheme even though one is in progress. Almost never wanted.")
+
+
+@tool(args_schema=CreateGroupSchemeArgs)
+def create_group_scheme(**kwargs) -> str:
+    """Create the Master Policy (the scheme) for an employer: product (Group Life or
+    Group Family Takaful), term, start date and default cover multiple. One step on
+    its own — use start_group_journey to run the whole thing."""
+    return "{}"
+
+
+class ServiceBandIn(BaseModel):
+    min_years: int = Field(ge=0)
+    amount: float = Field(gt=0)
+
+
+class AddGroupBenefitClassArgs(GroupSchemeLookupArgs):
+    name: Optional[str] = Field(default=None, description="Class name, e.g. Management, Staff, Workers.")
+    basis: Optional[Literal["Flat", "SalaryMultiple", "ServiceBanded", "LoanBalance"]] = Field(
+        default=None, description="LoanBalance is for Group Credit Life: cover is each borrower's outstanding loan (census column loan_amount).")
+    flat_amount: Optional[float] = Field(default=None, description="PKR, for Flat.")
+    salary_multiple: Optional[float] = Field(default=None, description="Times monthly basic salary, for SalaryMultiple.")
+    service_bands: Optional[list[ServiceBandIn]] = Field(default=None, description="For ServiceBanded: cover by completed years of service.")
+    grades: Optional[list[str]] = Field(default=None, description="Employee grades that fall into this class.")
+    min_cover: Optional[float] = None
+    max_cover: Optional[float] = None
+    coverages: Optional[list[dict]] = Field(default=None, description="Extra benefits for the class: [{coverage_type: AccidentalDeath|Disability|PayContinuation|FeeContinuation, percent_of_base, max_amount?}].")
+    is_default: Optional[bool] = Field(default=False, description="The class for employees who match no grade.")
+    classes_json: Optional[str] = Field(default=None, description="Several classes at once as a JSON array of the same fields.")
+    use_demo_template: Optional[bool] = Field(default=False, description="Demo mode only: add a ready-made set of classes.")
+    include_above_fcl: Optional[bool] = Field(default=False, description="With the demo template: also add an Executive class above the Free Cover Limit.")
+
+
+@tool(args_schema=AddGroupBenefitClassArgs)
+def add_group_benefit_class(**kwargs) -> str:
+    """Define who gets how much cover under a group scheme: a benefit class with a
+    flat amount, a salary multiple, or cover banded by years of service. Classes can
+    only be added before employees are enrolled."""
+    return "{}"
+
+
+class SubmitGroupCensusArgs(GroupSchemeLookupArgs):
+    employees_json: Optional[str] = Field(
+        default=None,
+        description="JSON array of employees with cnic, name, dob (YYYY-MM-DD), gender, occupation and annual declared_income; "
+                    "optional employee_id, designation, grade, joining_date, benefit_class, basic_monthly_salary.",
+    )
+    use_demo_data: Optional[bool] = Field(default=False, description="Demo mode only: generate a random census.")
+    employee_count: Optional[int] = None
+    above_fcl_count: Optional[int] = 0
+
+
+@tool(args_schema=SubmitGroupCensusArgs)
+def submit_group_census(**kwargs) -> str:
+    """Validate and enrol a group's employee census given as rows (or a generated
+    demo census). Nothing is enrolled unless every row is valid. For a real
+    spreadsheet use upload_group_census instead."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def upload_group_census(**kwargs) -> str:
+    """Load the employee census from a CSV or Excel file. The browser holds the
+    file, so this opens the file picker — call it and the user just chooses a file;
+    it is validated and enrolled automatically."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def get_group_scheme_status(**kwargs) -> str:
+    """Where a group scheme stands: status, benefit classes, members, undecided
+    above-limit members, latest quote and the next step."""
+    return "{}"
+
+
+class ListGroupMembersArgs(GroupSchemeLookupArgs):
+    limit: Optional[int] = None
+
+
+@tool(args_schema=ListGroupMembersArgs)
+def list_group_members(**kwargs) -> str:
+    """List a group scheme's insured members with class, cover and certificate number."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def generate_group_quote(**kwargs) -> str:
+    """Price the group as one pool and issue a versioned quote (a new one supersedes
+    the open one). Blocked while any above-limit member still awaits an underwriting
+    decision. Use for "quote the group", "revise the quote"."""
+    return "{}"
+
+
+class GroupQuoteDecisionArgs(GroupSchemeLookupArgs):
+    decided_by: Optional[str] = Field(default=None, description="The employer contact who decided, if the user said.")
+    notes: Optional[str] = None
+
+
+@tool(args_schema=GroupQuoteDecisionArgs)
+def accept_group_quote(**kwargs) -> str:
+    """Record the employer's acceptance of the open group quote."""
+    return "{}"
+
+
+@tool(args_schema=GroupQuoteDecisionArgs)
+def decline_group_quote(**kwargs) -> str:
+    """Record that the employer declined the open group quote. A revised quote can still be generated."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def issue_group_policy(**kwargs) -> str:
+    """Issue the master policy on the accepted quote: policy number, one numbered
+    certificate per member, and the schedule. Cover is not live until the employer's
+    payment is recorded."""
+    return "{}"
+
+
+class RecordGroupPaymentArgs(GroupSchemeLookupArgs):
+    reference: Optional[str] = Field(default=None, description="The bank / transfer reference for the employer's payment.")
+    amount: Optional[float] = Field(default=None, description="PKR paid. Defaults to the full amount due.")
+
+
+@tool(args_schema=RecordGroupPaymentArgs)
+def record_group_payment(**kwargs) -> str:
+    """Record the employer's premium / contribution payment. Full payment binds cover
+    for the whole scheme: every certificate and member goes Active."""
+    return "{}"
+
+
+# ── Group endorsements (Phase 4): mid-term changes to an in-force scheme ──────
+
+class GroupEndorsementArgs(GroupSchemeLookupArgs):
+    effective_date: Optional[str] = Field(default=None, description="YYYY-MM-DD the change takes effect. Defaults to today.")
+    reason: Optional[str] = None
+
+
+class PreviewGroupEndorsementArgs(GroupEndorsementArgs):
+    endorsement_type: Literal["ADD", "DELETE", "CHANGE"]
+    employees_json: Optional[str] = Field(default=None, description="ADD: JSON array of the joiners (cnic, name, dob, gender, occupation, declared_income, optional grade / benefit_class / employee_id).")
+    use_demo_data: Optional[bool] = Field(default=False, description="ADD, demo mode only: generate joiners.")
+    employee_count: Optional[int] = None
+    member_names: Optional[list[str]] = Field(default=None, description="DELETE / CHANGE: members by name, CNIC or employee id.")
+    new_salary: Optional[float] = Field(default=None, description="CHANGE: the new basic monthly salary.")
+    grade: Optional[str] = None
+    designation: Optional[str] = None
+    benefit_class: Optional[str] = None
+
+
+@tool(args_schema=PreviewGroupEndorsementArgs)
+def preview_group_endorsement(**kwargs) -> str:
+    """Show what a mid-term change to an in-force group scheme would do and cost —
+    members joining (ADD), leaving (DELETE) or changing salary / grade / class (CHANGE),
+    with the pro-rata premium (contribution for Takaful) — WITHOUT changing anything.
+    Always preview before applying, and tell the user the amount."""
+    return "{}"
+
+
+class ApplyGroupEndorsementArgs(PreviewGroupEndorsementArgs):
+    member_name: Optional[str] = Field(default=None, description="CHANGE: the member, by name, CNIC or employee id.")
+    cnics: Optional[list[str]] = Field(default=None, description="DELETE: members leaving, by CNIC.")
+
+
+@tool(args_schema=ApplyGroupEndorsementArgs)
+def apply_group_endorsement(**kwargs) -> str:
+    """Apply a mid-term change to an in-force group scheme: ADD joiners, DELETE leavers
+    (certificate cancelled, unexpired premium refunded; the customer record is kept) or
+    CHANGE a member's salary / grade / designation / class (cover re-priced pro rata).
+    Joiners or increases above the Free Cover Limit wait for an underwriting decision.
+    Preview first with preview_group_endorsement."""
+    return "{}"
+
+
+class GroupEndorsementRefArgs(GroupSchemeLookupArgs):
+    endorsement_number: Optional[str] = Field(default=None, description="e.g. END-GL-2026-0001-002, or just 002. Defaults to the latest.")
+
+
+@tool(args_schema=GroupEndorsementRefArgs)
+def list_group_endorsements(**kwargs) -> str:
+    """List a group scheme's endorsements with type, effective date, status and amount."""
+    return "{}"
+
+
+@tool(args_schema=GroupEndorsementRefArgs)
+def resolve_group_endorsement(**kwargs) -> str:
+    """Apply the endorsement lines that were waiting on an underwriting decision, now that
+    underwriters may have decided. Lines still undecided stay pending."""
+    return "{}"
+
+
+class SettleGroupEndorsementArgs(GroupEndorsementRefArgs):
+    reference: Optional[str] = Field(default=None, description="The bank reference for the collection or refund. Never invent one.")
+    amount: Optional[float] = Field(default=None, description="PKR. Defaults to the exact adjustment.")
+
+
+@tool(args_schema=SettleGroupEndorsementArgs)
+def settle_group_endorsement(**kwargs) -> str:
+    """Record an endorsement's additional premium as collected, or its refund as paid."""
+    return "{}"
+
+
+
+# ── Group renewals, claims and the Takaful fund (Phases 5–6) ─────────────────
+
+class StartGroupRenewalArgs(GroupSchemeLookupArgs):
+    employees_json: Optional[str] = Field(default=None, description="Optional refreshed workforce list (full census rows). Joiners are added and changes applied.")
+    remove_missing: Optional[bool] = Field(default=False, description="Treat employees missing from the refreshed list as leavers.")
+    notes: Optional[str] = None
+
+
+@tool(args_schema=StartGroupRenewalArgs)
+def start_group_renewal(**kwargs) -> str:
+    """Open the annual renewal of an in-force group scheme, optionally apply the employer's
+    refreshed census, and price the new period using the group's own claims experience.
+    Returns the renewal quote for the employer to accept or decline."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def get_group_renewal(**kwargs) -> str:
+    """Show the group scheme's current renewal: experience, factor, quote and status."""
+    return "{}"
+
+
+class DecideGroupRenewalArgs(GroupSchemeLookupArgs):
+    decision: Literal["accept", "decline"] = Field(description="The employer's answer to the renewal quote.")
+    decided_by: Optional[str] = Field(default=None, description="Who at the employer decided.")
+    notes: Optional[str] = None
+
+
+@tool(args_schema=DecideGroupRenewalArgs)
+def decide_group_renewal(**kwargs) -> str:
+    """Record the employer's answer to the renewal quote: accept (cover continues once
+    paid) or decline (the scheme lapses at period end)."""
+    return "{}"
+
+
+class RecordGroupRenewalPaymentArgs(GroupSchemeLookupArgs):
+    reference: Optional[str] = Field(default=None, description="The bank reference. Never invent one.")
+    amount: Optional[float] = Field(default=None, description="PKR. Defaults to the renewal quote total.")
+
+
+@tool(args_schema=RecordGroupRenewalPaymentArgs)
+def record_group_renewal_payment(**kwargs) -> str:
+    """Record the employer's renewal premium / contribution payment; the new period starts."""
+    return "{}"
+
+
+class RegisterGroupClaimArgs(GroupSchemeLookupArgs):
+    member_name: Optional[str] = Field(default=None, description="The insured employee, by name, CNIC or employee id.")
+    dependent_name: Optional[str] = Field(default=None, description="Set when the claim is for a covered dependant's death.")
+    claim_type: Optional[str] = Field(default="Death Claim", description="Death Claim, Accidental Death, Disability, Pay Continuation, Fee Continuation.")
+    coverage_type: Optional[str] = None
+    submitted_amount: Optional[float] = Field(default=None, description="PKR. Defaults to the member's life cover.")
+    incident_date: Optional[str] = Field(default=None, description="YYYY-MM-DD.")
+    notes: Optional[str] = None
+
+
+@tool(args_schema=RegisterGroupClaimArgs)
+def register_group_claim(**kwargs) -> str:
+    """Register a claim against a group scheme member (or their dependant) and show which
+    documents are required for that benefit."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def list_group_claims(**kwargs) -> str:
+    """List the claims on a group scheme with status and amounts."""
+    return "{}"
+
+
+class GroupClaimPayoutArgs(GroupSchemeLookupArgs):
+    claim_number: Optional[str] = None
+    member_name: Optional[str] = None
+    amount: Optional[float] = Field(default=None, description="PKR. Defaults to the approved amount.")
+    reference: Optional[str] = Field(default=None, description="Bank reference for the payout. Never invent one.")
+    confirm_no_nominee: Optional[bool] = Field(default=False, description="Only when the user agreed to pay the claimant because no nominee is on file.")
+
+
+@tool(args_schema=GroupClaimPayoutArgs)
+def preview_group_claim_payout(**kwargs) -> str:
+    """Show how an approved group claim would be split between the member's nominees
+    (by their share percentages). Pays nothing."""
+    return "{}"
+
+
+@tool(args_schema=GroupClaimPayoutArgs)
+def pay_group_claim(**kwargs) -> str:
+    """Disburse an approved group claim to its nominees by their shares and settle it."""
+    return "{}"
+
+
+@tool(args_schema=GroupSchemeLookupArgs)
+def get_group_ptf_report(**kwargs) -> str:
+    """Participants' Takaful Fund position for a Takaful scheme: contributions, Wakala fee,
+    retakaful, claims and surplus or deficit per period."""
+    return "{}"
+
+
+class AddGroupClassCoverageArgs(GroupSchemeLookupArgs):
+    class_name: Optional[str] = Field(default=None, description="The benefit class.")
+    coverage_type: Literal["AccidentalDeath", "Disability", "PayContinuation", "FeeContinuation"]
+    percent_of_base: float = Field(description="% of the member's life cover, e.g. 100 or 200.")
+    max_amount: Optional[float] = None
+
+
+@tool(args_schema=AddGroupClassCoverageArgs)
+def add_group_class_coverage(**kwargs) -> str:
+    """Add an extra benefit (Accidental Death, Disability, Pay Continuation, Fee
+    Continuation) to a benefit class. Withdraws any open quote, so re-quote afterwards."""
+    return "{}"
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Commission engine — rate card, waterfall, ledger, payout runs
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1591,6 +1973,35 @@ ALL_TOOLS = [
     upload_claim_document,
     start_claim_journey,
     continue_claim_journey,
+    # group life / group family takaful
+    start_group_journey,
+    continue_group_journey,
+    create_group_scheme,
+    add_group_benefit_class,
+    submit_group_census,
+    upload_group_census,
+    get_group_scheme_status,
+    list_group_members,
+    generate_group_quote,
+    accept_group_quote,
+    decline_group_quote,
+    issue_group_policy,
+    record_group_payment,
+    preview_group_endorsement,
+    apply_group_endorsement,
+    list_group_endorsements,
+    resolve_group_endorsement,
+    settle_group_endorsement,
+    start_group_renewal,
+    get_group_renewal,
+    decide_group_renewal,
+    record_group_renewal_payment,
+    register_group_claim,
+    list_group_claims,
+    preview_group_claim_payout,
+    pay_group_claim,
+    get_group_ptf_report,
+    add_group_class_coverage,
     # commission engine
     list_commission_payees,
     get_commission_rate_card,

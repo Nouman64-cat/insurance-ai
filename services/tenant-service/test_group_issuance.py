@@ -9,9 +9,12 @@ Run with: docker compose exec tenant-service python test_group_issuance.py
 """
 
 import asyncio
+import json
 import os
 import re
 from datetime import date, timedelta
+from types import SimpleNamespace
+from sqlmodel import select
 
 import httpx
 
@@ -30,11 +33,13 @@ from routers.group_policies import (
 from routers.organizations import delete_organization_employee
 from routers.pre_issuance import BeneficiariesReplace, BeneficiaryIn
 from schemas import GroupDependentCreate, GroupPaymentCreate, GroupQuoteDecision
+from shared.events.kafka_events import POLICY_LIFECYCLE_TOPIC
 from shared.models.core import (
     AIDecision,
     GroupMember,
     GroupMemberDependent,
     GroupQuote,
+    InsurancePlan,
     MasterPolicy,
     Organization,
     Policy,
@@ -91,6 +96,11 @@ async def test_full_lifecycle():
                                BeneficiaryIn(name="Omar", relationship="Child", share_pct=30)]))
             await _expect_http(replace_group_beneficiaries(member_id=manager.group_member_id, **ids, body=BeneficiariesReplace(
                 beneficiaries=[BeneficiaryIn(name="Sara", relationship="Spouse", share_pct=60)])), 422)
+
+            # The roster reports who has a nominee on file (the chat and Members tab both read it).
+            roster = await list_group_members(**ids)
+            assert {m.id: m.nominations for m in roster}[manager.group_member_id] == 2
+            assert sum(1 for m in roster if m.nominations == 0) == len(roster) - 1
 
             v1 = await generate_group_quote_endpoint(**ids)
             assert (v1.version, v1.status, v1.member_count, v1.dependent_count) == (1, "Open", 10, 1)
@@ -224,6 +234,110 @@ async def test_takaful_numbering_and_terms():
             await _cleanup(session, fx["tenant_id"])
 
 
+async def test_takaful_split_on_quote_and_documents():
+    async with _session_factory() as session:
+        fx = await _setup(session)
+        try:
+            mp_id, _ = await _enrolled_scheme(session, fx, plan_code="GROUP_FAMILY_TAKAFUL")
+            ids = _ids(fx, mp_id, session)
+            quote = await generate_group_quote_endpoint(**ids)
+            assert quote.wakala_fee_pct == 30.0                     # seeded plan default
+            assert abs(quote.wakala_fee + quote.ptf_allocation - quote.risk_premium) < 0.01
+            assert quote.breakdown["takaful"]["ptf_allocation"] == quote.ptf_allocation
+
+            # A plan-level override is picked up by the next (revised) quote.
+            plan = (await session.exec(select(InsurancePlan).where(
+                InsurancePlan.tenant_id == fx["tenant_id"], InsurancePlan.code == "GROUP_FAMILY_TAKAFUL"))).one()
+            plan.wakala_fee_pct = 20.0
+            session.add(plan)
+            await session.commit()
+            revised = await generate_group_quote_endpoint(**ids)
+            assert revised.wakala_fee_pct == 20.0 and revised.ptf_allocation > quote.ptf_allocation
+            assert revised.total_premium == quote.total_premium     # the split allocates, it doesn't reprice
+
+            row = await session.get(GroupQuote, revised.id)
+            assert os.path.exists(row.document_path)
+
+            # The schedule carries the split too.
+            await accept_group_quote(quote_id=revised.id, body=NO_DECISION, **ids)
+            await issue_master_policy(**ids)
+
+            # Conventional quotes have no split.
+            conv_id, _ = await _enrolled_scheme(session, fx)
+            conv = await generate_group_quote_endpoint(**_ids(fx, conv_id, session))
+            assert conv.wakala_fee_pct is None and conv.ptf_allocation is None and "takaful" not in conv.breakdown
+            print("PASS test_takaful_split_on_quote_and_documents")
+        finally:
+            await _cleanup(session, fx["tenant_id"])
+
+
+class _FakeProducer:
+    """Stands in for AIOKafkaProducer; records what would have been published."""
+
+    def __init__(self, fail=False):
+        self.sent, self.fail = [], fail
+
+    async def send_and_wait(self, topic, value, key=None):
+        if self.fail:
+            raise RuntimeError("broker down")
+        self.sent.append((topic, json.loads(value), key))
+
+
+def _fake_request(producer):
+    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(kafka_producer=producer)))
+
+
+async def test_certificate_events_published_to_kafka():
+    async with _session_factory() as session:
+        fx = await _setup(session)
+        try:
+            mp_id, enrolled = await _enrolled_scheme(session, fx)
+            ids = _ids(fx, mp_id, session)
+            n = len(enrolled.employees)
+            quote = await generate_group_quote_endpoint(**ids)
+            await accept_group_quote(quote_id=quote.id, body=NO_DECISION, **ids)
+
+            producer = _FakeProducer()
+            issued = await issue_master_policy(request=_fake_request(producer), **ids)
+            issue_events = [m for _t, m, _k in producer.sent]
+            assert {t for t, _m, _k in producer.sent} == {POLICY_LIFECYCLE_TOPIC}
+            assert {e["event_type"] for e in issue_events} == {"GroupCertificateIssued"}
+            assert {e["payload"]["to_status"] for e in issue_events} <= {"Proposed", "Approved", "PendingPayment"}
+            # Every certificate reached PendingPayment, and each event names its master policy.
+            assert len({e["payload"]["policy_id"] for e in issue_events if e["payload"]["to_status"] == "PendingPayment"}) == n
+            assert all(e["payload"]["detail"]["master_policy_number"] == issued.master_policy.policy_number for e in issue_events)
+            assert all(k == str(fx["tenant_id"]) for _t, _m, k in producer.sent)
+
+            producer.sent.clear()
+            await record_group_payment(body=GroupPaymentCreate(reference="PAY-K", amount=quote.total_premium),
+                                       request=_fake_request(producer), **ids)
+            bound = [m for _t, m, _k in producer.sent]
+            assert len(bound) == n and {e["event_type"] for e in bound} == {"GroupCoverBound"}
+            assert {e["payload"]["to_status"] for e in bound} == {"Active"}
+            print("PASS test_certificate_events_published_to_kafka")
+        finally:
+            await _cleanup(session, fx["tenant_id"])
+
+
+async def test_broker_outage_does_not_fail_issuance():
+    async with _session_factory() as session:
+        fx = await _setup(session)
+        try:
+            mp_id, _ = await _enrolled_scheme(session, fx)
+            ids = _ids(fx, mp_id, session)
+            quote = await generate_group_quote_endpoint(**ids)
+            await accept_group_quote(quote_id=quote.id, body=NO_DECISION, **ids)
+            issued = await issue_master_policy(request=_fake_request(_FakeProducer(fail=True)), **ids)
+            assert issued.master_policy.status == "PendingPayment"
+            paid = await record_group_payment(body=GroupPaymentCreate(reference="PAY-X", amount=quote.total_premium),
+                                              request=_fake_request(_FakeProducer(fail=True)), **ids)
+            assert paid.master_policy.status == "Active"
+            # No producer on app.state at all (e.g. Kafka disabled) behaves the same.
+            print("PASS test_broker_outage_does_not_fail_issuance")
+        finally:
+            await _cleanup(session, fx["tenant_id"])
+
+
 async def test_quote_guards():
     async with _session_factory() as session:
         fx = await _setup(session)
@@ -317,6 +431,9 @@ async def main():
     await test_full_lifecycle()
     await test_above_fcl_outcomes()
     await test_takaful_numbering_and_terms()
+    await test_takaful_split_on_quote_and_documents()
+    await test_certificate_events_published_to_kafka()
+    await test_broker_outage_does_not_fail_issuance()
     await test_quote_guards()
     await test_http_flow()
 

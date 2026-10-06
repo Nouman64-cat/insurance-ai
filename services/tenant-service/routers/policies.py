@@ -25,6 +25,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from services import payment_gateway
 from services.env_mode import is_demo
+from family_approval import pending_insured_members, waiting_message
 from services.policy_documents import generate_and_store_documents, generate_and_store_premium_notice
 from services.pre_issuance_gate import NotReadyToIssue, assert_ready_to_issue, compute_readiness
 from services.pricing_engine import GRACE_PERIOD_DAYS, PricingEngine
@@ -752,6 +753,12 @@ async def issue_policy(
         )
     if policy.policy_number:
         raise HTTPException(400, "Policy already issued")
+    # A family floater covers the head and, if chosen, a fully insured spouse: every insured life has to have
+    # been underwritten and approved first (demo mode keeps its usual waive-through).
+    if not is_demo():
+        waiting = await pending_insured_members(session, policy)
+        if waiting:
+            raise HTTPException(409, waiting_message(waiting))
 
     # Stage A gate — cannot draft the contract until every pre-issuance step is
     # satisfied (revised terms accepted, requirements cleared, compliance passed,

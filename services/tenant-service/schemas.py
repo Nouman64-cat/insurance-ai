@@ -675,9 +675,17 @@ class BenefitClassCreate(BaseModel):
     min_cover: Optional[float] = Field(default=None, ge=0)
     max_cover: Optional[float] = Field(default=None, ge=0)
     is_default: bool = False
+    coverages: Optional[List["ClassCoverageCreate"]] = None    # benefits beyond Life (Life 100% is automatic)
+
+
+class ClassCoverageCreate(BaseModel):
+    coverage_type: str                                   # AccidentalDeath | Disability | PayContinuation | FeeContinuation
+    percent_of_base: float = Field(gt=0, le=1000)        # % of the member's Life cover
+    max_amount: Optional[float] = Field(default=None, gt=0)
 
 
 class ClassCoverageRead(BaseModel):
+    id: Optional[UUID] = None
     coverage_type: str
     percent_of_base: float
     max_amount: Optional[float] = None
@@ -759,6 +767,12 @@ class GroupQuoteRead(BaseModel):
     policy_fee: float
     stamp_duty: float
     total_premium: float
+    wakala_fee_pct: Optional[float] = None
+    wakala_fee: Optional[float] = None
+    ptf_allocation: Optional[float] = None
+    retakaful_share_pct: Optional[float] = None
+    retakaful_contribution: Optional[float] = None
+    renewal_id: Optional[UUID] = None
     breakdown: Dict[str, Any]
     decided_at: Optional[datetime] = None
     decided_by: Optional[str] = None
@@ -783,6 +797,97 @@ class GroupIssueResponse(BaseModel):
     certificates_issued: int
     total_premium: float
     amount_due: float
+
+
+class EndorsementRequest(BaseModel):
+    """Members stay loose dicts (like CensusRequest) so each kind takes its natural
+    shape — census-style rows to ADD, {member_id | cnic | employee_id} to DELETE,
+    the same plus the new salary / grade / benefit_class / designation to CHANGE."""
+    endorsement_type: str                       # ADD | DELETE | CHANGE
+    effective_date: date
+    members: List[Dict[str, Any]]
+    reason: Optional[str] = Field(default=None, max_length=500)
+    requested_by: Optional[str] = Field(default=None, max_length=255)
+
+
+class EndorsementSettle(BaseModel):
+    reference: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+
+
+class EndorsementRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    number: str
+    endorsement_type: str
+    status: str
+    effective_date: date
+    reason: Optional[str] = None
+    requested_by: Optional[str] = None
+    lines: List[Dict[str, Any]]
+    days_remaining: int
+    period_days: int
+    pro_rata_factor: float
+    member_count_delta: int
+    sum_assured_delta: float
+    risk_delta: float
+    stamp_duty_delta: float
+    premium_delta: float
+    wakala_fee_delta: Optional[float] = None
+    ptf_delta: Optional[float] = None
+    retakaful_delta: Optional[float] = None
+    settlement_status: str
+    settlement_reference: Optional[str] = None
+    settled_at: Optional[datetime] = None
+    created_at: datetime
+    applied_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
+
+
+class RenewalStart(BaseModel):
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class RenewalCensusRefresh(BaseModel):
+    """The employer's refreshed workforce list: full census-style rows. Joiners are added,
+    salary / grade / class / designation changes applied, and — only when asked — employees
+    missing from the list are removed."""
+    employees: List[Dict[str, Any]]
+    effective_date: Optional[date] = None
+    remove_missing: bool = False
+    preview: bool = False
+    requested_by: Optional[str] = Field(default=None, max_length=255)
+
+
+class RenewalPayment(BaseModel):
+    reference: str = Field(min_length=1, max_length=100)
+    amount: float = Field(gt=0)
+
+
+class RenewalRead(BaseModel):
+    id: UUID
+    master_policy_id: UUID
+    period_no: int
+    status: str
+    source: str
+    current_period_start: date
+    current_period_end: date
+    new_period_start: date
+    new_period_end: date
+    experience: Dict[str, Any]
+    experience_factor: float
+    census_refresh: Optional[Dict[str, Any]] = None
+    decided_by: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    payment_reference: Optional[str] = None
+    amount_paid: Optional[float] = None
+    paid_at: Optional[datetime] = None
+    created_at: datetime
+    completed_at: Optional[datetime] = None
+
+    model_config = {"from_attributes": True}
 
 
 class GroupDependentCreate(BaseModel):
@@ -827,6 +932,7 @@ class GroupMemberRead(BaseModel):
     cover_note: Optional[str] = None
     underwriting_basis: Optional[str] = None   # Guaranteed | Approved | Loaded | Restricted | Pending
     dependents: int = 0
+    nominations: int = 0                       # beneficiaries recorded on the certificate
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -966,6 +1072,8 @@ class FamilyConfirmResponse(BaseModel):
     family_policy_id: UUID
     total_sum_insured: Optional[float] = None
     members: List[FamilyMemberOutcome]
+    # Everyone who receives a share of the head's death benefit (spouse included), with the rupee amount.
+    nominees: List[Dict[str, Any]] = []
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1101,6 +1209,8 @@ class InsurancePlanCreate(BaseModel):
 
     min_group_size: Optional[int] = None
     underwriting_basis: Optional[str] = None
+    wakala_fee_pct: Optional[float] = Field(default=None, ge=0, le=100)   # Takaful plans only
+    retakaful_share_pct: Optional[float] = Field(default=None, ge=0, le=100)
 
     # Pricing framework — defaults are neutral (0 rate / 1.0x factor) until
     # real rates are loaded per plan.
@@ -1168,6 +1278,8 @@ class InsurancePlanUpdate(BaseModel):
 
     min_group_size: Optional[int] = None
     underwriting_basis: Optional[str] = None
+    wakala_fee_pct: Optional[float] = Field(default=None, ge=0, le=100)
+    retakaful_share_pct: Optional[float] = Field(default=None, ge=0, le=100)
 
     base_premium_rate: Optional[float] = None
     smoker_factor: Optional[float] = None
@@ -1204,6 +1316,8 @@ class InsurancePlanRead(BaseModel):
 
     min_group_size: Optional[int]
     underwriting_basis: Optional[str]
+    wakala_fee_pct: Optional[float] = None
+    retakaful_share_pct: Optional[float] = None
 
     base_premium_rate: float
     smoker_factor: float

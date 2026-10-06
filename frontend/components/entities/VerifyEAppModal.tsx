@@ -8,7 +8,7 @@ interface VerifyEAppModalProps {
   customerName?: string;
   eApp: EApplication;
   onClose: () => void;
-  onVerified: () => void;
+  onVerified: (action: "approve" | "reject") => void;
 }
 
 export default function VerifyEAppModal({
@@ -34,7 +34,7 @@ export default function VerifyEAppModal({
     setErr(null);
     try {
       await verifyEApplication(caseId, "approve");
-      onVerified();
+      onVerified("approve");
     } catch (e: any) {
       setErr(e?.message || "Failed to verify application");
     } finally {
@@ -50,7 +50,7 @@ export default function VerifyEAppModal({
     setErr(null);
     try {
       await verifyEApplication(caseId, "reject");
-      onVerified();
+      onVerified("reject");
     } catch (e: any) {
       setErr(e?.message || "Failed to reset application status");
     } finally {

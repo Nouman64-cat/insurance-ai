@@ -31,7 +31,28 @@ REQUIRED_MEMBER_FIELDS = ["cnic", "name", "dob", "gender", "occupation", "declar
 # row and the pool's total_sum_insured instead of a per-member coverage_amount.
 LIFE_BUNDLE_EXTRA_FIELDS = ["coverage_amount", "plan_code"]
 
-_VALID_RELATIONSHIPS = {"Self", "Spouse", "Child", "Parent"}
+# Who is insured. Only the head ("Self") and — if the family chooses — the spouse carry cover and are
+# underwritten. Everyone else is a nominee: they receive a share of the head's death benefit and are
+# never insured. A row opts into this model by carrying `is_insured` and/or `share_pct`; rows without
+# either behave as before (every row insured), so older callers keep working.
+INSURABLE_RELATIONSHIPS = {"Self", "Spouse"}
+NOMINEE_RELATIONSHIPS = {"Child", "Parent", "Sibling", "Other"}
+NOMINEE_REQUIRED_FIELDS = ["name", "relationship"]
+SHARE_TOLERANCE = 0.01
+
+_VALID_RELATIONSHIPS = INSURABLE_RELATIONSHIPS | NOMINEE_RELATIONSHIPS
+
+
+def uses_nominee_model(rows: List[Dict[str, Any]]) -> bool:
+    return any((r.get("is_insured") is not None) or (r.get("share_pct") not in (None, "")) for r in rows)
+
+
+def is_insured_row(row: Dict[str, Any]) -> bool:
+    """Self is always insured; for anyone else, only when the row says so (default: insured, the legacy behaviour)."""
+    if row.get("relationship") == "Self":
+        return True
+    flag = row.get("is_insured")
+    return True if flag is None else bool(flag)
 
 
 class FamilyValidationResult(BaseModel):
@@ -43,7 +64,8 @@ class FamilyValidationResult(BaseModel):
 
 
 def _row_missing_fields(row: Dict[str, Any], index: int) -> List[str]:
-    missing = [f for f in REQUIRED_MEMBER_FIELDS if row.get(f) in (None, "") and row.get(f) != 0]
+    required = REQUIRED_MEMBER_FIELDS if is_insured_row(row) else NOMINEE_REQUIRED_FIELDS
+    missing = [f for f in required if row.get(f) in (None, "") and row.get(f) != 0]
     return [f"Row {index + 1}: missing {field}" for field in missing]
 
 
@@ -52,8 +74,13 @@ def validate_family_members(
     members: List[Dict[str, Any]],
     existing_count: int = 0,
     has_existing_self: bool = False,
+    existing_share_total: float = 0.0,
 ) -> FamilyValidationResult:
     """Validate a family-member batch before it's persisted.
+
+    With the nominee model (see `uses_nominee_model`): only the head and a spouse can be insured, each
+    non-head row carries a nominee `share_pct`, and those shares — together with any already recorded
+    (`existing_share_total`) — must total 100%.
 
     Checks: family-size bounds (2-8), required fields per row (including
     `relationship`), exactly one SELF member, duplicate CNICs within the
@@ -83,6 +110,10 @@ def validate_family_members(
         missing_fields.extend(_row_missing_fields(row, i))
 
         relationship = row.get("relationship")
+        if row.get("is_insured") is True and relationship not in INSURABLE_RELATIONSHIPS and relationship is not None:
+            errors.append(f"Row {i + 1}: only the head member or the spouse can be insured — a {relationship} can only be a nominee.")
+        if row.get("is_insured") is False and relationship == "Self":
+            errors.append(f"Row {i + 1}: the head member is always insured.")
         if relationship is not None and relationship not in _VALID_RELATIONSHIPS:
             errors.append(
                 f"Row {i + 1}: relationship '{relationship}' must be one of "
@@ -120,6 +151,22 @@ def validate_family_members(
             f"A family group must have exactly one 'Self' member (found {self_count})."
         )
 
+    if uses_nominee_model(members):
+        share_total = float(existing_share_total or 0.0)
+        for i, row in enumerate(members):
+            if row.get("relationship") == "Self":
+                continue
+            try:
+                share = float(row.get("share_pct"))
+            except (TypeError, ValueError):
+                missing_fields.append(f"Row {i + 1}: missing share_pct")
+                continue
+            if share <= 0 or share > 100:
+                errors.append(f"Row {i + 1}: share_pct must be between 0 and 100.")
+            share_total += max(share, 0.0)
+        if not any(f.endswith("missing share_pct") for f in missing_fields) and abs(round(share_total, 2) - 100.0) > SHARE_TOLERANCE:
+            errors.append(f"Nominee shares must total 100% (got {round(share_total, 2):g}%).")
+
     is_valid = not errors and not missing_fields
 
     return FamilyValidationResult(
@@ -136,13 +183,16 @@ def validate_life_bundle_members(
     members: List[Dict[str, Any]],
     existing_count: int = 0,
     has_existing_self: bool = False,
+    existing_share_total: float = 0.0,
 ) -> FamilyValidationResult:
-    """Same checks as validate_family_members, plus each row must also carry
-    its own coverage_amount + plan_code (see LIFE_BUNDLE_EXTRA_FIELDS)."""
-    result = validate_family_members(existing_cnics, members, existing_count, has_existing_self)
+    """Same checks as validate_family_members, plus each insured row must also carry
+    its own coverage_amount + plan_code (see LIFE_BUNDLE_EXTRA_FIELDS). Nominees have no cover."""
+    result = validate_family_members(existing_cnics, members, existing_count, has_existing_self, existing_share_total)
 
     extra_missing: List[str] = []
     for i, row in enumerate(members):
+        if not is_insured_row(row):
+            continue
         extra_missing.extend(
             f"Row {i + 1}: missing {field}"
             for field in LIFE_BUNDLE_EXTRA_FIELDS

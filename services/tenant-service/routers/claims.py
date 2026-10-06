@@ -257,15 +257,19 @@ class ClaimPayoutCreate(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.post("", status_code=201, summary="Create FNOL Claim")
-async def create_claim(
+async def open_claim(
+    session: AsyncSession,
     tenant_id: UUID,
-    body: ClaimCreate,
-    token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_session),
-):
-    current_user = await _assert_claims_role(token, session)
-
+    current_user: User,
+    body: "ClaimCreate",
+    *,
+    group_member_id: Optional[UUID] = None,
+    group_dependent_id: Optional[UUID] = None,
+    coverage_type: Optional[str] = None,
+) -> tuple[Claim, Policy, Optional[Customer]]:
+    """Open an FNOL: the claim, its SLA case and the first status-history row.
+    Shared by POST /claims and the group-certificate claim endpoint
+    (routers/group_claims.py), which adds who the loss is about. Commits."""
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None or not tenant.is_active:
         raise HTTPException(status_code=404, detail="Tenant not found or inactive")
@@ -331,6 +335,9 @@ async def create_claim(
         claimant_cnic=body.claimant_cnic,
         claimant_relationship=c_rel,
         claimant_phone=body.claimant_phone,
+        group_member_id=group_member_id,
+        group_dependent_id=group_dependent_id,
+        coverage_type=coverage_type,
     )
     session.add(claim)
     await session.flush()
@@ -347,7 +354,18 @@ async def create_claim(
     session.add(history)
     await session.commit()
     await session.refresh(claim)
+    return claim, policy, customer
 
+
+@router.post("", status_code=201, summary="Create FNOL Claim")
+async def create_claim(
+    tenant_id: UUID,
+    body: ClaimCreate,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    current_user = await _assert_claims_role(token, session)
+    claim, policy, customer = await open_claim(session, tenant_id, current_user, body)
     return _claim_dict(claim, policy, customer, current_user, 0)
 
 
@@ -757,24 +775,13 @@ async def adjudicate_claim(
     return _claim_dict(claim, policy, customer, adjuster, 0)
 
 
-@router.post("/{claim_id}/payout", status_code=201, summary="Initiate Claim Disbursement Payout")
-async def create_claim_payout(
-    tenant_id: UUID,
-    claim_id: UUID,
-    body: ClaimPayoutCreate,
-    token: str = Depends(oauth2_scheme),
-    session: AsyncSession = Depends(get_session),
-):
-    current_user = await _assert_claims_role(token, session)
-
-    claim = await session.get(Claim, claim_id)
-    if claim is None or claim.tenant_id != tenant_id:
-        raise HTTPException(status_code=404, detail="Claim not found")
-
+async def assert_claim_payable(session: AsyncSession, tenant_id: UUID, claim: Claim, amount: float) -> None:
+    """The gates every disbursement passes: an approved claim, at least one document,
+    and no more than was approved. Raises the same 400s the payout endpoint always did."""
     if claim.status not in (ClaimStatusEnum.APPROVED, ClaimStatusEnum.PARTIAL_APPROVAL):
         raise HTTPException(
             status_code=400,
-            detail=f"Payout Gate Error: Payouts can only be issued for claims in 'Approved' or 'Partial Approval' status (current status is '{claim.status.value}').",
+            detail=f"Payout Gate Error: Payouts can only be issued for claims in 'Approved' or 'Partial Approval' status (current status is '{claim.status.value}')."
         )
 
     if claim.case_id:
@@ -789,46 +796,91 @@ async def create_claim_payout(
         )
 
     max_allowed = claim.approved_amount if claim.approved_amount > 0 else claim.submitted_amount
-    if body.amount > max_allowed:
+    if amount > max_allowed:
         raise HTTPException(
             status_code=400,
-            detail=f"Validation Error: Payout amount (PKR {body.amount:,.2f}) cannot exceed approved claim amount (PKR {max_allowed:,.2f}).",
+            detail=f"Validation Error: Payout amount (PKR {amount:,.2f}) cannot exceed approved claim amount (PKR {max_allowed:,.2f}).",
         )
-    if body.amount <= 0:
+    if amount <= 0:
         raise HTTPException(
             status_code=400,
             detail="Validation Error: Payout amount must be greater than 0.",
         )
 
-    payout = ClaimPayout(
-        tenant_id=tenant_id,
-        claim_id=claim.id,
-        amount=body.amount,
-        method=body.method,
-        status="Settled",
-        initiated_at=datetime.utcnow(),
-        completed_at=datetime.utcnow(),
-        reference_number=body.reference_number or f"PAY-{datetime.utcnow().strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}",
-        notes=body.notes,
-    )
-    session.add(payout)
+
+async def settle_claim_with_payouts(
+    session: AsyncSession,
+    tenant_id: UUID,
+    claim: Claim,
+    current_user: User,
+    payouts: List[dict],
+) -> List[ClaimPayout]:
+    """Record one or more payouts (each {amount, method, reference_number, notes,
+    payee_*, share_pct}) and move the claim to Settled with a single history row.
+    Does not commit."""
+    now = datetime.utcnow()
+    rows: List[ClaimPayout] = []
+    for p in payouts:
+        row = ClaimPayout(
+            tenant_id=tenant_id,
+            claim_id=claim.id,
+            amount=p["amount"],
+            method=p.get("method") or "Bank Transfer",
+            status="Settled",
+            initiated_at=now,
+            completed_at=now,
+            reference_number=p.get("reference_number") or f"PAY-{now.strftime('%Y%m%d')}-{uuid4().hex[:6].upper()}",
+            notes=p.get("notes"),
+            payee_name=p.get("payee_name"),
+            payee_cnic=p.get("payee_cnic"),
+            payee_relationship=p.get("payee_relationship"),
+            share_pct=p.get("share_pct"),
+        )
+        session.add(row)
+        rows.append(row)
 
     # Update claim settlement state
+    total = sum(p["amount"] for p in payouts)
     old_status = claim.status.value if hasattr(claim.status, "value") else str(claim.status)
     claim.status = ClaimStatusEnum.SETTLED
-    claim.settlement_amount = (claim.settlement_amount or 0.0) + body.amount
-    claim.settled_at = datetime.utcnow()
+    claim.settlement_amount = (claim.settlement_amount or 0.0) + total
+    claim.settled_at = now
     session.add(claim)
 
-    history = ClaimStatusHistory(
+    if len(rows) == 1:
+        note = f"Disbursement payout of PKR {total:,.2f} initiated via {rows[0].method}. Ref: {rows[0].reference_number}"
+    else:
+        note = (f"Disbursement of PKR {total:,.2f} split between {len(rows)} payees: "
+                + "; ".join(f"{r.payee_name or 'payee'} PKR {r.amount:,.2f}" for r in rows))
+    session.add(ClaimStatusHistory(
         tenant_id=tenant_id,
         claim_id=claim.id,
         from_status=old_status,
         to_status=ClaimStatusEnum.SETTLED.value,
         actor_id=current_user.id,
-        notes=f"Disbursement payout of PKR {body.amount:,.2f} initiated via {body.method}. Ref: {payout.reference_number}",
-    )
-    session.add(history)
+        notes=note,
+    ))
+    return rows
+
+
+@router.post("/{claim_id}/payout", status_code=201, summary="Initiate Claim Disbursement Payout")
+async def create_claim_payout(
+    tenant_id: UUID,
+    claim_id: UUID,
+    body: ClaimPayoutCreate,
+    token: str = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+):
+    current_user = await _assert_claims_role(token, session)
+
+    claim = await session.get(Claim, claim_id)
+    if claim is None or claim.tenant_id != tenant_id:
+        raise HTTPException(status_code=404, detail="Claim not found")
+
+    await assert_claim_payable(session, tenant_id, claim, body.amount)
+    (payout,) = await settle_claim_with_payouts(session, tenant_id, claim, current_user, [{
+        "amount": body.amount, "method": body.method, "reference_number": body.reference_number, "notes": body.notes,
+    }])
     await session.commit()
     await session.refresh(payout)
 

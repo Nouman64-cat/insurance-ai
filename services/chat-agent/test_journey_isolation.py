@@ -43,6 +43,19 @@ CLAIMS_TRANSITIONS = {
     "c_finish": {"agent"},
 }
 
+GROUP_TRANSITIONS = {
+    "g_scheme": {"g_benefits", "g_finish"},
+    "g_benefits": {"g_census", "g_finish"},
+    "g_census": {"g_underwrite", "g_finish"},
+    "g_underwrite": {"g_quote", "g_finish"},
+    "g_quote": {"g_acceptance", "g_finish"},
+    "g_acceptance": {"g_issue", "g_finish"},
+    "g_issue": {"g_enroll", "g_finish"},
+    "g_enroll": {"g_finish"},
+    "g_resume": {"g_scheme", "g_benefits", "g_underwrite", "g_quote", "g_acceptance", "g_issue", "g_enroll", "g_finish"},
+    "g_finish": {"agent"},
+}
+
 UNDERWRITING_STATE_KEYS = {
     "journey_stage", "journey_cnic", "journey_customer_id", "journey_case_id",
     "journey_case_number", "journey_product", "journey_missing_documents",
@@ -78,9 +91,19 @@ def test_claims_journey_shape_unchanged():
         assert _transitions(node) == expected, f"{node} transitions changed: {_transitions(node)}"
 
 
+def test_group_journey_registered_with_the_expected_shape():
+    for node, expected in GROUP_TRANSITIONS.items():
+        assert node in graph._graph_builder.nodes, f"{node} missing from graph"
+        assert _transitions(node) == expected, f"{node} transitions changed: {_transitions(node)}"
+
+
 def test_journey_launch_tools_unchanged():
     assert graph.JOURNEY_TOOLS == {"start_underwriting_journey", "continue_underwriting_journey"}
     assert graph.CLAIM_JOURNEY_TOOLS == {"start_claim_journey", "continue_claim_journey"}
+    assert graph.GROUP_JOURNEY_TOOLS == {"start_group_journey", "continue_group_journey"}
+    # No tool may launch two pipelines.
+    assert not graph.JOURNEY_TOOLS & graph.CLAIM_JOURNEY_TOOLS
+    assert not graph.GROUP_JOURNEY_TOOLS & (graph.JOURNEY_TOOLS | graph.CLAIM_JOURNEY_TOOLS)
 
 
 def test_underwriting_stage_ids_unchanged():

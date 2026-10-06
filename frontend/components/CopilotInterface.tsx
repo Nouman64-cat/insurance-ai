@@ -14,7 +14,7 @@ import type { CaseDetail, Journey, JourneyContext, ProposalState } from "@/lib/a
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import type { CaseEvent } from "@/lib/agent/useCaseEvents";
 import { isPassiveAction } from "@/lib/agent/quickActions";
-import { useAgentChat } from "@/lib/agent/useAgentChat";
+import { useAgentChat, type FamilyJourney } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
 import { QuickActionSelect } from "./agent/QuickActionSelect";
@@ -31,6 +31,7 @@ import type { IssuanceResult, PaymentConfirmResult } from "@/app/services/polici
 import { ACRModal } from "./entities/ACRModal";
 import RuleBuilderModal from "./rule-engine/RuleBuilderModal";
 import { IS_DEMO } from "@/lib/envMode";
+import GroupCensusClientTool from "@/components/group/GroupCensusClientTool";
 
 const WELCOME: AgentMessage = {
   id: "1",
@@ -514,6 +515,9 @@ export function CopilotInterface() {
   // Tools like show_record answer with an explicit navigate instruction:
   // remember the target row, push the route, and the global record
   // highlighter pops it once the destination list has rendered.
+  // The URL of the open inline case view, readable from callbacks that outlive a render.
+  const casePanelUrlRef = useRef<string | null>(null);
+
   const handleAgentNavigate = useCallback(
     (route: string, entityId: string, highlight: boolean, embed?: boolean) => {
       if (highlight && entityId) {
@@ -524,6 +528,10 @@ export function CopilotInterface() {
       const sep = path.includes('?') ? '&' : '?';
       const targetUrl = `${window.location.origin}${path}${sep}_portal=1`;
       if (embed) {
+        // A case view that is open is a piece of work in progress (requirements being completed, documents being
+        // uploaded). A reply from the model must not swap it for some other page; another case may replace it.
+        const open = casePanelUrlRef.current;
+        if (open && new URL(open).pathname.startsWith("/case/") && !path.startsWith("/case/")) return;
         // The journey pausing mid pre-underwriting is the one case that
         // should open the case view automatically, inline in the chat —
         // no click needed, since that's exactly the moment the user needs
@@ -542,9 +550,13 @@ export function CopilotInterface() {
     onNavigate: handleAgentNavigate,
     // Demo data: the customer comes with a Draft proposal, so run the same
     // proposal steps as after the form. (Defined further down — see the ref.)
-    onProposalJourney: (customerId, name) => startProposalJourneyRef.current?.(customerId, name),
+    onProposalJourney: (customerId, name, family) => startProposalJourneyRef.current?.(customerId, name, family),
   });
-  const startProposalJourneyRef = useRef<((customerId: string, name: string) => void) | null>(null);
+  // A family is underwritten head first, then a fully insured spouse once the head's requirements are in.
+  const familyQueueRef = useRef<FamilyJourney["cases"]>([]);
+  // Insured family members whose pre-underwriting requirements are complete.
+  const familyDoneRef = useRef<Set<string>>(new Set());
+  const startProposalJourneyRef = useRef<((customerId: string, name: string, family?: FamilyJourney) => void) | null>(null);
 
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -575,6 +587,7 @@ export function CopilotInterface() {
   // sections, a half-filled form) at random moments. Now it stays mounted and is
   // just told to re-read its data; pages that don't listen simply keep what they
   // have.
+  useEffect(() => { casePanelUrlRef.current = casePanel?.url ?? null; }, [casePanel]);
   const casePanelFrameRef = useRef<HTMLIFrameElement | null>(null);
   const casePanelScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollCasePanel = (dir: -1 | 1) =>
@@ -596,7 +609,9 @@ export function CopilotInterface() {
     | "submit" | "review" | "underwrite" | "request_info"
     | "back_draft" | "back_submitted" | "resubmit" | "return_review" | "reject";
   type ProposalState = "draft" | "submitted" | "review" | "info";
-  type ProposalBase = { customerId: string; quoteId: string; policyId: string; name: string; hasMissing: boolean };
+  // A family's proposal is one shared quote for the whole group; its member cases already exist,
+  // so "Send to Underwriting" hands over to pre-underwriting on those cases instead of opening one.
+  type ProposalBase = { customerId: string; quoteId: string; extraQuoteIds?: string[]; policyId: string; name: string; hasMissing: boolean; memberCases?: FamilyJourney["cases"] };
   // `from` is the state the buttons were offered in, so a cancelled action can offer them again.
   type ProposalStep = ProposalBase & { step: ProposalStepId; from: ProposalState };
 
@@ -685,15 +700,26 @@ export function CopilotInterface() {
     return `**Rejected proposal** · ${ref}\n\n${figures}\n- **Customer:** ${d.customer_name} (${d.customer_cnic})`;
   };
 
-  const startProposalJourney = useCallback(async (customerId: string, name: string) => {
+  const startProposalJourney = useCallback(async (customerId: string, name: string, family?: FamilyJourney) => {
     // The quote row is written by a background worker just after the plan is
     // saved, so look for it for a short while.
     let quote: Awaited<ReturnType<typeof listQuotes>>[number] | undefined;
-    for (let i = 0; i < 15 && !quote; i++) {
+    let familyQuotes: Awaited<ReturnType<typeof listQuotes>> = [];
+    // A life bundle gives each member their own proposal; a floater has one shared proposal.
+    const expected = family?.isLifeBundle ? Math.max(family.cases.length, 1) : 1;
+    for (let i = 0; i < 15; i++) {
       try {
-        quote = (await listQuotes()).find((q) => q.customer_id === customerId && !q.quote_id.startsWith("draft-"));
+        const all = (await listQuotes()).filter((q) => !q.quote_id.startsWith("draft-"));
+        if (family) {
+          familyQuotes = all.filter((q) => q.family_group_id === family.familyGroupId && (!family.familyPolicyId || q.family_policy_id === family.familyPolicyId));
+          quote = familyQuotes[0];
+          if (familyQuotes.length >= expected) break;
+        } else {
+          quote = all.find((q) => q.customer_id === customerId);
+          if (quote) break;
+        }
       } catch { /* retry */ }
-      if (!quote) await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 2000));
     }
     if (!quote) {
       addAssistantMessage(
@@ -704,11 +730,13 @@ export function CopilotInterface() {
     }
     const detail = await getQuote(quote.quote_id).catch(() => null);
     const base: ProposalBase = {
-      customerId, quoteId: quote.quote_id, policyId: quote.policy_id, name,
+      customerId: quote.customer_id, quoteId: quote.quote_id, policyId: quote.policy_id, name,
+      extraQuoteIds: familyQuotes.slice(1).map((q) => q.quote_id),
       hasMissing: detail ? missingCustomerFields(detail).length > 0 : false,
+      memberCases: family?.cases,
     };
     addAssistantMessage(
-      `✅ **${name}** has been registered and the proposal is created as a **Draft**.\n\n` +
+      `✅ **${name}** has been registered and the ${family ? "family " : ""}proposal is created as a **Draft**.\n\n` +
         (detail ? `${proposalSummary(detail, "draft")}\n\n` : "") +
         PROPOSAL_OPTIONS.draft.next,
       proposalActions("draft", base)
@@ -720,6 +748,26 @@ export function CopilotInterface() {
   const runProposalStep = useCallback(async (p: ProposalStep) => {
     const { step, from, ...base } = p;
     try {
+      if (step === "underwrite" && p.memberCases?.length) {
+        // Family: the head and — if the family chose it — an insured spouse already have underwriting cases from
+        // enrolment. They are worked in order: the head's 7 requirements first, then the spouse's. Nominees have
+        // no cover and no underwriting.
+        familyQueueRef.current = p.memberCases;
+        familyDoneRef.current = new Set();
+        const [first, ...rest] = p.memberCases;
+        addAssistantMessage(
+          `**${p.name}**'s proposal has been **sent to underwriting** — case **${first.case_number}** (${first.name}, head) is open.` +
+            (rest.length ? ` ${rest.map((c) => `**${c.name}** (fully insured spouse, case ${c.case_number})`).join(", ")} follow${rest.length === 1 ? "s" : ""} once the head's requirements are complete.` : "") + `\n\n` +
+            `Underwriting has 7 requirements (documents, e-application, agent report, PEP & sanctions screening, initial premium, insurance history and medical examination). How would you like to work through them?\n\n` +
+            `- **Guide me step by step** — I'll take you through them one at a time, explaining each.\n` +
+            `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
+          [
+            { label: `Guide me step by step — ${first.name}`, actionType: "uw_requirements", payload: JSON.stringify({ caseId: first.case_id, caseNo: first.case_number }) },
+            { label: `Open the case workspace — ${first.name}`, actionType: "embed", payload: `case/${first.case_id}?autoRun=true` },
+          ]
+        );
+        return;
+      }
       if (step === "underwrite") {
         const tenantId = localStorage.getItem("tenant_id");
         const res = await api.post(`/tenants/${tenantId}/cases`, {
@@ -749,7 +797,7 @@ export function CopilotInterface() {
         addAssistantMessage(`Okay — **${p.name}**'s proposal was not rejected. ${PROPOSAL_OPTIONS[from].next}`, proposalActions(from, base));
         return;
       }
-      await updateQuote(p.quoteId, { status: def.status });
+      await Promise.all([p.quoteId, ...(p.extraQuoteIds ?? [])].map((id) => updateQuote(id, { status: def.status })));
       const detail = await getQuote(p.quoteId).catch(() => null);
       const fresh: ProposalBase = { ...base, hasMissing: detail ? missingCustomerFields(detail).length > 0 : base.hasMissing };
       if (def.to) {
@@ -802,8 +850,21 @@ export function CopilotInterface() {
         setCasePanel(null);
         const { id, name } = event.data as { id?: string; name?: string };
         if (id) startProposalJourney(id, name || "The customer");
+      } else if (event.data.type === "family_members_enrolled") {
+        // The family form's job ends once its members are enrolled — close it and carry on in the
+        // chat with the proposal steps, then pre-underwriting, just like after "Add demo data".
+        setCasePanel(null);
+        const d = event.data as { family_group_id: string; family_policy_id?: string; name?: string; is_life_bundle?: boolean; cases?: FamilyJourney["cases"] };
+        const cases = d.cases ?? [];
+        startProposalJourney("", d.name || "The family", {
+          familyGroupId: d.family_group_id, familyPolicyId: d.family_policy_id, isLifeBundle: d.is_life_bundle,
+          caseNumbers: cases.map((c) => c.case_number), cases,
+        });
       } else if (event.data.type === "document_uploaded") {
-        send("I've uploaded a document for this case in the case view. Please re-check the document checklist and tell me what's next.");
+        // The case view is open and already re-reads its own checklist after an upload. Asking the model to
+        // "re-check" sent it off on a turn whose tools navigate — which swapped this panel for another page
+        // in the middle of the requirements. Leave the panel where it is; the page refreshes itself.
+        casePanelFrameRef.current?.contentWindow?.postMessage({ source: "insurance-ai-copilot", type: "refresh" }, window.location.origin);
       } else if (event.data.type === "gates_cleared") {
         // All 6 gates are done — the case view has nothing further for the
         // user to act on there, so close it and hand off to the chat rather
@@ -814,8 +875,33 @@ export function CopilotInterface() {
         // plain text instead of actually producing clickable quick_actions —
         // this outcome is already known deterministically (the gates really
         // did just clear), so there's nothing for the model to decide here.
-        setCasePanel(null);
         const caseRef = event.data.caseId;
+        const queue = familyQueueRef.current;
+        const at = queue.findIndex((c) => c.case_id === caseRef || c.case_number === caseRef);
+        if (at >= 0) {
+          // A family: the head and a fully insured spouse are underwritten on the same workspace, one tab each.
+          // Stay on it until every insured member's requirements are in, then hand over to the chat.
+          familyDoneRef.current.add(queue[at].case_id);
+          const remaining = queue.filter((c) => !familyDoneRef.current.has(c.case_id));
+          if (remaining.length > 0) {
+            const next = remaining[0];
+            addAssistantMessage(
+              `**${queue[at].name}**'s requirements are complete. Continuing with **${next.name}**${next.relationship === "Spouse" ? " (fully insured spouse)" : ""} — their tab is open now.`
+            );
+            setCasePanel({ url: `${window.location.origin}/case/${next.case_id}?_portal=1`, title: `Case · ${next.name}` });
+            return;
+          }
+          setCasePanel(null);
+          addAssistantMessage(
+            `All underwriting requirements are complete for ${queue.map((c) => `**${c.name}**`).join(" and ")}. Run the AI underwriting for each insured member, head first.`,
+            [
+              ...queue.map((c): QuickAction => ({ label: `Run AI Underwriting — ${c.name}`, actionType: "submit", payload: `Run risk assessment for case ${c.case_number}` })),
+              { label: "Cancel", actionType: "submit", payload: "Not right now — I'll run the risk assessment later." },
+            ]
+          );
+          return;
+        }
+        setCasePanel(null);
         addAssistantMessage(
           "All 6 pre-underwriting gates have cleared for this case. Would you like to proceed with the AI underwriting now?",
           [
@@ -914,6 +1000,14 @@ export function CopilotInterface() {
       if (reqs.every((r) => r.ok)) {
         footer = "**All 7 requirements are complete.** The case is ready for AI underwriting.";
         actions = [act("Run AI Underwriting", `Run risk assessment for case ${no}`), workspace];
+        // A family's next insured member (the spouse) is underwritten once this one's requirements are in.
+        const queue = familyQueueRef.current;
+        const at = queue.findIndex((c) => c.case_id === caseId);
+        const next = at >= 0 ? queue[at + 1] : undefined;
+        if (next) {
+          footer += `\n\n👉 **Next member:** ${next.name}${next.relationship === "Spouse" ? " (fully insured spouse)" : ""} — their underwriting starts now.`;
+          actions.push({ label: `Underwrite ${next.name}`, actionType: "uw_requirements", payload: JSON.stringify({ caseId: next.case_id, caseNo: next.case_number }) });
+        }
       } else if (!reqs[0].ok) {
         footer = "👉 **Next — requirement 1 of 7:** upload the missing documents.";
         actions = [{
@@ -2304,6 +2398,8 @@ export function CopilotInterface() {
             />
           )}
         </>
+        {/* Browser half of the agent's group-census upload (opens its own picker) */}
+        <GroupCensusClientTool interrupt={pendingInterrupt} resolve={resolveInterrupt} notify={notify} />
         {/* Hidden File Input */}
         <input
           type="file"
@@ -3722,6 +3818,7 @@ export function CopilotInterface() {
                 </div>
               )}
               <form onSubmit={handleSubmit} className="flex items-end gap-2">
+                <GroupCensusClientTool interrupt={pendingInterrupt} resolve={resolveInterrupt} notify={notify} />
                 <input
                   type="file"
                   ref={fileInputRef}

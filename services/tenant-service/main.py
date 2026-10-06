@@ -55,6 +55,13 @@ from routers.cases import router as cases_router
 from routers.artifacts import router as artifacts_router
 from routers.organizations import router as organizations_router
 from routers.group_policies import router as group_policies_router
+from routers.group_census_upload import router as group_census_upload_router
+from routers.group_endorsements import router as group_endorsements_router
+from routers.group_claims import router as group_claims_router
+from routers.group_renewals import router as group_renewals_router
+from routers.group_coverages import router as group_coverages_router
+from routers.group_ptf import router as group_ptf_router
+from services.group_renewal import start_group_renewal_scheduler
 from routers.families import router as families_router
 from routers.insurance_plans import router as insurance_plans_router
 from routers.tokens import router as tokens_router
@@ -130,6 +137,9 @@ async def lifespan(app: FastAPI):
     stop_event = asyncio.Event()
     worker_task = start_ocr_worker(stop_event)
 
+    # Group scheme renewals — daily job, opt-in (GROUP_RENEWAL_SCHEDULER=true).
+    group_renewal_task = start_group_renewal_scheduler(stop_event, _session_factory)
+
     # ── STAGE B — POST-ISSUANCE LIFECYCLE (renewal scheduler) ──────────────────
     # Daily state machine (ACTIVE → GracePeriod → Lapsed + renewals). Runs AFTER
     # a policy is issued. Temporarily disabled for now — re-enable with the import
@@ -142,6 +152,8 @@ async def lifespan(app: FastAPI):
     # Graceful shutdown
     stop_event.set()
     await worker_task
+    if group_renewal_task is not None:
+        await group_renewal_task
     # await renewal_task  # STAGE B — disabled (see above)
     await producer.stop()
 
@@ -175,6 +187,12 @@ app.include_router(cases_router)
 app.include_router(artifacts_router)
 app.include_router(organizations_router)
 app.include_router(group_policies_router)
+app.include_router(group_census_upload_router)
+app.include_router(group_endorsements_router)
+app.include_router(group_claims_router)
+app.include_router(group_renewals_router)
+app.include_router(group_coverages_router)
+app.include_router(group_ptf_router)
 app.include_router(families_router)
 app.include_router(insurance_plans_router)
 app.include_router(tokens_router)

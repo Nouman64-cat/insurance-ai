@@ -33,7 +33,18 @@ interface UseAgentChatOptions {
   // A tool created a customer with a Draft proposal and wants the proposal steps
   // run in the chat. Fired once the reply has finished streaming, so the steps
   // land after the assistant's own message rather than racing it.
-  onProposalJourney?: (customerId: string, name: string) => void;
+  // A family's proposal is found by `family.familyGroupId`; `family.caseNumbers` are its member cases.
+  onProposalJourney?: (customerId: string, name: string, family?: FamilyJourney) => void;
+}
+
+/** A family proposal: its shared quote is found by `familyGroupId`; `cases` are the members' underwriting cases. */
+export interface FamilyJourney {
+  familyGroupId: string;
+  caseNumbers: string[];
+  /** Set when members were enrolled from the form: which policy, and whether each member has their own (life bundle). */
+  familyPolicyId?: string;
+  isLifeBundle?: boolean;
+  cases: { case_id: string; case_number: string; name: string; relationship: string }[];
 }
 
 export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposalJourney }: UseAgentChatOptions) {
@@ -43,7 +54,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
   onNavigateRef.current = onNavigate;
   const onProposalJourneyRef = useRef(onProposalJourney);
   onProposalJourneyRef.current = onProposalJourney;
-  const pendingProposalJourneyRef = useRef<{ customerId: string; name: string } | null>(null);
+  const pendingProposalJourneyRef = useRef<{ customerId: string; name: string; family?: FamilyJourney } | null>(null);
 
   const [messages, setMessages] = useState<AgentMessage[]>(() => {
     if (typeof window === "undefined") return welcomeMessage ? [welcomeMessage] : [];
@@ -249,7 +260,10 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
           break;
 
         case "proposal_journey":
-          pendingProposalJourneyRef.current = { customerId: evt.customer_id, name: evt.name };
+          pendingProposalJourneyRef.current = {
+            customerId: evt.customer_id, name: evt.name,
+            family: evt.family_group_id ? { familyGroupId: evt.family_group_id, caseNumbers: evt.case_numbers ?? [], cases: evt.cases ?? [] } : undefined,
+          };
           break;
 
         case "assessment":
@@ -286,7 +300,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
           const pending = pendingProposalJourneyRef.current;
           if (pending) {
             pendingProposalJourneyRef.current = null;
-            onProposalJourneyRef.current?.(pending.customerId, pending.name);
+            onProposalJourneyRef.current?.(pending.customerId, pending.name, pending.family);
           }
           break;
         }

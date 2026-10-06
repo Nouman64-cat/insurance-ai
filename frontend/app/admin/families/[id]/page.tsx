@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/app/services/api";
+import { notifyParentPortal } from "@/lib/agent/portalMessage";
+import FamilyMembersEditor, { FamilyRow, blankRow, buildMembersPayload, checkRows, startRows } from "@/components/family/FamilyMembersEditor";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 
 interface FamilyGroup {
@@ -72,7 +74,10 @@ interface FamilyConfirmResult {
   family_policy_id: string;
   total_sum_insured: number | null;
   members: FamilyMemberOutcome[];
+  nominees?: NomineeShare[];
 }
+
+interface NomineeShare { name: string; relationship: string; share_pct: number; amount: number | null; is_minor: boolean; guardian_name: string | null }
 
 const EMPTY_ROW: MemberFormRow = {
   cnic: "", name: "", dob: "", gender: "Male", occupation: "", declared_income: "", relationship: "Spouse",
@@ -279,7 +284,9 @@ export default function FamilyDetailPage() {
 
   // Member entry
   const [selectedPolicyId, setSelectedPolicyId] = useState("");
-  const [memberRows, setMemberRows] = useState<MemberFormRow[]>([{ ...EMPTY_ROW, relationship: "Self" }]);
+  const [memberRows, setMemberRows] = useState<FamilyRow[]>(startRows());
+  // Nominees already saved for the selected policy: what is left to give, and what a share is a share of.
+  const [nomineeInfo, setNomineeInfo] = useState<{ nominees: NomineeShare[]; total_share: number; base_amount: number | null }>({ nominees: [], total_share: 0, base_amount: null });
   const [validationResult, setValidationResult] = useState<FamilyValidationResult | null>(null);
   const [memberLoading, setMemberLoading] = useState(false);
   const [confirmResult, setConfirmResult] = useState<FamilyConfirmResult | null>(null);
@@ -366,31 +373,16 @@ export default function FamilyDetailPage() {
     }
   };
 
-  const updateMemberRow = (index: number, field: keyof MemberFormRow, value: string) => {
-    let finalValue = value;
-    if (field === "cnic") {
-      finalValue = formatCNIC(value);
-    }
-    setMemberRows((prev) => prev.map((row, i) => (i === index ? { ...row, [field]: finalValue } : row)));
+  // The head is enrolled once; later batches (a spouse, more nominees) have no head row.
+  const hasHead = members.some((m) => m.relationship === "Self");
+  const loadNominees = async (policyId: string) => {
+    try {
+      const r = await api.get(`/tenants/${tenantId}/families/${familyId}/family-policies/${policyId}/nominees`);
+      setNomineeInfo(r.data);
+    } catch { setNomineeInfo({ nominees: [], total_share: 0, base_amount: null }); }
   };
-
-  const addMemberRow = () => setMemberRows((prev) => [...prev, { ...EMPTY_ROW }]);
-  const removeMemberRow = (index: number) => setMemberRows((prev) => prev.filter((_, i) => i !== index));
-
-  const buildMembersPayload = () =>
-    memberRows.map((r) => ({
-      cnic: r.cnic,
-      name: r.name,
-      dob: r.dob,
-      gender: r.gender,
-      occupation: r.occupation,
-      declared_income: parseFloat(r.declared_income) || 0,
-      relationship: r.relationship,
-      ...(r.is_smoker !== "" ? { is_smoker: r.is_smoker === "true" } : {}),
-      ...(r.height_cm !== "" ? { height_cm: parseFloat(r.height_cm) || undefined } : {}),
-      ...(r.weight_kg !== "" ? { weight_kg: parseFloat(r.weight_kg) || undefined } : {}),
-      ...(isLifeBundle ? { coverage_amount: parseFloat(r.coverage_amount) || 0, plan_code: r.plan_code } : {}),
-    }));
+  useEffect(() => { if (selectedPolicyId) loadNominees(selectedPolicyId); }, [selectedPolicyId, familyId]);   // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setMemberRows(hasHead ? [blankRow("Nominee")] : startRows()); }, [hasHead, selectedPolicyId]);
 
   const policyPathSegment = isLifeBundle ? "life-bundle-policies" : "floater-policies";
 
@@ -403,7 +395,7 @@ export default function FamilyDetailPage() {
     try {
       const resp = await api.post<FamilyValidationResult>(
         `/tenants/${tenantId}/families/${familyId}/${policyPathSegment}/${selectedPolicy.id}/members/validate`,
-        { members: buildMembersPayload() }
+        { members: buildMembersPayload(memberRows, isLifeBundle) }
       );
       setValidationResult(resp.data);
     } catch (err: any) {
@@ -422,17 +414,33 @@ export default function FamilyDetailPage() {
     setSuccess("");
     setMemberLoading(true);
     try {
+      const { problems } = checkRows(memberRows, isLifeBundle, nomineeInfo.total_share, hasHead);
+      if (problems.length) { setError(problems.slice(0, 4).join("; ") + (problems.length > 4 ? `; …and ${problems.length - 4} more` : "")); return; }
+      const sent = buildMembersPayload(memberRows, isLifeBundle);
+      const insuredSent = sent.filter((m: any) => m.is_insured);
       const resp = await api.post<FamilyConfirmResult>(
         `/tenants/${tenantId}/families/${familyId}/${policyPathSegment}/${selectedPolicy.id}/members/confirm`,
-        { members: buildMembersPayload() }
+        { members: sent }
       );
+      // When this page is embedded in the Copilot, hand back to the chat so it carries on with the
+      // proposal steps (and then pre-underwriting) — exactly as after "Add demo data". No-op standalone.
+      notifyParentPortal("family_members_enrolled", {
+        family_group_id: familyId,
+        family_policy_id: selectedPolicy.id,
+        name: family?.name ?? "The family",
+        is_life_bundle: isLifeBundle,
+        // Only the head and an insured spouse have underwriting cases, head first; they come back in the order sent.
+        cases: resp.data.members
+          .map((o: any, i: number) => ({ case_id: o.case_id, case_number: o.case_number, name: (insuredSent[i] as any)?.name ?? "Member", relationship: (insuredSent[i] as any)?.relationship ?? "" }))
+          .filter((c: any) => c.case_id && c.case_number),
+      });
       setSuccess(
-        `${resp.data.members.length} member(s) enrolled on the ${isLifeBundle ? "life bundle" : "floater"} policy.`
+        `${resp.data.members.length} insured member(s) and ${sent.length - resp.data.members.length} nominee(s) saved on the ${isLifeBundle ? "life bundle" : "floater"} policy.`
       );
       setConfirmResult(resp.data);
-      setMemberRows([{ ...EMPTY_ROW }]);
       setValidationResult(null);
-      fetchAll();
+      await fetchAll();
+      await loadNominees(selectedPolicy.id);
     } catch (err: any) {
       let detail = err.response?.data?.detail;
       if (typeof detail === "string") {
@@ -663,120 +671,11 @@ export default function FamilyDetailPage() {
               </div>
 
               <div className="p-5 space-y-3">
-                <p className="text-xs text-slate-400">
-                  Family size: 2-8 members, exactly one must be &quot;Self&quot;. A member already enrolled on this family&apos;s
-                  other policy can be reused here — just reuse their CNIC. {isLifeBundle
-                    ? "Each life-bundle member picks their own coverage amount and plan; the discount above is applied to their rate."
-                    : "Floater members share one pool (set on the policy) — every member is individually AI-risk-scored, no guaranteed issue."}
-                </p>
-
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-left text-slate-400 uppercase tracking-wider">
-                        <th className="pb-2 pr-2">CNIC</th>
-                        <th className="pb-2 pr-2">Full Name</th>
-                        <th className="pb-2 pr-2">DOB</th>
-                        <th className="pb-2 pr-2">Gender</th>
-                        <th className="pb-2 pr-2">Relationship</th>
-                        <th className="pb-2 pr-2">Occupation</th>
-                        <th className="pb-2 pr-2">Annual Income (PKR)</th>
-                        {isLifeBundle && <th className="pb-2 pr-2">Coverage (PKR)</th>}
-                        {isLifeBundle && <th className="pb-2 pr-2">Plan</th>}
-                        <th className="pb-2 pr-2">Smoker?</th>
-                        <th className="pb-2 pr-2">Height (cm)</th>
-                        <th className="pb-2 pr-2">Weight (kg)</th>
-                        <th className="pb-2"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {memberRows.map((row, i) => (
-                        <tr key={i}>
-                          <td className="pr-2 pb-2 align-top">
-                            <input value={row.cnic} onChange={(e) => updateMemberRow(i, "cnic", e.target.value)} placeholder="61101-1234567-1"
-                              className={`w-32 bg-slate-50 border rounded px-2 py-1 ${row.cnic && !/^\d{5}-\d{7}-\d$/.test(row.cnic) ? 'border-red-400 focus:outline-red-400' : 'border-slate-200'}`} />
-                            {row.cnic && !/^\d{5}-\d{7}-\d$/.test(row.cnic) && (
-                              <p className="text-[10px] text-red-500 mt-0.5 leading-tight">Invalid format</p>
-                            )}
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <input value={row.name} onChange={(e) => updateMemberRow(i, "name", e.target.value)} placeholder="Full name"
-                              className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <input type="date" value={row.dob} onChange={(e) => updateMemberRow(i, "dob", e.target.value)}
-                              className="w-32 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <select value={row.gender} onChange={(e) => updateMemberRow(i, "gender", e.target.value)}
-                              className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1">
-                              <option value="Male">Male</option>
-                              <option value="Female">Female</option>
-                              <option value="Other">Other</option>
-                            </select>
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <select value={row.relationship} onChange={(e) => updateMemberRow(i, "relationship", e.target.value)}
-                              className="w-24 bg-slate-50 border border-slate-200 rounded px-2 py-1">
-                              <option value="Self">Self</option>
-                              <option value="Spouse">Spouse</option>
-                              <option value="Child">Child</option>
-                              <option value="Parent">Parent</option>
-                            </select>
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <input value={row.occupation} onChange={(e) => updateMemberRow(i, "occupation", e.target.value)} placeholder="Job title"
-                              className="w-28 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <input type="number" value={row.declared_income} onChange={(e) => updateMemberRow(i, "declared_income", e.target.value)} placeholder="0"
-                              className="w-24 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
-                          </td>
-                          {isLifeBundle && (
-                            <td className="pr-2 pb-2 align-top">
-                              <input type="number" value={row.coverage_amount} onChange={(e) => updateMemberRow(i, "coverage_amount", e.target.value)} placeholder="5000000"
-                                className="w-28 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
-                            </td>
-                          )}
-                          {isLifeBundle && (
-                            <td className="pr-2 pb-2 align-top">
-                              <select value={row.plan_code} onChange={(e) => updateMemberRow(i, "plan_code", e.target.value)}
-                                className="w-36 bg-slate-50 border border-slate-200 rounded px-2 py-1">
-                                <option value="">— select plan —</option>
-                                {lifePlans.map((p) => (
-                                  <option key={p.code} value={p.code}>{p.label}</option>
-                                ))}
-                              </select>
-                            </td>
-                          )}
-                          <td className="pr-2 pb-2 align-top">
-                            <select value={row.is_smoker} onChange={(e) => updateMemberRow(i, "is_smoker", e.target.value)}
-                              className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1">
-                              <option value="">—</option>
-                              <option value="false">No</option>
-                              <option value="true">Yes</option>
-                            </select>
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <input type="number" value={row.height_cm} onChange={(e) => updateMemberRow(i, "height_cm", e.target.value)} placeholder="170"
-                              className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
-                          </td>
-                          <td className="pr-2 pb-2 align-top">
-                            <input type="number" value={row.weight_kg} onChange={(e) => updateMemberRow(i, "weight_kg", e.target.value)} placeholder="70"
-                              className="w-20 bg-slate-50 border border-slate-200 rounded px-2 py-1" />
-                          </td>
-                          <td className="pb-2 align-top">
-                            <button type="button" onClick={() => removeMemberRow(i)} className="text-red-500 hover:text-red-700 font-bold px-1 mt-1">✕</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <button type="button" onClick={addMemberRow} className="text-xs font-semibold text-blue-600 hover:underline">
-                  + Add Row
-                </button>
+                <FamilyMembersEditor
+                  rows={memberRows} onChange={setMemberRows} isBundle={isLifeBundle} lifePlans={lifePlans} hasHead={hasHead}
+                  existingShare={nomineeInfo.total_share}
+                  baseAmount={isLifeBundle ? parseFloat(memberRows.find((r) => r.kind === "Self")?.coverage_amount || "0") || nomineeInfo.base_amount || 0 : selectedPolicy?.total_sum_insured || 0}
+                />
 
                 {validationResult && (
                   <div className={`rounded-lg border p-3 text-xs space-y-1 ${
@@ -847,6 +746,37 @@ export default function FamilyDetailPage() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {/* Nominees & their shares of the head's death benefit */}
+          {nomineeInfo.nominees.length > 0 && (
+            <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-2">
+                <p className="text-sm font-semibold text-slate-700">Nominees — share of the head&apos;s death benefit</p>
+                <span className={`text-xs font-semibold tabular-nums ${Math.abs(nomineeInfo.total_share - 100) < 0.01 ? "text-emerald-700" : "text-amber-700"}`}>
+                  {nomineeInfo.total_share}% allocated{nomineeInfo.base_amount ? ` of ${formatPKR(nomineeInfo.base_amount)}` : ""}
+                </span>
+              </div>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    <th className="px-5 py-3 text-left">Name</th><th className="px-5 py-3 text-left">Relationship</th>
+                    <th className="px-5 py-3 text-right">Share</th><th className="px-5 py-3 text-right">Amount</th><th className="px-5 py-3 text-left">Note</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {nomineeInfo.nominees.map((n, i) => (
+                    <tr key={`${n.name}${i}`}>
+                      <td className="px-5 py-3 font-medium text-slate-800">{n.name}</td>
+                      <td className="px-5 py-3 text-slate-600">{n.relationship}</td>
+                      <td className="px-5 py-3 text-right tabular-nums">{n.share_pct}%</td>
+                      <td className="px-5 py-3 text-right tabular-nums text-slate-700">{n.amount != null ? formatPKR(n.amount) : "—"}</td>
+                      <td className="px-5 py-3 text-xs text-slate-500">{n.is_minor ? `Minor${n.guardian_name ? ` — paid to ${n.guardian_name}` : ""}` : ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
 

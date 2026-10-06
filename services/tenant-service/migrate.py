@@ -1246,6 +1246,76 @@ MIGRATIONS: list[tuple[str, str]] = [
         "ADD COLUMN IF NOT EXISTS annual_premium DOUBLE PRECISION, "
         "ADD COLUMN IF NOT EXISTS cover_note VARCHAR(255)",
     ),
+    # ── Group Takaful — Wakala fee / PTF split (Phase 2 follow-up)
+    (
+        "v51c — add wakala_fee_pct to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS wakala_fee_pct DOUBLE PRECISION",
+    ),
+    (
+        "v51d — add Wakala fee / PTF split columns to group_quotes",
+        "ALTER TABLE group_quotes "
+        "ADD COLUMN IF NOT EXISTS wakala_fee_pct DOUBLE PRECISION, "
+        "ADD COLUMN IF NOT EXISTS wakala_fee DOUBLE PRECISION, "
+        "ADD COLUMN IF NOT EXISTS ptf_allocation DOUBLE PRECISION",
+    ),
+    (
+        "v51e — default Wakala fee on existing Group Family Takaful plans",
+        "UPDATE insurance_plans SET wakala_fee_pct = 30.0 "
+        "WHERE code = 'GROUP_FAMILY_TAKAFUL' AND wakala_fee_pct IS NULL",
+    ),
+    # ── Group claims (Phase 5)
+    (
+        "v52a — add group member / dependant / coverage columns to claims",
+        "ALTER TABLE claims "
+        "ADD COLUMN IF NOT EXISTS group_member_id UUID REFERENCES group_members(id) ON DELETE SET NULL, "
+        "ADD COLUMN IF NOT EXISTS group_dependent_id UUID REFERENCES group_member_dependents(id) ON DELETE SET NULL, "
+        "ADD COLUMN IF NOT EXISTS coverage_type VARCHAR(30)",
+    ),
+    (
+        "v52b — add payee columns to claim_payouts",
+        "ALTER TABLE claim_payouts "
+        "ADD COLUMN IF NOT EXISTS payee_name VARCHAR(255), "
+        "ADD COLUMN IF NOT EXISTS payee_cnic VARCHAR(20), "
+        "ADD COLUMN IF NOT EXISTS payee_relationship VARCHAR(100), "
+        "ADD COLUMN IF NOT EXISTS share_pct DOUBLE PRECISION",
+    ),
+    (
+        "v52c — index claims.group_member_id",
+        "CREATE INDEX IF NOT EXISTS ix_claims_group_member_id ON claims (group_member_id)",
+    ),
+    # ── Group Takaful / coverages / credit life (Phase 6)
+    (
+        "v54a — add retakaful_share_pct to insurance_plans",
+        "ALTER TABLE insurance_plans ADD COLUMN IF NOT EXISTS retakaful_share_pct DOUBLE PRECISION",
+    ),
+    (
+        "v54b — add retakaful columns to group_quotes",
+        "ALTER TABLE group_quotes "
+        "ADD COLUMN IF NOT EXISTS retakaful_share_pct DOUBLE PRECISION, "
+        "ADD COLUMN IF NOT EXISTS retakaful_contribution DOUBLE PRECISION",
+    ),
+    (
+        "v54c — add retakaful_delta to group_endorsements",
+        "ALTER TABLE group_endorsements ADD COLUMN IF NOT EXISTS retakaful_delta DOUBLE PRECISION",
+    ),
+    (
+        "v54d — add loan_amount to group_members (Group Credit Life)",
+        "ALTER TABLE group_members ADD COLUMN IF NOT EXISTS loan_amount DOUBLE PRECISION",
+    ),
+    (
+        "v54e — default retakaful share on existing Group Family Takaful plans",
+        "UPDATE insurance_plans SET retakaful_share_pct = 20.0 "
+        "WHERE code = 'GROUP_FAMILY_TAKAFUL' AND retakaful_share_pct IS NULL",
+    ),
+    # ── Group renewals (Phase 5): group_renewals is a new table (create_all)
+    (
+        "v53a — add renewal_id to group_quotes",
+        "ALTER TABLE group_quotes ADD COLUMN IF NOT EXISTS renewal_id UUID",
+    ),
+    (
+        "v53b — index group_quotes.renewal_id",
+        "CREATE INDEX IF NOT EXISTS ix_group_quotes_renewal_id ON group_quotes (renewal_id)",
+    ),
 ]
 
 
@@ -1786,6 +1856,31 @@ async def _rename_applicant_to_customer(conn) -> None:
     log.info("applicant->customer rename verified")
 
 
+# v41a–v41e re-add five legacy columns to business_rules that the rule-engine v2 data
+# migration reads and POST_DATA_MIGRATIONS (v44h) then drops. Run unconditionally they
+# do that on EVERY boot, and Postgres never reuses a dropped column's slot — each start
+# used up five of the table's 1,600 (a dev database that had restarted ~300 times could
+# no longer add a column to it, and the service refused to start). Once v2 has been
+# applied they have nothing left to do, so they are skipped.
+_LEGACY_RULE_COLUMN_STEPS = {"v41a", "v41b", "v41c", "v41d", "v41e"}
+
+
+async def _rule_engine_v2_applied() -> bool:
+    """True once the v2 data migration has run: rule_sets.domain is gone (dropped by
+    v44) and the category seed exists. A brand-new database has neither, so it still
+    takes the full path once."""
+    async with _engine.connect() as conn:
+        has_domain = (await conn.execute(text(
+            "SELECT 1 FROM information_schema.columns WHERE table_name='rule_sets' AND column_name='domain'"
+        ))).first()
+        if has_domain:
+            return False
+        try:
+            return (await conn.execute(text("SELECT 1 FROM rule_categories LIMIT 1"))).first() is not None
+        except Exception:  # noqa: BLE001 — table not there yet
+            return False
+
+
 async def run_migrations() -> None:
     # Check if database supports pgvector extension before registering models
     try:
@@ -1820,7 +1915,11 @@ async def run_migrations() -> None:
         log.info("create_all complete")
 
     # 2. Apply column / index changes to existing tables in individual transactions.
+    v2_done = await _rule_engine_v2_applied()
     for label, sql in MIGRATIONS:
+        if v2_done and label.split(" ", 1)[0] in _LEGACY_RULE_COLUMN_STEPS:
+            log.info("skipped (rule engine v2 already applied): %s", label)
+            continue
         async with _engine.begin() as conn:
             await conn.execute(text(sql))
             log.info("applied: %s", label)

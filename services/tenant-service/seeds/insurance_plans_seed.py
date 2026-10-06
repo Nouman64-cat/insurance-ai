@@ -389,9 +389,25 @@ INSURANCE_PLAN_SEED_DATA: list[dict] = [
         "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 70, "max_income_multiple": 36,
         "min_group_size": 10,
         "underwriting_basis": "Group-level (size, industry, claims history) — guaranteed issue up to the Free Cover Limit",
-        # Same v1 placeholder contribution rate as GROUP_LIFE until Wakala fee /
-        # PTF split pricing lands (GROUP_LIFE_PLAN.md Phase 6).
-        "base_premium_rate": 3.2, "smoker_factor": 1.4,
+        # Same v1 placeholder contribution rate as GROUP_LIFE. The Wakala fee is a
+        # placeholder too — set the real figure per plan; the rest of the risk
+        # contribution is allocated to the PTF (group_pricing.takaful_split), of
+        # which retakaful_share_pct is ceded to the retakaful operator.
+        "base_premium_rate": 3.2, "smoker_factor": 1.4, "wakala_fee_pct": 30.0, "retakaful_share_pct": 20.0,
+        "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_GROUP}],
+        "required_documents": [DOC_CENSUS, DOC_BUSINESS_REG],
+    },
+    {
+        "code": "GROUP_CREDIT_LIFE", "label": "Group Credit Life", "insurance_type": "GROUP_LIFE",
+        "category": "Group", "product_category": "Conventional", "partner_bank": None, "color": "blue",
+        "description": "Protects a lender's loan book: the bank, microfinance institution or leasing company is the policyholder and its borrowers are the insured members. Each borrower's cover is their outstanding loan balance, paying off the loan if they die — so the family isn't left with the debt.",
+        "entry_age_min": 18, "entry_age_max": 65, "entry_age_label": "Borrower",
+        "term_min_years": 1, "term_max_years": 1, "max_maturity_age": 70, "max_income_multiple": 36,
+        "min_group_size": 5,
+        "underwriting_basis": "Portfolio-level (size, loan mix) — guaranteed issue up to the Free Cover Limit",
+        # Cheaper per 1,000 than Group Life: cover tracks a balance that falls as the loan is repaid,
+        # and is re-based each renewal. A v1 placeholder like the other group rates.
+        "base_premium_rate": 2.4, "smoker_factor": 1.3,
         "medical_exam_tiers": [{"minSumAssured": 0, "tier": TIER_GROUP}],
         "required_documents": [DOC_CENSUS, DOC_BUSINESS_REG],
     },

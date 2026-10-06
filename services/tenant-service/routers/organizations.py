@@ -17,6 +17,7 @@ from group_benefits import (
     optional_text,
     parse_date,
     validate_benefit_class,
+    validate_coverage,
     validate_scheme_census,
 )
 from group_underwriting import (
@@ -609,6 +610,11 @@ async def create_benefit_class(
 
     spec = body.model_dump()
     errors = validate_benefit_class(spec)
+    for rider in spec.get("coverages") or []:
+        errors += validate_coverage(rider)
+    kinds = [r["coverage_type"] for r in spec.get("coverages") or []]
+    if len(kinds) != len(set(kinds)):
+        errors.append("Each benefit can only be listed once per class.")
     if errors:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
 
@@ -642,6 +648,11 @@ async def create_benefit_class(
         tenant_id=tenant_id, benefit_class_id=cls.id,
         coverage_type=GroupCoverageType.LIFE.value, percent_of_base=100.0,
     ))
+    for rider in spec.get("coverages") or []:
+        session.add(GroupClassCoverage(
+            tenant_id=tenant_id, benefit_class_id=cls.id, coverage_type=rider["coverage_type"],
+            percent_of_base=float(rider["percent_of_base"]), max_amount=rider.get("max_amount"),
+        ))
     await session.commit()
     await session.refresh(cls)
     return await _benefit_class_read(cls, session)
@@ -733,12 +744,33 @@ async def confirm_employee_census(
     result = validate_scheme_census(enrolled, body.employees, classes, min_group_size)
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
+    return await enroll_census_rows(tenant_id, org_id, master_policy, body.employees, classes, scheme_plan, session)
 
+
+async def enroll_census_rows(
+    tenant_id: UUID,
+    org_id: UUID,
+    master_policy: MasterPolicy,
+    employees: List[Dict[str, Any]],
+    classes: List[GroupBenefitClass],
+    scheme_plan: Optional[InsurancePlan],
+    session: AsyncSession,
+    *,
+    mark_proposed: bool = True,
+) -> CensusConfirmResponse:
+    """Enrol already-validated census rows: customers (reused by CNIC), draft
+    certificates, GroupMembers, risk scoring and underwriting cases for members
+    above the Free Cover Limit. Commits.
+
+    `mark_proposed=False` is for adding people to a scheme that is already in
+    force (an ADD endorsement, services/group_endorsement_engine.py): it must
+    not push the master policy back to "Proposed".
+    """
     # ── Pass 1: parse rows, resolve FCL, resolve risk-engine calls ───────────
     # No DB session/transaction held open across this — network I/O to
     # risk-engine happens entirely before Pass 2 starts writing.
     parsed_rows: List[Dict[str, Any]] = []
-    for row in body.employees:
+    for row in employees:
         try:
             dob = row["dob"] if isinstance(row["dob"], date) else date.fromisoformat(str(row["dob"]))
             declared_income = float(row["declared_income"])
@@ -753,7 +785,7 @@ async def confirm_employee_census(
     # existing FCL so it can't retroactively change the guaranteed-issue/
     # above-FCL split already applied to the existing roster.
     if master_policy.free_cover_limit is None:
-        free_cover_limit = compute_free_cover_limit(len(parsed_rows), average_age(body.employees))
+        free_cover_limit = compute_free_cover_limit(len(parsed_rows), average_age(employees))
     else:
         free_cover_limit = master_policy.free_cover_limit
 
@@ -882,6 +914,7 @@ async def confirm_employee_census(
             grade=optional_text(row.get("grade")),
             basic_monthly_salary=basic_monthly_salary(row),
             joining_date=parse_date(row.get("joining_date")),
+            loan_amount=float(row["loan_amount"]) if row.get("loan_amount") not in (None, "") else None,
             coverage_amount=coverage_amount,
             cover_start_date=master_policy.effective_date,
             status=GroupMemberStatus.PENDING.value,
@@ -988,7 +1021,8 @@ async def confirm_employee_census(
     # profile_status is left as-is (LEAD) so the org keeps its manual "In Progress"
     # button, just like an individual lead. Only a later issuance step marks the
     # master policy "Active" / the org a POLICYHOLDER.
-    master_policy.status = "Proposed"
+    if mark_proposed:
+        master_policy.status = "Proposed"
     if master_policy.free_cover_limit is None:
         master_policy.free_cover_limit = free_cover_limit
     session.add(master_policy)

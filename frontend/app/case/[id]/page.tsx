@@ -169,6 +169,11 @@ interface OrganizationMemberCase {
 }
 
 interface CaseDetailResponse {
+  family_members?: { customer_id: string; name: string; cnic: string; relationship?: string | null; case_id: string; case_number: string; case_status: string; is_current: boolean }[];
+  /** Insured lives on this family policy whose own underwriting isn't approved yet — the policy waits for them. */
+  /** Set on an insured spouse's case: the policy is issued to the head, on this case instead. */
+  family_head_case?: { case_id: string; case_number: string; name: string; case_status: string } | null;
+  family_underwriting_pending?: { name: string; relationship?: string | null; case_id: string; case_number: string; case_status: string }[];
   case: CaseData;
   customer: CustomerData | null;
   principal_participant_name?: string | null;
@@ -1607,8 +1612,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
       description: (eApp?.status === "Submitted" || eApp?.status === "Verified")
         ? `Customer E-Application submitted (${eApp.status}).`
         : "Customer health disclosures questionnaire pending submission or verification.",
-      actionLabel: "Open Pre-Underwriting",
-      actionHref: "/underwriting?tab=pre-underwriting",
+      actionLabel: "Open E-Application",
+      actionHref: `/underwriting?tab=pre-underwriting&case=${caseId}&gate=eapp&returnTo=${encodeURIComponent(`/case/${caseId}`)}`,
     },
     {
       id: "acr",
@@ -1664,11 +1669,16 @@ export default function CasePage({ params }: { params: { id: string } }) {
       title: "Insurance History Clearance",
       done: historyDone,
       statusLabel: history?.status ?? "Not Started",
-      description: historyDone 
-        ? "Prior coverage & replacement history check clear." 
+      description: historyDone
+        ? "Prior coverage & replacement history check clear."
+        : history?.status === "Flagged"
+        // Running the screen again only flags it again — a flagged screen needs someone to accept it.
+        ? `Flagged: ${(history.findings ?? []).map((f) => f.message).slice(0, 2).join(" ") || "over-insurance or prior-history findings."} Review it, then accept the findings to continue.`
         : "Prior policy coverage & over-insurance history check required.",
-      actionLabel: histBusy ? "Checking…" : "Run History Check",
-      onAction: handleRunHistory,
+      actionLabel: histBusy ? "Working…" : history?.status === "Flagged" ? "Accept Findings & Clear" : "Run History Check",
+      onAction: history?.status === "Flagged"
+        ? () => { if (window.confirm("Accept the flagged insurance-history findings and clear this gate? This is recorded as an underwriter override.")) handleHistoryOverride(true); }
+        : handleRunHistory,
       busy: histBusy,
     },
     {
@@ -1893,6 +1903,27 @@ export default function CasePage({ params }: { params: { id: string } }) {
         );
       })()}
 
+      {/* ── Family: one tab per insured member (head, fully insured spouse) ───────────── */}
+      {(detail?.family_members?.length ?? 0) > 1 && (
+        <div className="flex items-end gap-1 border-b border-slate-200 overflow-x-auto" role="tablist" aria-label="Insured family members">
+          {(detail?.family_members ?? []).map((m) => {
+            const role = m.relationship === "SELF" || m.relationship === "Self" ? "Head" : m.relationship ? m.relationship[0] + m.relationship.slice(1).toLowerCase() : "";
+            const active = m.case_id === detail?.case.caseld;
+            return (
+              <button
+                key={m.case_id} type="button" role="tab" aria-selected={active}
+                onClick={() => { if (!active) router.push(`/case/${m.case_id}`); }}
+                className={`px-4 py-2.5 text-xs font-semibold border-b-2 whitespace-nowrap transition-colors ${active ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+              >
+                {m.name}
+                {role && <span className="ml-1.5 font-normal text-slate-400">· {role}</span>}
+                <span className={`ml-2 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${m.case_status === "Approved" || m.case_status === "Closed" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-slate-50 text-slate-500 border-slate-200"}`}>{m.case_status}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-2.5">
           <p className="text-xs text-red-600">{error}</p>
@@ -1947,6 +1978,31 @@ export default function CasePage({ params }: { params: { id: string } }) {
                       </option>
                     ))}
                   </select>
+                </div>
+              )}
+              {detail?.family_head_case && (
+                <div className="mb-4 bg-blue-50 border border-blue-100 rounded-lg p-3">
+                  <p className="text-xs font-semibold text-blue-800">The policy is issued to the head</p>
+                  <p className="text-[11px] text-blue-700 mt-0.5 leading-snug">
+                    This is an insured spouse&apos;s case. Pre-issuance, issuance and payment run on the head&apos;s case —
+                    <button type="button" onClick={() => router.push(`/case/${detail.family_head_case!.case_id}`)} className="ml-1 font-bold underline">
+                      {detail.family_head_case.name} · {detail.family_head_case.case_number}
+                    </button>.
+                  </p>
+                </div>
+              )}
+              {(detail?.family_underwriting_pending?.length ?? 0) > 0 && (
+                <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg p-3 space-y-1.5">
+                  <p className="text-xs font-semibold text-amber-800">The family policy is waiting on another insured life</p>
+                  <p className="text-[11px] text-amber-700 leading-snug">
+                    A fully insured spouse is underwritten in their own case. The policy can only be approved and issued once every insured member&apos;s case is approved.
+                  </p>
+                  {(detail.family_underwriting_pending ?? []).map((m) => (
+                    <button key={m.case_id} type="button" onClick={() => router.push(`/case/${m.case_id}`)}
+                      className="block w-full text-left text-xs font-semibold text-amber-900 hover:underline">
+                      {m.name}{m.relationship ? ` (${m.relationship})` : ""} — {m.case_number} · {m.case_status} →
+                    </button>
+                  ))}
                 </div>
               )}
               {detail?.organization_name && (

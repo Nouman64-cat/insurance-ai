@@ -11,6 +11,7 @@ uses one basis (shared/models/core.py GroupBenefitBasis):
     SalaryMultiple  salary_multiple × basic monthly salary
     ServiceBanded   amount of the highest band whose min_years the member's
                     completed years of service reach
+    LoanBalance     the member's own outstanding loan balance (Group Credit Life)
 
 then min_cover / max_cover are applied. A MasterPolicy with no classes keeps
 its legacy behaviour: sum_assured_multiple × (declared_income / 12).
@@ -22,9 +23,10 @@ from datetime import date
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from group_underwriting import SUM_ASSURED_MULTIPLE_RANGE, CensusValidationResult, validate_census
-from shared.models.core import GroupBenefitBasis
+from shared.models.core import GroupBenefitBasis, GroupCoverageType
 
 _BASES = {b.value for b in GroupBenefitBasis}
+RIDER_TYPES = {c.value for c in GroupCoverageType if c is not GroupCoverageType.LIFE}
 
 
 def parse_date(raw: Any) -> Optional[date]:
@@ -75,6 +77,8 @@ def validate_benefit_class(spec: Dict[str, Any]) -> List[str]:
         lo, hi = SUM_ASSURED_MULTIPLE_RANGE
         if multiple is None or not lo <= multiple <= hi:
             errors.append(f"SalaryMultiple classes need salary_multiple between {lo:g}x and {hi:g}x.")
+    elif basis == GroupBenefitBasis.LOAN_BALANCE.value:
+        pass            # cover is each member's own outstanding balance — nothing to define here (min/max caps below)
     else:
         bands = spec.get("service_bands") or []
         if not bands:
@@ -94,6 +98,23 @@ def validate_benefit_class(spec: Dict[str, Any]) -> List[str]:
     lo_cap, hi_cap = spec.get("min_cover"), spec.get("max_cover")
     if lo_cap is not None and hi_cap is not None and lo_cap > hi_cap:
         errors.append("min_cover cannot exceed max_cover.")
+    return errors
+
+
+def validate_coverage(spec: Dict[str, Any]) -> List[str]:
+    """Errors for a benefit added to a class on top of Life (Life 100% is automatic)."""
+    errors: List[str] = []
+    kind = spec.get("coverage_type")
+    if kind == GroupCoverageType.LIFE.value:
+        errors.append("Life cover is automatic (100% of the class's base) and can't be added or changed.")
+    elif kind not in RIDER_TYPES:
+        errors.append(f"coverage_type must be one of {sorted(RIDER_TYPES)} (got {kind!r}).")
+    pct = spec.get("percent_of_base")
+    if pct is None or not 0 < float(pct) <= 1000:
+        errors.append("percent_of_base must be above 0 and at most 1000.")
+    cap = spec.get("max_amount")
+    if cap is not None and float(cap) <= 0:
+        errors.append("max_amount must be positive when given.")
     return errors
 
 
@@ -125,12 +146,17 @@ def resolve_benefit_class(row: Dict[str, Any], classes: Sequence[Any]) -> Tuple[
     return None, "no benefit class given, no class matches its grade, and the scheme has no default class"
 
 
-def class_cover(cls: Any, monthly_salary: float, joining_date: Optional[date], as_of: date) -> float:
+def class_cover(cls: Any, monthly_salary: float, joining_date: Optional[date], as_of: date,
+                loan_amount: Optional[float] = None) -> float:
     basis = cls.basis.value if hasattr(cls.basis, "value") else cls.basis
     if basis == GroupBenefitBasis.FLAT.value:
         amount = float(cls.flat_amount or 0)
     elif basis == GroupBenefitBasis.SALARY_MULTIPLE.value:
         amount = float(cls.salary_multiple or 0) * monthly_salary
+    elif basis == GroupBenefitBasis.LOAN_BALANCE.value:
+        if loan_amount in (None, ""):
+            raise ValueError("LoanBalance cover needs the member's loan_amount")
+        amount = float(loan_amount)
     else:
         if joining_date is None:
             raise ValueError("ServiceBanded cover needs a joining_date")
@@ -159,7 +185,7 @@ def member_cover(
         raise ValueError(error)
     if cls is None:
         return None, salary * legacy_multiple
-    return cls, class_cover(cls, salary, parse_date(row.get("joining_date")), as_of)
+    return cls, class_cover(cls, salary, parse_date(row.get("joining_date")), as_of, row.get("loan_amount"))
 
 
 def census_row_class_errors(row: Dict[str, Any], index: int, classes: Sequence[Any]) -> List[str]:
@@ -171,6 +197,13 @@ def census_row_class_errors(row: Dict[str, Any], index: int, classes: Sequence[A
         basis = cls.basis.value if hasattr(cls.basis, "value") else cls.basis
         if basis == GroupBenefitBasis.SERVICE_BANDED.value and not row.get("joining_date"):
             return [f"Row {index + 1}: class '{cls.name}' is service-banded, so joining_date is required."]
+        if basis == GroupBenefitBasis.LOAN_BALANCE.value:
+            try:
+                ok = float(row.get("loan_amount")) > 0
+            except (TypeError, ValueError):
+                ok = False
+            if not ok:
+                return [f"Row {index + 1}: class '{cls.name}' covers the outstanding loan, so loan_amount (above zero) is required."]
     return []
 
 

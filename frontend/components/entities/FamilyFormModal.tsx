@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
+import FamilyFullEntryModal from "./FamilyFullEntryModal";
 
 export interface FamilyFormValue {
   id: string;
@@ -93,6 +94,10 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
   }, [open, mode, family]);
 
   if (!open) return null;
+
+  // A new family entered in full is one window with three tabs (family, policy, members) and
+  // can be filled from an uploaded document; editing an existing family keeps the short form below.
+  if (mode === "full" && !family) return <FamilyFullEntryModal open={open} onClose={onClose} onSaved={onSaved} />;
 
   const handleQuickSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

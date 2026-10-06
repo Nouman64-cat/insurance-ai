@@ -1,8 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
+import SchemePanel from "@/components/group/SchemePanel";
+import ClassesPanel from "@/components/group/ClassesPanel";
+import MembersPanel from "@/components/group/MembersPanel";
+import QuotePanel from "@/components/group/QuotePanel";
+import EndorsementsPanel from "@/components/group/EndorsementsPanel";
+import ClaimsPanel from "@/components/group/ClaimsPanel";
+import RenewalsPanel from "@/components/group/RenewalsPanel";
 
 interface Organization {
   id: string;
@@ -23,8 +30,32 @@ interface MasterPolicy {
   effective_date: string;
   status: string;
   free_cover_limit: number | null;
+  policy_number?: string | null;
+  expiry_date?: string | null;
+  plan_code?: string | null;
+  plan_label?: string | null;
+  business_type?: string | null;
   created_at: string;
 }
+
+const GROUP_TABS = [
+  { id: "overview", label: "Overview" },
+  { id: "scheme", label: "Scheme" },
+  { id: "classes", label: "Classes" },
+  { id: "members", label: "Members" },
+  { id: "quote", label: "Quote" },
+  { id: "endorsements", label: "Endorsements" },
+  { id: "claims", label: "Claims" },
+  { id: "renewals", label: "Renewals" },
+] as const;
+type GroupTab = (typeof GROUP_TABS)[number]["id"];
+
+const GROUP_PLANS = [
+  { code: "GROUP_LIFE", label: "Group Life (Conventional)" },
+  { code: "GROUP_LIFE_SME", label: "Group Life — SME (Conventional)" },
+  { code: "GROUP_FAMILY_TAKAFUL", label: "Group Family Takaful" },
+  { code: "GROUP_CREDIT_LIFE", label: "Group Credit Life (Conventional)" },
+];
 
 interface Employee {
   id: string;
@@ -236,6 +267,7 @@ function employeeHasFullDetails(e: Employee): boolean {
 export default function OrganizationDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const orgId = params.id as string;
   const tenantId = typeof window !== "undefined" ? localStorage.getItem("tenant_id") ?? "" : "";
 
@@ -248,7 +280,18 @@ export default function OrganizationDetailPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
 
+  // Which section of the scheme is showing. The chat links straight to one (?tab=quote).
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState<GroupTab>(GROUP_TABS.some((t) => t.id === initialTab) ? (initialTab as GroupTab) : "overview");
+  const changeTab = (next: GroupTab) => {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "overview") url.searchParams.delete("tab"); else url.searchParams.set("tab", next);
+    window.history.replaceState(null, "", url.toString());
+  };
+
   // Create master policy form
+  const [planCode, setPlanCode] = useState("GROUP_LIFE");
   const [showCreateMP, setShowCreateMP] = useState(false);
   const [sumAssuredMultiple, setSumAssuredMultiple] = useState("24");
   const [termYears, setTermYears] = useState("10");
@@ -302,8 +345,10 @@ export default function OrganizationDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orgId]);
 
-  const fetchAll = async () => {
-    setLoading(true);
+  const fetchAll = async (silent = false) => {
+    // `silent` re-reads in place (after a change inside a tab) without the full-page
+    // spinner, which would unmount the tab and lose its messages.
+    if (!silent) setLoading(true);
     setError("");
     try {
       const [orgResp, mpResp, empResp, casesResp] = await Promise.all([
@@ -316,11 +361,12 @@ export default function OrganizationDetailPage() {
       setMasterPolicies(mpResp.data);
       setEmployees(empResp.data);
       setEmployeeCases(Object.fromEntries(casesResp.data.map((c) => [c.customer_id, c])));
-      if (mpResp.data.length > 0) setSelectedMpId(mpResp.data[0].id);
+      setSelectedMpId((current) =>
+        mpResp.data.some((m) => m.id === current) ? current : mpResp.data[0]?.id ?? "");
     } catch (err: any) {
       setError(err.response?.data?.detail ?? err.message ?? "Failed to load organization.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
@@ -334,6 +380,7 @@ export default function OrganizationDetailPage() {
         sum_assured_multiple: parseFloat(sumAssuredMultiple) || 0,
         term_years: parseInt(termYears) || 0,
         effective_date: effectiveDate,
+        plan_code: planCode,
       });
       setSuccess("Master policy created. Now add the employee census below.");
       setShowCreateMP(false);
@@ -559,6 +606,52 @@ export default function OrganizationDetailPage() {
         </div>
       ) : (
         <>
+          {/* Section tabs */}
+          <div className="flex items-center gap-1 border-b border-slate-200">
+            {GROUP_TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => changeTab(t.id)}
+                className={`px-4 py-2 text-sm font-semibold -mb-px border-b-2 transition-colors ${
+                  tab === t.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {tab !== "overview" && (() => {
+            const mp = masterPolicies.find((m) => m.id === selectedMpId) ?? masterPolicies[0];
+            if (!mp) {
+              return (
+                <div className="bg-white rounded-xl border border-slate-200 py-12 text-center text-sm text-slate-400">
+                  No group scheme yet — create a master policy from the Overview tab.
+                </div>
+              );
+            }
+            const panel = { tenantId, orgId, mp, reload: () => fetchAll(true) };
+            return (
+              <div className="space-y-4">
+                {masterPolicies.length > 1 && (
+                  <select value={mp.id} onChange={(e) => setSelectedMpId(e.target.value)} className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white">
+                    {masterPolicies.map((m) => (
+                      <option key={m.id} value={m.id}>{m.plan_label ?? "Group Life"} · {m.effective_date} ({m.status})</option>
+                    ))}
+                  </select>
+                )}
+                {tab === "scheme" && <SchemePanel {...panel} />}
+                {tab === "classes" && <ClassesPanel {...panel} />}
+                {tab === "members" && <MembersPanel {...panel} />}
+                {tab === "quote" && <QuotePanel {...panel} />}
+                {tab === "endorsements" && <EndorsementsPanel {...panel} />}
+                {tab === "claims" && <ClaimsPanel {...panel} />}
+                {tab === "renewals" && <RenewalsPanel {...panel} />}
+              </div>
+            );
+          })()}
+
+          {tab === "overview" && (<>
           {/* Master Policies */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
@@ -580,6 +673,7 @@ export default function OrganizationDetailPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                      <th className="px-5 py-3 text-left">Product</th>
                       <th className="px-5 py-3 text-left">Sum Assured Formula</th>
                       <th className="px-5 py-3 text-left">Term</th>
                       <th className="px-5 py-3 text-left">Effective Date</th>
@@ -590,6 +684,7 @@ export default function OrganizationDetailPage() {
                   <tbody className="divide-y divide-slate-100">
                     {masterPolicies.map((mp) => (
                       <tr key={mp.id} className={mp.id === selectedMpId ? "bg-blue-50/40" : ""}>
+                        <td className="px-5 py-3 text-slate-600">{mp.plan_label ?? "Group Life"}{mp.policy_number ? <span className="block text-[11px] font-mono text-slate-400">{mp.policy_number}</span> : null}</td>
                         <td className="px-5 py-3 font-semibold text-slate-800">{mp.sum_assured_multiple}× monthly basic salary</td>
                         <td className="px-5 py-3 text-slate-600">{mp.term_years} years</td>
                         <td className="px-5 py-3 text-slate-600">{mp.effective_date}</td>
@@ -846,6 +941,7 @@ export default function OrganizationDetailPage() {
               </div>
             )}
           </div>
+          </>)}
         </>
       )}
 
@@ -858,6 +954,19 @@ export default function OrganizationDetailPage() {
               <button onClick={() => setShowCreateMP(false)} className="text-slate-400 hover:text-slate-600 transition-colors">✕</button>
             </div>
             <form onSubmit={handleCreateMasterPolicy} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Product *</label>
+                <select value={planCode} onChange={(e) => setPlanCode(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm">
+                  {GROUP_PLANS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+                </select>
+                {planCode === "GROUP_CREDIT_LIFE" && (
+                  <p className="text-[11px] text-slate-400">Credit life: cover follows each borrower&apos;s outstanding loan — add a class with the &ldquo;Outstanding loan balance&rdquo; basis and give a loan_amount column in the census.</p>
+                )}
+                {planCode === "GROUP_FAMILY_TAKAFUL" && (
+                  <p className="text-[11px] text-slate-400">Takaful: the employer pays a contribution, split between the Wakala fee and the Participants&apos; Takaful Fund.</p>
+                )}
+              </div>
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-slate-600">Sum Assured Multiple (× monthly basic salary) *</label>
                 <input

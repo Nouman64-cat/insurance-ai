@@ -48,6 +48,7 @@ from schemas import (
     PolicyRead,
 )
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
+from family_approval import pending_insured_members
 
 router = APIRouter(prefix="/tenants/{tenant_id}/cases", tags=["Cases"])
 
@@ -364,6 +365,21 @@ async def get_case(tenant_id: UUID, case_id: UUID, session: AsyncSession = Depen
     return case
 
 
+
+async def _family_head_case(session, policy, case) -> Optional[dict]:
+    """The head's case on a shared family policy, when `case` belongs to someone else (the insured spouse).
+    The policy is issued to the head — against the head's case — never against the spouse's."""
+    if policy is None or getattr(policy, "family_policy_id", None) is None or case.customer_id == policy.customer_id:
+        return None
+    head_case = (await session.execute(
+        select(Case).where(Case.policy_id == policy.id, Case.customer_id == policy.customer_id).order_by(Case.createdAt.desc())
+    )).scalars().first()
+    head = await session.get(Customer, policy.customer_id)
+    if head_case is None or head is None:
+        return None
+    return {"case_id": str(head_case.caseld), "case_number": head_case.caseNumber, "name": head.name, "case_status": head_case.caseStatus.value}
+
+
 @router.get("/{case_id}/detail")
 async def get_case_detail(
     tenant_id: UUID,
@@ -471,6 +487,7 @@ async def get_case_detail(
                 "customer_id": str(p.id),
                 "name": p.name,
                 "cnic": p.cnic,
+                "relationship": getattr(p.family_relationship, "value", p.family_relationship),
                 "case_id": str(peer_case.caseld),
                 "case_number": peer_case.caseNumber,
                 "case_status": peer_case.caseStatus.value,
@@ -588,6 +605,10 @@ async def get_case_detail(
         "is_principal_participant": is_principal_participant,
         "family_relationship": family_relationship,
         "family_members": family_members,
+        # On a family floater the policy is issued to the head, on the head's case — set when this case is NOT the head's.
+        "family_head_case": await _family_head_case(session, policy, case),
+        # Insured lives on this family policy whose own underwriting isn't approved yet (the policy waits for them).
+        "family_underwriting_pending": await pending_insured_members(session, policy, exclude_case_id=case.caseld) if policy else [],
         "organization_name": organization_name,
         "organization_members": organization_members,
         "policy": PolicyRead.model_validate(policy) if policy else None,
@@ -842,6 +863,13 @@ async def update_case_status(
             st_val = policy_to_update.status.value if hasattr(policy_to_update.status, "value") else str(policy_to_update.status)
             if st_val.upper() in ("ACTIVE", "ISSUED"):
                 raise HTTPException(400, "Cannot decide this case: the associated policy is already Active/Issued.")
+            # A family floater is one policy for several insured lives (the head and a fully insured
+            # spouse): approving one case alone must not approve the policy. The case itself is approved;
+            # the policy stays where it is until every other insured life's case is approved too.
+            if target_status == PolicyStatusEnum.APPROVED and await pending_insured_members(session, policy_to_update, exclude_case_id=case.caseld):
+                await session.commit()
+                await session.refresh(case)
+                return case
             # Idempotent no-op if the policy is already in the target status — the
             # AI's auto-decision (routers/evaluate.py) may have already applied it
             # before an underwriter's manual "Override: Approve/Decline" click

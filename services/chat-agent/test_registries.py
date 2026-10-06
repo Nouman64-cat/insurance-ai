@@ -35,6 +35,7 @@ CLIENT_EXECUTED = {"upload_document"}
 GRAPH_ROUTED = {
     "start_underwriting_journey", "continue_underwriting_journey",
     "start_claim_journey", "continue_claim_journey",
+    "start_group_journey", "continue_group_journey",
     # Answered entirely inside permission_gate's own interceptor (asks the
     # Individual/Corporate/Family chip question, never mutates anything), so
     # it never reaches a tool_executor handler.
@@ -223,3 +224,12 @@ def test_sticky_domain_survives_a_keywordless_turn():
 def test_core_is_always_bound():
     for domain in toolsets.DOMAIN_TOOLS:
         assert toolsets.CORE_TOOLS <= toolsets.tool_names_for([domain])
+
+
+def test_every_tool_fits_the_providers_tool_limit():
+    """OpenAI rejects a request with more than 128 tools ("array_above_max_length"), and a turn
+    that matches no domain binds every tool — so the whole registry has to fit. Adding a tool
+    past the cap makes the agent unable to answer at all; merge tools instead."""
+    from graph import MAX_BOUND_TOOLS
+    from tools import ALL_TOOLS
+    assert len(ALL_TOOLS) <= MAX_BOUND_TOOLS, f"{len(ALL_TOOLS)} tools registered, provider cap is {MAX_BOUND_TOOLS}"

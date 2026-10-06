@@ -14,6 +14,8 @@ from decision_status import DECISION_CASE_STATUS
 from family_underwriting import (
     age_from_dob,
     eldest_age,
+    is_insured_row,
+    uses_nominee_model,
     normalize_cnic,
     validate_family_members,
     validate_life_bundle_members as validate_life_bundle_member_fields,
@@ -37,6 +39,8 @@ from shared.models.core import (
     ActionTypeEnum,
     AIDecision,
     Artifact,
+    Beneficiary,
+    BeneficiaryVersion,
     Case,
     CaseAssignment,
     CaseAttachment,
@@ -572,6 +576,95 @@ async def list_family_policies(tenant_id: UUID, family_id: UUID, session: AsyncS
     return list(result.all())
 
 
+
+# ── Nominees ─────────────────────────────────────────────────────────────────────
+# Only the head and (optionally) the spouse are insured. Everyone else is a nominee: a
+# `Beneficiary` row on the head's policy carrying their share of the death benefit.
+
+async def _existing_share_total(session: AsyncSession, fp_id: UUID) -> float:
+    total = (await session.exec(
+        select(func.coalesce(func.sum(Beneficiary.share_pct), 0.0)).where(
+            Beneficiary.policy_id.in_(select(Policy.id).where(Policy.family_policy_id == fp_id))
+        )
+    )).one()
+    return float(total or 0.0)
+
+
+def _parse_dob(value: Any) -> Optional[date]:
+    if value in (None, ""):
+        return None
+    try:
+        return value if isinstance(value, date) else date.fromisoformat(str(value))
+    except ValueError:
+        return None
+
+
+async def _save_nominees(
+    session: AsyncSession, tenant_id: UUID, policy_id: UUID, rows: List[Dict[str, Any]],
+    head_name: Optional[str], base_amount: Optional[float],
+) -> List[Dict[str, Any]]:
+    """Record each non-head row's share on the head's policy (the real Beneficiary table, so the
+    pre-issuance 100% check and the claim payout split see them) and snapshot the roster."""
+    incoming = [r for r in rows if r.get("relationship") != "Self" and r.get("share_pct") not in (None, "")]
+    if not incoming:
+        return []
+    for r in incoming:
+        dob = _parse_dob(r.get("dob"))
+        minor = bool(dob and age_from_dob(dob) < 18)
+        session.add(Beneficiary(
+            tenant_id=tenant_id, policy_id=policy_id, name=str(r["name"]).strip(),
+            cnic=(normalize_cnic(r["cnic"]) or None) if r.get("cnic") else None,
+            relationship=r["relationship"], share_pct=float(r["share_pct"]), date_of_birth=dob,
+            is_minor=minor, guardian_name=head_name if minor else None,
+        ))
+    await session.flush()
+    roster = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == policy_id))).all()
+    last_seq = (await session.exec(
+        select(BeneficiaryVersion.version_sequence).where(BeneficiaryVersion.policy_id == policy_id)
+        .order_by(BeneficiaryVersion.version_sequence.desc())  # type: ignore[arg-type]
+    )).first()
+    total = round(sum(b.share_pct for b in roster), 2)
+    session.add(BeneficiaryVersion(
+        tenant_id=tenant_id, policy_id=policy_id, version_sequence=(last_seq or 0) + 1,
+        beneficiaries_json=[{
+            "name": b.name, "cnic": b.cnic, "relationship": b.relationship, "share_pct": b.share_pct,
+            "date_of_birth": b.date_of_birth.isoformat() if b.date_of_birth else None,
+            "is_minor": b.is_minor, "guardian_name": b.guardian_name,
+        } for b in roster],
+        total_share=min(total, 100.0), changed_by="system", change_reason="Family enrolment",
+    ))
+    return [nominee_dict(b, base_amount) for b in roster]
+
+
+def nominee_dict(b: Beneficiary, base_amount: Optional[float]) -> Dict[str, Any]:
+    return {
+        "name": b.name, "relationship": b.relationship, "cnic": b.cnic, "share_pct": b.share_pct,
+        "amount": round(b.share_pct / 100.0 * base_amount, 2) if base_amount else None,
+        "is_minor": b.is_minor, "guardian_name": b.guardian_name,
+    }
+
+
+@router.get(
+    "/{tenant_id}/families/{family_id}/family-policies/{fp_id}/nominees",
+    dependencies=[Depends(verify_admin)],
+)
+async def list_family_nominees(tenant_id: UUID, family_id: UUID, fp_id: UUID, session: AsyncSession = Depends(get_session)):
+    """Who receives the head's death benefit under this policy, with their share and rupee amount. The
+    spouse appears here too — as a nominee, and separately in the roster if they are fully insured."""
+    family_group = await _get_family_group(tenant_id, family_id, session)
+    family_policy = (await session.exec(select(FamilyPolicy).where(
+        FamilyPolicy.id == fp_id, FamilyPolicy.family_group_id == family_id, FamilyPolicy.tenant_id == tenant_id))).first()
+    if family_policy is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Family policy not found.")
+    policies = (await session.exec(select(Policy).where(Policy.family_policy_id == fp_id).order_by(Policy.id))).all()
+    head = next((p for p in policies if p.customer_id == family_group.primary_member_customer_id), policies[0] if policies else None)
+    if head is None:
+        return {"nominees": [], "total_share": 0.0, "base_amount": None}
+    base = family_policy.total_sum_insured if family_policy.plan_type == FamilyPlanTypeEnum.FLOATER else head.coverage_amount
+    rows = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == head.id))).all()
+    return {"nominees": [nominee_dict(b, base) for b in rows], "total_share": round(sum(b.share_pct for b in rows), 2), "base_amount": base}
+
+
 # ── Floater members ──────────────────────────────────────────────────────────────
 
 @router.post(
@@ -599,7 +692,8 @@ async def validate_floater_members(
     existing_count = len(existing_cnics)
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self)
+    result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self,
+                                     await _existing_share_total(session, fp_id))
     return FamilyValidationResponse(**result.model_dump())
 
 
@@ -630,15 +724,20 @@ async def confirm_floater_members(
     existing_count = len(existing_cnics)
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self)
+    result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self,
+                                     await _existing_share_total(session, fp_id))
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
     household_income = family_group.household_declared_income or 0.0
 
     # ── Pass 1: parse rows ──────────────────────────────────────────────────
+    # Only insured rows (the head, and a spouse who is fully insured) become customers with cases;
+    # the rest are nominees, saved below as beneficiaries of the head's policy.
     parsed_rows: List[Dict[str, Any]] = []
     for row in body.members:
+        if not is_insured_row(row):
+            continue
         try:
             dob = row["dob"] if isinstance(row["dob"], date) else date.fromisoformat(str(row["dob"]))
             declared_income = float(row["declared_income"])
@@ -649,7 +748,16 @@ async def confirm_floater_members(
             )
         parsed_rows.append({**row, "_dob": dob, "_declared_income": declared_income})
 
-    eldest = eldest_age(body.members)
+    # Members already on this floater (an add-on enrolment). The pool is priced off the eldest life
+    # across everyone, and the shared Policy that already exists is reused rather than duplicated.
+    prior_members = (await session.exec(
+        select(Customer).where(Customer.id.in_(select(Policy.customer_id).where(Policy.family_policy_id == fp_id)))
+    )).all()
+    prior_rows = [
+        {"dob": c.dob, "is_smoker": c.is_smoker, "height_cm": c.height_cm, "weight_kg": c.weight_kg}
+        for c in prior_members if c.dob
+    ]
+    eldest = eldest_age([*prior_rows, *parsed_rows])
 
     # ── Pass 2: DB-only — build rows and commit once ─────────────────────────
     floater_plan = (await session.exec(
@@ -672,29 +780,43 @@ async def confirm_floater_members(
         )
         created_customers[row["cnic"]] = customer
 
-    self_cnic = next(row["cnic"] for row in parsed_rows if row["relationship"] == "Self")
-    self_customer = created_customers[self_cnic]   # created_customers is keyed by the same raw row["cnic"]
-    family_group.primary_member_customer_id = self_customer.id
-    session.add(family_group)
+    # The "Self" row arrives with the first batch only; a later batch adds to a family that already has one.
+    self_row = next((row for row in parsed_rows if row["relationship"] == "Self"), None)
+    if self_row is not None:
+        family_group.primary_member_customer_id = created_customers[self_row["cnic"]].id   # keyed by the same raw row["cnic"]
+        session.add(family_group)
 
     # One shared Policy for the whole pool — see FamilyPolicy's docstring.
     # Starts as a Quoted DRAFT: every floater member is still risk-scored below
     # (assessments/cases are created), but the proposal itself surfaces in the
     # Proposal page's Draft section and is advanced to Under Review manually via
     # the status control — it does not jump straight to Under Review.
-    eldest_row = next(r for r in parsed_rows if age_from_dob(r["_dob"]) == eldest)
-    shared_policy = Policy(
-        tenant_id=tenant_id,
-        customer_id=self_customer.id,
-        family_policy_id=family_policy.id,
-        product_name="Family Health Floater",
-        insurance_type=InsuranceTypeEnum.FAMILY_FLOATER,
-        coverage_amount=family_policy.total_sum_insured,
-        term_years=family_policy.term_years,
-        status=PolicyStatusEnum.QUOTED,
-    )
-    session.add(shared_policy)
-    await session.flush()
+    shared_policy = (await session.exec(
+        select(Policy).where(Policy.family_policy_id == fp_id).order_by(Policy.id)
+    )).first()
+    if shared_policy is None:
+        holder_id = created_customers[self_row["cnic"]].id if self_row is not None else family_group.primary_member_customer_id
+        shared_policy = Policy(
+            tenant_id=tenant_id,
+            customer_id=holder_id,
+            family_policy_id=family_policy.id,
+            product_name="Family Health Floater",
+            insurance_type=InsuranceTypeEnum.FAMILY_FLOATER,
+            coverage_amount=family_policy.total_sum_insured,
+            term_years=family_policy.term_years,
+            status=PolicyStatusEnum.QUOTED,
+        )
+        session.add(shared_policy)
+        await session.flush()
+
+    # Pricing basis: the eldest insured life, whether it joined now or earlier.
+    candidates = [{**r, "_dob": r["dob"]} for r in prior_rows] + parsed_rows
+    eldest_row = next((r for r in candidates if age_from_dob(r["_dob"]) == eldest), {})
+
+    head_name = (created_customers[self_row["cnic"]].name if self_row is not None
+                 else (await session.get(Customer, family_group.primary_member_customer_id)).name
+                 if family_group.primary_member_customer_id else None)
+    nominees = await _save_nominees(session, tenant_id, shared_policy.id, body.members, head_name, family_policy.total_sum_insured)
 
     member_outcomes: Dict[str, FamilyMemberOutcome] = {}
 
@@ -731,31 +853,34 @@ async def confirm_floater_members(
     # via the Proposal page's status control, not auto-promoted to the pool's
     # aggregated decision status.
 
-    # Always price — one calculation for the whole pool, off the eldest life.
-    breakdown = calculate_premium(
-        coverage_amount=family_policy.total_sum_insured,
-        base_premium_rate=floater_plan.base_premium_rate if floater_plan is not None else _FALLBACK_FLOATER_RATE,
-        smoker_factor=floater_plan.smoker_factor if floater_plan is not None else 1.0,
-        age=eldest,
-        is_smoker=bool(eldest_row.get("is_smoker", False)),
-        height_cm=float(eldest_row.get("height_cm", 170)),
-        weight_kg=float(eldest_row.get("weight_kg", 70)),
-    )
-    premium_quote = PremiumQuote(
-        tenant_id=tenant_id,
-        policy_id=shared_policy.id,
-        base_premium=breakdown.base_premium,
-        loading_applied=breakdown.loading_applied,
-        total_premium=breakdown.total_premium,
-        rate_version=floater_plan.rate_version if floater_plan is not None else "fallback-v1",
-    )
-    session.add(premium_quote)
+    # Always price — one calculation for the whole pool, off the eldest insured life. A batch that only
+    # adds nominees changes nobody's cover, so it leaves the pricing alone.
+    breakdown = None
+    if parsed_rows:
+        breakdown = calculate_premium(
+            coverage_amount=family_policy.total_sum_insured,
+            base_premium_rate=floater_plan.base_premium_rate if floater_plan is not None else _FALLBACK_FLOATER_RATE,
+            smoker_factor=floater_plan.smoker_factor if floater_plan is not None else 1.0,
+            age=eldest,
+            is_smoker=bool(eldest_row.get("is_smoker", False)),
+            height_cm=float(eldest_row.get("height_cm", 170)),
+            weight_kg=float(eldest_row.get("weight_kg", 70)),
+        )
+        premium_quote = PremiumQuote(
+            tenant_id=tenant_id,
+            policy_id=shared_policy.id,
+            base_premium=breakdown.base_premium,
+            loading_applied=breakdown.loading_applied,
+            total_premium=breakdown.total_premium,
+            rate_version=floater_plan.rate_version if floater_plan is not None else "fallback-v1",
+        )
+        session.add(premium_quote)
 
     outcomes: List[FamilyMemberOutcome] = []
     for row in parsed_rows:
         outcome = member_outcomes[row["cnic"]]
         outcome.status = shared_policy.status
-        outcome.premium_total = breakdown.total_premium
+        outcome.premium_total = breakdown.total_premium if breakdown else None
         outcomes.append(outcome)
 
     # Enrolling & underwriting members produces a PROPOSAL, not an in-force
@@ -778,6 +903,7 @@ async def confirm_floater_members(
         family_policy_id=family_policy.id,
         total_sum_insured=family_policy.total_sum_insured,
         members=outcomes,
+        nominees=nominees,
     )
 
 
@@ -808,7 +934,8 @@ async def validate_life_bundle_members(
     existing_count = len(existing_cnics)
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self)
+    result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self,
+                                                await _existing_share_total(session, fp_id))
     return FamilyValidationResponse(**result.model_dump())
 
 
@@ -839,13 +966,16 @@ async def confirm_life_bundle_members(
     existing_count = len(existing_cnics)
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
-    result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self)
+    result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self,
+                                                await _existing_share_total(session, fp_id))
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
     # ── Pass 1: parse rows ──────────────────────────────────────────────────
     parsed_rows: List[Dict[str, Any]] = []
     for row in body.members:
+        if not is_insured_row(row):
+            continue          # a nominee — saved below as a beneficiary of the head's policy
         try:
             dob = row["dob"] if isinstance(row["dob"], date) else date.fromisoformat(str(row["dob"]))
             declared_income = float(row["declared_income"])
@@ -878,6 +1008,8 @@ async def confirm_life_bundle_members(
 
     outcomes: List[FamilyMemberOutcome] = []
     customers_to_promote: List[Customer] = []
+    head_policy: Optional[Policy] = None
+    head_customer: Optional[Customer] = None
     for row in parsed_rows:
         plan: InsurancePlan = row["_plan"]
         is_smoker = bool(row.get("is_smoker", False))
@@ -908,6 +1040,8 @@ async def confirm_life_bundle_members(
         )
         session.add(policy)
         await session.flush()
+        if row["relationship"] == "Self":
+            head_policy, head_customer = policy, customer
 
         case = Case(
             tenant_id=tenant_id,
@@ -964,6 +1098,17 @@ async def confirm_life_bundle_members(
     family_policy.status = "Proposed"
     session.add(family_policy)
 
+    # Nominees' shares sit on the head's policy: this batch's, or the one enrolled earlier.
+    nominees: List[Dict[str, Any]] = []
+    if head_policy is None and family_group.primary_member_customer_id:
+        head_policy = (await session.exec(
+            select(Policy).where(Policy.family_policy_id == fp_id, Policy.customer_id == family_group.primary_member_customer_id)
+        )).first()
+        head_customer = await session.get(Customer, family_group.primary_member_customer_id)
+    if head_policy is not None:
+        nominees = await _save_nominees(session, tenant_id, head_policy.id, body.members,
+                                        head_customer.name if head_customer else None, head_policy.coverage_amount)
+
     session.add(family_group)
     for cust in customers_to_promote:
         session.add(cust)
@@ -974,4 +1119,5 @@ async def confirm_life_bundle_members(
         family_policy_id=family_policy.id,
         total_sum_insured=None,
         members=outcomes,
+        nominees=nominees,
     )

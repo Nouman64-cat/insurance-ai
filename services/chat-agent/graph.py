@@ -35,8 +35,12 @@ from history import compact_tool_result, trim_history
 
 logger = logging.getLogger(__name__)
 from claims_journey import register_claims_journey
+from group_journey import register_group_journey
 from journey import register_journey
-from toolsets import select_domains, tool_names_for
+from toolsets import CORE_TOOLS, select_domains, tool_names_for
+
+# OpenAI's hard limit on tools per request (Gemini has none, but the fallback must fit too).
+MAX_BOUND_TOOLS = 128
 
 from pages import catalogue, PAGES
 from permission import (
@@ -319,6 +323,65 @@ Every claims tool result already carries the exact next-step buttons. Relay what
 happened in a sentence and let the buttons carry the user forward — do not ask
 them to type a claim number, a status or an amount you were just handed."""
 
+DOMAIN_PROMPTS["group"] = """
+
+## GROUP LIFE / GROUP FAMILY TAKAFUL (an employer's scheme, scheme to enrolment)
+
+One Master Policy is issued to the employer; its employees are insured members,
+each with a certificate. Schemes are addressed by the COMPANY NAME, never a UUID.
+Takaful is a business type (GROUP_FAMILY_TAKAFUL): the employer pays a
+*contribution*, not a premium — say so — and the quote shows the Wakala fee and
+the Participants' Takaful Fund split.
+
+**start_group_journey** runs the whole pipeline autonomously (Scheme → Benefit
+classes → Census → Group underwriting → Quote → Employer acceptance → Issuance &
+payment → Enrolment) and is the right call for "set up a group life scheme for …",
+"start a group takaful for …", "start a group scheme". It stops only where a person
+must act: the census, above-Free-Cover-Limit members awaiting an underwriting
+decision, the EMPLOYER's accept / revise / decline, and the employer's payment.
+**continue_group_journey** resumes it afterwards. When the user says "demo" or
+"test data" set use_demo_data=true (demo mode generates classes and a random
+census); otherwise ask for the real census — NEVER invent employees.
+
+Employer acceptance is the employer's call: never accept or decline a quote unless
+the user told you which. Never invent a payment reference.
+
+### One step at a time
+1. **create_group_scheme** — the Master Policy (plan, term, start date).
+2. **add_group_benefit_class** — Flat / SalaryMultiple / ServiceBanded cover, before any employee is enrolled.
+3. **upload_group_census** — opens the file picker for a CSV/Excel census (preferred);
+   **submit_group_census** takes rows you were given. Nothing is enrolled unless every row is valid.
+4. **get_group_scheme_status** / **list_group_members** — read the scheme.
+5. **generate_group_quote** → **accept_group_quote** / **decline_group_quote** → **issue_group_policy**
+   → **record_group_payment** (needs the bank reference).
+
+After a census upload, or any step the user completes outside the chat, call
+**continue_group_journey** to carry on.
+
+### Changes to a scheme that is already in force (endorsements)
+People join, leave and get raises mid-term. Use **preview_group_endorsement** FIRST —
+it shows who is affected and the pro-rata amount (a contribution for Takaful) without
+changing anything — tell the user the number, then apply it with **apply_group_endorsement**
+(endorsement_type ADD, DELETE or CHANGE). Members are named by name, CNIC or
+employee id — never a UUID. New joiners above the Free Cover Limit wait for an
+underwriting decision (**resolve_group_endorsement** applies it once decided); leavers
+get a pro-rata refund; **settle_group_endorsement** records the money (needs the bank
+reference — never invent one). **list_group_endorsements** shows the history.
+
+### Renewal, claims and extra benefits
+**start_group_renewal** opens the annual renewal (optionally with the employer's refreshed
+census), prices it from the group's own claims experience and returns the quote;
+**decide_group_renewal** (accept or decline) records the employer's answer and
+**record_group_renewal_payment** starts the new period (bank reference needed — never
+invent one). **get_group_renewal** shows where it stands.
+Claims: **register_group_claim** (the member's name, or a dependant's for a dependant death)
+lists the documents needed for that benefit; **preview_group_claim_payout** shows the split
+between nominees by their shares; **pay_group_claim** disburses an approved claim — if no
+nominee is on file, ask before paying the claimant and then set confirm_no_nominee.
+**add_group_class_coverage** adds Accidental Death / Disability / Pay or Fee Continuation to a
+class (the open quote is withdrawn — re-quote). For a Takaful scheme **get_group_ptf_report**
+shows the fund. Never say "premium" for Takaful — it is a contribution."""
+
 DOMAIN_PROMPTS["commission"] = """
 
 ## COMMISSION ENGINE
@@ -436,6 +499,14 @@ def _llm(cfg: dict, role: str = "Admin", platform: str = "web",
     if domains is not None:
         in_scope = tool_names_for(domains)
         allowed = [t for t in allowed if t.name in in_scope]
+    if len(allowed) > MAX_BOUND_TOOLS:
+        # OpenAI rejects the whole request above 128 tools, so an over-full toolset
+        # means *no* answer at all. Keep the always-on core and drop the overflow from
+        # the domain packs; test_registries pins the total under the cap so this
+        # only ever fires as a safety net.
+        logger.error("_llm: %d tools in scope for role=%s, over the provider cap of %d — trimming %d domain tools",
+                     len(allowed), role, MAX_BOUND_TOOLS, len(allowed) - MAX_BOUND_TOOLS)
+        allowed = sorted(allowed, key=lambda t: t.name not in CORE_TOOLS)[:MAX_BOUND_TOOLS]
 
     # permission_gate processes exactly one tool_call per turn (last.tool_calls[0]) —
     # it has to, since a confirm/clarify interrupt suspends the whole node mid-dispatch
@@ -639,6 +710,14 @@ async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> 
                     "Fix Gemini billing or set OPENAI_API_KEY."
                 ) from exc
             lowered = text.lower()
+            # A 400 means *our request* is malformed (too many tools, bad schema…).
+            # Resending the same request can't help, and "briefly overloaded" would
+            # hide the real cause — surface it.
+            if "invalid_request_error" in lowered or "array_above_max_length" in lowered:
+                raise RuntimeError(
+                    "The AI provider rejected the request as invalid, so resending won't help. "
+                    f"Details: {text[:300]}"
+                ) from exc
             # OpenAI reports an empty account as HTTP 429 too ("insufficient_quota" /
             # "credit_balance_exhausted"), so a bare "429" check calls it a rate limit
             # and tells the user to wait — which can never fix it.
@@ -694,6 +773,7 @@ def _tool_result_message(name: str, call_id: str, result: dict) -> ToolMessage:
 # single REST call. Routed via Command(goto=...) below.
 JOURNEY_TOOLS = {"start_underwriting_journey", "continue_underwriting_journey"}
 CLAIM_JOURNEY_TOOLS = {"start_claim_journey", "continue_claim_journey"}
+GROUP_JOURNEY_TOOLS = {"start_group_journey", "continue_group_journey"}
 # Create calls that take agent_name — the agent chosen up front is injected here.
 LEAD_INTAKE_TOOLS = {
     "add_customer", "add_organization", "add_family_group",
@@ -2255,7 +2335,8 @@ async def permission_gate(state: ChatState) -> Command:
         # Destructive actions name their target so "Yes" is informed consent,
         # not a reflex click on a generic prompt.
         target = args.get("name") or args.get("applicant_name") or args.get("cnic") \
-            or args.get("case_number") or args.get("email") or args.get("full_name") or ""
+            or args.get("case_number") or args.get("email") or args.get("full_name") \
+            or args.get("organization_name") or ""
         if is_destructive(name):
             question = f"⚠️ This permanently deletes {target or 'this record'} and cannot be undone. Proceed?"
         elif name == "deploy_rule_version":
@@ -2319,6 +2400,26 @@ async def permission_gate(state: ChatState) -> Command:
                 "claim_audit": [], "claim_error": None, "claim_blocking_actions": [],
             })
         return Command(goto="c_resume", update={"pending_call": pending, "claim_error": None})
+
+    if name in GROUP_JOURNEY_TOOLS:
+        # Same hand-off, into the group-scheme pipeline. A fresh start clears the
+        # group namespace; continue re-enters via g_resume's router, which reads
+        # the scheme's real status.
+        pending = {"name": name, "args": args, "id": call_id}
+        if name == "start_group_journey":
+            return Command(goto="g_scheme", update={
+                "pending_call": pending,
+                "journey_next": {"id": "stage:group_scheme", "label": "Stage 1 · Scheme & Master Policy"},
+                "journey_done": None,
+                "group_stage": "group_scheme",
+                "group_organization_id": None, "group_organization_name": None,
+                "group_master_policy_id": None, "group_plan_code": None, "group_business_type": None,
+                "group_quote": None, "group_scheme": None,
+                "group_pending_members": [], "group_census_errors": [], "group_missing_nominations": [],
+                "group_outcome": None, "requires_group_intervention": False,
+                "group_audit": [], "group_error": None, "group_blocking_actions": [],
+            })
+        return Command(goto="g_resume", update={"pending_call": pending, "group_error": None})
 
     if name in CLIENT_EXECUTED_TOOLS:
         # The browser holds the attached File object — chat-agent can't
@@ -2389,6 +2490,7 @@ _graph_builder.add_conditional_edges("agent", _route_after_agent, {"permission_g
 # no static outgoing edge, so Command is the single source of truth.
 register_journey(_graph_builder)
 register_claims_journey(_graph_builder)
+register_group_journey(_graph_builder)
 
 
 def build_graph(checkpointer):

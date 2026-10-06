@@ -83,3 +83,30 @@ class ChatState(TypedDict, total=False):
     # Chips carried out of a node that failed a gate, so the suspension is
     # still one click to clear (see claims_journey._finish_actions).
     claim_blocking_actions: list[dict[str, Any]]
+
+    # ── Autonomous group-scheme journey (group_journey.py) ──────────────────
+    # Its own `group_*` namespace, for the same reason the claims journey has
+    # `claim_*`: a group scheme and an individual case (or a claim) can be
+    # suspended on one thread at once, and shared keys would let one pipeline
+    # resume into another's state. The transient journey_done / journey_next UI
+    # markers and `pending_call` are per-turn and shared on purpose.
+    group_stage: Optional[str]
+    group_organization_id: Optional[str]
+    group_organization_name: Optional[str]
+    group_master_policy_id: Optional[str]
+    group_plan_code: Optional[str]
+    group_business_type: Optional[str]          # Conventional | Takaful
+    group_quote: Optional[dict[str, Any]]
+    group_scheme: Optional[dict[str, Any]]      # latest scheme snapshot (status, counts, classes)
+    group_pending_members: list[str]            # above-FCL members awaiting an underwriting decision
+    group_census_errors: list[str]
+    group_missing_nominations: list[str]
+    # Census_Needed | Census_Invalid | Underwriting_Pending | Awaiting_Acceptance |
+    # Awaiting_Payment | Declined | Completed
+    group_outcome: Optional[str]
+    requires_group_intervention: bool
+    group_audit: list[str]
+    group_error: Optional[str]
+    # Chips carried out of a node that stopped on a question the user must answer
+    # (e.g. which Agent owns a new organization), so the suspension is one click.
+    group_blocking_actions: list[dict[str, Any]]

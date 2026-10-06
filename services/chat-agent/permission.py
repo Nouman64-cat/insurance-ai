@@ -6,6 +6,8 @@ instruction that used to be prose-only (route.ts:10) — both are now hard gates
 the graph checks before a tool ever runs.
 """
 
+from env_mode import is_demo
+
 MUTATING_TOOLS = {
     "add_customer",
     "update_customer",
@@ -71,6 +73,29 @@ MUTATING_TOOLS = {
     # start_underwriting_journey does. (continue_claim_journey is deliberately
     # NOT here — the journey was already consented to at start.)
     "start_claim_journey",
+    # Group Life / Takaful — each of these writes an employer's scheme, roster or
+    # contract. generate_group_quote is a guided step (WORKFLOW_STEP_TOOLS) and
+    # confirms nothing; start_group_journey is one confirmation for the pipeline,
+    # like the other journeys (continue_group_journey is deliberately not here).
+    "start_group_journey",
+    "create_group_scheme",
+    "add_group_benefit_class",
+    "submit_group_census",
+    "upload_group_census",
+    "generate_group_quote",
+    "accept_group_quote",
+    "decline_group_quote",
+    "issue_group_policy",
+    "record_group_payment",
+    "apply_group_endorsement",
+    "resolve_group_endorsement",
+    "settle_group_endorsement",
+    "start_group_renewal",
+    "decide_group_renewal",
+    "record_group_renewal_payment",
+    "register_group_claim",
+    "pay_group_claim",
+    "add_group_class_coverage",
     # Commission — payout runs move money; rules & schemes govern payout structure.
     "create_payout_run",
     "approve_payout_run",
@@ -124,6 +149,16 @@ SAFE_TOOLS = {
     "get_claims_dashboard",
     "get_claim_document_checklist",
     "continue_claim_journey",
+    # Group schemes (read-only) — still admin-only through GROUP_TOOLS below.
+    "continue_group_journey",
+    "get_group_scheme_status",
+    "list_group_members",
+    "preview_group_endorsement",
+    "list_group_endorsements",
+    "get_group_ptf_report",
+    "get_group_renewal",
+    "list_group_claims",
+    "preview_group_claim_payout",
     # Commission (read-only)
     "list_commission_payees",
     "get_commission_rate_card",
@@ -141,6 +176,41 @@ DESTRUCTIVE_TOOLS = {"delete_customer", "delete_user", "delete_case", "delete_ru
 
 
 ADMIN_ROLES = {"SuperAdmin", "Admin"}
+
+# Every group-scheme tool, read-only ones included. tenant-service gates all of
+# /organizations/**/master-policies/** on verify_admin, so the chat mirrors that:
+# Admin and SuperAdmin only. Without this guard the read-only ones sit in
+# SAFE_TOOLS, which would hand them to Viewer and to any unrecognised role.
+GROUP_TOOLS = {
+    "start_group_journey",
+    "continue_group_journey",
+    "create_group_scheme",
+    "add_group_benefit_class",
+    "submit_group_census",
+    "upload_group_census",
+    "get_group_scheme_status",
+    "list_group_members",
+    "generate_group_quote",
+    "accept_group_quote",
+    "decline_group_quote",
+    "issue_group_policy",
+    "record_group_payment",
+    "preview_group_endorsement",
+    "apply_group_endorsement",
+    "list_group_endorsements",
+    "resolve_group_endorsement",
+    "settle_group_endorsement",
+    "start_group_renewal",
+    "get_group_renewal",
+    "decide_group_renewal",
+    "record_group_renewal_payment",
+    "register_group_claim",
+    "list_group_claims",
+    "preview_group_claim_payout",
+    "pay_group_claim",
+    "get_group_ptf_report",
+    "add_group_class_coverage",
+}
 
 # Tools whose execution needs a real file the browser already has in memory
 # (an attached File object) — chat-agent has no way to receive that over a
@@ -166,6 +236,12 @@ REQUIRED_ARGS: dict[str, list[str]] = {
     ],
     "add_user": ["full_name", "email", "role_name"],
     "add_organization": ["name"],
+    "start_group_journey": ["organization_name"],
+    "create_group_scheme": ["organization_name"],
+    "record_group_payment": ["reference"],
+    "settle_group_endorsement": ["reference"],
+    "register_group_claim": ["member_name"],
+    "add_group_class_coverage": ["coverage_type", "percent_of_base"],
     "add_family_group": ["name"],
     "bulk_add_customers": ["customers_json"],
     "upload_document": ["document_type"],
@@ -291,6 +367,35 @@ STEP_LABELS: dict[str, str] = {
     "upload_claim_document": "Uploading claim document",
     "start_claim_journey": "Launching autonomous claims journey",
     "continue_claim_journey": "Resuming claims journey",
+    # Group schemes
+    "start_group_journey": "Launching group scheme journey",
+    "continue_group_journey": "Resuming group scheme journey",
+    "create_group_scheme": "Creating group scheme",
+    "add_group_benefit_class": "Adding benefit classes",
+    "submit_group_census": "Validating and enrolling the census",
+    "upload_group_census": "Uploading the employee census",
+    "get_group_scheme_status": "Checking group scheme status",
+    "list_group_members": "Listing group members",
+    "generate_group_quote": "Pricing the group scheme",
+    "accept_group_quote": "Recording quote acceptance",
+    "decline_group_quote": "Recording quote decline",
+    "issue_group_policy": "Issuing the master policy",
+    "record_group_payment": "Recording the employer's payment",
+    "preview_group_endorsement": "Pricing the endorsement",
+    "apply_group_endorsement": "Applying the endorsement",
+    "list_group_endorsements": "Listing endorsements",
+    "resolve_group_endorsement": "Applying underwriting decisions to the endorsement",
+    "settle_group_endorsement": "Recording the endorsement settlement",
+    "start_group_renewal": "Opening and pricing the renewal",
+    "get_group_renewal": "Checking the renewal",
+    "decide_group_renewal": "Recording the employer's renewal decision",
+    "record_group_renewal_payment": "Recording the renewal payment",
+    "register_group_claim": "Registering the group claim",
+    "list_group_claims": "Listing the scheme's claims",
+    "preview_group_claim_payout": "Working out the payout split",
+    "pay_group_claim": "Paying the claim to its nominees",
+    "get_group_ptf_report": "Building the Takaful fund report",
+    "add_group_class_coverage": "Adding an extra benefit to the class",
     # Commission engine
     "list_commission_payees": "Fetching payees",
     "get_commission_rate_card": "Looking up rate card",
@@ -424,6 +529,8 @@ ADMIN_ONLY_TOOLS = {
     "approve_payout_run",
 }
 
+ADMIN_ONLY_TOOLS |= GROUP_TOOLS
+
 # ── Claims roles ────────────────────────────────────────────────────────────
 #
 # tenant-service/routers/claims.py gates every claims endpoint on
@@ -537,6 +644,8 @@ def is_role_allowed(tool_name: str, role: str, platform: str = "web") -> bool:
     """
     if role in ADMIN_ROLES:
         return True
+    if tool_name in GROUP_TOOLS:
+        return False
     if role == "Agent":
         if platform == "mobile":
             return tool_name in AGENT_MOBILE_ALLOWED_TOOLS
@@ -582,6 +691,8 @@ WORKFLOW_STEP_TOOLS = {
     "run_pre_issuance_verification",
     "issue_policy",
     "confirm_policy_payment",
+    "generate_group_quote",
+    "resolve_group_endorsement",
 }
 
 
@@ -591,6 +702,12 @@ def requires_confirmation(tool_name: str) -> bool:
     return tool_name in MUTATING_TOOLS
 
 
+# Args that are only required outside demo mode: a demo employer "pays" with a
+# generated reference, a real one has to supply the bank's.
+DEMO_OPTIONAL_ARGS = {"record_group_payment": {"reference"}, "settle_group_endorsement": {"reference"}}
+
+
 def missing_args(tool_name: str, args: dict) -> list[str]:
     required = REQUIRED_ARGS.get(tool_name, [])
-    return [r for r in required if not args.get(r)]
+    optional = DEMO_OPTIONAL_ARGS.get(tool_name, set()) if is_demo() else set()
+    return [r for r in required if r not in optional and not args.get(r)]

@@ -261,6 +261,22 @@ async def _resolve_case(args: dict, ctx: Ctx) -> dict:
     return case
 
 
+async def _issuance_case(args: dict, ctx: Ctx) -> dict:
+    """The case an issuance step runs against. A family policy covers the head and a fully insured spouse, but it
+    is issued to the head — on the HEAD's case — never on the spouse's, whichever of them was approved last."""
+    case = await _resolve_case(args, ctx)
+    try:
+        detail = (await ctx.client.get(ctx.tsvc(f"/cases/{_case_id(case)}/detail"))).json()
+    except Exception:
+        return case
+    head = detail.get("family_head_case")
+    if not head:
+        return case
+    res = await ctx.client.get(ctx.tsvc("/cases"))
+    res.raise_for_status()
+    return next((c for c in res.json() if str(_case_id(c)) == head["case_id"]), case)
+
+
 def _nav(route: str, entity_id: Optional[str] = None) -> dict:
     """A "take the user here and pop the row" instruction for the frontend."""
     return {"route": build_route(route, entity_id), "entity_id": entity_id or "", "highlight": bool(entity_id)}
@@ -1093,6 +1109,9 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
         "message": f"Organization **{args['name']}** created" + (f", assigned to agent **{agent.get('full_name')}**." if agent else "."),
         "last_action": _action("add_organization", "organization", data["id"], route, f"Organization {args['name']} added"),
         "quick_actions": [
+            # The group tools are admin-only (permission.GROUP_TOOLS), so only offer them to those roles.
+            *([{"label": "Start group scheme", "actionType": "submit", "payload": f"Start a group scheme for {args['name']}"}]
+              if (ctx.exec_ctx.role or "") in ("Admin", "SuperAdmin") else []),
             {"label": "View Organization", "actionType": "navigate", "payload": route},
         ],
     }
@@ -1123,6 +1142,7 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
 
     enrolled_members = None
     case_numbers: list[str] = []
+    member_cases: list[dict] = []
     if members:
         fp = await ctx.client.post(
             ctx.tsvc(f"/families/{family_id}/floater-policies"),
@@ -1136,29 +1156,37 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
         confirm.raise_for_status()
         message += f" Enrolled {len(members)} member(s)."
         enrolled_members = members
-        case_numbers = [m["case_number"] for m in confirm.json().get("members", []) if m.get("case_number")]
+        outcomes = confirm.json().get("members", [])
+        nominees = confirm.json().get("nominees", [])
+        case_numbers = [m["case_number"] for m in outcomes if m.get("case_number")]
+        # Only the head and an insured spouse have underwriting cases; outcomes come back in the order they were sent.
+        insured = [m for m in members if m.get("relationship") == "Self" or m.get("is_insured") is not False]
+        member_cases = [
+            {"case_id": o.get("case_id"), "case_number": o.get("case_number"),
+             "name": m.get("name") or "Member", "relationship": m.get("relationship") or ""}
+            for o, m in zip(outcomes, insured) if o.get("case_number") and o.get("case_id")
+        ]
 
-        member_lines = "\n".join(
-            f"- **{m.get('name', 'Member')}** — {m.get('relationship', '')}"
-            + (f", {m.get('occupation')}" if m.get("occupation") else "")
-            for m in members
-        )
-        message += f"\n\n{member_lines}"
+        def _line(m: dict) -> str:
+            role = ("insured (head)" if m.get("relationship") == "Self"
+                    else "fully insured" if m.get("is_insured") is not False else "nominee")
+            share = next((n for n in nominees if n.get("name") == m.get("name")), None)
+            tail = f" — {share['share_pct']:g}% of the death benefit" + (f" (PKR {share['amount']:,.0f})" if share.get("amount") else "") if share else ""
+            return f"- **{m.get('name', 'Member')}** — {m.get('relationship', '')}, {role}{tail}"
+
+        message += "\n\n" + "\n".join(_line(m) for m in members)
 
         if case_numbers:
-            message += "\n\nEach member has an underwriting case ready. Start pre-underwriting clearance?"
+            # Same order as an individual customer: the proposal (Draft → Submitted →
+            # Under Review → Send to Underwriting) comes first, and only then pre-underwriting.
+            # The browser runs those steps (see proposal_journey) — the model must not narrate them.
+            message += (
+                "\n\nThe family proposal is created as a **Draft**. The proposal steps appear automatically "
+                "below — do NOT describe or list next steps yourself, just acknowledge in one short sentence."
+            )
 
     route = build_route("admin/families", family_id)
     quick_actions = [{"label": "View Family", "actionType": "navigate", "payload": route}]
-    if case_numbers:
-        quick_actions.insert(0, {
-            "label": "Start underwriting for family",
-            "actionType": "submit",
-            "payload": (
-                "Run pre-underwriting clearance one case at a time, waiting for each to finish "
-                "before starting the next, for: " + ", ".join(case_numbers)
-            ),
-        })
     result = {
         "success": True,
         "family_group_id": family_id,
@@ -1168,6 +1196,9 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
     }
     if enrolled_members is not None:
         result["family_members"] = enrolled_members
+    if case_numbers:
+        # `customer_id` stays empty: the browser finds a family's proposal by its family group.
+        result["proposal_journey"] = {"customer_id": "", "name": name, "family_group_id": family_id, "case_numbers": case_numbers, "cases": member_cases}
     return result
 
 
@@ -1476,8 +1507,12 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
         if pre_status.get("insurance_history") not in ("Clear", "Cleared"):
             pending_gates.append(f"Gate 5: Insurance History Check ({pre_status.get('insurance_history', 'NotStarted')})")
             if not next_action:
-                next_action = {"label": "5. Insurance History (Gate 5)", "actionType": "submit",
-                               "payload": f"Run insurance history check for case {case.get('caseNumber')}"}
+                if pre_status.get("insurance_history") in ("Flagged", "Failed") and not is_demo():
+                    # Re-running a flagged screen just flags it again — it needs an underwriter's review.
+                    next_action = {"label": "Review in the case workspace", "actionType": "embed", "payload": f"case/{case_id}"}
+                else:
+                    next_action = {"label": "5. Insurance History (Gate 5)", "actionType": "submit",
+                                   "payload": f"Run insurance history check for case {case.get('caseNumber')}"}
         if pre_status.get("medical_exam") not in ("Completed", "Waived", "NotRequired"):
             pending_gates.append(f"Gate 6: Medical Examination ({pre_status.get('medical_exam', 'NotAssessed')})")
             if not next_action:
@@ -2247,24 +2282,55 @@ async def _run_insurance_history_check(args: dict, ctx: Ctx) -> dict:
     findings_txt = "\n".join(f"- {f.get('title', '')}: {f.get('detail', '')}" for f in findings) if findings else "- No policy churning, non-disclosure, or HLV over-exposure found."
     route = f"case/{case_id}"
 
-    return {
-        "success": True,
-        "message": (
-            f"✅ **Gate 5: SECP Insurance History Screen ({status})** for case **{case.get('caseNumber')}**.\n\n"
-            f"- **Aggregate Sum Assured at Risk**: PKR {agg_sum:,.0f}\n"
-            f"- **Human Life Value (HLV) Exposure**: {hlv_str}\n\n"
-            f"**Findings:**\n{findings_txt}\n\n"
-            f"👉 Next Gate: **Gate 6: Medical Examination & NML Assessment**."
-        ),
-        "status": status,
-        "aggregate_sum_assured": agg_sum,
-        "last_action": _action("run_insurance_history_check", "case", case_id, route, f"Insurance history {status}"),
-        "quick_actions": [
+    # A flagged screen (typically HLV over-exposure: the cover is large for the declared income)
+    # blocks Gate 6 until someone accepts it. Demo mode accepts it automatically, the same way
+    # flagged compliance checks are cleared there; otherwise it stays a real hold for an underwriter.
+    demo_cleared = False
+    if status == "Flagged" and is_demo():
+        try:
+            clr = await ctx.client.post(
+                ctx.tsvc(f"/cases/{case_id}/insurance-history/clear"),
+                json={"note": "Demo mode: flagged finding accepted automatically"},
+            )
+            if clr.status_code < 400:
+                status, demo_cleared = clr.json().get("status", "Clear"), True
+        except httpx.HTTPError:
+            pass
+
+    held = status in ("Flagged", "Failed")
+    if held:
+        headline = f"⚠️ **Gate 5: SECP Insurance History Screen ({status})** for case **{case.get('caseNumber')}**."
+        tail = ("👉 **This gate is on hold.** An underwriter must review the findings and accept or reject them before the "
+                "medical examination (Gate 6) can start — the case workspace has the review button.")
+        actions = [
+            {"label": "Open the case workspace", "actionType": "embed", "payload": f"case/{case_id}"},
+            {"label": "Check Gate Status", "actionType": "submit",
+             "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
+        ]
+    else:
+        headline = f"✅ **Gate 5: SECP Insurance History Screen ({status})** for case **{case.get('caseNumber')}**."
+        tail = (("The screen was flagged and has been accepted automatically (demo mode).\n\n" if demo_cleared else "")
+                + "👉 Next Gate: **Gate 6: Medical Examination & NML Assessment**.")
+        actions = [
             {"label": "6. Medical Exam (Gate 6)", "actionType": "submit",
              "payload": f"Assess medical examination for case {case.get('caseNumber')}"},
             {"label": "Check Gate Status", "actionType": "submit",
              "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
-        ],
+        ]
+
+    return {
+        "success": True,
+        "message": (
+            f"{headline}\n\n"
+            f"- **Aggregate Sum Assured at Risk**: PKR {agg_sum:,.0f}\n"
+            f"- **Human Life Value (HLV) Exposure**: {hlv_str}\n\n"
+            f"**Findings:**\n{findings_txt}\n\n"
+            f"{tail}"
+        ),
+        "status": status,
+        "aggregate_sum_assured": agg_sum,
+        "last_action": _action("run_insurance_history_check", "case", case_id, route, f"Insurance history {status}"),
+        "quick_actions": actions,
     }
 
 
@@ -2644,10 +2710,33 @@ async def _approve_case(args: dict, ctx: Ctx) -> dict:
     res.raise_for_status()
 
     route = "policy-issuance"
+    # A family floater covers the head and, if chosen, a fully insured spouse: the policy is only approved
+    # once every insured life has been underwritten and approved, so don't offer to issue it yet.
+    try:
+        detail = (await ctx.client.get(ctx.tsvc(f"/cases/{case_id}/detail"))).json()
+        waiting = detail.get("family_underwriting_pending") or []
+    except Exception:
+        waiting = []
+    if waiting:
+        names = ", ".join(f"**{w['name']}**" for w in waiting)
+        return {
+            "success": True,
+            "message": f"Case **{case.get('caseNumber')}** is **Approved** ✓ — but the family policy can't be issued yet: "
+                       f"{names} still need{'s' if len(waiting) == 1 else ''} to be underwritten and approved first.",
+            "last_action": _action("approve_case", "case", case_id, route, f"{case.get('caseNumber')} approved"),
+            "quick_actions": [
+                {"label": f"Underwrite {w['name']}", "actionType": "uw_requirements",
+                 "payload": json.dumps({"caseId": w["case_id"], "caseNo": w["case_number"]})} for w in waiting
+            ],
+        }
+    issue_case = await _issuance_case({"case_number": case.get("caseNumber")}, ctx)
+    issue_no = issue_case.get("caseNumber") or case.get("caseNumber")
+    on_head = issue_no != case.get("caseNumber")
     return {
         "success": True,
         "message": f"Case **{case.get('caseNumber')}** has been **Approved** ✓\n"
-                    "Do you want to issue the policy now?",
+                    + (f"The family policy is issued to the head, on the head's case **{issue_no}**.\n" if on_head else "")
+                    + "Do you want to issue the policy now?",
         "last_action": _action("approve_case", "case", case_id, route, f"{case.get('caseNumber')} approved"),
         # No auto-navigate here — this used to pop a new tab the instant this
         # message arrived, before the user even chose Yes or No. Nothing
@@ -2655,7 +2744,7 @@ async def _approve_case(args: dict, ctx: Ctx) -> dict:
         # below cover both real choices without leaving the chat.
         "quick_actions": [
             {"label": "Yes — Issue Policy", "actionType": "submit",
-             "payload": f"Run pre-issuance verification and issue the policy for case {case.get('caseNumber')}"},
+             "payload": f"Run pre-issuance verification and issue the policy for case {issue_no}"},
             {"label": "No — Not Yet", "actionType": "submit",
              "payload": "Okay, I'll issue the policy later."},
         ],
@@ -2666,7 +2755,7 @@ async def _approve_case(args: dict, ctx: Ctx) -> dict:
 async def _get_pre_issuance_status(args: dict, ctx: Ctx) -> dict:
     """Step 6a — Fetch the 4-step pre-issuance readiness checklist for a
     policy associated with a case/customer."""
-    case = await _resolve_case(args, ctx)
+    case = await _issuance_case(args, ctx)
     case_id = _case_id(case)
 
     # Get the policy from the case detail
@@ -2736,7 +2825,7 @@ async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
     """Step 6b — Automatically run through the 4 pre-issuance verification
     steps: seed requirements, verify them, run compliance, and clear flags.
     Returns the updated readiness status for user approval."""
-    case = await _resolve_case(args, ctx)
+    case = await _issuance_case(args, ctx)
     case_id = _case_id(case)
 
     policy = await _resolve_policy_for_case(ctx, case)
@@ -2868,7 +2957,7 @@ async def _run_pre_issuance_verification(args: dict, ctx: Ctx) -> dict:
 async def _issue_policy(args: dict, ctx: Ctx) -> dict:
     """Step 6c — Draft the policy contract: assign a policy number, generate
     documents, compute the premium, and move to PendingPayment."""
-    case = await _resolve_case(args, ctx)
+    case = await _issuance_case(args, ctx)
     case_id = _case_id(case)
 
     policy = await _resolve_policy_for_case(ctx, case)
@@ -2921,7 +3010,7 @@ async def _confirm_policy_payment(args: dict, ctx: Ctx) -> dict:
     """Step 6d — Confirm the first premium payment, activating coverage.
     Policy moves PendingPayment → Active, cases are closed, customer promoted
     to Policyholder."""
-    case = await _resolve_case(args, ctx)
+    case = await _issuance_case(args, ctx)
     case_id = _case_id(case)
 
     policy = await _resolve_policy_for_case(ctx, case)
@@ -3215,12 +3304,23 @@ def _demo_family_group() -> tuple[str, list[dict]]:
 
     self_gender = random.choice(["Male", "Female"])
     spouse_gender = "Female" if self_gender == "Male" else "Male"
-    members = [
-        _member("Self", self_gender, (1975, 1995)),
-        _member("Spouse", spouse_gender, (1978, 1997)),
-    ]
+    head = _member("Self", self_gender, (1975, 1995))
+    head["is_insured"] = True
+    # The spouse is fully insured about half the time — then they are underwritten after the head.
+    spouse = _member("Spouse", spouse_gender, (1978, 1997))
+    spouse["is_insured"] = random.random() < 0.5
+    if not spouse["is_insured"]:
+        spouse = {k: spouse[k] for k in ("relationship", "name", "dob", "gender", "is_insured")}
+    members = [head, spouse]
+    children = []
     if random.random() < 0.6:
-        members.append(_member("Child", random.choice(["Male", "Female"]), (2005, 2020)))
+        kid = _member("Child", random.choice(["Male", "Female"]), (2005, 2020))
+        children.append({"relationship": "Child", "name": kid["name"], "dob": kid["dob"], "gender": kid["gender"], "is_insured": False})
+    # The spouse takes half of the head's death benefit and the children split the rest; alone, the spouse takes it all.
+    spouse["share_pct"] = 50.0 if children else 100.0
+    for kid in children:
+        kid["share_pct"] = 50.0 / len(children)
+    members += children
 
     return f"The {surname} Family", members
 
@@ -5520,3 +5620,9 @@ async def _upload_claim_document(args: dict, ctx: Ctx) -> dict:
             },
         },
     }
+
+
+# Group Life / Takaful tools live in their own module (GROUP_LIFE_PLAN.md Phase 3)
+# and register themselves into _HANDLERS on import. Kept at the very end so the
+# names group_tools imports from this module already exist.
+import group_tools  # noqa: E402,F401

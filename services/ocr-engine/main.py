@@ -609,6 +609,191 @@ async def extract_customer_fields(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Extraction error: {str(e)}")
 
 
+# ── Family group document ────────────────────────────────────────────────────
+# One document describes the whole household: the family, the policy being proposed
+# and every member. Same contract as /extract-customer — anything the document does
+# not state comes back null so the form leaves it empty (and highlights it).
+
+FAMILY_FIELDS = (
+    "family_name", "contact_person", "contact_email", "contact_phone",
+    "household_declared_income", "city", "province",
+    "policy_type", "total_sum_insured", "term_years", "effective_date", "discount_percentage",
+)
+FAMILY_MEMBER_FIELDS = (
+    "cnic", "name", "dob", "gender", "relationship", "occupation", "declared_income",
+    "is_smoker", "height_cm", "weight_kg", "coverage_amount", "plan_name",
+    "is_insured", "share_pct",
+)
+FAMILY_MAX_MEMBERS = 8
+
+FAMILY_EXTRACT_PROMPT = (
+    "You are a data-extraction engine for an insurance onboarding system. The input is a FAMILY "
+    "insurance proposal / household form. Read it thoroughly and return ONLY one valid JSON object — "
+    "no prose, no Markdown fences — with exactly this shape:\n"
+    "{\n"
+    '  "family_name": string|null,            // e.g. "Rehman Family"\n'
+    '  "contact_person": string|null,         // the proposer\n'
+    '  "contact_email": string|null,\n'
+    '  "contact_phone": string|null,\n'
+    '  "household_declared_income": number|null,   // household annual income, PKR\n'
+    '  "city": string|null,\n'
+    '  "province": string|null,               // Punjab, Sindh, Khyber Pakhtunkhwa, Balochistan, Islamabad Capital Territory, Gilgit-Baltistan, Azad Jammu & Kashmir\n'
+    '  "policy_type": "Floater"|"LifeBundle"|null,  // Health Floater = one shared pool; Life Bundle = each member has their own life cover\n'
+    '  "total_sum_insured": number|null,      // Floater only: the shared pool, PKR\n'
+    '  "term_years": number|null,\n'
+    '  "effective_date": "YYYY-MM-DD"|null,\n'
+    '  "discount_percentage": number|null,    // Life Bundle only\n'
+    '  "members": [ {\n'
+    '      "cnic": string|null, "name": string|null, "dob": "YYYY-MM-DD"|null,\n'
+    '      "gender": "Male"|"Female"|null,\n'
+    '      "relationship": "Self"|"Spouse"|"Child"|"Parent"|"Sibling"|"Other"|null,   // the proposer / head of family is Self\n'
+    '      "is_insured": boolean|null,        // Self is always true. Only a Spouse can be insured: true if the form says the spouse is fully insured / covered, false if only a nominee. Everyone else false.\n'
+    '      "share_pct": number|null,          // this person\'s share of the head\'s death benefit in % (nominee share). null for Self.\n'
+    '      "occupation": string|null, "declared_income": number|null,   // annual PKR; only for insured members\n'
+    '      "is_smoker": boolean|null, "height_cm": number|null, "weight_kg": number|null,\n'
+    '      "coverage_amount": number|null,    // Life Bundle only: this member\'s own sum assured\n'
+    '      "plan_name": string|null           // Life Bundle only: the life plan chosen for this member\n'
+    '  } ]\n'
+    "}\n\n"
+    "Rules:\n"
+    "- Use null for any value that is NOT explicitly stated. Never guess or invent.\n"
+    "- List every household member in the document, in the order written, at most 8.\n"
+    "- Read values exactly as written."
+)
+
+
+def _clean_family_fields(raw: dict) -> dict:
+    """Validate what the model returned; anything that does not pass becomes None."""
+    import re
+    from datetime import datetime
+
+    def text(v):
+        v = None if v is None else str(v).strip()
+        return v or None
+
+    def num(v, is_int=False):
+        if v in (None, ""):
+            return None
+        try:
+            n = float(str(v).replace(",", "").replace("PKR", "").replace("pkr", "").replace("%", "").strip())
+            return int(round(n)) if is_int else n
+        except (ValueError, TypeError):
+            return None
+
+    def date_(v):
+        try:
+            return datetime.strptime(str(v)[:10], "%Y-%m-%d").date().isoformat() if v else None
+        except ValueError:
+            return None
+
+    def cnic(v):
+        digits = re.sub(r"\D", "", str(v or ""))
+        return f"{digits[:5]}-{digits[5:12]}-{digits[12]}" if len(digits) == 13 else None
+
+    def boolean(v):
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            low = v.strip().lower()
+            if low in ("true", "yes", "y", "1"):
+                return True
+            if low in ("false", "no", "n", "0", "none"):
+                return False
+        return None
+
+    def choice(v, options):
+        low = str(v or "").strip().lower().replace(" ", "")
+        return next((o for o in options if o.lower() == low), None)
+
+    raw = raw if isinstance(raw, dict) else {}
+    province = text(raw.get("province"))
+    if province:
+        province = _PROVINCE_ALIASES.get(province.lower(), province)
+        province = province if province in CUSTOMER_PROVINCES else None
+
+    family = {
+        "family_name": text(raw.get("family_name")), "contact_person": text(raw.get("contact_person")),
+        "contact_email": text(raw.get("contact_email")), "contact_phone": text(raw.get("contact_phone")),
+        "household_declared_income": num(raw.get("household_declared_income")),
+        "city": text(raw.get("city")), "province": province,
+        "policy_type": choice(raw.get("policy_type"), ("Floater", "LifeBundle")),
+        "total_sum_insured": num(raw.get("total_sum_insured")), "term_years": num(raw.get("term_years"), True),
+        "effective_date": date_(raw.get("effective_date")), "discount_percentage": num(raw.get("discount_percentage")),
+    }
+    members = []
+    for m in (raw.get("members") if isinstance(raw.get("members"), list) else [])[:FAMILY_MAX_MEMBERS]:
+        if not isinstance(m, dict):
+            continue
+        row = {
+            "cnic": cnic(m.get("cnic")), "name": text(m.get("name")), "dob": date_(m.get("dob")),
+            "gender": choice(m.get("gender"), ("Male", "Female")),
+            "relationship": choice(m.get("relationship"), ("Self", "Spouse", "Child", "Parent", "Sibling", "Other")),
+            "occupation": text(m.get("occupation")), "declared_income": num(m.get("declared_income")),
+            "is_smoker": boolean(m.get("is_smoker")), "height_cm": num(m.get("height_cm")), "weight_kg": num(m.get("weight_kg")),
+            "coverage_amount": num(m.get("coverage_amount")), "plan_name": text(m.get("plan_name")),
+            "is_insured": boolean(m.get("is_insured")), "share_pct": num(m.get("share_pct")),
+        }
+        # Only the head and a spouse can be insured; anyone else is a nominee whatever the model said.
+        if row["relationship"] == "Self":
+            row["is_insured"], row["share_pct"] = True, None
+        elif row["relationship"] not in (None, "Spouse"):
+            row["is_insured"] = False
+        if any(v is not None for v in row.values()):
+            members.append(row)
+    return {"family": family, "members": members}
+
+
+@app.post("/extract-family")
+async def extract_family_fields(file: UploadFile = File(...)):
+    """Read a PDF / PNG / JPG describing a household and return the family, its policy and its members."""
+    file_ext = (file.filename or "").lower().rsplit(".", 1)[-1]
+    if file_ext not in CUSTOMER_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported format. Upload a PDF, PNG or JPG file.")
+    file_bytes = await file.read()
+    if len(file_bytes) > CUSTOMER_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large (max 10 MB).")
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    try:
+        try:
+            results = [await _run_ocr(file_bytes, MIME_MAP[file_ext], prompt=FAMILY_EXTRACT_PROMPT)]
+        except PdfProviderUnavailable:
+            pages = _pdf_pages_as_png(file_bytes)
+            if not pages:
+                raise
+            results = [await _run_ocr(png, "image/png", prompt=FAMILY_EXTRACT_PROMPT) for png in pages]
+
+        family = {k: None for k in FAMILY_FIELDS}
+        members: list = []
+        usage = {"input": 0, "output": 0, "total": 0}
+        for result in results:
+            asyncio.create_task(_record_token_usage(result["token_usage"], result["model_name"]))
+            for k in usage:
+                usage[k] += result["token_usage"].get(k, 0)
+            try:
+                page = _clean_family_fields(_parse_json_object(result["text"]))
+            except (ValueError, json.JSONDecodeError) as exc:
+                if len(results) == 1:
+                    raise HTTPException(status_code=422, detail=f"Could not read structured details from this document ({exc}).")
+                continue
+            # Earlier pages win; later pages fill what is still missing and add members not seen yet.
+            family = {k: family[k] if family[k] is not None else page["family"][k] for k in FAMILY_FIELDS}
+            seen = {m["cnic"] for m in members if m.get("cnic")}
+            members += [m for m in page["members"] if not (m.get("cnic") and m["cnic"] in seen)]
+        members = members[:FAMILY_MAX_MEMBERS]
+        found = sum(1 for v in family.values() if v is not None) + sum(1 for m in members for v in m.values() if v is not None)
+        return {"filename": file.filename, "family": family, "members": members, "found": found, "token_usage": usage}
+    except HTTPException:
+        raise
+    except PdfProviderUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NoProviderConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Extraction error: {str(e)}")
+
+
 @app.post("/extract/stream")
 async def extract_text_stream(file: UploadFile = File(...)):
     """Streams OCR extraction as Server-Sent Events — no HTTP timeout for large docs."""

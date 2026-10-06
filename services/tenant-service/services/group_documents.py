@@ -50,12 +50,14 @@ def generate_group_quote(ctx: dict) -> str:
     q = ctx["quote"]
     word = _premium_word(ctx["business_type"])
     b = q["breakdown"]
-    story = _header(ss, ctx["tenant_name"], f"{ctx['plan_label']} — Quotation",
+    renewal = ctx.get("renewal")
+    story = _header(ss, ctx["tenant_name"], f"{ctx['plan_label']} — {'Renewal ' if renewal else ''}Quotation",
                     f"Quote v{q['version']} for {ctx['organization']} · valid until {q['valid_until']}")
     story.append(_card_table([
         ("Policyholder", ctx["organization"]),
         ("Product", f"{ctx['plan_label']} ({ctx['business_type']})"),
-        ("Proposed start", str(ctx["effective_date"])),
+        *([("Renewal period", f"{renewal['new_period_start']} to {renewal['new_period_end']}")] if renewal else []),
+        ("Proposed start" if not renewal else "Renewing from", str(ctx["effective_date"])),
         ("Insured members", f"{q['member_count']:,}" + (f" + {q['dependent_count']:,} covered dependants" if q["dependent_count"] else "")),
         ("Total sum assured", _pkr(q["total_sum_assured"])),
     ], "Scheme"))
@@ -66,14 +68,34 @@ def generate_group_quote(ctx: dict) -> str:
         ("Average age (SA-weighted)", f"{b['weighted_average_age']:g} → factor {b['age_factor']:g}x"),
         ("Group size factor", f"{b['size_factor']:g}x"),
         ("Occupational hazard factor", f"{b['hazard_factor']:g}x"),
+        *([("Experience factor", f"{b['experience_factor']:g}x")] if b.get("experience_factor", 1.0) != 1.0 else []),
         ("Effective rate", f"PKR {q['rate_per_mille']:g} per 1,000 sum assured"),
     ]))
+    if renewal:
+        x = renewal["experience"]
+        story.append(Paragraph("Experience of the expiring period", ss["H"]))
+        story.append(_card_table([
+            (f"{word} earned to date", _pkr(x["premium_earned"])),
+            ("Claims incurred", f"{_pkr(x['claims_incurred'])} ({x['claim_count']} claim{'s' if x['claim_count'] != 1 else ''})"),
+            ("Loss ratio", f"{x['claims_ratio'] * 100:.1f}% (target {x['target_loss_ratio'] * 100:.0f}%)"),
+            ("Credibility of the group", f"{x['credibility'] * 100:.0f}%"),
+            ("<b>Experience factor on the rate</b>", f"<b>{renewal['experience_factor']:g}x</b>"),
+        ]))
     story.append(Paragraph("By benefit class", ss["H"]))
     story.append(_grid(
         ["Class", "Members", "Dependants", "Sum assured", word],
         [[c["benefit_class"], c["members"], c["dependents"], _pkr(c["sum_assured"]), _pkr(c["premium"])] for c in b["by_class"]],
         [45, 22, 25, 38, 36],
     ))
+    if len(b.get("by_coverage") or {}) > 1:
+        names = {"Life": "Life", "AccidentalDeath": "Accidental Death", "Disability": "Disability",
+                 "PayContinuation": "Pay Continuation", "FeeContinuation": "Fee Continuation"}
+        story.append(Paragraph("By benefit", ss["H"]))
+        story.append(_grid(
+            ["Benefit", "Total cover", word],
+            [[names.get(k, k), _pkr(b["cover_by_coverage"].get(k, 0)), _pkr(v)] for k, v in b["by_coverage"].items()],
+            [70, 48, 48],
+        ))
     if b.get("adjusted_members"):
         story.append(Paragraph("Underwriting adjustments", ss["H"]))
         story.append(_grid(
@@ -91,6 +113,17 @@ def generate_group_quote(ctx: dict) -> str:
             (f"<b>Total annual {word.lower()}</b>", f"<b>{_pkr(q['total_premium'])}</b>"),
         ]),
     ]))
+    if b.get("takaful"):
+        t = b["takaful"]
+        story.append(KeepTogether([
+            Paragraph("Contribution allocation", ss["H"]),
+            _card_table([
+                (f"Wakala fee ({t['wakala_fee_pct']:g}% of risk contribution)", _pkr(t["wakala_fee"])),
+                ("Participants' Takaful Fund (PTF)", _pkr(t["ptf_allocation"])),
+                *([(f"  of which ceded to retakaful ({t['retakaful_share_pct']:g}%)", _pkr(t["retakaful_contribution"])),
+                   ("  retained by the PTF for claims", _pkr(t["ptf_retained"]))] if t.get("retakaful_share_pct") else []),
+            ]),
+        ]))
     story.append(Spacer(1, 6))
     story.append(Paragraph(
         "This quotation is based on the member census supplied by the policyholder and is valid until the date "
@@ -107,7 +140,8 @@ def generate_master_schedule(ctx: dict) -> str:
     """ctx: tenant_name, organization, plan_label, business_type, master_policy_id,
     policy_number, effective_date, expiry_date, total_premium, free_cover_limit,
     classes [{name, basis_text}], members [{certificate, name, cnic, class, cover, note}],
-    dependents [{member, name, relationship, cover}]. Returns the file path."""
+    dependents [{member, name, relationship, cover}], optional takaful {wakala_fee_pct,
+    wakala_fee, ptf_allocation}. Returns the file path."""
     ss = _styles()
     word = _premium_word(ctx["business_type"])
     story = _header(ss, ctx["tenant_name"], f"{ctx['plan_label']} — Policy Schedule",
@@ -119,6 +153,12 @@ def generate_master_schedule(ctx: dict) -> str:
         ("Period of cover", f"{ctx['effective_date']} to {ctx['expiry_date']} (renewable annually)"),
         ("Free Cover Limit", _pkr(ctx["free_cover_limit"])),
         (f"Annual {word.lower()}", _pkr(ctx["total_premium"])),
+        *([
+            (f"Wakala fee ({ctx['takaful']['wakala_fee_pct']:g}%)", _pkr(ctx["takaful"]["wakala_fee"])),
+            ("Participants' Takaful Fund (PTF)", _pkr(ctx["takaful"]["ptf_allocation"])),
+            *([(f"Retakaful contribution ({ctx['takaful']['retakaful_share_pct']:g}% of PTF)", _pkr(ctx["takaful"]["retakaful_contribution"]))]
+              if ctx["takaful"].get("retakaful_share_pct") else []),
+        ] if ctx.get("takaful") else []),
         ("Insured members", f"{len(ctx['members']):,}"),
     ], "Schedule"))
     if ctx["classes"]:
@@ -142,5 +182,66 @@ def generate_master_schedule(ctx: dict) -> str:
     story += _footer(ss)
 
     path = os.path.join(_dir(ctx["master_policy_id"]), f"schedule_{date.today().isoformat()}.pdf")
+    _build(path, story)
+    return path
+
+
+def generate_group_endorsement(ctx: dict) -> str:
+    """ctx: tenant_name, organization, plan_label, business_type, master_policy_id,
+    policy_number, endorsement {number, endorsement_type, status, effective_date, reason,
+    days_remaining, period_days, pro_rata_factor, member_count_delta, sum_assured_delta,
+    risk_delta, stamp_duty_delta, premium_delta, wakala_fee_delta, ptf_delta, lines}.
+    Returns the file path."""
+    ss = _styles()
+    e = ctx["endorsement"]
+    word = _premium_word(ctx["business_type"])
+    kind = {"ADD": "Addition of members", "DELETE": "Deletion of members", "CHANGE": "Change to member cover"}[e["endorsement_type"]]
+    story = _header(ss, ctx["tenant_name"], f"Endorsement {e['number']}",
+                    f"{kind} · Master Policy {ctx['policy_number']} · {ctx['organization']}")
+    story.append(_card_table([
+        ("Endorsement no.", e["number"]),
+        ("Master policy", f"{ctx['policy_number']} — {ctx['plan_label']} ({ctx['business_type']})"),
+        ("Policyholder", ctx["organization"]),
+        ("Type", kind),
+        ("Effective date", str(e["effective_date"])),
+        ("Reason", e.get("reason") or "—"),
+        ("Status", e["status"]),
+    ], "Endorsement"))
+    story.append(Paragraph("Members affected", ss["H"]))
+    rows = []
+    for ln in e["lines"]:
+        before, after = ln.get("before") or {}, ln.get("after") or {}
+        cover = (_pkr(before["cover"]) + " → " if before.get("cover") is not None and ln["action"] == "CHANGE" else "") \
+            + (_pkr(after["cover"]) if after.get("cover") is not None else (_pkr(before["cover"]) if before.get("cover") is not None else "—"))
+        rows.append([ln["action"], ln["name"], ln.get("certificate_number") or "—", cover,
+                     _pkr(ln.get("risk_delta") or 0), ln.get("status") + (f"<br/><font size=7>{ln['note']}</font>" if ln.get("note") else "")])
+    story.append(_grid(["Action", "Member", "Certificate", "Sum assured", f"Pro-rata {word.lower()}", "Status"], rows,
+                       [16, 38, 30, 34, 26, 22]))
+    story.append(Spacer(1, 6))
+    story.append(KeepTogether([
+        Paragraph(f"{word} adjustment", ss["H"]),
+        _card_table([
+            ("Pro-rata basis", f"{e['days_remaining']} of {e['period_days']} days ({e['pro_rata_factor'] * 100:.1f}%)"),
+            ("Members", f"{e['member_count_delta']:+d}"),
+            ("Sum assured", ("+" if e["sum_assured_delta"] >= 0 else "−") + _pkr(abs(e["sum_assured_delta"]))),
+            (f"Risk {word.lower()}", ("+" if e["risk_delta"] >= 0 else "−") + _pkr(abs(e["risk_delta"]))),
+            ("Stamp duty", ("+" if e["stamp_duty_delta"] >= 0 else "−") + _pkr(abs(e["stamp_duty_delta"]))),
+            *([("Wakala fee", ("+" if e["wakala_fee_delta"] >= 0 else "−") + _pkr(abs(e["wakala_fee_delta"]))),
+               ("Participants' Takaful Fund (PTF)", ("+" if e["ptf_delta"] >= 0 else "−") + _pkr(abs(e["ptf_delta"])))]
+              if e.get("wakala_fee_delta") is not None else []),
+            *([("  of which retakaful", ("+" if e["retakaful_delta"] >= 0 else "−") + _pkr(abs(e["retakaful_delta"])))]
+              if e.get("retakaful_delta") is not None else []),
+            (f"<b>{'Additional' if e['premium_delta'] >= 0 else 'Refund of'} {word.lower()}</b>",
+             f"<b>{_pkr(abs(e['premium_delta']))}</b>"),
+        ]),
+    ]))
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(
+        "This endorsement amends the master policy from the effective date shown and forms part of it. "
+        "Cover for added members begins on that date, subject to the underwriting outcomes listed; cover for deleted "
+        "members ends on it. The adjustment is calculated pro rata for the unexpired period.", ss["Fine"]))
+    story += _footer(ss)
+
+    path = os.path.join(_dir(ctx["master_policy_id"]), f"endorsement_{e['number']}.pdf")
     _build(path, story)
     return path

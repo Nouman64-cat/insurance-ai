@@ -3,7 +3,7 @@
 Run with: docker compose exec tenant-service python test_group_pricing.py
 """
 
-from group_pricing import PricedLife, hazard_factor, price_group, size_factor
+from group_pricing import DEFAULT_WAKALA_FEE_PCT, PricedLife, hazard_factor, price_group, size_factor, takaful_split
 from group_underwriting import member_underwriting_outcome
 from shared.pricing.calculator import POLICY_FEE, STAMP_DUTY_RATE
 
@@ -70,6 +70,28 @@ def test_member_outcomes():
     assert (restricted.basis, restricted.covered_amount) == ("Restricted", fcl) and restricted.note
     for st in ("Quoted", "Proposed", "UnderReview", "InformationRequested"):
         assert member_underwriting_outcome(5_000_000, fcl, st).basis == "Pending", st
+
+
+def test_takaful_split_adds_back_to_contribution():
+    result = price_group([_life("a"), _life("b", age=40)], base_rate_per_mille=3.2)
+    split = takaful_split(result.risk_premium, 30)
+    assert split.wakala_fee_pct == 30
+    assert abs(split.wakala_fee - round(result.risk_premium * 0.30, 2)) < 0.005
+    assert abs(split.wakala_fee + split.ptf_allocation - result.risk_premium) < 0.005
+    # Fees and duty are charges, not contribution: the split never touches the total.
+    assert result.total_premium > result.risk_premium
+
+
+def test_takaful_split_edges_and_default():
+    assert takaful_split(1000.0, 0).ptf_allocation == 1000.0 and takaful_split(1000.0, 0).wakala_fee == 0
+    assert takaful_split(1000.0, 100).ptf_allocation == 0
+    assert takaful_split(1000.0, None).wakala_fee_pct == DEFAULT_WAKALA_FEE_PCT
+    for bad in (-1, 100.5):
+        try:
+            takaful_split(1000.0, bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"{bad}% should be rejected")
 
 
 if __name__ == "__main__":
