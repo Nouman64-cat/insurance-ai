@@ -707,7 +707,15 @@ def requires_confirmation(tool_name: str) -> bool:
 DEMO_OPTIONAL_ARGS = {"record_group_payment": {"reference"}, "settle_group_endorsement": {"reference"}}
 
 
+# An argument that can be given by another one instead. A group scheme is found by company name OR by id — and after
+# "which Demo Corporation?" the answer is the id, which must not be answered with "I need the organization name".
+ARG_ALTERNATIVES: dict[str, tuple[str, ...]] = {"organization_name": ("organization_id",)}
+
+
 def missing_args(tool_name: str, args: dict) -> list[str]:
     required = REQUIRED_ARGS.get(tool_name, [])
     optional = DEMO_OPTIONAL_ARGS.get(tool_name, set()) if is_demo() else set()
-    return [r for r in required if r not in optional and not args.get(r)]
+    return [
+        r for r in required
+        if r not in optional and not args.get(r) and not any(args.get(alt) for alt in ARG_ALTERNATIVES.get(r, ()))
+    ]

@@ -899,7 +899,8 @@ export function CopilotInterface() {
           `✅ **${org}** has been registered with its **${d.plan_label ?? "group"}** policy, benefit classes and **${d.employee_count ?? 0} employees**.\n\n` +
             `The scheme is enrolled and waiting for a quote. Shall I carry on — price it, then record the employer's acceptance, issue the master policy and collect the payment?`,
           [
-            { label: "Continue the group scheme", actionType: "submit", payload: `Continue the group scheme journey for ${org}` },
+            { label: "Continue the group scheme", actionType: "submit", // The id is what makes this the corporate that was just saved — companies can share a name.
+            payload: `Continue the group scheme journey for ${org} (organization id ${d.organization_id})` },
             { label: "Open the corporate", actionType: "navigate", payload: `admin/organizations/${d.organization_id}` },
           ]
         );

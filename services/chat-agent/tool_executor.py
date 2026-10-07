@@ -50,6 +50,9 @@ class ExecCtx:
     tenant_id: str
     jwt_token: str
     role: str = "Agent"
+    # The corporate this conversation is working on (see ChatState.group_current_org_id) — decides between
+    # same-named companies instead of asking.
+    current_org_id: Optional[str] = None
 
     @property
     def headers(self) -> dict[str, str]:

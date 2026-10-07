@@ -97,8 +97,13 @@ async def find_organization(args: dict, ctx: Ctx) -> Optional[dict]:
     wanted_id = (args.get("organization_id") or "").strip()
     if wanted_id:
         return next((o for o in orgs if str(o.get("id")) == wanted_id), None)
+    current = getattr(ctx.exec_ctx, "current_org_id", None)
     name = (args.get("organization_name") or args.get("name") or "").strip().lower()
     if not name:
+        # "upload the census" with no company named means the one this conversation is working on.
+        working_on = next((o for o in orgs if current and str(o.get("id")) == str(current)), None)
+        if working_on is not None:
+            return working_on
         raise LookupError("Which organization? Give me the company name.")
     exact = [o for o in orgs if (o.get("name") or "").strip().lower() == name]
     if len(exact) == 1:
@@ -106,10 +111,15 @@ async def find_organization(args: dict, ctx: Ctx) -> Optional[dict]:
     matches = exact or [o for o in orgs if name in (o.get("name") or "").lower()]
     if len(matches) == 1:
         return matches[0]
+    # Several companies share this name. The one being worked on in this conversation is the answer.
+    working_on = next((o for o in matches if current and str(o.get("id")) == str(current)), None)
+    if working_on is not None:
+        return working_on
     if len(matches) > 1:
         raise ChoiceNeeded(
             f"More than one organization matches “{args.get('organization_name') or args.get('name')}”. Which one?",
-            [{"label": o["name"], "actionType": "submit",
+            # Same-named organizations need telling apart: a short slice of the id (not the whole thing) in the label.
+            [{"label": f"{o['name']} · #{str(o['id'])[:8]}", "actionType": "submit",
               "payload": f"Use organization {o['name']} (id {o['id']})"} for o in matches[:6]],
         )
     return None
@@ -436,10 +446,27 @@ async def _add_group_benefit_class(args: dict, ctx: Ctx) -> dict:
     }
 
 
+async def _already_enrolled(org: dict, mp: dict, ctx: Ctx) -> Optional[dict]:
+    """The census is the one-time enrolment of the workforce. When it is already done — typically because the
+    corporate was entered in full, with its employees, in the form — don't ask for it again."""
+    snap = await scheme_snapshot(org, mp, ctx)
+    if not snap["member_count"]:
+        return None
+    return {
+        "success": True, "already_enrolled": True, "enrolled": snap["member_count"], "scheme": snap,
+        "message": f"**{org['name']}** already has its census — **{snap['member_count']} employees** are enrolled, so there is nothing to upload.\n"
+                   + _status_message(snap),
+        "quick_actions": next_step_chips(snap),
+    }
+
+
 @handles("submit_group_census")
 async def _submit_group_census(args: dict, ctx: Ctx) -> dict:
     """Validate, then enrol, a census given as rows (or a generated demo one)."""
     org, mp = await require_scheme(args, ctx)
+    done = await _already_enrolled(org, mp, ctx)
+    if done is not None:
+        return done
     rows = _parse_json_arg(args.get("employees_json"), "employees_json")
     demo_generated = False
     if not rows:
@@ -503,6 +530,9 @@ async def _upload_group_census(args: dict, ctx: Ctx) -> dict:
     with real ids — the browser holds the file, and can't turn a company name
     into a master policy id."""
     org, mp = await require_scheme(args, ctx)
+    done = await _already_enrolled(org, mp, ctx)
+    if done is not None:
+        return done
     return {
         "__client_execute__": True,
         "kind": "client_execute",

@@ -67,6 +67,7 @@ def _ctx(state: ChatState) -> ExecCtx:
         tenant_id=state.get("tenant_id", ""),
         jwt_token=state.get("jwt_token", ""),
         role=state.get("user_role") or "Admin",
+        current_org_id=state.get("group_current_org_id"),
     )
 
 
@@ -153,6 +154,8 @@ def _scheme_update(scheme: dict) -> dict[str, Any]:
         "group_scheme": scheme,
         "group_organization_id": scheme["organization_id"],
         "group_organization_name": scheme["organization_name"],
+        "group_current_org_id": scheme["organization_id"],
+        "group_current_org_name": scheme["organization_name"],
         "group_master_policy_id": scheme["master_policy_id"],
         "group_plan_code": scheme.get("plan_code"),
         "group_business_type": scheme.get("business_type"),
@@ -552,7 +555,8 @@ async def g_finish(state: ChatState) -> dict:
             "tool_name": "group_journey", "entity_type": "organization", "entity_id": org_id, "route": route,
             "label": f"Group scheme: {outcome or ('error' if error else 'done')} ({state.get('group_organization_name')})",
         }
-        result["navigate"] = {"route": route, "entity_id": org_id, "highlight": False}
+        # No "navigate" here: the frontend opens that in a new browser tab. The individual and family journeys stay
+        # in the chat, and the "Open scheme" button in quick_actions is how a user chooses to leave it.
 
     return {
         "messages": [ToolMessage(

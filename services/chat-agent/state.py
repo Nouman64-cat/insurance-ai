@@ -90,6 +90,11 @@ class ChatState(TypedDict, total=False):
     # suspended on one thread at once, and shared keys would let one pipeline
     # resume into another's state. The transient journey_done / journey_next UI
     # markers and `pending_call` are per-turn and shared on purpose.
+    # The corporate being worked on in this conversation. Unlike group_organization_id (a journey's own working
+    # state, reset when one starts) this is remembered across turns, so a company that shares its name with others
+    # is never asked about again once one of them has been chosen or has just been saved.
+    group_current_org_id: Optional[str]
+    group_current_org_name: Optional[str]
     group_stage: Optional[str]
     group_organization_id: Optional[str]
     group_organization_name: Optional[str]

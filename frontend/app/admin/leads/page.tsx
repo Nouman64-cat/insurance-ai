@@ -17,6 +17,7 @@ import CustomerFormModal from "@/components/entities/CustomerFormModal";
 import CustomerQuickLeadModal from "@/components/entities/CustomerQuickLeadModal";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
 import FamilyFormModal from "@/components/entities/FamilyFormModal";
+import { leadAnnouncementsPaused } from "@/lib/leadAnnouncements";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
 
@@ -454,6 +455,9 @@ export default function LeadsHubPage() {
    * what surfaces a lead an agent just created in the mobile app.
    */
   const announceNewLeads = (incoming: UnifiedLead[]) => {
+    // A form that is still saving a lead (and may yet roll it back) has paused this — the baseline is left
+    // alone, so whatever it created is announced after it finishes only if it is still there.
+    if (leadAnnouncementsPaused()) return;
     const known = knownLeadIds.current;
 
     // The first load establishes the baseline. Announcing it would fire a

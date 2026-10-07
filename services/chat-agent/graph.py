@@ -19,6 +19,7 @@ import json
 import logging
 import os
 import re
+import uuid
 from urllib.parse import quote
 from typing import Any, Optional
 
@@ -45,6 +46,7 @@ MAX_BOUND_TOOLS = 128
 from pages import catalogue, PAGES
 from permission import (
     CLIENT_EXECUTED_TOOLS,
+    GROUP_TOOLS,
     MOBILE_PORTAL_ONLY_TOOLS,
     get_tools_for_role,
     is_destructive,
@@ -358,6 +360,9 @@ the user told you which. Never invent a payment reference.
 After a census upload, or any step the user completes outside the chat, call
 **continue_group_journey** to carry on.
 
+When a message names an organization with an id — "(organization id …)" or "(id …)" — pass that id as
+organization_id and do NOT ask which company is meant: companies can share a name, the id is the answer.
+
 ### Changes to a scheme that is already in force (endorsements)
 People join, leave and get raises mid-term. Use **preview_group_endorsement** FIRST —
 it shows who is affected and the pro-rata amount (a contribution for Takaful) without
@@ -633,7 +638,30 @@ async def _retry_empty(llm, messages, state, thread_id) -> AIMessage:
     return AIMessage(content=_EMPTY_FALLBACK)
 
 
+# The button after a corporate is saved asks to carry on with that exact company's group scheme. Which tool answers
+# that is not a judgement call, and a model that "remembers" an earlier result instead of looking at the scheme again
+# reports a stale status — so the call is made here, without the model.
+_CONTINUE_GROUP_RE = re.compile(
+    r"^\s*continue the group scheme journey for (?P<name>.+?) \(organization id (?P<id>[0-9a-fA-F-]{36})\)\s*$", re.I)
+
+
+def _direct_group_continue(state: ChatState) -> dict | None:
+    last = state["messages"][-1] if state.get("messages") else None
+    if not isinstance(last, HumanMessage) or not isinstance(last.content, str):
+        return None
+    m = _CONTINUE_GROUP_RE.match(last.content)
+    if not m:
+        return None
+    call = {"name": "continue_group_journey", "id": f"direct-{uuid.uuid4().hex[:12]}", "type": "tool_call",
+            "args": {"organization_name": m.group("name").strip(), "organization_id": m.group("id")}}
+    return {"messages": [AIMessage(content="", tool_calls=[call])], "active_domains": ["group"],
+            "group_current_org_id": m.group("id"), "group_current_org_name": m.group("name").strip()}
+
+
 async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> dict:
+    direct = _direct_group_continue(state)
+    if direct is not None:
+        return direct
     user_role = state.get("user_role") or "Admin"
     platform = state.get("platform") or "web"
 
@@ -1304,10 +1332,16 @@ async def permission_gate(state: ChatState) -> Command:
     tool_call = last.tool_calls[0]
     name, args, call_id = tool_call["name"], tool_call["args"], tool_call["id"]
     platform = state.get("platform") or "web"
-    ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "Agent")
+    ctx = ExecCtx(tenant_id=state["tenant_id"], jwt_token=state["jwt_token"], role=state.get("user_role") or "Agent",
+                  current_org_id=state.get("group_current_org_id"))
+    # A group tool called with an explicit organization id is that corporate being chosen: remember it.
+    remember: dict = {}
+    if name in GROUP_TOOLS and args.get("organization_id"):
+        remember = {"group_current_org_id": str(args["organization_id"]),
+                    "group_current_org_name": args.get("organization_name") or state.get("group_current_org_name")}
 
     def back_to_agent(update: dict) -> Command:
-        return Command(goto="agent", update=update)
+        return Command(goto="agent", update={**update, **remember})
 
     if not is_role_allowed(name, state["user_role"], platform):
         if platform == "mobile" and name in MOBILE_PORTAL_ONLY_TOOLS:
@@ -2408,6 +2442,7 @@ async def permission_gate(state: ChatState) -> Command:
         pending = {"name": name, "args": args, "id": call_id}
         if name == "start_group_journey":
             return Command(goto="g_scheme", update={
+                **remember,
                 "pending_call": pending,
                 "journey_next": {"id": "stage:group_scheme", "label": "Stage 1 · Scheme & Master Policy"},
                 "journey_done": None,
@@ -2419,7 +2454,7 @@ async def permission_gate(state: ChatState) -> Command:
                 "group_outcome": None, "requires_group_intervention": False,
                 "group_audit": [], "group_error": None, "group_blocking_actions": [],
             })
-        return Command(goto="g_resume", update={"pending_call": pending, "group_error": None})
+        return Command(goto="g_resume", update={"pending_call": pending, "group_error": None, **remember})
 
     if name in CLIENT_EXECUTED_TOOLS:
         # The browser holds the attached File object — chat-agent can't

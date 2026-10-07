@@ -827,6 +827,77 @@ def test_phase5_6_tools_are_registered_gated_and_routed():
     print("PASS test_phase5_6_tools_are_registered_gated_and_routed")
 
 
+@_sync
+async def test_an_organization_id_settles_which_of_several_same_named_companies():
+    """Companies can share a name. The chip after a corporate is saved carries its id, and the id —
+    not a question — decides which one the journey continues."""
+    with backend("demo") as fake:
+        first, second = fake.add_org("Twin Textiles"), fake.add_org("Twin Textiles")
+        ambiguous = await _call("get_group_scheme_status", organization_name="Twin Textiles")
+        assert not ambiguous["success"] and "More than one organization" in ambiguous["error"]
+        for wanted in (first, second):
+            res = await _call("get_group_scheme_status", organization_name="Twin Textiles", organization_id=wanted)
+            assert "More than one organization" not in str(res.get("error", "")), res
+            assert res.get("organization_id", wanted) == wanted
+        print("PASS test_an_organization_id_settles_which_of_several_same_named_companies")
+
+
+@_sync
+async def test_the_corporate_being_worked_on_settles_same_named_companies_without_asking():
+    """Once a corporate has been saved or chosen, later requests that only say its name — or nothing — mean it."""
+    with backend("demo") as fake:
+        first, second = fake.add_org("Twin Textiles"), fake.add_org("Twin Textiles")
+
+        async def call(tool, current=None, **args):
+            return await tool_executor.execute_tool(
+                tool, args, tool_executor.ExecCtx(tenant_id=TENANT, jwt_token="", role="Admin", current_org_id=current))
+
+        asked = await call("get_group_scheme_status", organization_name="Twin Textiles")
+        assert not asked["success"] and "More than one organization" in asked["error"]            # nothing chosen yet → ask
+        for current in (first, second):
+            res = await call("get_group_scheme_status", current=current, organization_name="Twin Textiles")
+            assert "More than one organization" not in str(res.get("error", "")), res             # chosen → no question
+            assert res.get("scheme", {}).get("organization_id", current) == current or res["success"] is False
+        # No name at all also means the corporate being worked on.
+        nameless = await call("get_group_scheme_status", current=second)
+        assert "Which organization" not in str(nameless.get("error", "")) and "More than one" not in str(nameless.get("error", ""))
+        # A current corporate that doesn't match the name does not hijack it.
+        other = fake.add_org("Other Co")
+        res = await call("get_group_scheme_status", current=first, organization_name="Other Co")
+        assert "More than one" not in str(res.get("error", ""))
+        print("PASS test_the_corporate_being_worked_on_settles_same_named_companies_without_asking")
+
+
+@_sync
+async def test_a_census_that_is_already_enrolled_is_not_asked_for_again():
+    with backend("demo") as fake:
+        await _live_scheme(fake, "Enrolled Co")                         # a finished scheme: its employees are enrolled
+        for tool in ("upload_group_census", "submit_group_census"):
+            res = await _call(tool, organization_name="Enrolled Co", use_demo_data=True)
+            assert res["success"] and res.get("already_enrolled"), (tool, res)
+            assert "already has its census" in res["message"] and not res.get("__client_execute__")
+        n_before = len(fake.members[fake.only_scheme()["id"]])
+        assert n_before > 0 and not any(c[1].endswith("/census/confirm") for c in fake.calls[-6:])
+        print("PASS test_a_census_that_is_already_enrolled_is_not_asked_for_again")
+
+
+def test_the_continue_button_calls_the_journey_directly_for_that_exact_company():
+    """The button after a corporate is saved must not depend on the model: it resolves to a continue_group_journey
+    call carrying the organization id, so a stale earlier answer can never stand in for the scheme's real status."""
+    from langchain_core.messages import AIMessage, HumanMessage
+    import graph
+    oid = "62be3df6-029f-4c8c-a9be-9845922e7150"
+    out = graph._direct_group_continue({"messages": [HumanMessage(content=f"Continue the group scheme journey for Meridian Textiles Ltd (organization id {oid})")]})
+    call = out["messages"][0].tool_calls[0]
+    assert isinstance(out["messages"][0], AIMessage) and call["name"] == "continue_group_journey"
+    assert call["args"] == {"organization_name": "Meridian Textiles Ltd", "organization_id": oid}
+    assert out["group_current_org_id"] == oid          # remembered for the rest of the conversation
+    # Anything else goes to the model as usual.
+    assert graph._direct_group_continue({"messages": [HumanMessage(content="Continue the group journey for Meridian Textiles Ltd")]}) is None
+    assert graph._direct_group_continue({"messages": []}) is None
+    print("PASS test_the_continue_button_calls_the_journey_directly_for_that_exact_company")
+
+
 def test_group_tools_are_admin_only_even_the_read_ones():
     for tool in sorted(permission.GROUP_TOOLS):
         assert permission.is_role_allowed(tool, "Admin") and permission.is_role_allowed(tool, "SuperAdmin"), tool
@@ -854,3 +925,26 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+def test_a_picked_organization_id_stands_in_for_the_name():
+    """After "which Demo Corporation?" the answer is an id — it must not be met with "missing organization_name"."""
+    assert permission.missing_args("start_group_journey", {}) == ["organization_name"]
+    assert permission.missing_args("start_group_journey", {"organization_id": "1691dc5f-af21"}) == []
+    assert permission.missing_args("create_group_scheme", {"organization_id": "1691dc5f-af21"}) == []
+    assert permission.missing_args("start_group_journey", {"organization_name": "Demo Corporation"}) == []
+    # Other tools' requirements are untouched.
+    assert permission.missing_args("add_organization", {"organization_id": "x"}) == ["name"]
+
+
+@_sync
+async def test_organizations_with_the_same_name_get_distinguishable_chips():
+    with backend("demo") as fake:
+        a, b = fake.add_org("Twin Corp"), fake.add_org("Twin Corp")
+        res = await _call("get_group_scheme_status", organization_name="Twin Corp")
+        labels = [x["label"] for x in res["quick_actions"]]
+        assert len(labels) == 2 and len(set(labels)) == 2, labels                      # not two identical buttons
+        assert labels[0] == f"Twin Corp · #{a[:8]}" and labels[1] == f"Twin Corp · #{b[:8]}"
+        assert a not in "".join(labels)                                                # the short slice, never the whole id
+        assert f"id {a}" in res["quick_actions"][0]["payload"]                         # the full id still travels in the answer
+        print("PASS test_organizations_with_the_same_name_get_distinguishable_chips")

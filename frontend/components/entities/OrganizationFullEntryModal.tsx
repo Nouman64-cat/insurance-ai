@@ -16,6 +16,7 @@ import { listAgents, Agent } from "@/app/services/agents";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
+import { pauseLeadAnnouncements } from "@/lib/leadAnnouncements";
 
 interface Props {
   open: boolean;
@@ -64,6 +65,12 @@ function formatCNIC(value: string): string {
   return res;
 }
 
+const CNIC_RE = /^\d{5}-\d{7}-\d$/;
+/** Same rule as the server: 13 digits, with or without the dashes. */
+const cnicOk = (v: string) => CNIC_RE.test(v.trim()) || /^\d{13}$/.test(v.trim());
+const dateOk = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) && v <= new Date().toISOString().slice(0, 10);
+const nonNegative = (v: string) => v === "" || (Number.isFinite(Number(v)) && Number(v) >= 0);
+
 const INPUT = "w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all";
 const CELL = "w-full bg-slate-50 border border-slate-200 rounded-md px-2 py-1 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500";
 const AMBER = "!border-amber-400 !bg-amber-50";
@@ -109,6 +116,8 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
   const [progress, setProgress] = useState(0);
   // Keys the document did not contain — highlighted while still empty.
   const [flagged, setFlagged] = useState<Set<string>>(new Set());
+  // Cells holding a value that is present but wrong (key → the value), highlighted until it is edited.
+  const [bad, setBad] = useState<Map<string, string>>(new Map());
 
   // What exists already, so a retry after a failed step doesn't duplicate it.
   const created = useRef<{ orgId?: string; mpId?: string; classNames: Set<string>; memberByUid: Map<number, string>; depsDone: Set<number>; nomsDone: Set<number>; enrolled?: any }>(
@@ -121,7 +130,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
 
   useEffect(() => {
     if (!open) return;
-    setTab("company"); setError(""); setNotice(null); setFlagged(new Set()); setNewBenefit(null);
+    setTab("company"); setError(""); setNotice(null); setFlagged(new Set()); setBad(new Map()); setNewBenefit(null);
     setName(""); setRegistrationNumber(""); setIndustry(""); setContactPerson(""); setContactEmail(""); setContactPhone("");
     setCity(""); setProvince(""); setBranchId(""); setAssignedAgentId("");
     setPlanCode("GROUP_LIFE"); setMultiple("24"); setTerm("1"); setEffective(todayIso());
@@ -138,19 +147,21 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
 
   const miss = (key: string, value: unknown) => flagged.has(key) && empty(value);
   const hi = (key: string, value: unknown) => (miss(key, value) ? AMBER : "");
-  const cm = (kind: string, id: number | string, f: string, value: unknown) => flagged.has(`${kind}.${id}.${f}`) && empty(value);
+  const cm = (kind: string, id: number | string, f: string, value: unknown) =>
+    (flagged.has(`${kind}.${id}.${f}`) && empty(value)) || (bad.has(`${kind}.${id}.${f}`) && bad.get(`${kind}.${id}.${f}`) === String(value ?? ""));
   const amber = (kind: string, id: number | string, f: string, value: unknown) => (cm(kind, id, f, value) ? AMBER : "");
 
   const rowHasMissing = (kind: string, rows: { uid?: number }[], keys: string[], valueOf: (r: any, k: string) => unknown) =>
     rows.some((r, i) => keys.some((k) => cm(kind, kind === "class" ? i : (r.uid as number), k, valueOf(r, k))));
+  const hasBad = (kind: string) => Array.from(bad.keys()).some((k) => k.startsWith(`${kind}.`));
   const tabHasMissing: Record<Tab, boolean> = {
     company: [["name", name], ["registration_number", registrationNumber], ["industry", industry], ["contact_person", contactPerson], ["contact_email", contactEmail], ["contact_phone", contactPhone], ["city", city], ["province", province]]
       .some(([k, v]) => miss(k as string, v)),
     policy: [["plan", planCode], ["multiple", multiple], ["term", term], ["effective", effective]].some(([k, v]) => miss(k as string, v)),
     classes: flagged.has("classes") || rowHasMissing("class", classes as any, ["name", "flat_amount", "salary_multiple", "bands"], (r, k) => r[k]),
-    employees: flagged.has("employees") || rowHasMissing("emp", employees, Object.keys(blankEmployee()).filter((k) => k !== "uid"), (r, k) => r[k]),
-    dependants: rowHasMissing("dep", dependants, ["emp", "name", "relationship", "dob", "covered_amount"], (r, k) => r[k]),
-    nominees: rowHasMissing("nom", nominees, ["emp", "name", "relationship", "share_pct"], (r, k) => r[k]),
+    employees: flagged.has("employees") || hasBad("emp") || rowHasMissing("emp", employees, Object.keys(blankEmployee()).filter((k) => k !== "uid"), (r, k) => r[k]),
+    dependants: hasBad("dep") || rowHasMissing("dep", dependants, ["emp", "name", "relationship", "dob", "covered_amount"], (r, k) => r[k]),
+    nominees: hasBad("nom") || rowHasMissing("nom", nominees, ["emp", "name", "relationship", "share_pct"], (r, k) => r[k]),
   };
 
   const setEmp = (id: number, f: keyof EmployeeRow, v: string) =>
@@ -342,8 +353,10 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
   });
 
   const submit = async () => {
-    setError("");
+    setError(""); setBad(new Map());
     const flag = (keys: string[]) => setFlagged((prev) => { const n = new Set(prev); keys.forEach((k) => n.add(k)); return n; });
+    // A value that is present but wrong is highlighted like a missing one.
+    const flagBad = (key: string, value: unknown) => setBad((prev) => new Map(prev).set(key, String(value ?? "")));
     const stop = (t: Tab, problems: string[]) => { setTab(t); setError(problems.slice(0, 4).join("; ") + (problems.length > 4 ? `; …and ${problems.length - 4} more` : "")); };
 
     if (!name.trim()) { stop("company", ["Company name is required."]); return; }
@@ -361,8 +374,17 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
     if (classProblems.length) { stop("classes", classProblems); return; }
 
     const empProblems: string[] = [];
-    employees.forEach((r, i) => EMPLOYEE_REQUIRED.forEach(([f, t]) => { if (empty(r[f])) { empProblems.push(`Employee ${i + 1}: ${t} is missing`); flag([`emp.${r.uid}.${f}`]); } }));
-    const cnics = employees.map((r) => r.cnic).filter(Boolean);
+    employees.forEach((r, i) => {
+      EMPLOYEE_REQUIRED.forEach(([f, t]) => { if (empty(r[f])) { empProblems.push(`Employee ${i + 1}: ${t} is missing`); flag([`emp.${r.uid}.${f}`]); } });
+      // Checked here because the server would only find these after the company had been created.
+      if (!empty(r.cnic) && !cnicOk(r.cnic)) { empProblems.push(`Employee ${i + 1} (${r.name || "unnamed"}): CNIC “${r.cnic}” must be 13 digits, like 35202-1234567-1`); flagBad(`emp.${r.uid}.cnic`, r.cnic); }
+      if (!empty(r.dob) && !dateOk(r.dob)) { empProblems.push(`Employee ${i + 1}: date of birth must be a past date`); flagBad(`emp.${r.uid}.dob`, r.dob); }
+      if (!empty(r.joining_date) && !dateOk(r.joining_date)) { empProblems.push(`Employee ${i + 1}: joining date must be a past date`); flagBad(`emp.${r.uid}.joining_date`, r.joining_date); }
+      (["declared_income", "basic_monthly_salary", "loan_amount", "height_cm", "weight_kg"] as const).forEach((f) => {
+        if (!nonNegative(r[f])) { empProblems.push(`Employee ${i + 1}: ${f.replace(/_/g, " ")} must be a number`); flagBad(`emp.${r.uid}.${f}`, r[f]); }
+      });
+    });
+    const cnics = employees.map((r) => r.cnic.replace(/\D/g, "")).filter(Boolean);
     if (new Set(cnics).size !== cnics.length) empProblems.push("Two employees have the same CNIC");
     if (minGroup && employees.length < minGroup) empProblems.push(`${plan?.label ?? "This plan"} needs at least ${minGroup} employees (you have ${employees.length})`);
     const classNames = new Set(classes.map((c) => c.name.trim().toLowerCase()));
@@ -375,6 +397,11 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
         if (empty(d[f])) { depProblems.push(`Dependant ${i + 1}: ${t} is missing`); flag([`dep.${d.uid}.${f}`]); }
       });
     });
+    dependants.forEach((d, i) => {
+      if (!empty(d.cnic) && !cnicOk(d.cnic)) { depProblems.push(`Dependant ${i + 1} (${d.name || "unnamed"}): CNIC must be 13 digits`); flagBad(`dep.${d.uid}.cnic`, d.cnic); }
+      if (!empty(d.dob) && !dateOk(d.dob)) { depProblems.push(`Dependant ${i + 1}: date of birth must be a past date`); flagBad(`dep.${d.uid}.dob`, d.dob); }
+      if (!(parseFloat(d.covered_amount) > 0) && !empty(d.covered_amount)) depProblems.push(`Dependant ${i + 1}: covered amount must be more than zero`);
+    });
     if (depProblems.length) { stop("dependants", depProblems); return; }
 
     const nomProblems: string[] = [];
@@ -383,105 +410,105 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
         if (empty(n[f])) { nomProblems.push(`Nominee ${i + 1}: ${t} is missing`); flag([`nom.${n.uid}.${f}`]); }
       });
     });
+    nominees.forEach((n, i) => {
+      if (!empty(n.cnic) && !cnicOk(n.cnic)) { nomProblems.push(`Nominee ${i + 1} (${n.name || "unnamed"}): CNIC must be 13 digits`); flagBad(`nom.${n.uid}.cnic`, n.cnic); }
+      if (!empty(n.dob) && !dateOk(n.dob)) { nomProblems.push(`Nominee ${i + 1}: date of birth must be a past date`); flagBad(`nom.${n.uid}.dob`, n.dob); }
+    });
     const shares = new Map<number, number>();
     nominees.forEach((n) => { if (n.emp !== null) shares.set(n.emp, (shares.get(n.emp) ?? 0) + (parseFloat(n.share_pct) || 0)); });
     shares.forEach((total, id) => { if (Math.abs(total - 100) > 0.01) nomProblems.push(`${empLabel(id)}'s nominee shares total ${total}% — they must total 100%`); });
     if (nomProblems.length) { stop("nominees", nomProblems); return; }
 
     setSaving(true);
+    // The Leads board must not announce this corporate until it has been saved in full — it appears in the
+    // list as soon as the first record is written, so announcements wait until we finish (or roll back).
+    const resumeAnnouncements = pauseLeadAnnouncements();
     const tenantId = localStorage.getItem("tenant_id");
     const st = created.current;
+    // All or nothing: the corporate is written step by step (company, policy, classes, census, dependants,
+    // nominees), so if any step fails everything written so far is deleted again and the form stays as it is.
+    class StepError extends Error { constructor(public tab: Tab, message: string) { super(message); } }
     try {
-      if (!st.orgId) {
-        const resp = await api.post(`/tenants/${tenantId}/organizations`, {
+      try {
+        const org = await api.post(`/tenants/${tenantId}/organizations`, {
           name: name.trim(), registration_number: registrationNumber || null, industry: industry || null,
           contact_person: contactPerson || null, contact_email: contactEmail || null, contact_phone: contactPhone || null,
           city: city || null, province: province || null, branch_id: branchId || null, assigned_agent_id: assignedAgentId || null,
         });
-        st.orgId = resp.data.id;
-      }
-      const orgId = st.orgId!;
+        st.orgId = org.data.id;
+        const orgId: string = org.data.id;
 
-      if (!st.mpId) {
-        const resp = await api.post(`/tenants/${tenantId}/organizations/${orgId}/master-policies`, {
-          sum_assured_multiple: parseFloat(multiple), term_years: parseInt(term), effective_date: effective, plan_code: planCode,
+        let mpId: string;
+        try {
+          mpId = (await api.post(`/tenants/${tenantId}/organizations/${orgId}/master-policies`, {
+            sum_assured_multiple: parseFloat(multiple), term_years: parseInt(term), effective_date: effective, plan_code: planCode,
+          })).data.id;
+        } catch (err: any) { throw new StepError("policy", readError(err, "The group policy could not be created.")); }
+        const mpBase = `/tenants/${tenantId}/organizations/${orgId}/master-policies/${mpId}`;
+
+        // Classes first — they are frozen once employees are enrolled.
+        for (const c of classes) {
+          try { await api.post(`${mpBase}/benefit-classes`, classBody(c)); }
+          catch (err: any) { throw new StepError("classes", `Class “${c.name}”: ${readError(err, "could not be added")}`); }
+        }
+
+        let enrolled: any;
+        try { enrolled = (await api.post(`${mpBase}/census/confirm`, { employees: employees.map(employeeBody) })).data; }
+        catch (err: any) { throw new StepError("employees", readError(err, "The employees could not be enrolled.")); }
+        // Outcomes come back in the order the employees were sent.
+        const memberByUid = new Map<number, string>();
+        employees.forEach((e, i) => { const id = enrolled.employees?.[i]?.group_member_id; if (id) memberByUid.set(e.uid, id); });
+
+        for (const d of dependants) {
+          const memberId = d.emp !== null ? memberByUid.get(d.emp) : undefined;
+          if (!memberId) throw new StepError("dependants", `${d.name}: ${empLabel(d.emp)} was not enrolled`);
+          try {
+            await api.post(`${mpBase}/members/${memberId}/dependents`, {
+              name: d.name.trim(), relationship: d.relationship, dob: d.dob, covered_amount: parseFloat(d.covered_amount),
+              ...(d.cnic ? { cnic: d.cnic } : {}), ...(d.gender ? { gender: d.gender } : {}),
+            });
+          } catch (err: any) { throw new StepError("dependants", `${d.name} (${empLabel(d.emp)}): ${readError(err, "could not be added")}`); }
+        }
+        const nomineeGroups = new Map<number, NomineeRow[]>();
+        nominees.forEach((n) => { if (n.emp !== null) nomineeGroups.set(n.emp, [...(nomineeGroups.get(n.emp) ?? []), n]); });
+        for (const [empUid, list] of Array.from(nomineeGroups.entries())) {
+          const memberId = memberByUid.get(empUid);
+          if (!memberId) throw new StepError("nominees", `${empLabel(empUid)} was not enrolled`);
+          try {
+            await api.put(`${mpBase}/members/${memberId}/beneficiaries`, {
+              beneficiaries: list.map((n) => ({
+                name: n.name.trim(), relationship: n.relationship, share_pct: parseFloat(n.share_pct), is_minor: n.is_minor,
+                ...(n.cnic ? { cnic: n.cnic } : {}), ...(n.dob ? { date_of_birth: n.dob } : {}), ...(n.guardian_name ? { guardian_name: n.guardian_name } : {}),
+              })),
+              changed_by: "Entered with the corporate", change_reason: "Initial nomination",
+            });
+          } catch (err: any) { throw new StepError("nominees", `${empLabel(empUid)}: ${readError(err, "nominees could not be saved")}`); }
+        }
+
+        // Saved in full. Embedded in the Copilot: close the window and let the chat carry on with the scheme.
+        notifyParentPortal("organization_enrolled", {
+          organization_id: orgId, master_policy_id: mpId, name: name.trim(),
+          employee_count: employees.length, plan_label: plan?.label ?? "Group Life", free_cover_limit: enrolled?.free_cover_limit ?? null,
         });
-        st.mpId = resp.data.id;
-      }
-      const mpBase = `/tenants/${tenantId}/organizations/${orgId}/master-policies/${st.mpId}`;
-
-      // Classes first — they are frozen once employees are enrolled.
-      for (const c of classes) {
-        const key = c.name.trim().toLowerCase();
-        if (st.classNames.has(key)) continue;
-        try {
-          await api.post(`${mpBase}/benefit-classes`, classBody(c));
-          st.classNames.add(key);
-        } catch (err: any) {
-          stop("classes", [`The company and its policy were created, but class “${c.name}” was not: ${readError(err, "Failed to add the class.")} Fix it and press the button again.`]);
-          return;
+        onSaved(`Corporate "${name.trim()}" created with ${employees.length} employees enrolled.`, { id: orgId, isNew: true });
+        st.orgId = undefined;       // nothing to roll back any more
+        onClose();
+      } catch (err: any) {
+        // Undo whatever was written, so no half-created corporate is left on the Leads board.
+        let cleaned = true;
+        if (st.orgId) {
+          try { await api.delete(`/tenants/${tenantId}/organizations/${st.orgId}`); } catch { cleaned = false; }
+          st.orgId = undefined;
         }
+        const text = err instanceof StepError ? err.message : readError(err, "Failed to create the corporate.");
+        stop(err instanceof StepError ? err.tab : "company", [
+          `Nothing was saved — ${text}. Fix it and press the button again.` + (cleaned ? "" : " (The partly created corporate could not be removed automatically — delete it from the Leads board.)"),
+        ]);
       }
-
-      if (!st.enrolled) {
-        try {
-          st.enrolled = (await api.post(`${mpBase}/census/confirm`, { employees: employees.map(employeeBody) })).data;
-          // Outcomes come back in the order the employees were sent.
-          employees.forEach((e, i) => { const id = st.enrolled.employees?.[i]?.group_member_id; if (id) st.memberByUid.set(e.uid, id); });
-        } catch (err: any) {
-          stop("employees", [`The company, policy and classes were created, but the employees were not enrolled: ${readError(err, "Failed to enrol the employees.")} Fix the rows and press the button again.`]);
-          return;
-        }
-      }
-
-      // Dependants and nominees hang off each enrolled employee. A failure here leaves the scheme intact:
-      // say what is left and let the button be pressed again — only the unfinished ones are retried.
-      const failures: { tab: Tab; text: string }[] = [];
-      for (const d of dependants) {
-        if (st.depsDone.has(d.uid)) continue;
-        const memberId = d.emp !== null ? st.memberByUid.get(d.emp) : undefined;
-        if (!memberId) { failures.push({ tab: "dependants", text: `${d.name}: ${empLabel(d.emp)} was not enrolled` }); continue; }
-        try {
-          await api.post(`${mpBase}/members/${memberId}/dependents`, {
-            name: d.name.trim(), relationship: d.relationship, dob: d.dob, covered_amount: parseFloat(d.covered_amount),
-            ...(d.cnic ? { cnic: d.cnic } : {}), ...(d.gender ? { gender: d.gender } : {}),
-          });
-          st.depsDone.add(d.uid);
-        } catch (err: any) { failures.push({ tab: "dependants", text: `${d.name} (${empLabel(d.emp)}): ${readError(err, "could not be added")}` }); }
-      }
-      const nomineeGroups = new Map<number, NomineeRow[]>();
-      nominees.forEach((n) => { if (n.emp !== null) nomineeGroups.set(n.emp, [...(nomineeGroups.get(n.emp) ?? []), n]); });
-      for (const [empUid, list] of Array.from(nomineeGroups.entries())) {
-        if (list.every((n) => st.nomsDone.has(n.uid))) continue;
-        const memberId = st.memberByUid.get(empUid);
-        if (!memberId) { failures.push({ tab: "nominees", text: `${empLabel(empUid)} was not enrolled` }); continue; }
-        try {
-          await api.put(`${mpBase}/members/${memberId}/beneficiaries`, {
-            beneficiaries: list.map((n) => ({
-              name: n.name.trim(), relationship: n.relationship, share_pct: parseFloat(n.share_pct), is_minor: n.is_minor,
-              ...(n.cnic ? { cnic: n.cnic } : {}), ...(n.dob ? { date_of_birth: n.dob } : {}), ...(n.guardian_name ? { guardian_name: n.guardian_name } : {}),
-            })),
-            changed_by: "Entered with the corporate", change_reason: "Initial nomination",
-          });
-          list.forEach((n) => st.nomsDone.add(n.uid));
-        } catch (err: any) { failures.push({ tab: "nominees", text: `${empLabel(empUid)}: ${readError(err, "nominees could not be saved")}` }); }
-      }
-      if (failures.length) {
-        stop(failures[0].tab, [`The corporate and its employees were created, but some extras were not saved — ${failures.slice(0, 3).map((f) => f.text).join("; ")}${failures.length > 3 ? `; …and ${failures.length - 3} more` : ""}. Fix them and press the button again, or add them later from the Members tab.`]);
-        return;
-      }
-
-      // Embedded in the Copilot: close the window and let the chat carry on with the group scheme.
-      notifyParentPortal("organization_enrolled", {
-        organization_id: orgId, master_policy_id: st.mpId, name: name.trim(),
-        employee_count: employees.length, plan_label: plan?.label ?? "Group Life", free_cover_limit: st.enrolled?.free_cover_limit ?? null,
-      });
-      onSaved(`Corporate "${name.trim()}" created with ${employees.length} employees enrolled.`, { id: orgId, isNew: true });
-      onClose();
-    } catch (err: any) {
-      setError(readError(err, "Failed to create the corporate."));
     } finally {
       setSaving(false);
+      // Let the next poll settle before announcements resume, so a rolled-back corporate is never announced.
+      setTimeout(resumeAnnouncements, 4000);
     }
   };
 
@@ -769,7 +796,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                           <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("dep", d.uid, "name", d.name)}`} value={d.name} onChange={(e) => setDep(d.uid, { name: e.target.value })} /></td>
                           <td className="px-1.5 py-1.5"><select className={`${CELL} ${amber("dep", d.uid, "relationship", d.relationship)}`} value={d.relationship} onChange={(e) => setDep(d.uid, { relationship: e.target.value })}><option>Spouse</option><option>Child</option><option>Parent</option></select></td>
                           <td className="px-1.5 py-1.5 min-w-[120px]"><input type="date" className={`${CELL} ${amber("dep", d.uid, "dob", d.dob)}`} value={d.dob} onChange={(e) => setDep(d.uid, { dob: e.target.value })} /></td>
-                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={CELL} value={d.cnic} onChange={(e) => setDep(d.uid, { cnic: e.target.value })} placeholder="optional" /></td>
+                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("dep", d.uid, "cnic", d.cnic)}`} value={d.cnic} onChange={(e) => setDep(d.uid, { cnic: e.target.value })} placeholder="optional" /></td>
                           <td className="px-1.5 py-1.5"><select className={CELL} value={d.gender} onChange={(e) => setDep(d.uid, { gender: e.target.value })}><option value="">—</option><option>Male</option><option>Female</option></select></td>
                           <td className="px-1.5 py-1.5 min-w-[110px]"><input type="number" className={`${CELL} ${amber("dep", d.uid, "covered_amount", d.covered_amount)}`} value={d.covered_amount} onChange={(e) => setDep(d.uid, { covered_amount: e.target.value })} placeholder="PKR" /></td>
                           <td className="px-1.5 py-1.5"><button type="button" onClick={() => setDependants((p) => p.filter((x) => x.uid !== d.uid))} className="text-slate-300 hover:text-red-600" aria-label="Remove dependant">✕</button></td>
@@ -798,9 +825,9 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
                           <td className="px-1.5 py-1.5 min-w-[160px]"><select className={`${CELL} ${amber("nom", n.uid, "emp", n.emp)}`} value={n.emp ?? ""} onChange={(e) => setNom(n.uid, { emp: e.target.value ? Number(e.target.value) : null })}>{empOptions}</select></td>
                           <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("nom", n.uid, "name", n.name)}`} value={n.name} onChange={(e) => setNom(n.uid, { name: e.target.value })} /></td>
                           <td className="px-1.5 py-1.5"><select className={`${CELL} ${amber("nom", n.uid, "relationship", n.relationship)}`} value={n.relationship} onChange={(e) => setNom(n.uid, { relationship: e.target.value })}><option>Spouse</option><option>Child</option><option>Parent</option><option>Sibling</option><option>Other</option></select></td>
-                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={CELL} value={n.cnic} onChange={(e) => setNom(n.uid, { cnic: e.target.value })} placeholder="optional" /></td>
+                          <td className="px-1.5 py-1.5 min-w-[140px]"><input className={`${CELL} ${amber("nom", n.uid, "cnic", n.cnic)}`} value={n.cnic} onChange={(e) => setNom(n.uid, { cnic: e.target.value })} placeholder="optional" /></td>
                           <td className="px-1.5 py-1.5 w-[80px]"><input type="number" className={`${CELL} ${amber("nom", n.uid, "share_pct", n.share_pct)}`} value={n.share_pct} onChange={(e) => setNom(n.uid, { share_pct: e.target.value })} placeholder="%" /></td>
-                          <td className="px-1.5 py-1.5 min-w-[120px]"><input type="date" className={CELL} value={n.dob} onChange={(e) => setNom(n.uid, { dob: e.target.value })} /></td>
+                          <td className="px-1.5 py-1.5 min-w-[120px]"><input type="date" className={`${CELL} ${amber("nom", n.uid, "dob", n.dob)}`} value={n.dob} onChange={(e) => setNom(n.uid, { dob: e.target.value })} /></td>
                           <td className="px-1.5 py-1.5 text-center"><input type="checkbox" checked={n.is_minor} onChange={(e) => setNom(n.uid, { is_minor: e.target.checked })} /></td>
                           <td className="px-1.5 py-1.5 min-w-[120px]"><input className={CELL} value={n.guardian_name} onChange={(e) => setNom(n.uid, { guardian_name: e.target.value })} disabled={!n.is_minor} placeholder={n.is_minor ? "Guardian name" : "—"} /></td>
                           <td className="px-1.5 py-1.5"><button type="button" onClick={() => setNominees((p) => p.filter((x) => x.uid !== n.uid))} className="text-slate-300 hover:text-red-600" aria-label="Remove nominee">✕</button></td>
