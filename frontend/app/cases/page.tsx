@@ -959,7 +959,9 @@ export default function CasesPage() {
   useEffect(() => {
     setLoadingMain(true);
     Promise.all([
-      api.get(`/tenants/${tenantId}/customers`),
+      // Family members and corporate employees carry cases too, so include them here
+      // (the plain list leaves them out — they belong to their group on the Leads board).
+      api.get(`/tenants/${tenantId}/customers`, { params: { include_group_members: true } }),
       api.get(`/tenants/${tenantId}/cases`),
     ]).then(([aRes, cRes]) => {
       setCustomers(aRes.data);

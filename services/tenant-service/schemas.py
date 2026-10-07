@@ -572,6 +572,7 @@ class OrganizationCreate(BaseModel):
     contact_phone: Optional[str] = None
     branch_id: Optional[UUID] = None
     assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
     city: Optional[str] = None
     province: Optional[str] = None
 
@@ -592,6 +593,7 @@ class OrganizationUpdate(BaseModel):
     contact_phone: Optional[str] = None
     branch_id: Optional[UUID] = None
     assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
     city: Optional[str] = None
     province: Optional[str] = None
     profile_status: Optional[ProfileStatusEnum] = None
@@ -607,6 +609,7 @@ class OrganizationRead(BaseModel):
     contact_phone: Optional[str] = None
     branch_id: Optional[UUID] = None
     assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
     city: Optional[str] = None
     province: Optional[str] = None
     profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD
@@ -948,6 +951,7 @@ class FamilyGroupCreate(BaseModel):
     household_declared_income: Optional[float] = None
     branch_id: Optional[UUID] = None
     assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
     city: Optional[str] = None
     province: Optional[str] = None
 
@@ -967,6 +971,7 @@ class FamilyGroupUpdate(BaseModel):
     household_declared_income: Optional[float] = None
     branch_id: Optional[UUID] = None
     assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
     city: Optional[str] = None
     province: Optional[str] = None
     profile_status: Optional[ProfileStatusEnum] = None
@@ -992,6 +997,7 @@ class FamilyGroupRead(BaseModel):
     primary_member_customer_id: Optional[UUID] = None
     branch_id: Optional[UUID] = None
     assigned_agent_id: Optional[UUID] = None
+    acquisition_source_id: Optional[UUID] = None
     city: Optional[str] = None
     province: Optional[str] = None
     profile_status: ProfileStatusEnum = ProfileStatusEnum.LEAD

@@ -9,7 +9,10 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from schemas import ChangePasswordRequest, ProfileUpdate
-from shared.models.core import Branch, Role, Tenant, User, UserProfile
+from typing import Optional
+from uuid import UUID
+
+from shared.models.core import AcquisitionSource, Branch, Role, Tenant, User, UserProfile
 
 SECRET_KEY  = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
 ALGORITHM   = "HS256"
@@ -26,6 +29,9 @@ def decode_access_token(token: str) -> dict:
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+# For read endpoints that internal services also call without a token; when a token
+# is present it decides what the caller may see.
+optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
 
 
 async def _get_current_user(token: str, session: AsyncSession) -> User:
@@ -50,6 +56,20 @@ async def _get_current_user(token: str, session: AsyncSession) -> User:
         # A removed account's existing sessions stop working too.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
     return user
+
+
+async def source_scope(token: Optional[str], session: AsyncSession) -> Optional[set[UUID]]:
+    """The acquisition sources whose customers (and their cases) the caller is limited
+    to, or None for unrestricted access. A login issued to an acquisition source (a
+    broker, an agent, a bank desk…) sees only the customers that source brought in;
+    staff accounts — not linked to any source — see the whole tenant."""
+    if not token:
+        return None
+    user = await _get_current_user(token, session)
+    source_ids = set((await session.execute(
+        select(AcquisitionSource.id).where(AcquisitionSource.user_id == user.id)
+    )).scalars().all())
+    return source_ids or None
 
 
 async def _role_name(user: User, session: AsyncSession) -> str:

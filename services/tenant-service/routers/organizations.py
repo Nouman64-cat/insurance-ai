@@ -85,6 +85,7 @@ from shared.models.core import (
     VerificationFinding,
 )
 from shared.pricing.calculator import calculate_premium
+from routers.auth import optional_oauth2_scheme, source_scope
 from routers.users import verify_admin   # reuse existing Admin guard — tenant-scoped for Admin, cross-tenant for SuperAdmin
 
 logger = logging.getLogger("tenant-service.organizations")
@@ -294,11 +295,16 @@ async def create_organization(
     tenant_id: UUID,
     body: OrganizationCreate,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> Organization:
     tenant = await session.get(Tenant, tenant_id)
     _verify_tenant(tenant, tenant_id)
 
     org = Organization(tenant_id=tenant_id, **body.model_dump())
+    # A source's own login can only bring in groups under its own source.
+    scope = await source_scope(token, session)
+    if scope is not None and org.acquisition_source_id not in scope:
+        org.acquisition_source_id = next(iter(scope))
     session.add(org)
     await session.commit()
     await session.refresh(org)
@@ -321,8 +327,12 @@ async def list_organizations(
     created_from: Optional[date] = None,
     created_to: Optional[date] = None,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     query = select(Organization).where(Organization.tenant_id == tenant_id)
+    scope = await source_scope(token, session)
+    if scope is not None:
+        query = query.where(Organization.acquisition_source_id.in_(scope))
     term = (search or "").strip()
     if term:
         like = f"%{term}%"
@@ -360,8 +370,16 @@ async def list_organizations(
     response_model=OrganizationStatsRead,
     dependencies=[Depends(verify_admin)],
 )
-async def get_organization_stats(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
-    orgs = list((await session.exec(select(Organization).where(Organization.tenant_id == tenant_id))).all())
+async def get_organization_stats(
+    tenant_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    query = select(Organization).where(Organization.tenant_id == tenant_id)
+    scope = await source_scope(token, session)
+    if scope is not None:
+        query = query.where(Organization.acquisition_source_id.in_(scope))
+    orgs = list((await session.exec(query)).all())
     enriched = await _enrich_organizations(tenant_id, orgs, session)
     active = sum(1 for dto in enriched if _org_category(dto) == "active")
     in_progress = sum(1 for dto in enriched if _org_category(dto) == "in_progress")
@@ -378,8 +396,16 @@ async def get_organization_stats(tenant_id: UUID, session: AsyncSession = Depend
     response_model=OrganizationRead,
     dependencies=[Depends(verify_admin)],
 )
-async def get_organization(tenant_id: UUID, org_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_organization(
+    tenant_id: UUID,
+    org_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
     org = await _get_organization(tenant_id, org_id, session)
+    scope = await source_scope(token, session)
+    if scope is not None and org.acquisition_source_id not in scope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found.")
     return (await _enrich_organizations(tenant_id, [org], session))[0]
 
 
@@ -843,6 +869,9 @@ async def enroll_census_rows(
         )
 
     audit_user = (await session.exec(select(User).where(User.tenant_id == tenant_id))).first()
+    # New employee profiles are credited to whoever brought the organization in.
+    org = await session.get(Organization, org_id)
+    org_source_id = org.acquisition_source_id if org else None
 
     # A CNIC that already belongs to this insurer's customer (an individual
     # policyholder, a family member, an employee of another scheme) is reused —
@@ -877,6 +906,7 @@ async def enroll_census_rows(
                 is_smoker=is_smoker,
                 height_cm=height_cm,
                 weight_kg=weight_kg,
+                acquisition_source_id=org_source_id,
             )
             session.add(customer)
             customers_to_promote.append(customer)

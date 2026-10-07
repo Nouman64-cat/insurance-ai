@@ -71,6 +71,7 @@ from shared.models.core import (
     VerificationFinding,
 )
 from shared.pricing.calculator import calculate_premium
+from routers.auth import optional_oauth2_scheme, source_scope
 from routers.users import verify_admin   # reuse existing Admin guard — tenant-scoped for Admin, cross-tenant for SuperAdmin
 
 logger = logging.getLogger("tenant-service.families")
@@ -184,6 +185,9 @@ async def _get_or_create_member_customer(
     to a different family or to a corporate organization's employee roster.
     """
     cnic = normalize_cnic(row["cnic"]) or row["cnic"]
+    # Members are credited to whoever brought the family in.
+    family = await session.get(FamilyGroup, family_id)
+    source_id = family.acquisition_source_id if family else None
     existing = (await session.exec(
         select(Customer).where(Customer.tenant_id == tenant_id, Customer.cnic == cnic)
     )).first()
@@ -208,6 +212,7 @@ async def _get_or_create_member_customer(
             # filled in later via PUT /customers/{id} from the family member's
             # "Full Details" editor, same endpoint individual customers use.
             details=row.get("details"),
+            acquisition_source_id=source_id,
         )
         session.add(customer)
         await session.flush()
@@ -226,6 +231,8 @@ async def _get_or_create_member_customer(
 
     existing.family_group_id = family_id
     existing.family_relationship = _relationship_enum(row["relationship"])
+    if existing.acquisition_source_id is None:
+        existing.acquisition_source_id = source_id
     if row.get("details"):
         existing.details = row["details"]
     session.add(existing)
@@ -245,11 +252,16 @@ async def create_family_group(
     tenant_id: UUID,
     body: FamilyGroupCreate,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> FamilyGroup:
     tenant = await session.get(Tenant, tenant_id)
     _verify_tenant(tenant, tenant_id)
 
     fg = FamilyGroup(tenant_id=tenant_id, **body.model_dump())
+    # A source's own login can only bring in groups under its own source.
+    scope = await source_scope(token, session)
+    if scope is not None and fg.acquisition_source_id not in scope:
+        fg.acquisition_source_id = next(iter(scope))
     session.add(fg)
     await session.commit()
     await session.refresh(fg)
@@ -272,8 +284,12 @@ async def list_family_groups(
     created_from: Optional[date] = None,
     created_to: Optional[date] = None,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     query = select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id)
+    scope = await source_scope(token, session)
+    if scope is not None:
+        query = query.where(FamilyGroup.acquisition_source_id.in_(scope))
     term = (search or "").strip()
     if term:
         like = f"%{term}%"
@@ -304,8 +320,16 @@ async def list_family_groups(
     response_model=FamilyStatsRead,
     dependencies=[Depends(verify_admin)],
 )
-async def get_family_stats(tenant_id: UUID, session: AsyncSession = Depends(get_session)):
-    groups = list((await session.exec(select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id))).all())
+async def get_family_stats(
+    tenant_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
+    query = select(FamilyGroup).where(FamilyGroup.tenant_id == tenant_id)
+    scope = await source_scope(token, session)
+    if scope is not None:
+        query = query.where(FamilyGroup.acquisition_source_id.in_(scope))
+    groups = list((await session.exec(query)).all())
     enriched = await _enrich_families(tenant_id, groups, session)
     active = sum(1 for dto in enriched if _family_category(dto) == "active")
     in_progress = sum(1 for dto in enriched if _family_category(dto) == "in_progress")
@@ -322,8 +346,16 @@ async def get_family_stats(tenant_id: UUID, session: AsyncSession = Depends(get_
     response_model=FamilyGroupRead,
     dependencies=[Depends(verify_admin)],
 )
-async def get_family_group(tenant_id: UUID, family_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_family_group(
+    tenant_id: UUID,
+    family_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
     fg = await _get_family_group(tenant_id, family_id, session)
+    scope = await source_scope(token, session)
+    if scope is not None and fg.acquisition_source_id not in scope:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family group not found.")
     return (await _enrich_families(tenant_id, [fg], session))[0]
 
 

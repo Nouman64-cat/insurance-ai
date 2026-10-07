@@ -31,7 +31,9 @@ from aiokafka import AIOKafkaProducer
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from shared.models.core import Role, User
+from sqlmodel import select
+
+from shared.models.core import AcquisitionSource, Role, User
 
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "change-me-in-production")
 JWT_ALGORITHM = "HS256"
@@ -115,6 +117,25 @@ async def get_current_user(
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return user
+
+
+async def get_source_scope(
+    token: Optional[str] = Depends(oauth2_scheme),
+    session: AsyncSession = Depends(get_session),
+) -> Optional[set[UUID]]:
+    """The acquisition sources whose customers the caller is limited to, or None for
+    unrestricted access. A login issued to an acquisition source (a broker, an agent,
+    a bank desk…) sees only the customers that source brought in; staff accounts —
+    not linked to any source — see the whole tenant. Mirrors
+    tenant-service/routers/auth.py::source_scope. A request without a token
+    (internal service calls) is unrestricted."""
+    if not token:
+        return None
+    user = await get_current_user(token, session)
+    source_ids = set((await session.exec(
+        select(AcquisitionSource.id).where(AcquisitionSource.user_id == user.id)
+    )).all())
+    return source_ids or None
 
 
 def require_roles(*allowed_role_names: str):

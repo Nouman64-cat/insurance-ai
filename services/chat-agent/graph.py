@@ -1343,8 +1343,8 @@ async def permission_gate(state: ChatState) -> Command:
             args["full_journey"] = False
         if state.get("lead_agent") and not args.get("agent_name") and not args.get("agent_email"):
             args["agent_name"] = state["lead_agent"]
-        # (Only individual customers carry an acquisition source; the id is ignored
-        # by the organization / family create calls.)
+        # Individuals, families and organizations all carry the acquisition source;
+        # family members and employees inherit it from their group.
         source_id = (state.get("lead_source") or {}).get("id")
         if source_id and not args.get("acquisition_source_id"):
             args["acquisition_source_id"] = source_id

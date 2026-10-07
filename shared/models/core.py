@@ -373,6 +373,8 @@ class Organization(SQLModel, table=True):
 
     branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", index=True, nullable=True)
     assigned_agent_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+    # Who brought this group in (broker, agent, bank desk…); its members inherit it.
+    acquisition_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", index=True, nullable=True)
     city: Optional[str] = Field(default=None, max_length=100)
     province: Optional[str] = Field(default=None, max_length=100)
 
@@ -936,6 +938,8 @@ class FamilyGroup(SQLModel, table=True):
 
     branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", index=True, nullable=True)
     assigned_agent_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+    # Who brought this group in (broker, agent, bank desk…); its members inherit it.
+    acquisition_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", index=True, nullable=True)
     city: Optional[str] = Field(default=None, max_length=100)
     province: Optional[str] = Field(default=None, max_length=100)
 

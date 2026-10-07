@@ -8,7 +8,7 @@ from datetime import datetime
 
 from database import get_session
 from document_requirements import get_required_documents
-from routers.auth import oauth2_scheme, _get_current_user, _role_name
+from routers.auth import oauth2_scheme, optional_oauth2_scheme, source_scope, _get_current_user, _role_name
 from services import compliance_engine, underwriting_gate
 from shared.models.core import (
     Customer,
@@ -59,6 +59,12 @@ router = APIRouter(prefix="/tenants/{tenant_id}/cases", tags=["Cases"])
 # the Proposal page's PATCH /quotes/{id} in api-gateway/routers/quote.py.
 _CASE_DECISION_ROLES = {"Underwriter", "Admin", "SuperAdmin"}
 _CASE_SUBMISSION_ROLES = {"Agent", "Underwriter", "Admin", "SuperAdmin"}
+
+async def _case_in_scope(case: Case, scope: Optional[set[UUID]], session: AsyncSession) -> bool:
+    if scope is None:
+        return True
+    customer = await session.get(Customer, case.customer_id)
+    return customer is not None and customer.acquisition_source_id in scope
 
 def generate_case_number() -> str:
     # Auto-generate CaseNumber: e.g., CASE-YYYY-XXXXXX
@@ -166,7 +172,8 @@ async def list_cases(
     segment: Optional[Literal["individual", "family", "organization"]] = Query(
         None, description="Filter by customer segment: individual | family | organization"
     ),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     """Enriched case list — the data source for the Underwriting queue page.
 
@@ -178,6 +185,11 @@ async def list_cases(
     triage.
     """
     stmt = select(Case).where(Case.tenant_id == tenant_id)
+    scope = await source_scope(token, session)
+    if scope is not None:
+        stmt = stmt.join(Customer, Customer.id == Case.customer_id).where(
+            Customer.acquisition_source_id.in_(scope)
+        )
     if customer_id:
         stmt = stmt.where(Case.customer_id == customer_id)
     if status:
@@ -356,11 +368,16 @@ async def list_cases(
 
 
 @router.get("/{case_id}", response_model=CaseRead)
-async def get_case(tenant_id: UUID, case_id: UUID, session: AsyncSession = Depends(get_session)):
+async def get_case(
+    tenant_id: UUID,
+    case_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
+):
     stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
     result = await session.execute(stmt)
     case = result.scalar_one_or_none()
-    if not case:
+    if not case or not await _case_in_scope(case, await source_scope(token, session), session):
         raise HTTPException(status_code=404, detail="Case not found")
     return case
 
@@ -385,13 +402,14 @@ async def get_case_detail(
     tenant_id: UUID,
     case_id: UUID,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     """Bundled Case 360 view: case + customer + policy + document checklist +
     latest risk assessment, in one round trip — the data source for the
     frontend's single-page underwriting workbench (case/[id])."""
     stmt = select(Case).where(Case.tenant_id == tenant_id, Case.caseld == case_id)
     case = (await session.execute(stmt)).scalar_one_or_none()
-    if not case:
+    if not case or not await _case_in_scope(case, await source_scope(token, session), session):
         raise HTTPException(status_code=404, detail="Case not found")
 
     customer_res = await session.execute(

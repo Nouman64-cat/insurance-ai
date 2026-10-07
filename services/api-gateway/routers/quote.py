@@ -24,7 +24,7 @@ from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
-from dependencies import get_current_user, get_tenant_id
+from dependencies import get_current_user, get_source_scope, get_tenant_id
 from schemas import QuoteDetail, QuoteListItem, QuoteRequest, QuoteResponse, QuoteUpdate
 from shared.models.core import (
     AcquisitionSource,
@@ -165,6 +165,7 @@ async def list_quotes(
     last_modified_to: Optional[datetime] = Query(None),
     tenant_id: UUID = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
+    scope: Optional[set[UUID]] = Depends(get_source_scope),
 ) -> list[QuoteListItem]:
     stmt = (
         select(PremiumQuote, Policy, Customer, AcquisitionSource, MasterPolicy, Organization, FamilyPolicy, FamilyGroup, User)
@@ -178,6 +179,8 @@ async def list_quotes(
         .outerjoin(User, Policy.assigned_underwriter_id == User.id)
         .where(PremiumQuote.tenant_id == tenant_id)
     )
+    if scope is not None:
+        stmt = stmt.where(Customer.acquisition_source_id.in_(scope))
 
     if search:
         search_term = f"%{search}%"
@@ -277,6 +280,7 @@ async def get_quote_detail(
     quote_id: UUID,
     tenant_id: UUID = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
+    scope: Optional[set[UUID]] = Depends(get_source_scope),
 ) -> QuoteDetail:
     stmt = (
         select(PremiumQuote, Policy, Customer, AcquisitionSource, MasterPolicy, Organization, FamilyPolicy, FamilyGroup, User)
@@ -290,6 +294,8 @@ async def get_quote_detail(
         .outerjoin(User, Policy.assigned_underwriter_id == User.id)
         .where(PremiumQuote.id == quote_id, PremiumQuote.tenant_id == tenant_id)
     )
+    if scope is not None:
+        stmt = stmt.where(Customer.acquisition_source_id.in_(scope))
     row = (await session.exec(stmt)).first()
     if row is None:
         raise HTTPException(
@@ -310,6 +316,7 @@ async def update_quote(
     tenant_id: UUID = Depends(get_tenant_id),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
+    scope: Optional[set[UUID]] = Depends(get_source_scope),
 ) -> QuoteDetail:
     stmt = (
         select(PremiumQuote, Policy, Customer, AcquisitionSource, MasterPolicy, Organization, FamilyPolicy, FamilyGroup, User)
@@ -323,6 +330,8 @@ async def update_quote(
         .outerjoin(User, Policy.assigned_underwriter_id == User.id)
         .where(PremiumQuote.id == quote_id, PremiumQuote.tenant_id == tenant_id)
     )
+    if scope is not None:
+        stmt = stmt.where(Customer.acquisition_source_id.in_(scope))
     row = (await session.exec(stmt)).first()
     if row is None:
         raise HTTPException(

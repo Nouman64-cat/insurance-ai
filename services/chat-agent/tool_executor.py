@@ -1099,6 +1099,7 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
         "contact_email": args.get("contact_email"),
         "contact_phone": args.get("contact_phone"),
         "assigned_agent_id": agent.get("id") if agent else None,
+        "acquisition_source_id": args.get("acquisition_source_id"),
     })
     res.raise_for_status()
     data = res.json()
@@ -1135,6 +1136,7 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
         "contact_phone": args.get("contact_phone"),
         "household_declared_income": _as_float(args.get("household_declared_income")),
         "assigned_agent_id": agent.get("id") if agent else None,
+        "acquisition_source_id": args.get("acquisition_source_id"),
     })
     res.raise_for_status()
     family_id = res.json()["id"]

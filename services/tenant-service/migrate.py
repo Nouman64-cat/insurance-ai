@@ -1421,6 +1421,42 @@ POST_DATA_MIGRATIONS: list[tuple[str, str]] = [
         "v44p — rule_evaluation_logs: index on customer_cnic",
         "CREATE INDEX IF NOT EXISTS ix_rule_evaluation_logs_customer_cnic ON rule_evaluation_logs (customer_cnic)",
     ),
+    (
+        "acq-src-group-a — add acquisition_source_id to family_groups",
+        "ALTER TABLE family_groups ADD COLUMN IF NOT EXISTS acquisition_source_id UUID REFERENCES acquisition_sources(id)",
+    ),
+    (
+        "acq-src-group-b — add acquisition_source_id to organizations",
+        "ALTER TABLE organizations ADD COLUMN IF NOT EXISTS acquisition_source_id UUID REFERENCES acquisition_sources(id)",
+    ),
+    (
+        "acq-src-group-c — index family_groups.acquisition_source_id",
+        "CREATE INDEX IF NOT EXISTS ix_family_groups_acquisition_source_id ON family_groups (acquisition_source_id)",
+    ),
+    (
+        "acq-src-group-d — index organizations.acquisition_source_id",
+        "CREATE INDEX IF NOT EXISTS ix_organizations_acquisition_source_id ON organizations (acquisition_source_id)",
+    ),
+    (
+        "acq-src-group-e — backfill family_groups source from an assigned source login",
+        "UPDATE family_groups fg SET acquisition_source_id = s.id FROM acquisition_sources s "
+        "WHERE fg.acquisition_source_id IS NULL AND s.user_id = fg.assigned_agent_id AND s.tenant_id = fg.tenant_id",
+    ),
+    (
+        "acq-src-group-f — backfill organizations source from an assigned source login",
+        "UPDATE organizations o SET acquisition_source_id = s.id FROM acquisition_sources s "
+        "WHERE o.acquisition_source_id IS NULL AND s.user_id = o.assigned_agent_id AND s.tenant_id = o.tenant_id",
+    ),
+    (
+        "acq-src-group-g — family members inherit their group's source",
+        "UPDATE customers c SET acquisition_source_id = fg.acquisition_source_id FROM family_groups fg "
+        "WHERE c.family_group_id = fg.id AND c.acquisition_source_id IS NULL AND fg.acquisition_source_id IS NOT NULL",
+    ),
+    (
+        "acq-src-group-h — organization employees inherit their organization's source",
+        "UPDATE customers c SET acquisition_source_id = o.acquisition_source_id FROM organizations o "
+        "WHERE c.organization_id = o.id AND c.acquisition_source_id IS NULL AND o.acquisition_source_id IS NOT NULL",
+    ),
 ]
 
 

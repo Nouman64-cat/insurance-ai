@@ -20,6 +20,7 @@ from shared.models.core import (
     ProfileStatusEnum, PolicyStatusEnum, InsurancePlan,
 )
 from shared.pricing.calculator import calculate_premium
+from routers.auth import optional_oauth2_scheme, source_scope
 from routers.users import verify_admin   # reuse existing Admin guard
 
 # A customer counts as a policyholder only once a policy is actually bound and in-force.
@@ -96,6 +97,7 @@ async def create_customer(
     body: CustomerCreate,
     request: Request,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ) -> Customer:
     # 1. Verify tenant exists and is active
     tenant = await session.get(Tenant, tenant_id)
@@ -147,6 +149,12 @@ async def create_customer(
             if all_b:
                 resolved_branch_id = all_b[0].id
 
+    # A source's own login can only bring in customers under its own source.
+    acquisition_source_id = body.acquisition_source_id
+    scope = await source_scope(token, session)
+    if scope is not None and acquisition_source_id not in scope:
+        acquisition_source_id = next(iter(scope))
+
     # 3. Persist — tenant_id is always taken from the path (JWT-scoped)
     customer = Customer(
         tenant_id       = tenant_id,
@@ -161,7 +169,7 @@ async def create_customer(
         height_cm       = body.height_cm if body.height_cm is not None else 170.0,
         weight_kg       = body.weight_kg if body.weight_kg is not None else 70.0,
         profile_status  = status_val,
-        acquisition_source_id = body.acquisition_source_id,
+        acquisition_source_id = acquisition_source_id,
         branch_id       = resolved_branch_id,
         assigned_agent_id = body.assigned_agent_id,
         city            = body.city,
@@ -196,20 +204,26 @@ async def list_customers(
     province: Optional[str] = None,
     created_from: Optional[date] = None,
     created_to: Optional[date] = None,
+    include_group_members: bool = Query(
+        False, description="Also list family members and corporate employees (the Cases page needs their folders)"
+    ),
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     query = (
         select(Customer)
         .where(Customer.tenant_id == tenant_id)
+        .options(selectinload(Customer.acquisition_source))
+    )
+    if not include_group_members:
         # Members enrolled under a family group or a corporate organization are
         # surfaced through their FamilyGroup / Organization lead on the Leads
         # board, not as standalone individuals — excluding them here keeps a
         # family/corporate member from also appearing as its own INDIVIDUAL lead.
-        .where(Customer.organization_id.is_(None))
-        .where(Customer.family_group_id.is_(None))
-        .options(selectinload(Customer.acquisition_source))
-    )
-
+        query = query.where(Customer.organization_id.is_(None)).where(Customer.family_group_id.is_(None))
+    scope = await source_scope(token, session)
+    if scope is not None:
+        query = query.where(Customer.acquisition_source_id.in_(scope))
 
     term = (search or "").strip()
     if term:
@@ -288,12 +302,15 @@ async def list_customers(
 async def get_customer_stats(
     tenant_id: UUID,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     active_exists = _active_policy_exists(tenant_id)
+    scope = await source_scope(token, session)
+    scope_conditions = () if scope is None else (Customer.acquisition_source_id.in_(scope),)
 
     async def _count(*conditions) -> int:
         result = await session.execute(
-            select(func.count()).select_from(Customer).where(Customer.tenant_id == tenant_id, *conditions)
+            select(func.count()).select_from(Customer).where(Customer.tenant_id == tenant_id, *scope_conditions, *conditions)
         )
         return result.scalar_one()
 
@@ -323,6 +340,7 @@ async def get_customer(
     tenant_id: UUID,
     customer_id: UUID,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     result = await session.exec(
         select(Customer)
@@ -330,7 +348,8 @@ async def get_customer(
         .options(selectinload(Customer.acquisition_source))
     )
     customer = result.first()
-    if not customer or customer.tenant_id != tenant_id:
+    scope = await source_scope(token, session)
+    if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
@@ -346,9 +365,11 @@ async def list_customer_policies(
     tenant_id: UUID,
     customer_id: UUID,
     session: AsyncSession = Depends(get_session),
+    token: Optional[str] = Depends(optional_oauth2_scheme),
 ):
     customer = await session.get(Customer, customer_id)
-    if not customer or customer.tenant_id != tenant_id:
+    scope = await source_scope(token, session)
+    if not customer or customer.tenant_id != tenant_id or (scope is not None and customer.acquisition_source_id not in scope):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Customer not found"
