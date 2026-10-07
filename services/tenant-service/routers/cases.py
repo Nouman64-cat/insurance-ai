@@ -48,7 +48,7 @@ from schemas import (
     PolicyRead,
 )
 from shared.services.policy_state_machine import IllegalStateTransition, apply_transition
-from family_approval import pending_insured_members
+from family_approval import head_case_ids, owner_case_id, pending_insured_members
 
 router = APIRouter(prefix="/tenants/{tenant_id}/cases", tags=["Cases"])
 
@@ -310,6 +310,13 @@ async def list_cases(
             )).scalars().all()
         }
 
+    # An insured spouse's case shows the head's Agent report / initial premium (one proposer, one premium).
+    for spouse_case_id, head_id in (await head_case_ids(session, list(cases))).items():
+        if head_id in acr_status_by_case:
+            acr_status_by_case[spouse_case_id] = acr_status_by_case[head_id]
+        if head_id in ipp_status_by_case:
+            ipp_status_by_case[spouse_case_id] = ipp_status_by_case[head_id]
+
     out = []
     for c in cases:
         customer = customers.get(c.customer_id)
@@ -381,6 +388,19 @@ async def get_case(
         raise HTTPException(status_code=404, detail="Case not found")
     return case
 
+
+
+
+async def _family_ref(session, customer, policy) -> Optional[dict]:
+    if customer is None or customer.family_group_id is None:
+        return None
+    from shared.models.core import FamilyGroup
+    group = await session.get(FamilyGroup, customer.family_group_id)
+    return {
+        "group_id": str(customer.family_group_id),
+        "policy_id": str(policy.family_policy_id) if policy is not None and getattr(policy, "family_policy_id", None) else None,
+        "name": group.name if group is not None else None,
+    }
 
 
 async def _family_head_case(session, policy, case) -> Optional[dict]:
@@ -563,8 +583,9 @@ async def get_case_detail(
         ComplianceStatusEnum, InsuranceHistoryCheck, MedicalExamOrder,
     )
     e_app = (await session.execute(select(CustomerEApplication).where(CustomerEApplication.case_id == case_id))).scalars().first()
-    acr = (await session.execute(select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id))).scalars().first()
-    ipp = (await session.execute(select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == case_id))).scalars().first()
+    # An insured spouse's case reads the Agent's report and the initial premium from the head's case (see family_approval).
+    acr = (await session.execute(select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == await owner_case_id(session, case, "acr")))).scalars().first()
+    ipp = (await session.execute(select(InitialPremiumPayment).where(InitialPremiumPayment.case_id == await owner_case_id(session, case, "ipp")))).scalars().first()
     hist = (await session.execute(select(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == case_id))).scalars().first()
     medical = (await session.execute(select(MedicalExamOrder).where(MedicalExamOrder.case_id == case_id))).scalars().first()
 
@@ -623,6 +644,8 @@ async def get_case_detail(
         "is_principal_participant": is_principal_participant,
         "family_relationship": family_relationship,
         "family_members": family_members,
+        # The family this case belongs to — what a family report needs to list the nominees and name the household.
+        "family": await _family_ref(session, customer, policy),
         # On a family floater the policy is issued to the head, on the head's case — set when this case is NOT the head's.
         "family_head_case": await _family_head_case(session, policy, case),
         # Insured lives on this family policy whose own underwriting isn't approved yet (the policy waits for them).

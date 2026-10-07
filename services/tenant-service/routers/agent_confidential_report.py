@@ -41,6 +41,9 @@ async def _get_current_user_id(token: str) -> UUID:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
+from family_approval import owner_case_id
+
+
 async def _get_case(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Case:
     case = await session.get(Case, case_id)
     if case is None or case.tenant_id != tenant_id:
@@ -113,7 +116,7 @@ async def get_acr(
     session: AsyncSession = Depends(get_session),
 ):
     await _get_current_user_id(token)
-    await _get_case(session, tenant_id, case_id)
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "acr")   # the head's, for an insured spouse
 
     stmt = select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id)
     acr = (await session.execute(stmt)).scalars().first()
@@ -134,7 +137,7 @@ async def upsert_acr(
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None or not tenant.is_active:
         raise HTTPException(status_code=404, detail="Tenant not found or inactive")
-    await _get_case(session, tenant_id, case_id)
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "acr")
 
     stmt = select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id)
     acr = (await session.execute(stmt)).scalars().first()
@@ -165,7 +168,7 @@ async def submit_acr(
     session: AsyncSession = Depends(get_session),
 ):
     await _get_current_user_id(token)
-    await _get_case(session, tenant_id, case_id)
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "acr")
 
     stmt = select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id)
     acr = (await session.execute(stmt)).scalars().first()

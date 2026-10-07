@@ -27,6 +27,7 @@ import asyncio
 import json
 import os
 import random
+import re
 from dataclasses import dataclass
 from datetime import date
 from typing import Any, Awaitable, Callable, Optional
@@ -1145,14 +1146,16 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
     enrolled_members = None
     case_numbers: list[str] = []
     member_cases: list[dict] = []
+    family_policy_id = None
     if members:
         fp = await ctx.client.post(
             ctx.tsvc(f"/families/{family_id}/floater-policies"),
             json={"total_sum_insured": 5_000_000, "term_years": 1, "effective_date": date.today().isoformat()},
         )
         fp.raise_for_status()
+        family_policy_id = fp.json()["id"]
         confirm = await ctx.client.post(
-            ctx.tsvc(f"/families/{family_id}/floater-policies/{fp.json()['id']}/members/confirm"),
+            ctx.tsvc(f"/families/{family_id}/floater-policies/{family_policy_id}/members/confirm"),
             json={"members": members},
         )
         confirm.raise_for_status()
@@ -1200,7 +1203,7 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
         result["family_members"] = enrolled_members
     if case_numbers:
         # `customer_id` stays empty: the browser finds a family's proposal by its family group.
-        result["proposal_journey"] = {"customer_id": "", "name": name, "family_group_id": family_id, "case_numbers": case_numbers, "cases": member_cases}
+        result["proposal_journey"] = {"customer_id": "", "name": name, "family_group_id": family_id, "family_policy_id": family_policy_id, "case_numbers": case_numbers, "cases": member_cases}
     return result
 
 
@@ -1403,6 +1406,24 @@ async def _create_proposal(args: dict, ctx: Ctx) -> dict:
     }
 
 
+def _past_underwriting(case: dict, policy: dict) -> Optional[dict]:
+    """A case whose policy is already issued — or whose approval is already recorded — doesn't go through the risk
+    assessment again; this says where it stands and what comes next. None when underwriting is still open."""
+    no = case.get("caseNumber")
+    pstatus = str(policy.get("status") or "").replace(" ", "").lower()
+    cstatus = str(case.get("caseStatus") or "")
+    if pstatus == "active":
+        return {"message": f"✅ Case **{no}** is already done — the policy is issued and **Active**. There is nothing left to assess.",
+                "quick_actions": [{"label": "View active policy", "actionType": "submit", "payload": f"Show me the active policy status for case {no}"}]}
+    if pstatus == "pendingpayment":
+        return {"message": f"Case **{no}** is already past underwriting — the policy is issued and is **waiting for the first payment**.",
+                "quick_actions": [{"label": "Confirm payment", "actionType": "submit", "payload": f"Confirm payment for case {no}"}]}
+    if cstatus in ("Approved", "Closed") and pstatus in ("approved", "acceptedwithloadings"):
+        return {"message": f"Case **{no}** is already **approved** — the underwriting decision is recorded. The next step is to issue the policy.",
+                "quick_actions": [{"label": "Yes — Issue Policy", "actionType": "submit", "payload": f"Run pre-issuance verification and issue the policy for case {no}"}]}
+    return None
+
+
 @handles("run_risk_assessment")
 async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
@@ -1428,6 +1449,11 @@ async def _run_risk_assessment(args: dict, ctx: Ctx) -> dict:
                 "payload": f"Create a Term Life proposal for CNIC {case.get('customer_cnic') or args.get('cnic')}",
             }],
         }
+
+    # The case is past underwriting altogether: say where it stands rather than assessing (or holding) it again.
+    done = _past_underwriting(case, policy)
+    if done and not args.get("force_rerun"):
+        return {"success": True, "message": done["message"], "quick_actions": done["quick_actions"]}
 
     # If risk assessment was already completed in the portal/DB and no explicit re-run was requested
     if latest and latest.get("ai_decision") and not args.get("force_rerun"):
@@ -1852,6 +1878,20 @@ async def _verify_e_application(args: dict, ctx: Ctx) -> dict:
     }
 
 
+def _already_complete(case: dict, detail: dict, key: str, label: str) -> Optional[dict]:
+    """A requirement that is already satisfied is reported, not run again — re-running would at best fail on a locked
+    record (the head's Agent report covers a spouse) and at worst wipe a clearance (PEP screening is per policy)."""
+    meta = next((g for g in _GATE_ORDER if g[0] == key), None)
+    if meta is None or (detail.get("pre_underwriting_status") or {}).get(key) not in meta[3]:
+        return None
+    head = detail.get("family_head_case")
+    # One proposer, one premium: whichever insured member does these first records them once for the whole family.
+    why = (f" — recorded once for the whole family, on the head's case {head['case_number']}" if head
+           else " — already recorded for the family" if len(detail.get("family_members") or []) > 1 else "")
+    return {"success": True, "already_done": True,
+            "message": f"✅ **{label}** is already complete for case **{case.get('caseNumber')}**{why}; nothing to do here."}
+
+
 @handles("submit_agent_confidential_report")
 async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
@@ -1863,6 +1903,10 @@ async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
     detail = detail_res.json()
     pre = detail.get("pre_underwriting_status") or {}
     e_app = pre.get("e_application", "NotStarted")
+
+    done = _already_complete(case, detail, "acr", "Agent's Confidential Report")
+    if done:
+        return done
 
     if e_app != "Verified" and not args.get("bypass_prerequisites"):
         return {
@@ -1992,6 +2036,11 @@ async def _run_compliance_screening(args: dict, ctx: Ctx) -> dict:
     detail = detail_res.json()
     pre = detail.get("pre_underwriting_status") or {}
     acr_status = pre.get("acr", "NotStarted")
+
+    # Screening again replaces every check row — it would wipe a clearance the family policy already has.
+    done = _already_complete(case, detail, "compliance", "PEP & Sanctions Screening")
+    if done:
+        return done
 
     if acr_status != "Submitted" and not args.get("bypass_prerequisites"):
         return {
@@ -2131,6 +2180,10 @@ async def _process_initial_premium_payment(args: dict, ctx: Ctx) -> dict:
     detail = detail_res.json()
     pre = detail.get("pre_underwriting_status") or {}
     comp_status = pre.get("compliance", "NotRun")
+
+    done = _already_complete(case, detail, "ipp", "Initial Premium Payment")
+    if done:
+        return done
 
     if comp_status not in ("Passed", "Cleared") and not args.get("bypass_prerequisites"):
         return {
@@ -3488,6 +3541,120 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
 # Dispatch
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ── Requirements that are already satisfied are skipped, not asked again ─────────────────────────────
+# Each gate tool's own reply names the next gate in a fixed order. For a family member some requirements
+# are already ticked (the head's Agent report and premium cover an insured spouse), so after a gate is
+# done the next step has to be the first requirement that is genuinely still open — and the ones passed
+# over are said out loud.
+
+_GATE_ORDER = [
+    # (status key, number in the 7-step checklist, name, satisfied statuses, chip label, chip prompt)
+    ("e_application", 2, "Customer E-Application", ("Verified",), "Generate E-App Link", "Generate e-application link for case {no}"),
+    ("acr", 3, "Agent's Confidential Report", ("Submitted",), "File ACR", "Submit agent confidential report for case {no}"),
+    ("compliance", 4, "PEP & Sanctions Screening", ("Passed", "Cleared"), "Run PEP Check", "Run compliance screening for case {no}"),
+    ("ipp", 5, "Initial Premium Payment", ("Realized",), "Collect Premium", "Process initial premium payment for case {no}"),
+    ("insurance_history", 6, "Insurance History Clearance", ("Clear", "Cleared"), "Run History Check", "Run insurance history check for case {no}"),
+    ("medical_exam", 7, "Medical Examination", ("Completed", "Waived", "NotRequired"), "Assess Medical", "Assess medical examination for case {no}"),
+]
+_GATE_OF_TOOL = {
+    "verify_e_application": "e_application", "submit_agent_confidential_report": "acr", "run_compliance_screening": "compliance",
+    "process_initial_premium_payment": "ipp", "run_insurance_history_check": "insurance_history", "assess_medical_examination": "medical_exam",
+}
+
+
+async def _skip_completed_gates(tool: str, result: dict, ctx: Ctx, args: dict) -> dict:
+    """After a gate is done, point at the first requirement still open — and say which ones were already complete."""
+    message = result.get("message") if isinstance(result, dict) else None
+    if not message or not result.get("success", True):
+        return result
+    try:
+        m = re.search(r"CASE-\d{4}-[A-Z0-9]+", message) or re.search(r"CASE-\d{4}-[A-Z0-9]+", str(args.get("case_number") or ""))
+        case_no = m.group(0) if m else None
+        if not case_no:
+            return result
+        case = await _resolve_case({"case_number": case_no}, ctx)
+        detail = (await ctx.client.get(ctx.tsvc(f"/cases/{_case_id(case)}/detail"))).json()
+        pre = detail.get("pre_underwriting_status") or {}
+        keys = [g[0] for g in _GATE_ORDER]
+        at = keys.index(_GATE_OF_TOOL[tool])
+        done = lambda g: pre.get(g[0]) in g[3]
+        if not done(_GATE_ORDER[at]):
+            return result                                    # this gate isn't actually finished (e.g. only the link was sent)
+        skipped, nxt = [], None
+        for g in _GATE_ORDER[at + 1:]:
+            if done(g):
+                skipped.append(g)
+            else:
+                nxt = g
+                break
+        if not skipped and not result.get("already_done"):
+            return result                                    # nothing was passed over — the tool's own pointer is right
+        head = detail.get("family_head_case")
+        shared = {"acr", "compliance", "ipp"}
+        why = (f" — recorded once for the whole family, on the head's case {head['case_number']}" if head
+               else " — already recorded for the family" if len(detail.get("family_members") or []) > 1 and any(g[0] in shared for g in skipped) else "")
+        passed = ", ".join(f"{g[1]} ({g[2]})" for g in skipped)
+        note = (f"✅ Already complete, nothing to do for {'requirement' if len(skipped) == 1 else 'requirements'} {passed}{why}." if skipped else "")
+        if nxt:
+            tail = f"👉 **Next — requirement {nxt[1]} of 7:** {nxt[2]}."
+            actions = [{"label": nxt[4], "actionType": "submit", "payload": nxt[5].format(no=case_no)}]
+        else:
+            tail = "👉 **All pre-underwriting requirements are complete.** The case is ready for AI underwriting."
+            actions = [{"label": "Run AI Underwriting", "actionType": "submit", "payload": f"Run risk assessment for case {case_no}"}]
+        actions.append({"label": "Check Gate Status", "actionType": "submit", "payload": f"Check pre-underwriting status for case {case_no}"})
+        kept = re.sub(r"\n*👉 Next Gate:[^\n]*", "", message).rstrip()
+        return {**result, "message": "\n\n".join(p for p in (kept, note, tail) if p), "quick_actions": actions}
+    except Exception:
+        return result                                        # never let a nicety break the gate that just succeeded
+
+
+# ── A family is assessed together, after everyone insured has been underwritten ───────────────────────────────────
+# Any reply that would offer "Run risk assessment" for one member of a family is changed here: while another insured
+# member's requirements are still open it points at that member; once all are in, it offers the one assessment run
+# for every insured member.
+_RISK_ASK = re.compile(r"^\s*Run (?:AI )?risk assessment for case (\S+)", re.I)
+
+
+async def _family_risk_chips(result: dict, ctx: Ctx) -> dict:
+    actions = result.get("quick_actions") if isinstance(result, dict) else None
+    if not actions:
+        return result
+    asks = [i for i, a in enumerate(actions) if isinstance(a, dict) and _RISK_ASK.match(str(a.get("payload") or ""))]
+    if not asks:
+        return result
+    try:
+        case_no = _RISK_ASK.match(actions[asks[0]]["payload"]).group(1)
+        case = await _resolve_case({"case_number": case_no}, ctx)
+        detail = (await ctx.client.get(ctx.tsvc(f"/cases/{_case_id(case)}/detail"))).json()
+        members = detail.get("family_members") or []
+        if len(members) < 2:
+            return result
+        waiting = []
+        for m in members:
+            if m.get("is_current"):
+                continue
+            other = (await ctx.client.get(ctx.tsvc(f"/cases/{m['case_id']}/detail"))).json()
+            if not (other.get("pre_underwriting_status") or {}).get("is_ready"):
+                waiting.append(m)
+        waiting.sort(key=lambda m: 0 if re.fullmatch(r"self", str(m.get("relationship") or ""), re.I) else 1)
+        if waiting:
+            nxt = waiting[0]
+            chip = {"label": f"Underwrite {nxt['name']}", "actionType": "uw_requirements",
+                    "payload": json.dumps({"caseId": nxt["case_id"], "caseNo": nxt["case_number"]})}
+            note = (f"The risk assessment runs for all insured members together, once everyone's underwriting is in — "
+                    f"**{nxt['name']}** is next.")
+        else:
+            chip = {"label": "Run risk assessment — all insured members", "actionType": "family_assess", "payload": "{}"}
+            note = "Every insured member's underwriting is complete — the risk assessment runs for all of them together."
+        kept = [a for i, a in enumerate(actions) if i not in asks]
+        out = {**result, "quick_actions": [chip, *kept]}
+        if isinstance(out.get("message"), str):
+            out["message"] = f"{out['message'].rstrip()}\n\n👉 {note}"
+        return out
+    except Exception:
+        return result                                        # never let a nicety break the step that just succeeded
+
+
 async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[str, Any]:
     handler = _HANDLERS.get(name)
     if handler is None:
@@ -3512,7 +3679,11 @@ async def execute_tool(name: str, args: dict[str, Any], ctx: ExecCtx) -> dict[st
             tenant_id=ctx.effective_tenant_id,
             exec_ctx=ctx,
         )
-        return await handler(strip_demo_args(args), scoped)
+        result = await handler(strip_demo_args(args), scoped)
+        if name in _GATE_OF_TOOL:
+            result = await _skip_completed_gates(name, result, scoped, args)
+        result = await _family_risk_chips(result, scoped)
+        return result
     except ChoiceNeeded as exc:
         # A "couldn't find it, but here's what does exist" path — offered as
         # chips instead of a dead-end string the user has to retype from.

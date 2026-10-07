@@ -35,6 +35,9 @@ interface UseAgentChatOptions {
   // land after the assistant's own message rather than racing it.
   // A family's proposal is found by `family.familyGroupId`; `family.caseNumbers` are its member cases.
   onProposalJourney?: (customerId: string, name: string, family?: FamilyJourney) => void;
+  // Fired when a regenerate rewinds the conversation, with the id of the last message that was kept — its buttons must
+  // be usable again, and anything the page tracked about the steps that were dropped is stale.
+  onRewound?: (lastKeptMessageId: string | undefined) => void;
 }
 
 /** A family proposal: its shared quote is found by `familyGroupId`; `cases` are the members' underwriting cases. */
@@ -47,13 +50,15 @@ export interface FamilyJourney {
   cases: { case_id: string; case_number: string; name: string; relationship: string }[];
 }
 
-export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposalJourney }: UseAgentChatOptions) {
+export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposalJourney, onRewound }: UseAgentChatOptions) {
   const { notify } = useNotify();
   const threadStorageKey = `${storageKey}_thread_id`;
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
   const onProposalJourneyRef = useRef(onProposalJourney);
   onProposalJourneyRef.current = onProposalJourney;
+  const onRewoundRef = useRef(onRewound);
+  onRewoundRef.current = onRewound;
   const pendingProposalJourneyRef = useRef<{ customerId: string; name: string; family?: FamilyJourney } | null>(null);
 
   const [messages, setMessages] = useState<AgentMessage[]>(() => {
@@ -90,6 +95,8 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
   const pendingAssessmentRef = useRef<any>(null);
   const pendingQuickActionsRef = useRef<QuickAction[] | null>(null);
   const pendingFamilyMembersRef = useRef<any>(null);
+  // The user message whose turn is currently streaming — stamped on every reply the agent writes in it.
+  const turnUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -143,6 +150,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
                 id: newId(),
                 role: "assistant",
                 text: evt.content,
+                turnUserId: turnUserIdRef.current || undefined,
                 assessment: pendingAssessmentRef.current || undefined,
                 quickActions: pendingQuickActionsRef.current || undefined,
                 familyMembers: pendingFamilyMembersRef.current || undefined,
@@ -262,7 +270,7 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
         case "proposal_journey":
           pendingProposalJourneyRef.current = {
             customerId: evt.customer_id, name: evt.name,
-            family: evt.family_group_id ? { familyGroupId: evt.family_group_id, caseNumbers: evt.case_numbers ?? [], cases: evt.cases ?? [] } : undefined,
+            family: evt.family_group_id ? { familyGroupId: evt.family_group_id, familyPolicyId: evt.family_policy_id, caseNumbers: evt.case_numbers ?? [], cases: evt.cases ?? [] } : undefined,
           };
           break;
 
@@ -377,7 +385,9 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
       setTurnActions([]);
       
       let msgText = text.trim();
-      setMessages((prev) => [...prev, { id: newId(), role: "user", text: msgText, attachments }]);
+      const userId = newId();
+      turnUserIdRef.current = userId;
+      setMessages((prev) => [...prev, { id: userId, role: "user", text: msgText, attachments }]);
       setIsLoading(true);
       try {
         const payload: any = { thread_id: threadIdRef.current, message: text.trim(), role: currentRole() };
@@ -442,11 +452,65 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
   // narrate them as plain text instead of actually calling the tool that
   // would produce clickable ones.
   const addAssistantMessage = useCallback((text: string, quickActions?: QuickAction[]) => {
-    setMessages((prev) => [...prev, { id: newId(), role: "assistant", text, quickActions }]);
+    setMessages((prev) => [...prev, { id: newId(), role: "assistant", text, quickActions, clientSide: true }]);
     if (quickActions?.length) {
       setTurnActions(quickActions.filter((a) => a.actionType !== "upload"));
     }
   }, []);
+
+  // GPT-style "regenerate from here": everything after this point is dropped and the flow carries on from it.
+  //  - A reply the agent wrote: the conversation is rewound to the message that asked for it and that message is asked
+  //    again (the agent's own memory of the thread is rewound too — see /chat/stream `regenerate`).
+  //  - A step the browser produced (proposal steps, the underwriting checklist, results summaries): there is nothing to
+  //    re-ask, so it steps back to the message before it, whose buttons come alive again.
+  // Records already created or approved by earlier steps are not undone.
+  const regenerate = useCallback(
+    async (messageId: string) => {
+      if (isLoading) return;
+      const idx = messages.findIndex((m) => m.id === messageId);
+      if (idx < 0 || messages[idx].role !== "assistant") return;
+      setPendingInterrupt(null);
+      setSteps([]);
+
+      // Only a reply the agent itself wrote can be re-asked, and only back to the message that started its turn.
+      // Everything else — browser steps, and chats saved before replies were stamped — steps back one message instead,
+      // so a stray click can never wipe a conversation.
+      const turnStart = messages[idx].turnUserId ? messages.findIndex((m) => m.id === messages[idx].turnUserId) : -1;
+      if (messages[idx].clientSide || turnStart < 0) {
+        const kept = messages.slice(0, idx);
+        const last = kept[kept.length - 1];
+        // Un-pick the button that led here, so the choices on that message can be made again.
+        const restored = last ? kept.slice(0, -1).concat({ ...last, selections: undefined }) : kept;
+        setMessages(restored);
+        setTurnActions(last?.quickActions ? last.quickActions.filter((a) => a.actionType !== "upload") : []);
+        onRewoundRef.current?.(last?.id);
+        return;
+      }
+
+      const u = turnStart;
+      const asked = messages[u];
+      const occurrence = messages.slice(0, u).filter((m) => m.role === "user" && m.text === asked.text).length;
+      turnUserIdRef.current = asked.id;
+      onRewoundRef.current?.(asked.id);
+      setMessages(messages.slice(0, u + 1));
+      setTurnActions([]);
+      setIsLoading(true);
+      try {
+        const payload: any = { thread_id: threadIdRef.current, message: asked.text, role: currentRole(), regenerate: true, occurrence };
+        if (asked.attachments?.length) payload.attachments = asked.attachments;
+        const res = await fetch("/api/chat/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify(payload),
+        });
+        await consumeStream(res);
+      } catch {
+        setMessages((prev) => [...prev, { id: newId(), role: "assistant", text: "⚠️ Error connecting to the server. Please try again." }]);
+        setIsLoading(false);
+      }
+    },
+    [isLoading, messages, consumeStream]
+  );
 
   const recordSelection = useCallback((messageId: string, actionIdx: number, label: string) => {
     setMessages((prev) =>
@@ -466,5 +530,5 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
     localStorage.removeItem(`${storageKey}_actions`);
   }, [storageKey, threadStorageKey, welcomeMessage]);
 
-  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, recordSelection };
+  return { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, recordSelection, regenerate };
 }

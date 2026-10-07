@@ -528,7 +528,7 @@ def _parse_json_object(text: str) -> dict:
 CUSTOMER_PDF_MAX_PAGES = 3
 
 
-def _pdf_pages_as_png(pdf_bytes: bytes) -> list[bytes]:
+def _pdf_pages_as_png(pdf_bytes: bytes, dpi: int = 130) -> list[bytes]:
     """First few pages of a PDF as PNGs. Empty list if PyMuPDF isn't available
     or the PDF can't be opened, so the caller can surface the original error."""
     try:
@@ -538,7 +538,7 @@ def _pdf_pages_as_png(pdf_bytes: bytes) -> list[bytes]:
     try:
         with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
             return [
-                page.get_pixmap(dpi=130).tobytes("png")
+                page.get_pixmap(dpi=dpi).tobytes("png")
                 for page in list(doc)[:CUSTOMER_PDF_MAX_PAGES]
             ]
     except Exception as exc:  # noqa: BLE001 — corrupt/encrypted PDF
@@ -662,54 +662,68 @@ FAMILY_EXTRACT_PROMPT = (
 )
 
 
-def _clean_family_fields(raw: dict) -> dict:
-    """Validate what the model returned; anything that does not pass becomes None."""
-    import re
-    from datetime import datetime
+import re as _re
+from datetime import datetime as _datetime
 
-    def text(v):
-        v = None if v is None else str(v).strip()
-        return v or None
 
-    def num(v, is_int=False):
-        if v in (None, ""):
-            return None
-        try:
-            n = float(str(v).replace(",", "").replace("PKR", "").replace("pkr", "").replace("%", "").strip())
-            return int(round(n)) if is_int else n
-        except (ValueError, TypeError):
-            return None
+def _c_text(v):
+    v = None if v is None else str(v).strip()
+    return v or None
 
-    def date_(v):
-        try:
-            return datetime.strptime(str(v)[:10], "%Y-%m-%d").date().isoformat() if v else None
-        except ValueError:
-            return None
 
-    def cnic(v):
-        digits = re.sub(r"\D", "", str(v or ""))
-        return f"{digits[:5]}-{digits[5:12]}-{digits[12]}" if len(digits) == 13 else None
-
-    def boolean(v):
-        if isinstance(v, bool):
-            return v
-        if isinstance(v, str):
-            low = v.strip().lower()
-            if low in ("true", "yes", "y", "1"):
-                return True
-            if low in ("false", "no", "n", "0", "none"):
-                return False
+def _c_num(v, is_int=False):
+    if v in (None, ""):
+        return None
+    try:
+        n = float(str(v).replace(",", "").replace("PKR", "").replace("pkr", "").replace("%", "").strip())
+        return int(round(n)) if is_int else n
+    except (ValueError, TypeError):
         return None
 
-    def choice(v, options):
-        low = str(v or "").strip().lower().replace(" ", "")
-        return next((o for o in options if o.lower() == low), None)
+
+def _c_date(v):
+    try:
+        return _datetime.strptime(str(v)[:10], "%Y-%m-%d").date().isoformat() if v else None
+    except ValueError:
+        return None
+
+
+def _c_cnic(v):
+    digits = _re.sub(r"\D", "", str(v or ""))
+    return f"{digits[:5]}-{digits[5:12]}-{digits[12]}" if len(digits) == 13 else None
+
+
+def _c_bool(v):
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str):
+        low = v.strip().lower()
+        if low in ("true", "yes", "y", "1"):
+            return True
+        if low in ("false", "no", "n", "0", "none"):
+            return False
+    return None
+
+
+def _c_choice(v, options):
+    low = str(v or "").strip().lower().replace(" ", "")
+    return next((o for o in options if o.lower().replace(" ", "") == low), None)
+
+
+def _c_province(v):
+    v = _c_text(v)
+    if not v:
+        return None
+    v = _PROVINCE_ALIASES.get(v.lower(), v)
+    return v if v in CUSTOMER_PROVINCES else None
+
+
+def _clean_family_fields(raw: dict) -> dict:
+    """Validate what the model returned; anything that does not pass becomes None."""
+    text, num, date_, cnic, boolean, choice = _c_text, _c_num, _c_date, _c_cnic, _c_bool, _c_choice
 
     raw = raw if isinstance(raw, dict) else {}
-    province = text(raw.get("province"))
-    if province:
-        province = _PROVINCE_ALIASES.get(province.lower(), province)
-        province = province if province in CUSTOMER_PROVINCES else None
+    province = _c_province(raw.get("province"))
 
     family = {
         "family_name": text(raw.get("family_name")), "contact_person": text(raw.get("contact_person")),
@@ -784,6 +798,200 @@ async def extract_family_fields(file: UploadFile = File(...)):
         members = members[:FAMILY_MAX_MEMBERS]
         found = sum(1 for v in family.values() if v is not None) + sum(1 for m in members for v in m.values() if v is not None)
         return {"filename": file.filename, "family": family, "members": members, "found": found, "token_usage": usage}
+    except HTTPException:
+        raise
+    except PdfProviderUnavailable as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except NoProviderConfigured as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Extraction error: {str(e)}")
+
+
+# ── Corporate (organization) document ─────────────────────────────────────────
+# One document describes the company, the group policy being proposed, its benefit classes
+# and the employee census. Same contract as /extract-family.
+
+ORG_MAX_EMPLOYEES = 60
+ORG_MAX_CLASSES = 10
+ORG_MAX_DEPENDANTS = 120
+ORG_MAX_NOMINEES = 120
+_RIDER_TYPES = ("AccidentalDeath", "Disability", "PayContinuation", "FeeContinuation")
+
+ORGANIZATION_EXTRACT_PROMPT = (
+    "You are a data-extraction engine for an insurance onboarding system. The input is a CORPORATE "
+    "group life insurance proposal: the company, the group policy requested, the benefit classes, the "
+    "employee list, and the employees' dependants and nominees. Read it thoroughly and return ONLY one valid "
+    "JSON object — no prose, no Markdown fences — with exactly this shape:\n"
+    "{\n"
+    '  "company": { "name": string|null, "registration_number": string|null, "industry": string|null,\n'
+    '               "contact_person": string|null, "contact_email": string|null, "contact_phone": string|null,\n'
+    '               "city": string|null, "province": string|null },\n'
+    '  "policy": { "plan_name": string|null,          // e.g. "Group Life", "Group Life — SME", "Group Family Takaful"\n'
+    '              "sum_assured_multiple": number|null, // default cover as a multiple of monthly basic salary\n'
+    '              "term_years": number|null, "effective_date": "YYYY-MM-DD"|null },\n'
+    '  "classes": [ { "name": string|null, "basis": "Flat"|"SalaryMultiple"|"ServiceBanded"|"LoanBalance"|null,\n'
+    '                 "flat_amount": number|null, "salary_multiple": number|null,\n'
+    '                 "service_bands": [ {"min_years": number, "amount": number} ]|null,\n'
+    '                 "grades": [string]|null, "min_cover": number|null, "max_cover": number|null, "is_default": boolean|null,\n'
+    '                 "coverages": [ {"coverage_type": "AccidentalDeath"|"Disability"|"PayContinuation"|"FeeContinuation",\n'
+    '                                 "percent_of_base": number, "max_amount": number|null} ]|null } ],   // extra benefits, % of life cover\n'
+    '  "employees": [ { "cnic": string|null, "name": string|null, "dob": "YYYY-MM-DD"|null, "gender": "Male"|"Female"|null,\n'
+    '                   "occupation": string|null, "declared_income": number|null,   // annual PKR\n'
+    '                   "employee_id": string|null, "designation": string|null, "grade": string|null,\n'
+    '                   "joining_date": "YYYY-MM-DD"|null, "basic_monthly_salary": number|null,\n'
+    '                   "benefit_class": string|null, "is_smoker": boolean|null, "height_cm": number|null,\n'
+    '                   "weight_kg": number|null, "loan_amount": number|null } ],\n'
+    '  "dependants": [ { "employee_ref": string|null,   // the employee\'s Employee ID (or CNIC) exactly as written\n'
+    '                    "name": string|null, "relationship": "Spouse"|"Child"|"Parent"|null, "dob": "YYYY-MM-DD"|null,\n'
+    '                    "cnic": string|null, "gender": "Male"|"Female"|null, "covered_amount": number|null } ],\n'
+    '  "nominees": [ { "employee_ref": string|null, "name": string|null,\n'
+    '                  "relationship": "Spouse"|"Child"|"Parent"|"Sibling"|"Other"|null, "cnic": string|null,\n'
+    '                  "share_pct": number|null, "date_of_birth": "YYYY-MM-DD"|null, "is_minor": boolean|null,\n'
+    '                  "guardian_name": string|null } ]\n'
+    "}\n\n"
+    "Rules:\n"
+    "- Use null for any value that is NOT explicitly stated. Never guess or invent. Use [] for a list the document does not have.\n"
+    "- The employee census may be split across two tables that share the Emp ID column — merge them into ONE employee object per Emp ID.\n"
+    "- \"employees\" holds ONLY the people in the employee census tables. The dependants and nominees tables list other people — never repeat them under \"employees\".\n"
+    "- A class's \"coverages\" come from the extra-benefits table for THAT class only; do not copy one class's benefits to another.\n"
+    "- Section headings often state how many rows follow (e.g. \"10 employees\", \"6 dependants\"). Return exactly that many, "
+    "going row by row from the first to the last — do not skip or merge rows.\n"
+    "- List every benefit class, employee, dependant and nominee, in the order written.\n"
+    "- Read values exactly as written."
+)
+
+
+def _clean_organization_fields(raw: dict) -> dict:
+    raw = raw if isinstance(raw, dict) else {}
+    c, p = raw.get("company") or {}, raw.get("policy") or {}
+    company = {
+        "name": _c_text(c.get("name")), "registration_number": _c_text(c.get("registration_number")),
+        "industry": _c_text(c.get("industry")), "contact_person": _c_text(c.get("contact_person")),
+        "contact_email": _c_text(c.get("contact_email")), "contact_phone": _c_text(c.get("contact_phone")),
+        "city": _c_text(c.get("city")), "province": _c_province(c.get("province")),
+    }
+    policy = {
+        "plan_name": _c_text(p.get("plan_name")), "sum_assured_multiple": _c_num(p.get("sum_assured_multiple")),
+        "term_years": _c_num(p.get("term_years"), True), "effective_date": _c_date(p.get("effective_date")),
+    }
+
+    def items(key, limit):
+        return [x for x in (raw.get(key) if isinstance(raw.get(key), list) else [])[:limit] if isinstance(x, dict)]
+
+    classes = []
+    for k in items("classes", ORG_MAX_CLASSES):
+        grades = [g for g in (_c_text(g) for g in (k.get("grades") if isinstance(k.get("grades"), list) else [])) if g]
+        bands = []
+        for b in (k.get("service_bands") if isinstance(k.get("service_bands"), list) else []):
+            if isinstance(b, dict) and _c_num(b.get("min_years")) is not None and _c_num(b.get("amount")) is not None:
+                bands.append({"min_years": _c_num(b["min_years"], True), "amount": _c_num(b["amount"])})
+        coverages = []
+        for v in (k.get("coverages") if isinstance(k.get("coverages"), list) else []):
+            kind = _c_choice(v.get("coverage_type"), _RIDER_TYPES) if isinstance(v, dict) else None
+            if kind and _c_num(v.get("percent_of_base")) is not None:
+                coverages.append({"coverage_type": kind, "percent_of_base": _c_num(v["percent_of_base"]), "max_amount": _c_num(v.get("max_amount"))})
+        row = {
+            "name": _c_text(k.get("name")), "basis": _c_choice(k.get("basis"), ("Flat", "SalaryMultiple", "ServiceBanded", "LoanBalance")),
+            "flat_amount": _c_num(k.get("flat_amount")), "salary_multiple": _c_num(k.get("salary_multiple")),
+            "service_bands": bands or None, "grades": grades or None, "min_cover": _c_num(k.get("min_cover")),
+            "max_cover": _c_num(k.get("max_cover")), "is_default": _c_bool(k.get("is_default")), "coverages": coverages or None,
+        }
+        if row["name"]:
+            classes.append(row)
+
+    employees = []
+    for e in items("employees", ORG_MAX_EMPLOYEES):
+        row = {
+            "cnic": _c_cnic(e.get("cnic")), "name": _c_text(e.get("name")), "dob": _c_date(e.get("dob")),
+            "gender": _c_choice(e.get("gender"), ("Male", "Female")), "occupation": _c_text(e.get("occupation")),
+            "declared_income": _c_num(e.get("declared_income")), "employee_id": _c_text(e.get("employee_id")),
+            "designation": _c_text(e.get("designation")), "grade": _c_text(e.get("grade")),
+            "joining_date": _c_date(e.get("joining_date")), "basic_monthly_salary": _c_num(e.get("basic_monthly_salary")),
+            "benefit_class": _c_text(e.get("benefit_class")), "is_smoker": _c_bool(e.get("is_smoker")),
+            "height_cm": _c_num(e.get("height_cm")), "weight_kg": _c_num(e.get("weight_kg")), "loan_amount": _c_num(e.get("loan_amount")),
+        }
+        # A census row carries pay, class or occupation; a person lifted from the dependants / nominees
+        # tables doesn't, so it is not an employee.
+        if any(row[k] is not None for k in ("declared_income", "basic_monthly_salary", "benefit_class", "occupation")):
+            employees.append(row)
+
+    dependants = []
+    for d in items("dependants", ORG_MAX_DEPENDANTS):
+        row = {
+            "employee_ref": _c_text(d.get("employee_ref")), "name": _c_text(d.get("name")),
+            "relationship": _c_choice(d.get("relationship"), ("Spouse", "Child", "Parent")), "dob": _c_date(d.get("dob")),
+            "cnic": _c_cnic(d.get("cnic")), "gender": _c_choice(d.get("gender"), ("Male", "Female")), "covered_amount": _c_num(d.get("covered_amount")),
+        }
+        if row["name"]:
+            dependants.append(row)
+
+    nominees = []
+    for n in items("nominees", ORG_MAX_NOMINEES):
+        row = {
+            "employee_ref": _c_text(n.get("employee_ref")), "name": _c_text(n.get("name")),
+            "relationship": _c_choice(n.get("relationship"), ("Spouse", "Child", "Parent", "Sibling", "Other")),
+            "cnic": _c_cnic(n.get("cnic")), "share_pct": _c_num(n.get("share_pct")), "date_of_birth": _c_date(n.get("date_of_birth")),
+            "is_minor": _c_bool(n.get("is_minor")), "guardian_name": _c_text(n.get("guardian_name")),
+        }
+        if row["name"]:
+            nominees.append(row)
+    return {"company": company, "policy": policy, "classes": classes, "employees": employees, "dependants": dependants, "nominees": nominees}
+
+
+@app.post("/extract-organization")
+async def extract_organization_fields(file: UploadFile = File(...)):
+    """Read a PDF / PNG / JPG describing a company's group scheme: company, policy, classes and employees."""
+    file_ext = (file.filename or "").lower().rsplit(".", 1)[-1]
+    if file_ext not in CUSTOMER_UPLOAD_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Unsupported format. Upload a PDF, PNG or JPG file.")
+    file_bytes = await file.read()
+    if len(file_bytes) > CUSTOMER_UPLOAD_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large (max 10 MB).")
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="The uploaded file is empty.")
+
+    try:
+        try:
+            results = [await _run_ocr(file_bytes, MIME_MAP[file_ext], prompt=ORGANIZATION_EXTRACT_PROMPT)]
+        except PdfProviderUnavailable:
+            pages = _pdf_pages_as_png(file_bytes, dpi=180)   # census tables are dense; digits need the extra resolution
+            if not pages:
+                raise
+            results = [await _run_ocr(png, "image/png", prompt=ORGANIZATION_EXTRACT_PROMPT) for png in pages]
+
+        company = {k: None for k in ("name", "registration_number", "industry", "contact_person", "contact_email", "contact_phone", "city", "province")}
+        policy = {k: None for k in ("plan_name", "sum_assured_multiple", "term_years", "effective_date")}
+        classes: list = []
+        employees: list = []
+        dependants: list = []
+        nominees: list = []
+        usage = {"input": 0, "output": 0, "total": 0}
+        for result in results:
+            asyncio.create_task(_record_token_usage(result["token_usage"], result["model_name"]))
+            for k in usage:
+                usage[k] += result["token_usage"].get(k, 0)
+            try:
+                page = _clean_organization_fields(_parse_json_object(result["text"]))
+            except (ValueError, json.JSONDecodeError) as exc:
+                if len(results) == 1:
+                    raise HTTPException(status_code=422, detail=f"Could not read structured details from this document ({exc}).")
+                continue
+            # Earlier pages win; later pages fill what is missing and add classes / employees not yet seen.
+            company = {k: company[k] if company[k] is not None else page["company"][k] for k in company}
+            policy = {k: policy[k] if policy[k] is not None else page["policy"][k] for k in policy}
+            names = {k["name"].lower() for k in classes}
+            classes += [k for k in page["classes"] if k["name"].lower() not in names]
+            seen = {e["cnic"] for e in employees if e.get("cnic")}
+            employees += [e for e in page["employees"] if not (e.get("cnic") and e["cnic"] in seen)]
+            dependants += page["dependants"]
+            nominees += page["nominees"]
+        classes, employees = classes[:ORG_MAX_CLASSES], employees[:ORG_MAX_EMPLOYEES]
+        dependants, nominees = dependants[:ORG_MAX_DEPENDANTS], nominees[:ORG_MAX_NOMINEES]
+        found = (sum(v is not None for v in company.values()) + sum(v is not None for v in policy.values())
+                 + sum(v is not None for rows in (classes, employees, dependants, nominees) for r in rows for v in r.values()))
+        return {"filename": file.filename, "company": company, "policy": policy, "classes": classes, "employees": employees,
+                "dependants": dependants, "nominees": nominees, "found": found, "token_usage": usage}
     except HTTPException:
         raise
     except PdfProviderUnavailable as e:

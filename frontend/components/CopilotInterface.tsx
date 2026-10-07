@@ -381,15 +381,26 @@ function getRecommendedActions(lastMessage: AgentMessage | undefined): QuickActi
   }
   
   if (text.includes("missing documents") || (text.includes("upload") && text.includes("document"))) {
-    const isCNIC = text.includes("cnic");
-    const isMed = text.includes("medical");
-    const isSalary = text.includes("salary");
+    // Offer an upload button only for the documents the reply actually names. This used to offer CNIC, Medical
+    // Report and Salary Slip whenever it named none — telling a user (whose required documents were all in) to
+    // upload a Salary Slip no one had asked for.
+    const named: [string, string][] = [
+      ["cnic", "CNIC"], ["medical report", "Medical Report"], ["medical examination", "Medical Report"],
+      ["physician", "Physician Report"], ["salary", "Salary Slip"], ["bank statement", "Bank Statement"],
+      ["ecg", "ECG Report"], ["lab report", "Lab Report"], ["tax return", "Tax Return"],
+    ];
+    const seen = new Set<string>();
     const actions: QuickAction[] = [];
-    if (isCNIC || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload CNIC", actionType: "upload", payload: JSON.stringify({ document_type: "CNIC" }) });
-    if (isMed || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload Medical Report", actionType: "upload", payload: JSON.stringify({ document_type: "Medical Report" }) });
-    if (isSalary || (!isCNIC && !isMed && !isSalary)) actions.push({ label: "Upload Salary Slip", actionType: "upload", payload: JSON.stringify({ document_type: "Salary Slip" }) });
-    actions.push({ label: "I have uploaded them", actionType: "submit", payload: "I have uploaded the documents. Please check and proceed." });
-    return actions;
+    for (const [needle, documentType] of named) {
+      if (text.includes(needle) && !seen.has(documentType)) {
+        seen.add(documentType);
+        actions.push({ label: `Upload ${documentType}`, actionType: "upload", payload: JSON.stringify({ document_type: documentType }) });
+      }
+    }
+    if (actions.length) {
+      actions.push({ label: "I have uploaded them", actionType: "submit", payload: "I have uploaded the documents. Please check and proceed." });
+      return actions;
+    }
   }
 
   if (text.includes("customer") && text.includes("added")) {
@@ -544,18 +555,31 @@ export function CopilotInterface() {
     []
   );
 
-  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, recordSelection } = useAgentChat({
+  const { messages, send, resolveInterrupt, isLoading, pendingInterrupt, clearChat, loadChat, steps, turnActions, addAssistantMessage, recordSelection, regenerate } = useAgentChat({
     storageKey: STORAGE_KEY,
     welcomeMessage: WELCOME,
     onNavigate: handleAgentNavigate,
     // Demo data: the customer comes with a Draft proposal, so run the same
     // proposal steps as after the form. (Defined further down — see the ref.)
     onProposalJourney: (customerId, name, family) => startProposalJourneyRef.current?.(customerId, name, family),
+    // A rewind brings the last kept message's buttons back to life, and what the page tracked about the dropped steps
+    // (which family members were done, an open case view) no longer applies.
+    onRewound: (lastKept) => {
+      if (lastKept) setUsedActions((prev) => { const next = { ...prev }; delete next[lastKept]; return next; });
+      familyDoneRef.current = new Set();
+      setCasePanel(null);
+    },
   });
-  // A family is underwritten head first, then a fully insured spouse once the head's requirements are in.
+  // A family is underwritten head first, then a fully insured spouse; the risk assessments run once both members'
+  // requirements are in.
   const familyQueueRef = useRef<FamilyJourney["cases"]>([]);
   // Insured family members whose pre-underwriting requirements are complete.
   const familyDoneRef = useRef<Set<string>>(new Set());
+  // The family being underwritten (for the report) and each insured member's risk-assessment outcome.
+  type FamilyOutcome = { m: FamilyJourney["cases"][number]; decision: string; scores: any; status: "Approved" | "Needs review" | "Rejected"; assessedAt: string; already?: boolean };
+  const familyMetaRef = useRef<{ name: string; familyGroupId?: string; familyPolicyId?: string }>({ name: "The family" });
+  const familyResultsRef = useRef<FamilyOutcome[]>([]);
+  const runFamilyAssessmentsRef = useRef<(() => void) | null>(null);
   const startProposalJourneyRef = useRef<((customerId: string, name: string, family?: FamilyJourney) => void) | null>(null);
 
   const [input, setInput] = useState("");
@@ -728,6 +752,7 @@ export function CopilotInterface() {
       );
       return;
     }
+    if (family) familyMetaRef.current = { name, familyGroupId: family.familyGroupId, familyPolicyId: family.familyPolicyId };
     const detail = await getQuote(quote.quote_id).catch(() => null);
     const base: ProposalBase = {
       customerId: quote.customer_id, quoteId: quote.quote_id, policyId: quote.policy_id, name,
@@ -750,20 +775,22 @@ export function CopilotInterface() {
     try {
       if (step === "underwrite" && p.memberCases?.length) {
         // Family: the head and — if the family chose it — an insured spouse already have underwriting cases from
-        // enrolment. They are worked in order: the head's 7 requirements first, then the spouse's. Nominees have
-        // no cover and no underwriting.
-        familyQueueRef.current = p.memberCases;
+        // enrolment. They are worked in this order: the head's 7 requirements first, then the spouse's.
+        // Nominees have no cover and no underwriting.
+        const ordered = [...p.memberCases.filter((c) => c.relationship === "Self"), ...p.memberCases.filter((c) => c.relationship !== "Self")];
+        familyQueueRef.current = ordered;
         familyDoneRef.current = new Set();
-        const [first, ...rest] = p.memberCases;
+        const [first, ...rest] = ordered;
+        const role = (c: { relationship: string }) => (c.relationship === "Self" ? "head" : "fully insured spouse");
         addAssistantMessage(
-          `**${p.name}**'s proposal has been **sent to underwriting** — case **${first.case_number}** (${first.name}, head) is open.` +
-            (rest.length ? ` ${rest.map((c) => `**${c.name}** (fully insured spouse, case ${c.case_number})`).join(", ")} follow${rest.length === 1 ? "s" : ""} once the head's requirements are complete.` : "") + `\n\n` +
+          `**${p.name}**'s proposal has been **sent to underwriting** — case **${first.case_number}** (${first.name}, ${role(first)}) is open.` +
+            (rest.length ? ` ${rest.map((c) => `**${c.name}** (${role(c)}, case ${c.case_number})`).join(", ")} ${rest.length === 1 ? "follows" : "follow"} once ${first.name}'s requirements are complete — the risk assessment runs after both.` : "") + `\n\n` +
             `Underwriting has 7 requirements (documents, e-application, agent report, PEP & sanctions screening, initial premium, insurance history and medical examination). How would you like to work through them?\n\n` +
             `- **Guide me step by step** — I'll take you through them one at a time, explaining each.\n` +
             `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
           [
             { label: `Guide me step by step — ${first.name}`, actionType: "uw_requirements", payload: JSON.stringify({ caseId: first.case_id, caseNo: first.case_number }) },
-            { label: `Open the case workspace — ${first.name}`, actionType: "embed", payload: `case/${first.case_id}?autoRun=true` },
+            { label: `Open the case workspace — ${first.name}`, actionType: "embed", payload: `case/${first.case_id}` },
           ]
         );
         return;
@@ -787,7 +814,9 @@ export function CopilotInterface() {
             `- **Open the case workspace** — see all 7 together and complete them yourself on the case page.`,
           [
             { label: "Guide me step by step", actionType: "uw_requirements", payload: JSON.stringify({ caseId, caseNo }) },
-            { label: "Open the case workspace", actionType: "embed", payload: `case/${caseId}?autoRun=true` },
+            // A family member's case must not start its own assessment the moment its gates clear: the assessments run
+            // together after every insured member's underwriting (head, then spouse) is in.
+            { label: "Open the case workspace", actionType: "embed", payload: `case/${caseId}${familyQueueRef.current.some((c) => c.case_id === caseId) ? "" : "?autoRun=true"}` },
           ]
         );
         return;
@@ -860,6 +889,20 @@ export function CopilotInterface() {
           familyGroupId: d.family_group_id, familyPolicyId: d.family_policy_id, isLifeBundle: d.is_life_bundle,
           caseNumbers: cases.map((c) => c.case_number), cases,
         });
+      } else if (event.data.type === "organization_enrolled") {
+        // The corporate form's job ends once the census is enrolled — close it and carry on with the
+        // group scheme in the chat (quote, acceptance, issuance), which resumes from the scheme's status.
+        setCasePanel(null);
+        const d = event.data as { organization_id: string; name?: string; employee_count?: number; plan_label?: string };
+        const org = d.name || "The corporate";
+        addAssistantMessage(
+          `✅ **${org}** has been registered with its **${d.plan_label ?? "group"}** policy, benefit classes and **${d.employee_count ?? 0} employees**.\n\n` +
+            `The scheme is enrolled and waiting for a quote. Shall I carry on — price it, then record the employer's acceptance, issue the master policy and collect the payment?`,
+          [
+            { label: "Continue the group scheme", actionType: "submit", payload: `Continue the group scheme journey for ${org}` },
+            { label: "Open the corporate", actionType: "navigate", payload: `admin/organizations/${d.organization_id}` },
+          ]
+        );
       } else if (event.data.type === "document_uploaded") {
         // The case view is open and already re-reads its own checklist after an upload. Asking the model to
         // "re-check" sent it off on a turn whose tools navigate — which swapped this panel for another page
@@ -886,19 +929,14 @@ export function CopilotInterface() {
           if (remaining.length > 0) {
             const next = remaining[0];
             addAssistantMessage(
-              `**${queue[at].name}**'s requirements are complete. Continuing with **${next.name}**${next.relationship === "Spouse" ? " (fully insured spouse)" : ""} — their tab is open now.`
+              `**${queue[at].name}**'s requirements are complete. Continuing with **${next.name}** (${next.relationship === "Self" ? "head" : "fully insured spouse"}) — their tab is open now.`
             );
             setCasePanel({ url: `${window.location.origin}/case/${next.case_id}?_portal=1`, title: `Case · ${next.name}` });
             return;
           }
           setCasePanel(null);
-          addAssistantMessage(
-            `All underwriting requirements are complete for ${queue.map((c) => `**${c.name}**`).join(" and ")}. Run the AI underwriting for each insured member, head first.`,
-            [
-              ...queue.map((c): QuickAction => ({ label: `Run AI Underwriting — ${c.name}`, actionType: "submit", payload: `Run risk assessment for case ${c.case_number}` })),
-              { label: "Cancel", actionType: "submit", payload: "Not right now — I'll run the risk assessment later." },
-            ]
-          );
+          addAssistantMessage(`All underwriting requirements are complete for ${queue.map((c) => `**${c.name}**`).join(" and ")}. Running the risk assessment for each insured member now.`);
+          runFamilyAssessmentsRef.current?.();
           return;
         }
         setCasePanel(null);
@@ -968,6 +1006,14 @@ export function CopilotInterface() {
       const res = await api.get(`/tenants/${tenantId}/cases/${caseId}/detail`);
       const d = res.data;
       const no: string = caseNo || d.case?.caseNumber || caseId;
+      // After a reload the family queue in memory is gone; rebuild it from the case itself (head first, then the spouse),
+      // so a family member is never assessed on their own.
+      if ((d.family_members?.length ?? 0) > 1 && !familyQueueRef.current.some((c) => c.case_id === caseId)) {
+        familyQueueRef.current = [...d.family_members]
+          .map((m: any) => ({ case_id: m.case_id, case_number: m.case_number, name: m.name, relationship: /^self$/i.test(String(m.relationship)) ? "Self" : "Spouse" }))
+          .sort((a, b) => Number(b.relationship === "Self") - Number(a.relationship === "Self"));
+        familyDoneRef.current = new Set();
+      }
       const pre = d.pre_underwriting_status || {};
       const missingDocs: string[] = d.document_checklist?.missing ?? [];
       const eApp = pre.e_application ?? "NotStarted", acr = pre.acr ?? "NotStarted", comp = pre.compliance ?? "NotRun";
@@ -979,11 +1025,11 @@ export function CopilotInterface() {
         { name: "Customer E-Application Questionnaire", status: eApp, ok: eApp === "Verified",
           detail: "The customer's health disclosures questionnaire — send the link, then verify it once submitted." },
         { name: "Agent's Confidential Report (ACR)", status: acr, ok: acr === "Submitted",
-          detail: "The agent's own confidential assessment of the applicant, to be filed." },
+          detail: d.family_head_case ? `Filed once for the whole family (recorded on the head's case ${d.family_head_case.case_number}) — one proposer, one report.` : "The agent's own confidential assessment of the applicant, to be filed." },
         { name: "PEP & Sanctions Screening", status: comp, ok: ["Passed", "Cleared"].includes(comp),
           detail: "PEP and AML screening of the applicant against watchlists." },
         { name: "Initial Premium Payment (IPP)", status: ipp, ok: ipp === "Realized",
-          detail: "Collect the initial premium payment so cover can start." },
+          detail: d.family_head_case ? `Paid once for the whole family policy (recorded on the head's case ${d.family_head_case.case_number}).` : "Collect the initial premium payment so cover can start." },
         { name: "Insurance History Clearance", status: hist, ok: ["Clear", "Cleared"].includes(hist),
           detail: "Prior policy coverage and over-insurance history check." },
         { name: "Medical Examination / NML Grid", status: med, ok: ["Completed", "Waived", "NotRequired"].includes(med),
@@ -1004,9 +1050,16 @@ export function CopilotInterface() {
         const queue = familyQueueRef.current;
         const at = queue.findIndex((c) => c.case_id === caseId);
         const next = at >= 0 ? queue[at + 1] : undefined;
+        if (at >= 0) familyDoneRef.current.add(caseId);
+        // In a family one member is never assessed alone: the assessments run together once everyone's requirements are in.
+        if (at >= 0 && queue.length > 1) actions = actions.filter((a) => a.label !== "Run AI Underwriting");
         if (next) {
-          footer += `\n\n👉 **Next member:** ${next.name}${next.relationship === "Spouse" ? " (fully insured spouse)" : ""} — their underwriting starts now.`;
+          footer += `\n\n👉 **Next member:** ${next.name} (${next.relationship === "Self" ? "head" : "fully insured spouse"}) — their underwriting starts now.`;
           actions.push({ label: `Underwrite ${next.name}`, actionType: "uw_requirements", payload: JSON.stringify({ caseId: next.case_id, caseNo: next.case_number }) });
+        } else if (at >= 0 && queue.length > 1 && queue.every((c) => familyDoneRef.current.has(c.case_id))) {
+          // Everyone insured has their requirements in: assess them all together rather than just this member.
+          footer += `\n\n👉 **Every insured member's requirements are complete** — assess them together.`;
+          actions = [{ label: "Run risk assessment — all insured members", actionType: "family_assess", payload: "{}" }, workspace];
         }
       } else if (!reqs[0].ok) {
         footer = "👉 **Next — requirement 1 of 7:** upload the missing documents.";
@@ -1190,6 +1243,83 @@ export function CopilotInterface() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingInterrupt]);
 
+  // Runs one case through the risk engine, streaming its live steps into the progress graph. Shared by the single-case
+  // assessment below and by the family run (every insured member in turn). Throws when the engine rejects the input;
+  // `blockedGate` is set when mandatory requirements stop the assessment.
+  const streamAssessment = useCallback(async (payload: { customer: any; policy: any; case_id: string }) => {
+    const tenantId = localStorage.getItem("tenant_id") || "00000000-0000-0000-0000-000000000001";
+    const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010";
+    const finalScores: any = {};
+    let finalDecision = "";
+    let blockedGate: any = null;
+    const updateStep = (id: string, label: string, status: "active" | "done" | "error") => {
+      setRiskSteps(prev => {
+        const copy = [...prev];
+        const idx = copy.findIndex(st => st.id === id);
+        if (idx >= 0) copy[idx] = { id, label, status };
+        else copy.push({ id, label, status });
+        return copy;
+      });
+    };
+    setRiskSteps([{ id: "medical", label: "Analyzing medical history", status: "active" }]);
+
+    const res = await fetch(`${API_BASE}/evaluate/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error("Stream failed");
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    stream: while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith("data: ")) continue;
+        let evt: any;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+        if (evt.type === "progress") {
+          const node = evt.node;
+          const data = evt.data || {};
+          if (node === "medical_scoring") {
+            updateStep("medical", "Analyzing medical history", "done");
+            updateStep("financial", "Evaluating financial profile", "active");
+            finalScores.medical_score = data.medical_score;
+            finalScores.medical_reasons = data.medical_reasons ?? [];
+          } else if (node === "financial_scoring") {
+            updateStep("financial", "Evaluating financial profile", "done");
+            updateStep("fraud", "Checking fraud signals", "active");
+            finalScores.financial_score = data.financial_score;
+            finalScores.financial_reasons = data.financial_reasons ?? [];
+          } else if (node === "fraud_detection") {
+            updateStep("fraud", "Checking fraud signals", "done");
+            updateStep("decision", "Calculating composite risk", "active");
+            finalScores.fraud_probability = data.fraud_probability;
+            finalScores.fraud_reasons = data.fraud_reasons ?? [];
+          } else if (node === "decision_engine") {
+            updateStep("decision", "Calculating composite risk", "done");
+            finalScores.composite_risk_score = data.composite_risk_score;
+            finalDecision = data.ai_decision;
+            finalScores.reasons = data.reasons ?? [];
+          }
+        } else if (evt.type === "pending_requirements") {
+          updateStep("decision", "Mandatory requirements not yet satisfied", "error");
+          blockedGate = evt.data || {};
+          break stream;
+        } else if (evt.type === "invalid" || evt.type === "error") {
+          updateStep("error", "Assessment failed", "error");
+          throw new Error(evt.errors?.length ? evt.errors.join("; ") : (evt.message || "Validation failed"));
+        }
+      }
+    }
+    return { finalScores, finalDecision, blockedGate };
+  }, []);
+
   // Client-executed risk assessment (so we can stream the live steps to the UI)
   useEffect(() => {
     if (pendingInterrupt?.kind !== "client_execute") return;
@@ -1215,81 +1345,8 @@ export function CopilotInterface() {
           case_id: args.case_id,
         };
 
-        const res = await fetch(`${API_BASE}/evaluate/stream`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Tenant-Id": tenantId },
-          body: JSON.stringify(payload),
-        });
+        const { finalScores, finalDecision, blockedGate } = await streamAssessment(payload);
 
-        if (!res.ok) throw new Error("Stream failed");
-
-        const reader = res.body!.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-        
-        let finalScores: any = {};
-        let finalDecision = "";
-        
-        const updateStep = (id: string, label: string, status: "active" | "done" | "error") => {
-          setRiskSteps(prev => {
-            const copy = [...prev];
-            const idx = copy.findIndex(s => s.id === id);
-            if (idx >= 0) copy[idx] = { id, label, status };
-            else copy.push({ id, label, status });
-            return copy;
-          });
-        };
-
-        let blockedGate: any = null;
-        stream: while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const parts = buffer.split("\n\n");
-          buffer = parts.pop() ?? "";
-
-          for (const part of parts) {
-            const line = part.trim();
-            if (!line.startsWith("data: ")) continue;
-            let evt: any;
-            try { evt = JSON.parse(line.slice(6)); } catch { continue; }
-
-            if (evt.type === "progress") {
-              const node = evt.node;
-              const data = evt.data || {};
-              if (node === "medical_scoring") {
-                 updateStep("medical", "Analyzing medical history", "done");
-                 updateStep("financial", "Evaluating financial profile", "active");
-                 finalScores.medical_score = data.medical_score;
-                 finalScores.medical_reasons = data.medical_reasons ?? [];
-              } else if (node === "financial_scoring") {
-                 updateStep("financial", "Evaluating financial profile", "done");
-                 updateStep("fraud", "Checking fraud signals", "active");
-                 finalScores.financial_score = data.financial_score;
-                 finalScores.financial_reasons = data.financial_reasons ?? [];
-              } else if (node === "fraud_detection") {
-                 updateStep("fraud", "Checking fraud signals", "done");
-                 updateStep("decision", "Calculating composite risk", "active");
-                 finalScores.fraud_probability = data.fraud_probability;
-                 finalScores.fraud_reasons = data.fraud_reasons ?? [];
-              } else if (node === "decision_engine") {
-                 updateStep("decision", "Calculating composite risk", "done");
-                 finalScores.composite_risk_score = data.composite_risk_score;
-                 finalDecision = data.ai_decision;
-                 finalScores.reasons = data.reasons ?? [];
-              }
-            } else if (evt.type === "pending_requirements") {
-               updateStep("decision", "Mandatory requirements not yet satisfied", "error");
-               blockedGate = evt.data || {};
-               break stream;
-            } else if (evt.type === "invalid" || evt.type === "error") {
-               updateStep("error", "Assessment failed", "error");
-               const errMsg = evt.errors?.length ? evt.errors.join("; ") : (evt.message || "Validation failed");
-               throw new Error(errMsg);
-            }
-          }
-        }
-        
         if (blockedGate) {
           resolveInterrupt(buildRequirementsBlockedResult(blockedGate, args.case_id, args.case_number));
           return;
@@ -1331,7 +1388,7 @@ export function CopilotInterface() {
         setRiskSteps([]);
       }
     })();
-  }, [pendingInterrupt, resolveInterrupt]);
+  }, [pendingInterrupt, resolveInterrupt, streamAssessment]);
   // Client-executed bulk underwriting journey
   useEffect(() => {
     if (pendingInterrupt?.kind !== "client_execute") return;
@@ -1489,6 +1546,29 @@ export function CopilotInterface() {
     if ((!text.trim() && !selectedFile) || isLoading || isUploading) return;
     if (!overrideText) setInput("");
 
+    // A member of a family is never assessed on their own: the risk assessment runs for every insured member together,
+    // after the head's AND the spouse's underwriting. Anything asking for one member's assessment is turned into that.
+    const riskAsk = /^\s*run (?:ai )?risk assessment for case (\S+)/i.exec(text);
+    const queue = familyQueueRef.current;
+    const member = riskAsk && queue.length > 1 ? queue.find((c) => c.case_number === riskAsk[1] || c.case_id === riskAsk[1]) : undefined;
+    if (member) {
+      (async () => {
+        const states = await Promise.all(queue.map(async (c) => {
+          try { return { c, ready: !!(await api.get(`/tenants/${tenantOf()}/cases/${c.case_id}/detail`)).data?.pre_underwriting_status?.is_ready }; }
+          catch { return { c, ready: false }; }
+        }));
+        const waiting = states.filter((x) => !x.ready).map((x) => x.c);
+        if (waiting.length === 0) {
+          addAssistantMessage("Every insured member's underwriting is complete — running the risk assessment for all of them together.");
+          runFamilyAssessmentsRef.current?.();
+        } else {
+          addAssistantMessage(`The risk assessment runs for all insured members together, once everyone's underwriting is in — **${waiting[0].name}** is next.`);
+          showUnderwritingRequirements(waiting[0].case_id, waiting[0].case_number);
+        }
+      })();
+      return;
+    }
+
     let attachments = undefined;
     if (selectedFile) {
         try {
@@ -1514,7 +1594,202 @@ export function CopilotInterface() {
     } else {
       send(text.trim(), attachments);
     }
-  }, [input, isLoading, pendingInterrupt, send, resolveInterrupt, selectedFile]);
+  }, [input, isLoading, pendingInterrupt, send, resolveInterrupt, selectedFile, isUploading, addAssistantMessage, showUnderwritingRequirements]);
+
+  // ── Family underwriting: assess every insured member, then let the underwriter decide ───────────────────────────────
+  // Only the head and a fully insured spouse are insured; nominees carry no cover and are not assessed. The assessments
+  // run one after another once every member's requirements are in, and the results come back as one summary
+  // with the three ways forward.
+  const FAMILY_APPROVED = ["Auto Approve", "Approve with Loading"];
+  const familyStatusOf = (decision: string): FamilyOutcome["status"] =>
+    FAMILY_APPROVED.includes(decision) ? "Approved" : decision === "Decline" ? "Rejected" : "Needs review";
+  const tenantOf = () => localStorage.getItem("tenant_id") || DEFAULT_TENANT_ID;
+
+  const fetchNominees = useCallback(async () => {
+    const { familyGroupId, familyPolicyId } = familyMetaRef.current;
+    if (!familyGroupId || !familyPolicyId) return [] as { name: string; relationship: string; share_pct: number; amount: number | null }[];
+    try {
+      const r = await api.get(`/tenants/${tenantOf()}/families/${familyGroupId}/family-policies/${familyPolicyId}/nominees`);
+      return (r.data?.nominees ?? []) as { name: string; relationship: string; share_pct: number; amount: number | null }[];
+    } catch { return []; }
+  }, []);
+
+  const runFamilyAssessments = useCallback(async () => {
+    const queue = familyQueueRef.current;
+    if (!queue.length) return;
+    const results: FamilyOutcome[] = [];
+    try {
+      for (const m of queue) {
+        const detail = (await api.get(`/tenants/${tenantOf()}/cases/${m.case_id}/detail`)).data;
+
+        // Past underwriting already (a step was refreshed, or the chat was reopened later): say where the family stands
+        // instead of assessing — and holding — a case whose decision is already on record.
+        const policyState = String(detail.policy?.status ?? "").replace(/\s/g, "").toLowerCase();
+        const headNo = (queue.find((c) => c.relationship === "Self") ?? queue[0]).case_number;
+        if (policyState === "active" || policyState === "pendingpayment") {
+          familyResultsRef.current = results;
+          addAssistantMessage(
+            policyState === "active"
+              ? `✅ This family's case is already done — the policy is issued and **Active**. There is nothing left to assess.`
+              : `This family's policy is already issued and is **waiting for the first payment**.`,
+            [policyState === "active"
+              ? { label: "View active policy", actionType: "submit", payload: `Show me the active policy status for case ${headNo}` }
+              : { label: "Confirm payment", actionType: "submit", payload: `Confirm payment for case ${headNo}` }]
+          );
+          return;
+        }
+        if (["Approved", "Closed"].includes(String(detail.case?.caseStatus)) && detail.latest_assessment) {
+          const a = detail.latest_assessment;   // decision already recorded — reuse it, don't run the engine again
+          results.push({
+            m, decision: a.ai_decision, already: true, status: "Approved", assessedAt: new Date().toISOString(),
+            scores: { medical_score: a.medical_score, financial_score: a.financial_score, fraud_probability: a.fraud_probability, composite_risk_score: a.composite_risk_score, reasons: a.reasons },
+          });
+          continue;
+        }
+
+        const { finalScores, finalDecision, blockedGate } = await streamAssessment({ customer: detail.customer, policy: detail.policy, case_id: m.case_id });
+        if (blockedGate) {
+          // The evidence check wants something more for this member — say so, with the same buttons as a single case.
+          const held = buildRequirementsBlockedResult(blockedGate, m.case_id, m.case_number);
+          addAssistantMessage(`**${m.name}**${m.relationship === "Spouse" ? " (fully insured spouse)" : ""}: ${held.message}`, held.quick_actions as QuickAction[]);
+          familyResultsRef.current = results;
+          return;
+        }
+        results.push({ m, decision: finalDecision, scores: finalScores, status: familyStatusOf(finalDecision), assessedAt: new Date().toISOString() });
+      }
+    } catch (err: any) {
+      addAssistantMessage(`⚠️ The family risk assessment stopped: ${err?.message ?? "unknown error"}. You can run it again.`,
+        [{ label: "Run risk assessment — all insured members", actionType: "family_assess", payload: "{}" }]);
+      return;
+    } finally {
+      setRiskSteps([]);
+    }
+    familyResultsRef.current = results;
+
+    if (results.length && results.every((r) => r.already)) {
+      const headNo = (queue.find((c) => c.relationship === "Self") ?? queue[0]).case_number;
+      addAssistantMessage(
+        `Every insured member is already **approved** — ${results.map((r) => `**${r.m.name}**`).join(" and ")}. The decisions are on record, so nothing is assessed again. ` +
+          `The family policy is issued to the head, on the head's case **${headNo}**.`,
+        [
+          { label: "Yes — Issue Policy", actionType: "submit", payload: `Run pre-issuance verification and issue the policy for case ${headNo}` },
+          { label: "Download family report", actionType: "family_report", payload: "{}" },
+        ]
+      );
+      return;
+    }
+
+    const nominees = await fetchNominees();
+    const icon = { "Approved": "✅", "Needs review": "⏳", "Rejected": "❌" } as const;
+    const pct = (v: number | undefined) => (v == null ? "—" : `${Math.round(v * 100)}%`);
+    const shown = [...results].sort((a, b) => Number(b.m.relationship === "Self") - Number(a.m.relationship === "Self"));   // head first, whatever order they were assessed in
+    const lines = shown.map((r) =>
+      `${icon[r.status]} **${r.m.name}** (${r.m.relationship === "Self" ? "Head" : r.m.relationship}) — **${r.status}** · ${r.decision}${r.already ? " · already decided" : ""}` +
+      ` · Medical ${r.scores.medical_score ?? "—"} · Financial ${r.scores.financial_score ?? "—"} · Fraud ${pct(r.scores.fraud_probability)}`);
+    const nomLines = nominees.map((n) => `- ${n.name} (${n.relationship}) — ${n.share_pct}%${n.amount != null ? ` · PKR ${Math.round(n.amount).toLocaleString()}` : ""}`);
+    const head = results.find((r) => r.m.relationship === "Self") ?? results[0];
+    const approved = results.filter((r) => r.status === "Approved");
+    const review = results.filter((r) => r.status === "Needs review");
+    const rejected = results.filter((r) => r.status === "Rejected");
+
+    const actions: QuickAction[] = [];
+    if (head && head.status === "Approved") {
+      actions.push({ label: "Proceed head with all approved members", actionType: "family_decision", payload: JSON.stringify({ mode: "approved" }) });
+    }
+    if (review.length || (head && head.status === "Needs review")) {
+      actions.push({ label: "Proceed head with unapproved members", actionType: "family_decision", payload: JSON.stringify({ mode: "with_unapproved" }) });
+    }
+    // Anyone who was not approved can have their data corrected and be assessed again — rejected, or still needing review.
+    if (rejected.length || review.length) {
+      actions.push({ label: rejected.length ? "Resubmit data for the rejected members" : "Resubmit data for the unapproved members", actionType: "family_decision", payload: JSON.stringify({ mode: "resubmit" }) });
+    }
+    actions.push({ label: "Download family report", actionType: "family_report", payload: "{}" });
+
+    addAssistantMessage(
+      `### Family underwriting results\n\n${lines.join("\n\n")}` +
+        (nomLines.length ? `\n\n**Nominees** — no cover, not underwritten:\n${nomLines.join("\n")}` : "") +
+        `\n\n${approved.length} approved · ${review.length} need review · ${rejected.length} rejected. How would you like to go on?\n\n` +
+        `- **Proceed head with all approved members** — the policy goes ahead for the head and the approved members; anyone else is left off the cover.\n` +
+        `- **Proceed head with unapproved members** — an underwriter accepts the members who still need review, so they are covered too.\n` +
+        `- **Resubmit data for the rejected members** — correct their details, then assess them again.`,
+      actions
+    );
+  }, [streamAssessment, addAssistantMessage, fetchNominees]);
+  runFamilyAssessmentsRef.current = runFamilyAssessments;
+
+  const setCaseStatus = (caseId: string, status: string) =>
+    api.patch(`/tenants/${tenantOf()}/cases/${caseId}/status`, { status });
+  const noteOnCase = (caseId: string, text: string) =>
+    api.post(`/tenants/${tenantOf()}/cases/${caseId}/comments`, { commentText: text, commentType: "Internal", visibilityLevel: "Team" }).catch(() => undefined);
+
+  const runFamilyDecision = useCallback(async (mode: "approved" | "with_unapproved" | "resubmit") => {
+    const results = familyResultsRef.current;
+    if (!results.length) { addAssistantMessage("The assessment results are no longer available — run the family risk assessment again.", [{ label: "Run risk assessment — all insured members", actionType: "family_assess", payload: "{}" }]); return; }
+    const head = results.find((r) => r.m.relationship === "Self") ?? results[0];
+    const rejected = results.filter((r) => r.status === "Rejected");
+
+    if (mode === "resubmit") {
+      const targets = rejected.length ? rejected : results.filter((r) => r.status !== "Approved");
+      try { await Promise.all(targets.map((r) => setCaseStatus(r.m.case_id, "InProgress"))); } catch { /* the workspace still opens */ }
+      addAssistantMessage(
+        `${targets.map((r) => `**${r.m.name}**`).join(" and ")} ${targets.length === 1 ? "is" : "are"} back in progress. Correct the details or documents in ${targets.length === 1 ? "their" : "each"} workspace, then run the assessment again.`,
+        targets.flatMap((r): QuickAction[] => [
+          { label: `Open ${r.m.name}'s workspace`, actionType: "embed", payload: `case/${r.m.case_id}` },
+          { label: `Re-run assessment — ${r.m.name}`, actionType: "submit", payload: `Re-run risk assessment for case ${r.m.case_number}` },
+        ])
+      );
+      return;
+    }
+
+    // Who goes ahead and who is left off the cover.
+    const goes = results.filter((r) => (mode === "approved" ? r.status === "Approved" : r.status !== "Rejected"));
+    const left = results.filter((r) => !goes.includes(r));
+    if (!goes.includes(head)) {
+      addAssistantMessage(`**${head.m.name}**'s own result is **${head.status}**, so the policy can't go ahead for the head yet.`,
+        [{ label: "Resubmit data for the rejected members", actionType: "family_decision", payload: JSON.stringify({ mode: "resubmit" }) }]);
+      return;
+    }
+    try {
+      // Members left off the cover are closed first, so the family policy is not held waiting for them; the head is last.
+      for (const r of left) {
+        await noteOnCase(r.m.case_id, `Left off the family cover — AI decision "${r.decision}" (${r.status}).`);
+        await setCaseStatus(r.m.case_id, "Closed");
+      }
+      for (const r of [...goes.filter((x) => x !== head), head]) {
+        if (r.status !== "Approved") await noteOnCase(r.m.case_id, `Accepted by the underwriter from chat despite the AI recommendation "${r.decision}".`);
+        await setCaseStatus(r.m.case_id, "Approved");
+      }
+    } catch (err: any) {
+      addAssistantMessage(`⚠️ Couldn't record the decision: ${err?.response?.data?.detail ?? err?.message ?? "unknown error"}. You can try again.`,
+        [{ label: mode === "approved" ? "Proceed head with all approved members" : "Proceed head with unapproved members", actionType: "family_decision", payload: JSON.stringify({ mode }) }]);
+      return;
+    }
+    addAssistantMessage(
+      `Approved: ${goes.map((r) => `**${r.m.name}**`).join(", ")}.` +
+        (left.length ? ` Left off the cover: ${left.map((r) => `**${r.m.name}**`).join(", ")} — they stay on the policy as nominees only.` : "") +
+        `\n\nThe family policy is issued to the head, on the head's case **${head.m.case_number}**. Do you want to issue it now?`,
+      [
+        { label: "Yes — Issue Policy", actionType: "submit", payload: `Run pre-issuance verification and issue the policy for case ${head.m.case_number}` },
+        { label: "No — Not Yet", actionType: "submit", payload: "Okay, I'll issue the policy later." },
+      ]
+    );
+  }, [addAssistantMessage]);
+
+  const downloadFamilyReport = useCallback(async () => {
+    const first = familyQueueRef.current[0];
+    if (!first) { notify("Run the family risk assessment first.", false); return; }
+    try {
+      notify("Generating the family report...", true);
+      const { buildFamilyReport } = await import("@/lib/case-report");
+      const { generateFamilyAssessmentPDF } = await import("@/lib/pdf-export");
+      const report = await buildFamilyReport(first.case_id);
+      if (!report) throw new Error("This family has no insured members to report on");
+      await generateFamilyAssessmentPDF(report);
+      notify("✅ Family report downloaded", true);
+    } catch (err: any) {
+      notify(`⚠️ Could not build the family report: ${err.message}`, false);
+    }
+  }, [notify]);
 
   const handleQuickAction = useCallback((action: QuickAction) => {
     if (action.actionType === "navigate") {
@@ -1542,6 +1817,12 @@ export function CopilotInterface() {
     } else if (action.actionType === "uw_requirements") {
       const { caseId, caseNo } = JSON.parse(action.payload);
       showUnderwritingRequirements(caseId, caseNo);
+    } else if (action.actionType === "family_assess") {
+      runFamilyAssessments();
+    } else if (action.actionType === "family_decision") {
+      runFamilyDecision(JSON.parse(action.payload).mode);
+    } else if (action.actionType === "family_report") {
+      downloadFamilyReport();
     } else if (action.actionType === "submit" && /^Check pre-underwriting status for case (\S+)/.test(action.payload)) {
       // The "Check Gate Status" button every gate result ends with — answer it
       // here rather than asking the model, so the list and its buttons are
@@ -1570,7 +1851,7 @@ export function CopilotInterface() {
     } else {
       handleSubmit(undefined, action.payload);
     }
-  }, [router, resolveInterrupt, handleSubmit, runProposalStep, showUnderwritingRequirements]);
+  }, [router, resolveInterrupt, handleSubmit, runProposalStep, showUnderwritingRequirements, runFamilyAssessments, runFamilyDecision, downloadFamilyReport]);
 
   const handleDownloadPDF = async (caseId: string) => {
     try {
@@ -1592,8 +1873,8 @@ export function CopilotInterface() {
       if (!detailRes.ok) throw new Error("Failed to fetch assessment details");
       const detail = await detailRes.json();
       
-      const { generateAssessmentPDF } = await import("@/lib/pdf-export");
-      await generateAssessmentPDF({
+      const { generateCaseReportPDF } = await import("@/lib/case-report");
+      await generateCaseReportPDF({
         customer_name: detail.customer_name,
         customer_cnic: detail.customer_cnic,
         case_id: detail.case_id,
@@ -3047,7 +3328,7 @@ export function CopilotInterface() {
                                      <button type="button" title="Copy" onClick={() => navigator.clipboard.writeText(msg.text)} className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors">
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
                                      </button>
-                                     <button type="button" className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors" title="Rewrite">
+                                     <button type="button" onClick={() => regenerate(msg.id)} disabled={isLoading || riskSteps.length > 0 || bulkSteps.length > 0} className="p-1 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Regenerate from here — drops everything after this reply">
                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
                                      </button>
                                    </div>

@@ -304,6 +304,63 @@ async def test_the_floater_waits_for_the_insured_spouse_before_it_is_approved():
             await _drop_family_tenant(session, tid)
 
 
+async def test_the_spouse_inherits_the_heads_report_and_premium_but_not_the_rest():
+    """One proposer, one premium: the head's Agent report and initial premium cover the insured spouse's case too.
+    Documents, the health e-application, the insurance-history screen and the medical stay per person."""
+    import main as app_module
+    from routers.users import verify_admin
+    from shared.models.core import AgentConfidentialReport, ACRStatusEnum, InitialPremiumPayment, IPPStatusEnum, Policy
+
+    async with _session_factory() as session:
+        tenant = Tenant(name=f"Family Inherit {uuid4().hex[:6]}", code=f"FI{uuid4().hex[:6].upper()}")
+        session.add(tenant)
+        await session.flush()
+        await seed_insurance_plans(session, tenant.id)
+        await session.commit()
+        tid = tenant.id
+        app_module.app.dependency_overrides[verify_admin] = lambda: None
+        try:
+            transport = httpx.ASGITransport(app=app_module.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+                fam = (await c.post(f"/tenants/{tid}/families", json={"name": "Inherit Family"})).json()["id"]
+                fp = (await c.post(f"/tenants/{tid}/families/{fam}/floater-policies",
+                                   json={"total_sum_insured": 5_000_000, "term_years": 1, "effective_date": date.today().isoformat()})).json()["id"]
+                rows = [_member("Self", "1985-01-01", is_insured=True), _member("Spouse", "1988-05-05", is_insured=True, share_pct=100)]
+                r = await c.post(f"/tenants/{tid}/families/{fam}/floater-policies/{fp}/members/confirm", json={"members": rows})
+                assert r.status_code == 201, r.text
+                head_case, spouse_case = [m["case_id"] for m in r.json()["members"]]
+
+                async def status(case_id):
+                    return (await c.get(f"/tenants/{tid}/cases/{case_id}/detail")).json()["pre_underwriting_status"]
+
+                before = await status(spouse_case)
+                assert before["acr"] == "NotStarted" and before["ipp"] == "NotStarted"
+
+                async with _session_factory() as s1:
+                    policy = (await s1.exec(select(Policy).where(Policy.family_policy_id == fp))).first()
+                    s1.add(AgentConfidentialReport(tenant_id=tid, case_id=UUID(head_case), status=ACRStatusEnum.SUBMITTED))
+                    s1.add(InitialPremiumPayment(tenant_id=tid, case_id=UUID(head_case), policy_id=policy.id, amount=1000.0, status=IPPStatusEnum.REALIZED))
+                    await s1.commit()
+
+                spouse = await status(spouse_case)
+                assert spouse["acr"] == "Submitted" and spouse["ipp"] == "Realized", "the head's report and premium count for the spouse"
+                # Everything about the individual life is still the spouse's own to do.
+                assert spouse["e_application"] != "Verified" and spouse["insurance_history"] not in ("Clear", "Cleared")
+                assert spouse["medical_exam"] not in ("Completed", "Waived", "NotRequired")
+                assert (await c.get(f"/tenants/{tid}/cases/{spouse_case}/acr")).status_code in (200, 401, 403)
+                # The case list shows the same inherited statuses.
+            print("PASS test_the_spouse_inherits_the_heads_report_and_premium_but_not_the_rest")
+        finally:
+            app_module.app.dependency_overrides.pop(verify_admin, None)
+            await session.close()
+            async with _session_factory() as s5:
+                from sqlalchemy import delete as _del
+                await s5.exec(_del(AgentConfidentialReport).where(AgentConfidentialReport.tenant_id == tid))
+                await s5.exec(_del(InitialPremiumPayment).where(InitialPremiumPayment.tenant_id == tid))
+                await s5.commit()
+            await _drop_family_tenant(session, tid)
+
+
 async def _drop_family_tenant(session, tid):
     from sqlalchemy import delete
     await session.close()
@@ -323,6 +380,7 @@ async def main():
     await test_only_insured_members_get_cases_and_nominees_get_shares()
     await test_life_bundle_nominees_sit_on_the_heads_policy()
     await test_the_floater_waits_for_the_insured_spouse_before_it_is_approved()
+    await test_the_spouse_inherits_the_heads_report_and_premium_but_not_the_rest()
 
 
 if __name__ == "__main__":

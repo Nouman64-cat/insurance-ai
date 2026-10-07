@@ -48,6 +48,9 @@ async def _get_current_user_id(token: str) -> UUID:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 
+from family_approval import owner_case_id
+
+
 async def _get_case(session: AsyncSession, tenant_id: UUID, case_id: UUID) -> Case:
     case = await session.get(Case, case_id)
     if case is None or case.tenant_id != tenant_id:
@@ -100,7 +103,7 @@ async def get_ipp(
     session: AsyncSession = Depends(get_session),
 ):
     await _get_current_user_id(token)
-    await _get_case(session, tenant_id, case_id)
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "ipp")   # the head's, for an insured spouse
 
     stmt = select(InitialPremiumPayment).where(
         InitialPremiumPayment.tenant_id == tenant_id,
@@ -136,6 +139,7 @@ async def initiate_ipp(
     case = await _get_case(session, tenant_id, case_id)
     if case.policy_id is None:
         raise HTTPException(status_code=409, detail="This case has no linked policy/quote yet.")
+    case_id = await owner_case_id(session, case, "ipp")      # one premium for the family policy — recorded on the head's case
 
     stmt = select(InitialPremiumPayment).where(
         InitialPremiumPayment.tenant_id == tenant_id,
@@ -201,7 +205,7 @@ async def confirm_ipp(
     session: AsyncSession = Depends(get_session),
 ):
     await _get_current_user_id(token)
-    await _get_case(session, tenant_id, case_id)
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "ipp")
 
     stmt = select(InitialPremiumPayment).where(
         InitialPremiumPayment.tenant_id == tenant_id,

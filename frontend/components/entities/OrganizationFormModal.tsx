@@ -5,6 +5,7 @@ import api from "@/app/services/api";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
+import OrganizationFullEntryModal from "./OrganizationFullEntryModal";
 
 export interface OrganizationFormValue {
   id: string;
@@ -96,6 +97,10 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
   }, [open, mode, organization]);
 
   if (!open) return null;
+
+  // A new corporate entered in full is one window with four tabs (company, policy, classes, employees)
+  // and can be filled from an uploaded document; editing an existing one keeps the short form below.
+  if (mode === "full" && !organization) return <OrganizationFullEntryModal open={open} onClose={onClose} onSaved={onSaved} />;
 
   const handleQuickSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

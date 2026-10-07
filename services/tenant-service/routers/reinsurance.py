@@ -271,8 +271,9 @@ async def _case_context(session: AsyncSession, policy: Policy) -> dict:
         medical = (await session.exec(
             select(MedicalExamOrder).where(MedicalExamOrder.case_id == case.caseld)
         )).first()
+        from family_approval import owner_case_id
         acr = (await session.exec(
-            select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case.caseld)
+            select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == await owner_case_id(session, case, "acr"))
         )).first()
         history_row = (await session.exec(
             select(InsuranceHistoryCheck).where(InsuranceHistoryCheck.case_id == case.caseld)

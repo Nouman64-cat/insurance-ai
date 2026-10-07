@@ -5,6 +5,6 @@ import type { QuickAction } from "./types";
 // Picking one of a message's buttons normally locks the rest of the group (the
 // choice is made); these are exempt both ways: clicking them never locks the
 // group, and they stay usable after a real choice has been made.
-const PASSIVE_TYPES: ReadonlySet<QuickAction["actionType"]> = new Set<QuickAction["actionType"]>(["download", "navigate", "embed", "upload"]);
+const PASSIVE_TYPES: ReadonlySet<QuickAction["actionType"]> = new Set<QuickAction["actionType"]>(["download", "navigate", "embed", "upload", "family_report"]);
 
 export const isPassiveAction = (action: QuickAction): boolean => PASSIVE_TYPES.has(action.actionType);

@@ -40,3 +40,41 @@ async def pending_insured_members(
 def waiting_message(pending: List[Dict[str, Any]]) -> str:
     names = ", ".join(f"{p['name']} ({p['case_number']}, {p['case_status']})" for p in pending)
     return f"The family policy is still waiting for the underwriting of: {names}."
+
+
+# ── Requirements the head's case covers for everyone on the family floater ───────────────────────────
+# One proposal, one proposer, one premium: the Agent's Confidential Report is about the proposer (KYC, their
+# signature) and the initial premium is a single payment for the shared policy, so an insured spouse's case
+# reads both from the head's case instead of asking for them again. PEP screening is already keyed to the
+# policy. Everything about the individual life — documents, the health e-application, the insurance-history
+# screen and the medical — stays per case. Change this tuple to move a requirement between the two groups.
+SHARED_WITH_HEAD = ("acr", "ipp")
+
+
+async def head_case_ids(session: AsyncSession, cases: List[Case]) -> Dict[UUID, UUID]:
+    """case_id -> the head's case id, for each case that is NOT the head's on a shared (floater) family policy."""
+    policy_ids = {c.policy_id for c in cases if c.policy_id}
+    if not policy_ids:
+        return {}
+    policies = {p.id: p for p in (await session.exec(
+        select(Policy).where(Policy.id.in_(policy_ids), Policy.family_policy_id.is_not(None))
+    )).all()}
+    others = [c for c in cases if c.policy_id in policies and c.customer_id != policies[c.policy_id].customer_id]
+    if not others:
+        return {}
+    heads = {}
+    for case in (await session.exec(
+        select(Case).where(Case.policy_id.in_({c.policy_id for c in others}))
+        .order_by(Case.createdAt)
+    )).all():
+        pol = policies.get(case.policy_id)
+        if pol is not None and case.customer_id == pol.customer_id:
+            heads.setdefault(case.policy_id, case.caseld)
+    return {c.caseld: heads[c.policy_id] for c in others if c.policy_id in heads}
+
+
+async def owner_case_id(session: AsyncSession, case: Case, requirement: str) -> UUID:
+    """The case that holds this requirement for `case`: the head's, if the head's case covers it, else its own."""
+    if requirement not in SHARED_WITH_HEAD:
+        return case.caseld
+    return (await head_case_ids(session, [case])).get(case.caseld, case.caseld)

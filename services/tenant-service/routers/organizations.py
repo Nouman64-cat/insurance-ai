@@ -1057,7 +1057,6 @@ async def enroll_census_rows(
         master_policy.free_cover_limit = free_cover_limit
     session.add(master_policy)
 
-    from shared.models.core import Organization
     org = await session.get(Organization, org_id)
     if org:
         session.add(org)

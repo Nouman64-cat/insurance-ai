@@ -158,8 +158,9 @@ async def build_case_profile(session: AsyncSession, tenant_id: UUID, case: Case)
     ea = (await session.exec(
         select(CustomerEApplication).where(CustomerEApplication.case_id == case.caseld)
     )).first()
+    from family_approval import owner_case_id
     acr = (await session.exec(
-        select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case.caseld)
+        select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == await owner_case_id(session, case, "acr"))
     )).first()
     document_evidence = await collect_document_evidence(session, tenant_id, case.caseld)
     prior = await _prior_findings(session, case.caseld)

@@ -117,8 +117,8 @@ function DetailPanel({
 
   const downloadPDF = async () => {
     if (!detail) return;
-    const { generateAssessmentPDF } = await import("@/lib/pdf-export");
-    await generateAssessmentPDF({
+    const { generateCaseReportPDF } = await import("@/lib/case-report");
+    await generateCaseReportPDF({
       ...detail,
       ai_decision: decision,
       composite_risk_score: composite,

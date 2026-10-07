@@ -152,13 +152,53 @@ def _pending_interrupt_event(state, thread_id: str) -> str | None:
     return None
 
 
+async def _checkpoint_before(graph, thread_id: str, text: str, occurrence: int):
+    """The checkpoint config just before the `occurrence`-th (0-based) user message with exactly this text was added,
+    or None when the thread has no such message. Running a turn from it forks the conversation there.
+
+    Only the CURRENT branch is searched. Once a conversation has been regenerated its history holds both the old
+    branch and the new one, so "the newest snapshot without this message" could land on the end of the abandoned
+    branch; walking back through each snapshot's parent keeps to the branch the user is actually looking at."""
+    config = {"configurable": {"thread_id": thread_id}}
+    snaps = [s async for s in graph.aget_state_history(config)]          # newest first
+    if not snaps:
+        return None
+    by_id = {s.config["configurable"].get("checkpoint_id"): s for s in snaps}
+    head = snaps[0]
+    wanted = text.strip()
+    humans = [m for m in (head.values or {}).get("messages", [])
+              if isinstance(m, HumanMessage) and _as_text(m.content).strip() == wanted]
+    if occurrence >= len(humans):
+        return None
+    target = humans[occurrence].id
+    snap = head
+    while snap is not None:                                               # head, its parent, its parent's parent …
+        if target not in {m.id for m in (snap.values or {}).get("messages", [])}:
+            return snap.config
+        parent = (snap.parent_config or {}).get("configurable", {}).get("checkpoint_id")
+        snap = by_id.get(parent)
+    return None
+
+
 @router.post("/stream")
 async def chat_stream(body: ChatStreamRequest, request: Request, x_tenant_id: str = Header(default=""), authorization: str = Header(default="")):
     graph = request.app.state.graph
     config = {"configurable": {"thread_id": body.thread_id}}
 
-    existing = await graph.aget_state(config)
-    pending = _pending_interrupt_event(existing, body.thread_id)
+    fork = None
+    try:
+        if body.regenerate and body.message:
+            # Rewinding to an earlier point drops whatever the thread was waiting on, so a pending question is not replayed.
+            fork = await _checkpoint_before(graph, body.thread_id, body.message, body.occurrence)
+            if fork is not None:
+                config = fork
+        existing = await graph.aget_state(config)
+    except Exception:
+        # Reading the thread failed (a database hiccup). Say so — a silent stop looks like the agent ignoring you.
+        async def _failed():
+            yield _event({"type": "error", "message": "I couldn't read this conversation just now — please try again."})
+        return StreamingResponse(_failed(), media_type="text/event-stream", headers=_SSE_HEADERS)
+    pending = _pending_interrupt_event(existing, body.thread_id) if fork is None else None
     if pending is not None:
         async def _regen():
             yield pending

@@ -582,8 +582,8 @@ function UnderwritingMainContent() {
         return;
       }
 
-      const { generateAssessmentPDF } = await import("@/lib/pdf-export");
-      await generateAssessmentPDF({
+      const { generateCaseReportPDF } = await import("@/lib/case-report");
+      await generateCaseReportPDF({
         customer_name: customer?.name ?? "Unknown",
         customer_cnic: customer?.cnic ?? "Unknown",
         case_id: c.caseld,

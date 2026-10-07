@@ -1161,8 +1161,13 @@ export default function CasePage({ params }: { params: { id: string } }) {
     if (isGroup) return;
     const missingDocs = detail?.document_checklist?.missing ?? [];
     const checksMissing = eApp?.status !== "Submitted" || acr?.status !== "Submitted" || ipp?.status !== "Realized";
+    // A family member is never assessed on their own as soon as their gates clear: the head and the insured spouse are
+    // underwritten first, and the assessments run together afterwards (from the chat).
+    const inFamily = (detail?.family_members?.length ?? 0) > 1;
     if (detail && !loading && status === "idle" && !live.compositeScore && !detail.latest_assessment && missingDocs.length === 0 && !checksMissing) {
-      if (autoRun === "true") {
+      if (autoRun === "true" && inFamily) {
+        router.replace(`/case/${caseId}`);            // drop the flag; the page waits for the family's assessment
+      } else if (autoRun === "true") {
         // Remove autoRun from URL so we don't re-trigger on refresh
         router.replace(`/case/${caseId}`);
         // Small delay to ensure UI renders first before stream starts
@@ -1494,9 +1499,9 @@ export default function CasePage({ params }: { params: { id: string } }) {
 
   const downloadPDF = async () => {
     if (!customer || (!hasLive && !assessment)) return;
-    const { generateAssessmentPDF } = await import("@/lib/pdf-export");
+    const { generateCaseReportPDF } = await import("@/lib/case-report");
 
-    await generateAssessmentPDF({
+    await generateCaseReportPDF({
       customer_name: customer.name,
       customer_cnic: customer.cnic,
       case_id: caseId,
@@ -1621,8 +1626,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
       done: acr?.status === "Submitted",
       statusLabel: acr?.status ?? "Not Started",
       description: acr?.status === "Submitted" 
-        ? "Moral hazard & financial standing report filed by field agent." 
-        : "Agent confidential report needs to be completed.",
+        ? `Moral hazard & financial standing report filed by field agent.${detail?.family_head_case ? ` Filed once for the whole family (recorded on the head's case ${detail.family_head_case.case_number}) — one proposer, one report.` : ""}`
+        : detail?.family_head_case ? `The agent's report on the proposer is filed once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.` : "Agent confidential report needs to be completed.",
       actionLabel: acr?.status === "Submitted" ? "View ACR" : "File ACR",
       onAction: () => setShowACRModal(true),
     },
@@ -1659,8 +1664,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
       done: ipp?.status === "Realized",
       statusLabel: ipp?.status ?? "Not Started",
       description: ipp?.status === "Realized" 
-        ? "Section 30 initial premium payment realized." 
-        : "Initial premium payment collection or realization pending.",
+        ? `Section 30 initial premium payment realized.${detail?.family_head_case ? ` Paid once for the whole family policy (recorded on the head's case ${detail.family_head_case.case_number}).` : ""}`
+        : detail?.family_head_case ? `The family policy's premium is paid once for the whole family — it is recorded on the head's case ${detail.family_head_case.case_number}.` : "Initial premium payment collection or realization pending.",
       actionLabel: ipp?.status === "Realized" ? "View Payment" : "Collect Premium",
       onAction: () => setShowIPPModal(true),
     },
@@ -1906,7 +1911,7 @@ export default function CasePage({ params }: { params: { id: string } }) {
       {/* ── Family: one tab per insured member (head, fully insured spouse) ───────────── */}
       {(detail?.family_members?.length ?? 0) > 1 && (
         <div className="flex items-end gap-1 border-b border-slate-200 overflow-x-auto" role="tablist" aria-label="Insured family members">
-          {(detail?.family_members ?? []).map((m) => {
+          {[...(detail?.family_members ?? [])].sort((a, b) => Number(/^self$/i.test(String(b.relationship))) - Number(/^self$/i.test(String(a.relationship)))).map((m) => {
             const role = m.relationship === "SELF" || m.relationship === "Self" ? "Head" : m.relationship ? m.relationship[0] + m.relationship.slice(1).toLowerCase() : "";
             const active = m.case_id === detail?.case.caseld;
             return (
