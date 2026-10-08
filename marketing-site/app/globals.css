@@ -1,0 +1,268 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-inter: 'Inter Variable', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  html {
+    color-scheme: light;
+  }
+
+  body {
+    @apply bg-base font-sans text-body;
+  }
+
+  h1, h2, h3 {
+    @apply text-ink;
+  }
+
+  ::selection {
+    @apply bg-brand/20 text-ink;
+  }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { @apply bg-base; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full border-2 border-solid border-base bg-line-strong; }
+}
+
+/* ── Responsive scale ─────────────────────────────────────────────────────
+   Everything is sized in rem, so raising the root size on large displays scales
+   the whole layout (type, spacing, cards) instead of leaving empty margins. */
+@media (min-width: 1920px) { html { font-size: 112.5%; } }
+@media (min-width: 2560px) { html { font-size: 137.5%; } }
+@media (min-width: 3200px) { html { font-size: 150%; } }
+@media (min-width: 4400px) { html { font-size: 175%; } }
+
+/* ── Motion ───────────────────────────────────────────────────────────────
+   --intro-delay holds hero animations back until the landing splash lifts.
+   It is only non-zero on the first visit to "/" in a session (see layout.tsx). */
+:root { --intro-delay: 0s; }
+html[data-splash="pending"] { --intro-delay: 2s; }
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+@keyframes node-drift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(1.6cqw, -2cqw, 0); }
+  50% { transform: translate3d(0, -3.2cqw, 0); }
+  75% { transform: translate3d(-1.6cqw, -1.2cqw, 0); }
+}
+@keyframes node-ping {
+  0% { transform: scale(1); opacity: 0.55; }
+  70%, 100% { transform: scale(1.55); opacity: 0; }
+}
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+@keyframes glow {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+@keyframes draw {
+  to { stroke-dashoffset: 0; }
+}
+@keyframes logo-pop {
+  0% { opacity: 0; transform: scale(0.55) rotate(-8deg); }
+  70% { transform: scale(1.06) rotate(0); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes letter-rise {
+  from { opacity: 0; transform: translateY(0.6em); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes drop-in {
+  from { opacity: 0; transform: translateY(-1.5rem); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slide-from-left {
+  from { opacity: 0; transform: translateX(-4rem); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes slide-from-right {
+  from { opacity: 0; transform: translateX(4rem); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes splash-failsafe {
+  to { visibility: hidden; }
+}
+@keyframes logo-failsafe {
+  to { opacity: 1; }
+}
+
+.fade-up { animation: fade-up 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 90ms); }
+.fade-up-intro { animation: fade-up 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--i, 0) * 110ms); }
+.intro-left { animation: slide-from-left 1s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--i, 0) * 110ms); }
+.intro-right { animation: slide-from-right 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--i, 0) * 110ms); }
+/* Header controls drop in from above, only on the first visit (while the splash is pending) */
+html[data-splash="pending"] .intro-drop {
+  animation: drop-in 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--intro-delay) + 0.25s + var(--i, 0) * 90ms);
+}
+.fade-in-intro { animation: fade-in 1.1s ease both; animation-delay: calc(var(--intro-delay) + 0.2s); }
+.animate-float { animation: float 7s ease-in-out infinite; }
+.animate-drift { animation: node-drift 8s ease-in-out infinite; }
+.node-ping { animation: node-ping 3.2s ease-out infinite; }
+.flow-caption { animation: fade-up 0.5s ease both; }
+.animate-spin-slow { animation: spin-slow 60s linear infinite; }
+.animate-glow { animation: glow 6s ease-in-out infinite; }
+.bar-grow {
+  transform-origin: left;
+  animation: bar-grow 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--intro-delay) + 0.6s + var(--i, 0) * 140ms);
+}
+
+/* Scroll reveal: only hidden once the inline script in layout.tsx adds `.js`,
+   so a page without JavaScript still shows everything. */
+.js [data-reveal] {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.7s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.7s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+.js [data-reveal="left"] { transform: translateX(-28px); }
+.js [data-reveal="right"] { transform: translateX(28px); }
+.js [data-reveal].is-visible { opacity: 1; transform: none; }
+
+/* Sections below the fold are not laid out or painted until they near the viewport. */
+.cv-auto { content-visibility: auto; contain-intrinsic-size: auto 40rem; }
+
+/* Landing splash (see components/layout/Splash.tsx). The layers only exist while it is pending;
+   the failsafes hide them and show the header logo even if JavaScript never runs. */
+.splash-layer { display: none; }
+html[data-splash="pending"] .splash-layer { display: block; animation: splash-failsafe 0.01s linear 6s forwards; }
+html[data-splash="pending"] .splash-fly { display: flex; }
+html[data-splash="pending"] .splash-tag { animation: fade-in 0.8s ease both 1.5s, splash-failsafe 0.01s linear 6s forwards; }
+html[data-splash="pending"]:not([data-logo-ready]) [data-logo-target] { opacity: 0; animation: logo-failsafe 0.01s linear 6s forwards; }
+.splash-mark { animation: logo-pop 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.1) 0.1s both; }
+.logo-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.8s ease forwards 0.45s; }
+.logo-draw-2 { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.5s ease forwards 1.05s; }
+.splash-letter { display: inline-block; animation: letter-rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(0.85s + var(--i, 0) * 45ms); }
+.splash-tag { animation: fade-in 0.8s ease both 1.5s; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+  }
+  .js [data-reveal] { opacity: 1; transform: none; }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-card shadow-card;
+    transition: border-color 0.25s ease;
+  }
+  .card:hover {
+    border-color: rgb(37 99 235 / 0.4);
+  }
+
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-widest text-accent;
+  }
+
+  .field {
+    @apply block w-full rounded-lg border border-line-strong bg-alt px-3.5 py-2.5 text-sm text-ink placeholder:text-faint focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/25;
+  }
+}
+
+
+/* ── Cursor effects (see components/effects) ─────────────────────────────── */
+/* Small deep-blue glow trailing the pointer, moved by transform only */
+.cursor-glow {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 30;
+  width: 8.5rem;
+  height: 8.5rem;
+  border-radius: 9999px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+  background: radial-gradient(closest-side, rgb(30 64 175 / 0.32), rgb(30 64 175 / 0.14) 50%, transparent);
+  will-change: transform;
+}
+
+/* A highlight that follows the pointer inside the box it is over */
+.card, .glow { position: relative; }
+.card::before, .glow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  background: radial-gradient(20rem circle at var(--mx, 50%) var(--my, 50%), rgb(37 99 235 / 0.1), transparent 65%);
+}
+.card:hover::before, .glow:hover::before { opacity: 1; }
+
+@media (hover: none) {
+  .cursor-glow, .card::before, .glow::before { display: none; }
+}
+
+/* Header: no divider line, no shadow edge, ever. Once scrolled it is solid white and its bottom
+   edge dissolves into the page with a fade strip, so there is no line or colour step to see. */
+.site-header { background-color: transparent; transition: background-color 0.25s ease; }
+.site-header::after {
+  content: "";
+  position: absolute;
+  inset: 100% 0 auto 0;
+  height: 2rem;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.97), rgb(255 255 255 / 0));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+html[data-scrolled] .site-header { background-color: rgb(255 255 255 / 0.97); }
+html[data-scrolled] .site-header::after { opacity: 1; }
+
+/* ── Click feedback (see components/effects/ClickRipple.tsx) ─────────────── */
+.btn { position: relative; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+.btn:active { transform: scale(0.96); }
+.ripple {
+  position: absolute;
+  border-radius: 9999px;
+  background: currentColor;
+  opacity: 0.28;
+  transform: scale(0);
+  pointer-events: none;
+  animation: ripple 0.65s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+}
+@keyframes ripple { to { transform: scale(1); opacity: 0; } }
+.btn-pulse { animation: btn-pulse 0.7s ease-out; }
+.btn-pulse.btn-ring-light { animation-name: btn-pulse-light; }
+@keyframes btn-pulse {
+  0% { box-shadow: 0 0 0 0 rgb(37 99 235 / 0.55); }
+  100% { box-shadow: 0 0 0 0.9rem rgb(37 99 235 / 0); }
+}
+@keyframes btn-pulse-light {
+  0% { box-shadow: 0 0 0 0 rgb(255 255 255 / 0.6); }
+  100% { box-shadow: 0 0 0 0.9rem rgb(255 255 255 / 0); }
+}
