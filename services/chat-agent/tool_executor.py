@@ -872,11 +872,34 @@ async def _resolve_lead_agent(args: dict, ctx: Ctx) -> tuple[Optional[dict], Opt
     return agent, None
 
 
+def is_placeholder_cnic(cnic: Optional[str]) -> bool:
+    """A made-up number rather than anyone's real CNIC: all one digit (111…), the counting run 1234567890123 /
+    12345-6789012-3 a model reaches for when told to "make something up", or its reverse."""
+    digits = "".join(ch for ch in str(cnic or "") if ch.isdigit())
+    if len(digits) != 13:
+        return False
+    ascending = "".join(str((int(digits[0]) + i) % 10) for i in range(13))
+    descending = "".join(str((int(digits[0]) - i) % 10) for i in range(13))
+    return len(set(digits)) == 1 or digits in (ascending, descending)
+
+
 @handles("add_customer")
 async def _add_customer(args: dict, ctx: Ctx) -> dict:
     agent, error = await _resolve_lead_agent(args, ctx)
     if error:
         return error
+
+    if is_placeholder_cnic(args.get("cnic")):
+        # Never register it (and never offer to "continue anyway"): the next attempt at the same number would only
+        # hit the same customer. Demo data comes from quick_start_workflow, which generates a unique CNIC itself.
+        raise ChoiceNeeded(
+            f"CNIC '{args.get('cnic')}' is a placeholder, not a real CNIC, so I haven't registered anyone with it.",
+            quick_actions=[
+                {"label": "Generate a new demo customer", "actionType": "submit",
+                 "payload": "Run quick_start_workflow with fresh random demo data"},
+                {"label": "Fill the form instead", "actionType": "embed", "payload": "admin/leads?add=individual"},
+            ],
+        )
 
     payload = _customer_payload(args)
     payload["assigned_agent_id"] = agent.get("id") if agent else None
@@ -1138,6 +1161,10 @@ async def _add_family_group(args: dict, ctx: Ctx) -> dict:
     members = args.get("members")
     if args.get("use_demo_data") and not members:
         name, members = _demo_family_group()
+    fake = [m.get("cnic") for m in (members or []) if is_placeholder_cnic(m.get("cnic"))]
+    if fake:
+        return {"success": False, "error": f"CNIC {fake[0]} is a placeholder, not a real CNIC, so no family was created. "
+                                           "Give the members' real CNICs, or use demo data to have unique ones generated."}
 
     res = await ctx.client.post(ctx.tsvc("/families"), json={
         "name": name,
@@ -3447,7 +3474,14 @@ async def _quick_start_workflow(args: dict, ctx: Ctx) -> dict:
     birth_year = demo.pop("_birth_year")
     demo["assigned_agent_id"] = agent.get("id") if agent else None
 
-    cust_res = await ctx.client.post(ctx.tsvc("/customers"), json=_customer_payload(demo))
+    # The demo person's CNIC is random, but "random" is not "unused": draw again if it is already registered, so
+    # demo data can never fail with — or silently reuse — somebody else's CNIC.
+    for attempt in range(8):
+        cust_res = await ctx.client.post(ctx.tsvc("/customers"), json=_customer_payload(demo))
+        if cust_res.status_code != 409:
+            break
+        fresh = _demo_customer()
+        demo["cnic"], demo["date_of_birth"], birth_year = fresh["cnic"], fresh["date_of_birth"], fresh["_birth_year"]
     cust_res.raise_for_status()
     customer = cust_res.json()
 

@@ -661,8 +661,35 @@ def _direct_group_continue(state: ChatState) -> dict | None:
             "group_current_org_id": m.group("id"), "group_current_org_name": m.group("name").strip()}
 
 
+# "Add demo data" in the guided intake. Which tool answers it depends only on the customer type chosen a step
+# earlier, and generating the person (or family, or company) must never be left to the model: asked to "make
+# something up" it reaches for the same placeholder CNIC ("12345-6789012-3") every time, which is of course
+# already registered. The tools generate their own fresh, unique data.
+_DEMO_DATA_RE = re.compile(r"^\s*add demo data\s*$", re.I)
+_REGENERATE_DEMO_RE = re.compile(r"^\s*run quick_start_workflow with fresh random demo data\s*$", re.I)
+_DEMO_TOOL_FOR = {
+    "add_customer": ("quick_start_workflow", {}),
+    "add_family_group": ("add_family_group", {"use_demo_data": True}),
+    "add_organization": ("add_organization", {"use_demo_data": True}),
+}
+
+
+def _direct_intake_demo(state: ChatState) -> dict | None:
+    last = state["messages"][-1] if state.get("messages") else None
+    if not isinstance(last, HumanMessage) or not isinstance(last.content, str):
+        return None
+    if _REGENERATE_DEMO_RE.match(last.content):
+        tool, args = "quick_start_workflow", {}
+    elif _DEMO_DATA_RE.match(last.content) and state.get("lead_intake") and state.get("lead_tool") in _DEMO_TOOL_FOR:
+        tool, args = _DEMO_TOOL_FOR[state["lead_tool"]]
+    else:
+        return None
+    call = {"name": tool, "id": f"direct-{uuid.uuid4().hex[:12]}", "type": "tool_call", "args": dict(args)}
+    return {"messages": [AIMessage(content="", tool_calls=[call])]}
+
+
 async def agent_node(state: ChatState, config: RunnableConfig | None = None) -> dict:
-    direct = _direct_group_continue(state)
+    direct = _direct_group_continue(state) or _direct_intake_demo(state)
     if direct is not None:
         return direct
     user_role = state.get("user_role") or "Admin"
@@ -1601,6 +1628,7 @@ async def permission_gate(state: ChatState) -> Command:
             "lead_agent": lead_agent,
             "lead_source": lead_source,
             "lead_intake": True,
+            "lead_tool": resolved[1] if resolved else None,
         })
 
     if name == "create_proposal":
@@ -2415,7 +2443,7 @@ async def permission_gate(state: ChatState) -> Command:
                 "journey_risk": None, "journey_outcome": None,
                 "requires_human_intervention": False,
                 "journey_audit": [], "journey_error": None,
-                "lead_agent": None, "lead_source": None, "lead_intake": None,
+                "lead_agent": None, "lead_source": None, "lead_intake": None, "lead_tool": None,
             })
         return Command(goto="j_resume", update={"pending_call": pending, "journey_error": None})
 
@@ -2482,6 +2510,7 @@ async def permission_gate(state: ChatState) -> Command:
         update["lead_agent"] = None
         update["lead_source"] = None
         update["lead_intake"] = None
+        update["lead_tool"] = None
     if result.get("last_action"):
         update["last_action"] = result["last_action"]
     if result.get("assessment"):

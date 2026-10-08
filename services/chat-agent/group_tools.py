@@ -577,6 +577,11 @@ async def _submit_group_census(args: dict, ctx: Ctx) -> dict:
     if done is not None:
         return done
     rows = _parse_json_arg(args.get("employees_json"), "employees_json")
+    from tool_executor import is_placeholder_cnic
+    fake = next((r.get("cnic") for r in (rows or []) if is_placeholder_cnic(r.get("cnic"))), None)
+    if fake:
+        return {"success": False, "error": f"CNIC {fake} is a placeholder, not a real CNIC, so nothing was enrolled. "
+                                           "Give the employees' real CNICs, or use demo data."}
     demo_generated = False
     if not rows:
         if not args.get("use_demo_data"):

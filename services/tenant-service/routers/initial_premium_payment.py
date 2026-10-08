@@ -19,6 +19,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from jose import JWTError
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -156,31 +157,40 @@ async def initiate_ipp(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    def _apply(row: InitialPremiumPayment, now: datetime) -> None:
+        row.amount = amount
+        row.status = IPPStatusEnum.INITIATED
+        row.method = intent.method.value
+        row.reference = intent.reference
+        if not row.initiated_at:
+            row.initiated_at = now
+        row.updated_at = now
+
     now = datetime.utcnow()
     if ipp is None:
-        ipp = InitialPremiumPayment(
-            tenant_id=tenant_id,
-            case_id=case_id,
-            policy_id=case.policy_id,
-            amount=amount,
-            status=IPPStatusEnum.INITIATED,
-            method=intent.method.value,
-            reference=intent.reference,
-            initiated_at=now,
-            updated_at=now,
-        )
+        ipp = InitialPremiumPayment(tenant_id=tenant_id, case_id=case_id, policy_id=case.policy_id, amount=amount,
+                                    status=IPPStatusEnum.INITIATED, method=intent.method.value, reference=intent.reference,
+                                    initiated_at=now, updated_at=now)
         session.add(ipp)
     else:
-        ipp.amount = amount
-        ipp.status = IPPStatusEnum.INITIATED
-        ipp.method = intent.method.value
-        ipp.reference = intent.reference
-        if not ipp.initiated_at:
-            ipp.initiated_at = now
-        ipp.updated_at = now
+        _apply(ipp, now)
         session.add(ipp)
 
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # Two initiations for the same case at once (the payment window asks as it opens, and a page can ask twice):
+        # both saw no row, and one insert lost to the unique index on case_id. Initiating is idempotent — take the
+        # row the other request wrote and refresh it.
+        await session.rollback()
+        ipp = (await session.exec(stmt)).first()
+        if ipp is None:
+            raise
+        if ipp.status == IPPStatusEnum.REALIZED:
+            raise HTTPException(status_code=409, detail="Initial premium has already been paid for this case.")
+        _apply(ipp, datetime.utcnow())
+        session.add(ipp)
+        await session.commit()
     await session.refresh(ipp)
 
     return IPPInitiateResponse(

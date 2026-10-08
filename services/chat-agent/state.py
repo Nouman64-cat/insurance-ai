@@ -30,6 +30,9 @@ class ChatState(TypedDict, total=False):
     # automated full journey — even for an Agent login, who is asked neither source
     # nor agent.
     lead_intake: Optional[bool]
+    # The tool the guided intake resolved the customer type to (add_customer / add_family_group / add_organization),
+    # so "Add demo data" can be answered without asking the model to invent anything.
+    lead_tool: Optional[str]
 
     # ── Autonomous underwriting journey (agentic pipeline) ──────────────────
     # The tool_call that launched the pipeline — j_finish answers it with a

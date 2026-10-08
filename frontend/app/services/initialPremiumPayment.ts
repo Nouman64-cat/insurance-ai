@@ -44,13 +44,25 @@ export async function getIPP(caseId: string): Promise<IPP> {
   return res.data;
 }
 
-export async function initiateIPP(
-  caseId: string,
-  method?: string
-): Promise<{ amount: number; payment: PaymentIntent; available_payment_methods: PaymentMethod[] }> {
+type IPPInitiation = { amount: number; payment: PaymentIntent; available_payment_methods: PaymentMethod[] };
+const initiating = new Map<string, Promise<IPPInitiation>>();
+
+/**
+ * Starts (or restarts) the payment for a case. Asking again while a request for the same case and method is still on
+ * its way shares that request: the payment window asks as it opens and can be mounted twice in development, and two
+ * calls would otherwise hand back two different payment references for one payment.
+ */
+export function initiateIPP(caseId: string, method?: string): Promise<IPPInitiation> {
+  const key = `${caseId}|${method ?? ""}`;
+  const running = initiating.get(key);
+  if (running) return running;
   const tid = tenantId();
-  const res = await api.post(`/tenants/${tid}/cases/${caseId}/ipp/initiate`, { method });
-  return res.data;
+  const request = api
+    .post(`/tenants/${tid}/cases/${caseId}/ipp/initiate`, { method })
+    .then((res) => res.data as IPPInitiation)
+    .finally(() => initiating.delete(key));
+  initiating.set(key, request);
+  return request;
 }
 
 export async function confirmIPP(
