@@ -61,6 +61,7 @@ class FakeTenantService:
         self.quotes: dict = {}
         self.endorsements: dict = {}
         self.renewals: dict = {}
+        self.fail_paths: set = set()          # paths ending in one of these answer 500
         self.claims: dict = {}
         self.calls: list[tuple[str, str]] = []
         self.fcl = 1_000_000.0
@@ -197,6 +198,14 @@ class FakeTenantService:
     def _dispatch(self, method: str, url: str, body):
         path = url.replace(BASE, "")
         self.calls.append((method, path))
+        if any(path.endswith(f) for f in self.fail_paths):
+            return _Resp(500, {"detail": "boom"})
+        dm = re.fullmatch(r"/organizations/([^/]+)", path)
+        if method == "DELETE" and dm:
+            self.orgs.pop(dm.group(1), None)
+            for mid in [m for m, sc in self.schemes.items() if sc["organization_id"] == dm.group(1)]:
+                self.schemes.pop(mid)
+            return _Resp(204, None)
         if path == "/organizations":
             if method == "GET":
                 return _Resp(200, list(self.orgs.values()))
@@ -879,6 +888,45 @@ async def test_a_census_that_is_already_enrolled_is_not_asked_for_again():
         n_before = len(fake.members[fake.only_scheme()["id"]])
         assert n_before > 0 and not any(c[1].endswith("/census/confirm") for c in fake.calls[-6:])
         print("PASS test_a_census_that_is_already_enrolled_is_not_asked_for_again")
+
+
+@_sync
+async def test_demo_data_for_a_corporate_builds_the_whole_scheme_and_hands_the_ui_its_summary():
+    """Chat → Corporate → Add demo data: a company, its policy, classes and 10 enrolled employees, and the same
+    organization_enrolled summary (with the id the Continue button needs) the full-detail form produces."""
+    with backend("demo") as fake:
+        res = await _call("add_organization", use_demo_data=True, no_agent=True)
+        assert res["success"] and res["employees_enrolled"] == 10, res
+        scheme = fake.only_scheme()
+        assert len(fake.members[scheme["id"]]) == 10 and len(fake.classes[scheme["id"]]) == 3
+        assert scheme["organization_id"] == res["organization_id"] and scheme["plan_code"] == "GROUP_LIFE"
+        summary = res["organization_enrolled"]
+        assert summary["organization_id"] == res["organization_id"] and summary["employee_count"] == 10 and summary["demo"] is True
+        assert summary["name"] == fake.orgs[res["organization_id"]]["name"]
+        roster = summary["employees"]          # the table the page shows under the summary
+        assert len(roster) == 10 and all(r["name"] and r["benefit_class"] and r["coverage_amount"] for r in roster), roster
+        assert {r["name"] for r in roster} == {m["name"] for m in fake.members[scheme["id"]]}
+        assert "quick_actions" not in res or not res["quick_actions"]      # the buttons come from the UI summary, once
+        assert "do NOT describe next steps" in res["message"]
+        # A second call is a different company.
+        again = await _call("add_organization", use_demo_data=True, no_agent=True)
+        assert again["organization_id"] != res["organization_id"] and again["organization_name"] != res["organization_name"]
+        print("PASS test_demo_data_for_a_corporate_builds_the_whole_scheme_and_hands_the_ui_its_summary")
+
+
+@_sync
+async def test_demo_corporate_is_all_or_nothing_and_demo_only():
+    with backend("demo") as fake:
+        fake.fail_paths.add("/census/confirm")
+        res = await _call("add_organization", use_demo_data=True, no_agent=True)
+        assert not res["success"] and "Nothing was saved" in res["error"]
+        assert not fake.orgs and not fake.schemes, "the half-built company must be deleted again"
+    with backend("prod") as fake:
+        res = await _call("add_organization", use_demo_data=True, no_agent=True)
+        assert not res["success"] and "demo mode" in res["error"] and not fake.orgs
+        assert permission.missing_args("add_organization", {"use_demo_data": True}) == []     # no name is asked for
+        assert permission.missing_args("add_organization", {}) == ["name"]
+        print("PASS test_demo_corporate_is_all_or_nothing_and_demo_only")
 
 
 def test_the_continue_button_calls_the_journey_directly_for_that_exact_company():

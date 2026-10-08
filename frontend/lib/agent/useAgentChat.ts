@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNotify } from "@/components/NotificationContext";
-import type { AgentMessage, AgentStreamEvent, PendingInterrupt, ProcessStep, QuickAction } from "./types";
+import type { AgentMessage, AgentStreamEvent, OrganizationEmployee, PendingInterrupt, ProcessStep, QuickAction } from "./types";
 
 function newId(): string {
   return typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2);
@@ -35,6 +35,9 @@ interface UseAgentChatOptions {
   // land after the assistant's own message rather than racing it.
   // A family's proposal is found by `family.familyGroupId`; `family.caseNumbers` are its member cases.
   onProposalJourney?: (customerId: string, name: string, family?: FamilyJourney) => void;
+  // A tool created a corporate with its policy, classes and employees (demo data). Fired once the reply has finished
+  // streaming, so the summary and its "Continue" button land after the assistant's own sentence.
+  onOrganizationEnrolled?: (org: EnrolledOrganization) => void;
   // Fired when a regenerate rewinds the conversation, with the id of the last message that was kept — its buttons must
   // be usable again, and anything the page tracked about the steps that were dropped is stale.
   onRewound?: (lastKeptMessageId: string | undefined) => void;
@@ -50,13 +53,22 @@ export interface FamilyJourney {
   cases: { case_id: string; case_number: string; name: string; relationship: string }[];
 }
 
-export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposalJourney, onRewound }: UseAgentChatOptions) {
+/** A corporate the chat has just created and enrolled (demo data), ready for the group scheme to carry on. */
+export interface EnrolledOrganization {
+  organization_id: string; master_policy_id?: string; name: string; employee_count: number;
+  plan_label?: string; class_count?: number; demo?: boolean; employees?: OrganizationEmployee[];
+}
+
+export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposalJourney, onOrganizationEnrolled, onRewound }: UseAgentChatOptions) {
   const { notify } = useNotify();
   const threadStorageKey = `${storageKey}_thread_id`;
   const onNavigateRef = useRef(onNavigate);
   onNavigateRef.current = onNavigate;
   const onProposalJourneyRef = useRef(onProposalJourney);
   onProposalJourneyRef.current = onProposalJourney;
+  const onOrganizationEnrolledRef = useRef(onOrganizationEnrolled);
+  onOrganizationEnrolledRef.current = onOrganizationEnrolled;
+  const pendingOrganizationRef = useRef<EnrolledOrganization | null>(null);
   const onRewoundRef = useRef(onRewound);
   onRewoundRef.current = onRewound;
   const pendingProposalJourneyRef = useRef<{ customerId: string; name: string; family?: FamilyJourney } | null>(null);
@@ -274,6 +286,12 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
           };
           break;
 
+        case "organization_enrolled": {
+          const { type: _t, ...org } = evt;
+          pendingOrganizationRef.current = org;
+          break;
+        }
+
         case "assessment":
           pendingAssessmentRef.current = evt.assessment;
           // Also attach to the current message just in case no token event follows
@@ -309,6 +327,11 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
           if (pending) {
             pendingProposalJourneyRef.current = null;
             onProposalJourneyRef.current?.(pending.customerId, pending.name, pending.family);
+          }
+          const enrolled = pendingOrganizationRef.current;
+          if (enrolled) {
+            pendingOrganizationRef.current = null;
+            onOrganizationEnrolledRef.current?.(enrolled);
           }
           break;
         }
@@ -451,8 +474,8 @@ export function useAgentChat({ storageKey, welcomeMessage, onNavigate, onProposa
   // the model to "present exactly these two buttons" is unreliable: it can
   // narrate them as plain text instead of actually calling the tool that
   // would produce clickable ones.
-  const addAssistantMessage = useCallback((text: string, quickActions?: QuickAction[]) => {
-    setMessages((prev) => [...prev, { id: newId(), role: "assistant", text, quickActions, clientSide: true }]);
+  const addAssistantMessage = useCallback((text: string, quickActions?: QuickAction[], extras?: Partial<AgentMessage>) => {
+    setMessages((prev) => [...prev, { id: newId(), role: "assistant", text, quickActions, clientSide: true, ...extras }]);
     if (quickActions?.length) {
       setTurnActions(quickActions.filter((a) => a.actionType !== "upload"));
     }

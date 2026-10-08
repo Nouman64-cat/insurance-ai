@@ -297,6 +297,7 @@ def generate_demo_census(count: int, classes: list[str], above_fcl: int = 0, use
     scheme on the higher Free Cover Limit band. Only classes the scheme actually
     has are assigned; `above_fcl` senior staff go to Executive when it exists."""
     used = used_cnics if used_cnics is not None else set()
+    names: set[str] = set()          # no two demo employees share a name — they would be ambiguous to find by name
     today = date.today()
     has = set(classes)
     rows: list[dict] = []
@@ -311,9 +312,14 @@ def generate_demo_census(count: int, classes: list[str], above_fcl: int = 0, use
         age = int(min(52, max(24, _RNG.gauss(34, 7))))
         dob = today - timedelta(days=age * 365 + _RNG.randrange(0, 364))
         role, occupation = _RNG.choice(_ROLES)
+        while True:
+            full_name = f"{_RNG.choice(_FIRST)} {_RNG.choice(_LAST)}"
+            if full_name not in names:
+                names.add(full_name)
+                break
         rows.append({
             "cnic": _random_cnic(used),
-            "name": f"{_RNG.choice(_FIRST)} {_RNG.choice(_LAST)}",
+            "name": full_name,
             "dob": dob.isoformat(),
             "gender": _RNG.choice(["Male", "Female"]),
             "occupation": occupation,
@@ -326,6 +332,109 @@ def generate_demo_census(count: int, classes: list[str], above_fcl: int = 0, use
             **({"benefit_class": cls} if cls else {}),
         })
     return rows
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# A complete demo corporate — what "Add demo data" does for a Corporate in the chat
+# ═══════════════════════════════════════════════════════════════════════════
+
+_DEMO_COMPANY_PREFIX = ["Meridian", "Crescent", "Falcon", "Zenith", "Indus", "Karakoram", "Sapphire", "Horizon", "Pinnacle",
+                        "Summit", "Evergreen", "Orion", "Bluebird", "Granite", "Lotus", "Cedar"]
+_DEMO_COMPANY_SECTOR = [("Textiles", "Textiles"), ("Engineering Works", "Engineering"), ("Logistics", "Logistics"),
+                        ("Pharma", "Pharmaceuticals"), ("Foods", "Food & Beverage"), ("Steel Mills", "Manufacturing"),
+                        ("Software", "Information Technology"), ("Packaging", "Packaging")]
+_DEMO_CITIES = [("Lahore", "Punjab"), ("Karachi", "Sindh"), ("Islamabad", "Islamabad Capital Territory"),
+                ("Faisalabad", "Punjab"), ("Rawalpindi", "Punjab"), ("Peshawar", "Khyber Pakhtunkhwa")]
+DEMO_CORPORATE_EMPLOYEES = 10      # Group Life needs at least 10
+
+
+async def create_demo_corporate(ctx: Ctx, agent: Optional[dict]) -> dict:
+    """A company with its Group Life policy, benefit classes and enrolled employees, generated fresh each call.
+
+    Demo mode only. All or nothing, like the full-detail form: if any step fails, the company is deleted again
+    so no half-built corporate is left on the Leads board."""
+    if not is_demo():
+        return {"success": False, "error": "Demo data is only available in demo mode — give me the company's real details instead."}
+
+    existing = {(o.get("name") or "").strip().lower() for o in (await ctx.client.get(ctx.tsvc("/organizations"))).json()}
+    for _ in range(20):
+        prefix, (suffix, industry) = _RNG.choice(_DEMO_COMPANY_PREFIX), _RNG.choice(_DEMO_COMPANY_SECTOR)
+        name = f"{prefix} {suffix} Ltd"
+        if name.lower() not in existing:
+            break
+    else:
+        name = f"{prefix} {suffix} {secrets.token_hex(2).upper()} Ltd"
+    city, province = _RNG.choice(_DEMO_CITIES)
+    contact = f"{_RNG.choice(_FIRST)} {_RNG.choice(_LAST)}"
+    slug = "".join(c for c in prefix.lower() if c.isalpha())
+
+    res = await ctx.client.post(ctx.tsvc("/organizations"), json={
+        "name": name, "registration_number": f"CUIN {_RNG.randrange(1000000, 9999999)}", "industry": industry,
+        "contact_person": contact, "contact_email": f"hr@{slug}.example.com",
+        "contact_phone": f"03{_RNG.randrange(0, 5)}{_RNG.randrange(1000000, 9999999)}",
+        "city": city, "province": province, "assigned_agent_id": agent.get("id") if agent else None,
+    })
+    if res.status_code >= 400:
+        return {"success": False, "error": f"Couldn't create the demo company: {_error_text(res)}"}
+    org = res.json()
+
+    class _Failed(Exception):
+        pass
+
+    async def step(what: str, coro) -> httpx.Response:
+        r = await coro
+        if r.status_code >= 400:
+            raise _Failed(f"{what}: {_error_text(r)}")
+        return r
+
+    try:
+        mp = (await step("The group policy", ctx.client.post(ctx.tsvc(f"/organizations/{org['id']}/master-policies"), json={
+            "plan_code": "GROUP_LIFE", "sum_assured_multiple": 24, "term_years": 1, "effective_date": date.today().isoformat(),
+        }))).json()
+        base = _gurl(ctx, org["id"], mp["id"])
+        classes = demo_benefit_classes()
+        for c in classes:
+            await step(f"Benefit class {c['name']}", ctx.client.post(f"{base}/benefit-classes", json=c))
+
+        used: set[str] = set()
+        rows: list[dict] = []
+        for _ in range(4):        # a random CNIC can in theory collide with an existing customer; draw again
+            rows = generate_demo_census(DEMO_CORPORATE_EMPLOYEES, [c["name"] for c in classes], 0, used)
+            verdict = (await step("The census check", ctx.client.post(f"{base}/census/validate", json={"employees": rows}))).json()
+            if verdict.get("is_valid") or not verdict.get("duplicate_cnics"):
+                break
+        if not verdict.get("is_valid"):
+            raise _Failed(f"The generated census was rejected: {_census_problems(verdict)}")
+        enrolled = (await step("Enrolling the employees", ctx.client.post(f"{base}/census/confirm", json={"employees": rows}))).json()
+    except Exception as exc:                     # noqa: BLE001 — undo whatever was written, then report
+        try:
+            await ctx.client.delete(ctx.tsvc(f"/organizations/{org['id']}"))
+        except Exception:                        # noqa: BLE001
+            pass
+        reason = str(exc) if isinstance(exc, _Failed) else f"{type(exc).__name__}: {exc}"
+        return {"success": False, "error": f"Nothing was saved — the demo corporate couldn't be built. {reason}"}
+
+    outcomes = enrolled.get("employees") or []
+    n = len(outcomes)
+    # Outcomes come back in the order the rows were sent.
+    roster = [{"name": r["name"], "employee_id": r.get("employee_id"), "designation": r.get("designation"),
+               "benefit_class": (o or {}).get("benefit_class") or r.get("benefit_class"),
+               "coverage_amount": (o or {}).get("coverage_amount")} for r, o in zip(rows, outcomes)]
+    route = _org_route(org["id"], "scheme")
+    return {
+        "success": True, "organization_id": org["id"], "organization_name": name, "master_policy_id": mp["id"],
+        "employees_enrolled": n,
+        # Streamed to the browser, which writes the same summary and "Continue / Open" buttons the full-detail form does.
+        "organization_enrolled": {
+            "organization_id": org["id"], "master_policy_id": mp["id"], "name": name, "employee_count": n,
+            "plan_label": mp.get("plan_label") or "Group Life", "class_count": len(classes), "demo": True,
+            "free_cover_limit": enrolled.get("free_cover_limit"), "employees": roster,
+        },
+        "message": f"Demo corporate **{name}** created: Group Life policy, {len(classes)} benefit classes and {n} employees enrolled. "
+                   "The summary and the next-step buttons appear automatically below — do NOT describe next steps yourself, "
+                   "just acknowledge in one short sentence.",
+        "last_action": _action("add_organization", "organization", org["id"], route, f"Demo corporate {name}"),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════

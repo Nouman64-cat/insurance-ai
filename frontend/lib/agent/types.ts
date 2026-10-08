@@ -64,6 +64,15 @@ export type PendingInterrupt =
   | { kind: "confirm"; question: string; options?: string[]; toolCall: { name: string; args: Record<string, any> } }
   | { kind: "client_execute"; toolCall: { name: string; args: Record<string, any> } };
 
+/** One enrolled employee, as listed under a corporate's enrolment summary. */
+export interface OrganizationEmployee {
+  name?: string;
+  employee_id?: string | null;
+  designation?: string | null;
+  benefit_class?: string | null;
+  coverage_amount?: number | null;
+}
+
 export interface FamilyMember {
   name?: string;
   cnic?: string;
@@ -88,6 +97,7 @@ export interface AgentMessage {
   steps?: ProcessStep[];
   assessment?: AssessmentScores;
   familyMembers?: FamilyMember[];
+  organizationEmployees?: OrganizationEmployee[];
   // Produced by the browser itself (a deterministic step such as a proposal status or an underwriting checklist),
   // not by a model turn — so "regenerate" steps back to the previous message instead of re-asking the agent.
   clientSide?: boolean;
@@ -128,6 +138,7 @@ export type AgentStreamEvent =
   | { type: "quick_actions"; actions: QuickAction[] }
   | { type: "step"; id: string; label: string; status: ProcessStep["status"] }
   | { type: "navigate"; route: string; entity_id: string; highlight: boolean; embed?: boolean }
+  | { type: "organization_enrolled"; organization_id: string; master_policy_id?: string; name: string; employee_count: number; plan_label?: string; class_count?: number; demo?: boolean; employees?: OrganizationEmployee[] }
   | { type: "proposal_journey"; customer_id: string; name: string; family_group_id?: string; family_policy_id?: string; case_numbers?: string[]; cases?: { case_id: string; case_number: string; name: string; relationship: string }[] }
   | { type: "assessment"; assessment: AssessmentScores }
   | { type: "family_members"; family_members: FamilyMember[] }

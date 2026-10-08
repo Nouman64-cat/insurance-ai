@@ -56,6 +56,10 @@ class NoProviderConfigured(RuntimeError):
 
 # ── Model factory ─────────────────────────────────────────────────────────────
 
+# How long one model call may take. A scheme document (company, policy, classes, a whole census, dependants and
+# nominees) makes the model write a very long JSON answer — easily more than the 60 s that suits a CNIC or a salary slip.
+LLM_TIMEOUT_SECONDS = float(os.environ.get("OCR_LLM_TIMEOUT_SECONDS", "180"))
+
 def build_model(entry: dict, *, streaming: bool = False):
     provider = (entry.get("provider") or "").lower()
     model = entry.get("model")
@@ -75,14 +79,14 @@ def build_model(entry: dict, *, streaming: bool = False):
             raise RuntimeError("langchain-openai is not installed")
         return ChatOpenAI(
             model=model, api_key=api_key, temperature=0, max_retries=0,
-            timeout=60, stream_usage=True,
+            timeout=LLM_TIMEOUT_SECONDS, stream_usage=True,
         )
     if provider == "anthropic":
         if ChatAnthropic is None:
             raise RuntimeError("langchain-anthropic is not installed")
         return ChatAnthropic(
             model=model, api_key=api_key, temperature=0, max_retries=0,
-            timeout=60, max_tokens=8000,
+            timeout=LLM_TIMEOUT_SECONDS, max_tokens=8000,
         )
     raise RuntimeError(f"unknown LLM provider {provider!r}")
 

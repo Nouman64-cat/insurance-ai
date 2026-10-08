@@ -14,7 +14,7 @@ import type { CaseDetail, Journey, JourneyContext, ProposalState } from "@/lib/a
 import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import type { CaseEvent } from "@/lib/agent/useCaseEvents";
 import { isPassiveAction } from "@/lib/agent/quickActions";
-import { useAgentChat, type FamilyJourney } from "@/lib/agent/useAgentChat";
+import { useAgentChat, type FamilyJourney, type EnrolledOrganization } from "@/lib/agent/useAgentChat";
 import { requestHighlight, triggerHighlight } from "@/lib/useHighlightTarget";
 import { isCommissionTool, runCommissionTool } from "@/lib/agent/commissionTools";
 import { QuickActionSelect } from "./agent/QuickActionSelect";
@@ -562,6 +562,8 @@ export function CopilotInterface() {
     // Demo data: the customer comes with a Draft proposal, so run the same
     // proposal steps as after the form. (Defined further down — see the ref.)
     onProposalJourney: (customerId, name, family) => startProposalJourneyRef.current?.(customerId, name, family),
+    // Demo data for a Corporate: the same summary and "Continue" button the full-detail form leaves behind.
+    onOrganizationEnrolled: (org) => announceOrganizationEnrolledRef.current?.(org),
     // A rewind brings the last kept message's buttons back to life, and what the page tracked about the dropped steps
     // (which family members were done, an open case view) no longer applies.
     onRewound: (lastKept) => {
@@ -581,6 +583,7 @@ export function CopilotInterface() {
   const familyResultsRef = useRef<FamilyOutcome[]>([]);
   const runFamilyAssessmentsRef = useRef<(() => void) | null>(null);
   const startProposalJourneyRef = useRef<((customerId: string, name: string, family?: FamilyJourney) => void) | null>(null);
+  const announceOrganizationEnrolledRef = useRef<((org: EnrolledOrganization) => void) | null>(null);
 
   const [input, setInput] = useState("");
   const [isRecording, setIsRecording] = useState(false);
@@ -768,6 +771,26 @@ export function CopilotInterface() {
     );
   }, [addAssistantMessage]);
 
+  // A corporate that is saved and enrolled — whether entered in the full-detail form or generated as demo data —
+  // ends with the same summary and buttons, so the group scheme carries on identically from here.
+  const announceOrganizationEnrolled = useCallback((d: EnrolledOrganization) => {
+    const org = d.name || "The corporate";
+    const classes = d.class_count ? `${d.class_count} benefit classes` : "benefit classes";
+    addAssistantMessage(
+      `✅ **${org}** has been registered with its **${d.plan_label ?? "group"}** policy, ${d.demo ? classes : "benefit classes"} and **${d.employee_count ?? 0} employees**${d.demo ? " (demo data)" : ""}.\n\n` +
+        `The scheme is enrolled and waiting for a quote. Shall I carry on — price it, then record the employer's acceptance, issue the master policy and collect the payment?`,
+      [
+        // The id is what makes this the corporate that was just saved — companies can share a name.
+        { label: "Continue the group scheme", actionType: "submit",
+          payload: `Continue the group scheme journey for ${org} (organization id ${d.organization_id})` },
+        { label: "Open the corporate", actionType: "navigate", payload: `admin/organizations/${d.organization_id}` },
+      ],
+      // Shown as a table under the message, like a family's enrolled members.
+      d.employees?.length ? { organizationEmployees: d.employees } : undefined
+    );
+  }, [addAssistantMessage]);
+  announceOrganizationEnrolledRef.current = announceOrganizationEnrolled;
+
   startProposalJourneyRef.current = startProposalJourney;
 
   const runProposalStep = useCallback(async (p: ProposalStep) => {
@@ -893,17 +916,7 @@ export function CopilotInterface() {
         // The corporate form's job ends once the census is enrolled — close it and carry on with the
         // group scheme in the chat (quote, acceptance, issuance), which resumes from the scheme's status.
         setCasePanel(null);
-        const d = event.data as { organization_id: string; name?: string; employee_count?: number; plan_label?: string };
-        const org = d.name || "The corporate";
-        addAssistantMessage(
-          `✅ **${org}** has been registered with its **${d.plan_label ?? "group"}** policy, benefit classes and **${d.employee_count ?? 0} employees**.\n\n` +
-            `The scheme is enrolled and waiting for a quote. Shall I carry on — price it, then record the employer's acceptance, issue the master policy and collect the payment?`,
-          [
-            { label: "Continue the group scheme", actionType: "submit", // The id is what makes this the corporate that was just saved — companies can share a name.
-            payload: `Continue the group scheme journey for ${org} (organization id ${d.organization_id})` },
-            { label: "Open the corporate", actionType: "navigate", payload: `admin/organizations/${d.organization_id}` },
-          ]
-        );
+        announceOrganizationEnrolledRef.current?.(event.data as EnrolledOrganization);
       } else if (event.data.type === "document_uploaded") {
         // The case view is open and already re-reads its own checklist after an upload. Asking the model to
         // "re-check" sent it off on a turn whose tools navigate — which swapped this panel for another page
@@ -3308,6 +3321,38 @@ export function CopilotInterface() {
                                                <td className="py-2 px-2 align-top text-slate-500">{m.occupation || "—"}</td>
                                                <td className="py-2 px-2 align-top text-slate-500">
                                                  {m.declared_income != null ? `PKR ${Number(m.declared_income).toLocaleString()}` : "—"}
+                                               </td>
+                                             </tr>
+                                           ))}
+                                         </tbody>
+                                       </table>
+                                     </div>
+                                   </div>
+                                 )}
+
+                                 {msg.organizationEmployees && msg.organizationEmployees.length > 0 && (
+                                   <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm max-w-3xl">
+                                     <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-3">Enrolled Employees</div>
+                                     <div className="overflow-x-auto -mx-1">
+                                       <table className="w-full min-w-[480px] text-[13px]">
+                                         <thead>
+                                           <tr className="border-b border-slate-100">
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Employee</th>
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">ID</th>
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Designation</th>
+                                             <th className="text-left py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Class</th>
+                                             <th className="text-right py-1.5 px-2 font-bold text-[10px] uppercase tracking-widest text-slate-400">Cover</th>
+                                           </tr>
+                                         </thead>
+                                         <tbody>
+                                           {msg.organizationEmployees.map((e, i) => (
+                                             <tr key={i} className="border-b border-slate-50 hover:bg-slate-50/60 transition-colors">
+                                               <td className="py-2 px-2 align-top font-semibold text-slate-800">{e.name || "—"}</td>
+                                               <td className="py-2 px-2 align-top text-slate-500">{e.employee_id || "—"}</td>
+                                               <td className="py-2 px-2 align-top text-slate-500">{e.designation || "—"}</td>
+                                               <td className="py-2 px-2 align-top text-slate-600">{e.benefit_class || "—"}</td>
+                                               <td className="py-2 px-2 align-top text-right tabular-nums text-slate-700">
+                                                 {e.coverage_amount != null ? `PKR ${Number(e.coverage_amount).toLocaleString()}` : "—"}
                                                </td>
                                              </tr>
                                            ))}

@@ -108,20 +108,27 @@ async def _run_ocr(file_bytes: bytes, mime_type: str, prompt: str = OCR_PROMPT) 
 
     last_exc: Exception | None = None
     for entry in chain:
-        try:
-            model = llm_provider.build_model(entry)
-            messages = llm_provider.messages_for(entry, prompt, file_bytes, mime_type)
-            response = await model.ainvoke(messages)
-            return {
-                "text": _text_of(response.content),
-                "token_usage": llm_provider.usage_of(response),
-                "model_name": llm_provider.model_of(response),
-            }
-        except (PdfProviderUnavailable, NoProviderConfigured):
-            raise
-        except Exception as exc:  # noqa: BLE001 — try the next provider
-            last_exc = exc
-            log.warning("OCR via %s failed: %s", entry.get("provider"), exc)
+        # A timeout or a dropped connection is usually the provider having a slow moment, not a bad request: try the
+        # same provider once more before giving up on it and moving down the chain.
+        for attempt in (1, 2):
+            try:
+                model = llm_provider.build_model(entry)
+                messages = llm_provider.messages_for(entry, prompt, file_bytes, mime_type)
+                response = await model.ainvoke(messages)
+                return {
+                    "text": _text_of(response.content),
+                    "token_usage": llm_provider.usage_of(response),
+                    "model_name": llm_provider.model_of(response),
+                }
+            except (PdfProviderUnavailable, NoProviderConfigured):
+                raise
+            except Exception as exc:  # noqa: BLE001 — retry once if transient, else try the next provider
+                last_exc = exc
+                transient = isinstance(exc, (asyncio.TimeoutError, TimeoutError)) or any(
+                    w in str(exc).lower() for w in ("timed out", "timeout", "connection error", "connection reset", "temporarily"))
+                log.warning("OCR via %s failed (attempt %d): %s", entry.get("provider"), attempt, exc)
+                if not (transient and attempt == 1):
+                    break
     if dropped_for_pdf:
         raise PdfProviderUnavailable(
             f"PDF OCR failed on the PDF-capable provider(s) ({last_exc}) and the "
@@ -576,7 +583,7 @@ async def extract_customer_fields(file: UploadFile = File(...)):
             pages = _pdf_pages_as_png(file_bytes)
             if not pages:
                 raise
-            results = [await _run_ocr(png, "image/png", prompt=CUSTOMER_EXTRACT_PROMPT) for png in pages]
+            results = list(await asyncio.gather(*[_run_ocr(png, "image/png", prompt=CUSTOMER_EXTRACT_PROMPT) for png in pages]))
 
         fields = {k: None for k in CUSTOMER_FIELDS}
         usage = {"input": 0, "output": 0, "total": 0}
@@ -776,7 +783,7 @@ async def extract_family_fields(file: UploadFile = File(...)):
             pages = _pdf_pages_as_png(file_bytes)
             if not pages:
                 raise
-            results = [await _run_ocr(png, "image/png", prompt=FAMILY_EXTRACT_PROMPT) for png in pages]
+            results = list(await asyncio.gather(*[_run_ocr(png, "image/png", prompt=FAMILY_EXTRACT_PROMPT) for png in pages]))
 
         family = {k: None for k in FAMILY_FIELDS}
         members: list = []
@@ -958,7 +965,7 @@ async def extract_organization_fields(file: UploadFile = File(...)):
             pages = _pdf_pages_as_png(file_bytes, dpi=180)   # census tables are dense; digits need the extra resolution
             if not pages:
                 raise
-            results = [await _run_ocr(png, "image/png", prompt=ORGANIZATION_EXTRACT_PROMPT) for png in pages]
+            results = list(await asyncio.gather(*[_run_ocr(png, "image/png", prompt=ORGANIZATION_EXTRACT_PROMPT) for png in pages]))
 
         company = {k: None for k in ("name", "registration_number", "industry", "contact_person", "contact_email", "contact_phone", "city", "province")}
         policy = {k: None for k in ("plan_name", "sum_assured_multiple", "term_years", "effective_date")}

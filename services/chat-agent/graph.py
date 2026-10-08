@@ -155,7 +155,10 @@ customer/family/organization WITHOUT giving you their real CNIC/details:
   pattern). quick_start_workflow generates a genuinely random CNIC/name every call so repeated demo
   requests never collide with an existing record; a hand-invented CNIC always collides eventually.
   Add full_journey=true if they want the whole flow exercised.
-- For CORPORATE customers, DO NOT use quick_start_workflow. Instead, generate realistic fake data yourself (fake names, emails, incomes, etc.) and call **add_organization** directly.
+- For CORPORATE customers, DO NOT use quick_start_workflow and DO NOT invent company or employee data yourself — call
+  **add_organization** with `use_demo_data=true` and no name. The tool generates a fresh company with its Group Life
+  policy, benefit classes and 10 employees, and the browser then shows the summary and the "Continue the group scheme"
+  button, so reply with one short sentence only.
 - For FAMILY customers, DO NOT use quick_start_workflow and DO NOT invent member data yourself —
   call **add_family_group** with `use_demo_data=true` and no `members` list. The tool generates a
   fresh, randomly-varied family (different names/CNICs every time) so repeated demo requests never

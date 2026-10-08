@@ -326,11 +326,16 @@ def delete_user(**kwargs) -> str:
 
 
 class AddOrganizationArgs(BaseModel):
-    name: str
+    name: Optional[str] = Field(default=None, description="The company name. Not needed with use_demo_data.")
     contact_person: Optional[str] = None
     contact_email: Optional[str] = None
     contact_phone: Optional[str] = None
     agent_name: Optional[str] = Field(default=None, description=_AGENT_NAME_DESCRIPTION)
+    use_demo_data: bool = Field(
+        default=False,
+        description="Demo mode only: generate a complete demo corporate — a company, its Group Life policy, benefit "
+        "classes and 10 employees — and enrol it. Pass NO name and make nothing up yourself.",
+    )
 
 
 @tool(args_schema=AddOrganizationArgs)

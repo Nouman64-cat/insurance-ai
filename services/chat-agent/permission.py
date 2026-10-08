@@ -709,7 +709,11 @@ DEMO_OPTIONAL_ARGS = {"record_group_payment": {"reference"}, "settle_group_endor
 
 # An argument that can be given by another one instead. A group scheme is found by company name OR by id — and after
 # "which Demo Corporation?" the answer is the id, which must not be answered with "I need the organization name".
-ARG_ALTERNATIVES: dict[str, tuple[str, ...]] = {"organization_name": ("organization_id",)}
+ARG_ALTERNATIVES: dict[str, tuple[str, ...]] = {
+    "organization_name": ("organization_id",),
+    # Demo data supplies the name itself (a generated company / family), so none has to be asked for.
+    "name": ("use_demo_data",),
+}
 
 
 def missing_args(tool_name: str, args: dict) -> list[str]:

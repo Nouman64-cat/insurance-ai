@@ -1097,6 +1097,12 @@ async def _add_organization(args: dict, ctx: Ctx) -> dict:
     if error:
         return error
 
+    if args.get("use_demo_data"):
+        from group_tools import create_demo_corporate   # late: group_tools imports this module
+        return await create_demo_corporate(ctx, agent)
+    if not (args.get("name") or "").strip():
+        return {"success": False, "error": "What is the company's name?"}
+
     res = await ctx.client.post(ctx.tsvc("/organizations"), json={
         "name": args["name"],
         "contact_person": args.get("contact_person"),

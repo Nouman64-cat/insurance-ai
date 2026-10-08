@@ -489,6 +489,13 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
         notifyParentPortal("organization_enrolled", {
           organization_id: orgId, master_policy_id: mpId, name: name.trim(),
           employee_count: employees.length, plan_label: plan?.label ?? "Group Life", free_cover_limit: enrolled?.free_cover_limit ?? null,
+          class_count: classes.length,
+          // Outcomes come back in the order the employees were sent.
+          employees: employees.map((e, i) => ({
+            name: e.name.trim(), employee_id: e.employee_id || null, designation: e.designation || null,
+            benefit_class: enrolled?.employees?.[i]?.benefit_class ?? (e.benefit_class || null),
+            coverage_amount: enrolled?.employees?.[i]?.coverage_amount ?? null,
+          })),
         });
         onSaved(`Corporate "${name.trim()}" created with ${employees.length} employees enrolled.`, { id: orgId, isNew: true });
         st.orgId = undefined;       // nothing to roll back any more

@@ -127,6 +127,8 @@ async def _consume(graph, config, input_):
                             yield _event({"type": "family_members", "family_members": result["family_members"]})
                         if result.get("proposal_journey"):
                             yield _event({"type": "proposal_journey", **result["proposal_journey"]})
+                        if result.get("organization_enrolled"):
+                            yield _event({"type": "organization_enrolled", **result["organization_enrolled"]})
                         if result.get("quick_actions"):
                             yield _event({"type": "quick_actions", "actions": result["quick_actions"]})
     except Exception as exc:
