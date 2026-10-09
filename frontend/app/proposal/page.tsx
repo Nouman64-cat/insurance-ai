@@ -262,8 +262,19 @@ interface ProposalActionOption {
   tier: "submission" | "decision"; // submission: Agent+; decision: Underwriter+
 }
 
-function getAvailableActions(status: string, hasMissingFields: boolean, forBatch: boolean): ProposalActionOption[] {
+function getAvailableActions(
+  status: string,
+  hasMissingFields: boolean,
+  forBatch: boolean,
+  canSendToUnderwriting: boolean,
+  isAgent: boolean,
+): ProposalActionOption[] {
   const opts: ProposalActionOption[] = [];
+
+  // An Agent's part of the journey is the lead and the proposal: Submit it, and answer an
+  // Info Request. Once it is submitted (Submitted / Under Review) it belongs to
+  // underwriting and the Agent can only watch it, so no actions are offered at all.
+  if (isAgent && (status === "Proposed" || status === "UnderReview")) return [];
 
   if (status === "Quoted") { // Draft
     if (forBatch || !hasMissingFields) {
@@ -276,7 +287,11 @@ function getAvailableActions(status: string, hasMissingFields: boolean, forBatch
     // Undo an accidental Submit — back to Draft, no harm done.
     opts.push({ value: "status:Quoted", label: "Step Back to Draft", tier: "submission" });
   } else if (status === "UnderReview") {
-    opts.push({ value: "underwriting", label: "Send to Underwriting", tier: "submission" });
+    // An Agent's part of the journey stops here: sending to underwriting is for
+    // Underwriters and above, so the option isn't offered to an Agent at all.
+    if (canSendToUnderwriting) {
+      opts.push({ value: "underwriting", label: "Send to Underwriting", tier: "submission" });
+    }
     opts.push({ value: "status:InformationRequested", label: "Request Info", tier: "submission" });
     // Undo an accidental Start Review — back to Submitted, no harm done.
     opts.push({ value: "status:Proposed", label: "Step Back to Submitted", tier: "submission" });
@@ -413,6 +428,11 @@ export default function QuotePage() {
   // real underwriter can decline outright (e.g. plain ineligibility) without
   // running a full assessment first. So Reject gets its own button here.
   const canDecideProposals = userRole != null && ["Underwriter", "Admin", "SuperAdmin"].includes(userRole);
+  // Handing a proposal to underwriting is NOT an Agent action: an Agent prepares the
+  // customer, plan and details and stops at Under Review. Anyone else who can act
+  // on proposals (Underwriter and above) sends it on.
+  const isAgent = userRole === "Agent";
+  const canSendToUnderwriting = canActOnProposals && !isAgent;
 
   const isMounted = useRef(false);
   useEffect(() => {
@@ -578,7 +598,7 @@ export default function QuotePage() {
   // forBatch=true so it doesn't try to reason about any one customer's
   // missing fields — both Submit and Send-to-Info-Requested are offered
   // together and the underwriter picks whichever fits the selected batch.
-  const batchOptions = useMemo(() => getAvailableActions(activeTab, false, true), [activeTab]);
+  const batchOptions = useMemo(() => getAvailableActions(activeTab, false, true, canSendToUnderwriting, isAgent), [activeTab, canSendToUnderwriting, isAgent]);
 
   const handleBatchApply = async (value: string, quotesToProcess: QuoteListItem[]) => {
     if (value === "underwriting") {
@@ -1319,6 +1339,8 @@ export default function QuotePage() {
           onStatusChange={(newStatus) => setActiveTab(newStatus as StatusFilter)}
           canAct={canActOnProposals}
           canDecide={canDecideProposals}
+          canSendToUnderwriting={canSendToUnderwriting}
+          isAgent={isAgent}
           onStartUnderwriting={async () => {
             if (!detail) return;
             const tenantId = localStorage.getItem("tenant_id");
@@ -1747,7 +1769,7 @@ function ProposalsGrid({
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
 function QuoteDetailModal({
-  detail, loading, error, onClose, onStartUnderwriting, onRefresh, onStatusChange, canAct, canDecide
+  detail, loading, error, onClose, onStartUnderwriting, onRefresh, onStatusChange, canAct, canDecide, canSendToUnderwriting, isAgent
 }: {
   detail: QuoteDetail | null;
   loading: boolean;
@@ -1758,6 +1780,8 @@ function QuoteDetailModal({
   onStatusChange: (newStatus: string) => void;
   canAct: boolean;
   canDecide: boolean;
+  canSendToUnderwriting: boolean;
+  isAgent: boolean;
 }) {
   const [underwriters, setUnderwriters] = useState<Agent[]>([]);
   const [updating, setUpdating] = useState(false);
@@ -1807,8 +1831,8 @@ function QuoteDetailModal({
   // along) as the batch dropdown — see getAvailableActions above.
   const modalOptions = useMemo(() => {
     if (!detail) return [];
-    return getAvailableActions(detail.status, missingFields.length > 0, false);
-  }, [detail?.status, missingFields.length]);
+    return getAvailableActions(detail.status, missingFields.length > 0, false, canSendToUnderwriting, isAgent);
+  }, [detail?.status, missingFields.length, canSendToUnderwriting, isAgent]);
 
   const handleApplyAction = async (value: string) => {
     if (!detail) return;
@@ -2058,6 +2082,12 @@ function QuoteDetailModal({
             {(detail.status === "Approved" || detail.status === "AcceptedWithLoadings" || detail.status === "Declined") && (
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
                 This proposal's outcome was decided on its underwriting case, not here — open the case to review the decision.
+              </div>
+            )}
+
+            {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500" title="Currently, you have no access to do this, ask your manager">
+                This proposal has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.
               </div>
             )}
 

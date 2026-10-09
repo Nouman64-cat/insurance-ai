@@ -662,8 +662,23 @@ export function CopilotInterface() {
     review:    { ids: ["underwrite", "request_info", "back_submitted", "reject"],   next: "Next step: send it to underwriting.\n\n⚠️ **Choose carefully** — once you send it to underwriting, you can't go back." },
     info:      { ids: ["resubmit", "return_review", "reject"],                      next: "Once the information is in, re-submit the proposal." },
   };
+  // Sending a proposal to underwriting is for Underwriters and above. Everyone else (Agent, Broker,
+  // Bancassurance, Corporate Agent, Walk-in, Digital, Viewer...) stops once the proposal is Under
+  // Review: it goes to the admin team for further review, and these roles only follow its progress.
+  const canHandOffToUnderwriting = () => {
+    try { return ["Underwriter", "Admin", "SuperAdmin"].includes(localStorage.getItem("user_role") ?? ""); } catch { return false; }
+  };
+  const SENT_FOR_REVIEW =
+    "✅ **Your proposal has been sent to the admin team for further review.** They will take it from here, and you can follow its progress under Proposals.";
+  const proposalNext = (state: ProposalState) =>
+    state === "review" && !canHandOffToUnderwriting() ? "" : PROPOSAL_OPTIONS[state].next;
   const proposalActions = (state: ProposalState, base: ProposalBase): QuickAction[] =>
-    PROPOSAL_OPTIONS[state].ids
+    state === "review" && !canHandOffToUnderwriting()
+      ? [
+          { label: "View Proposals", actionType: "navigate", payload: "proposal" },
+          { label: "Add another customer", actionType: "submit", payload: "Add a new customer" },
+        ]
+      : PROPOSAL_OPTIONS[state].ids
       .filter((step) => !(step === "submit" && base.hasMissing))
       .map((step) => ({
       label: step === "underwrite" ? "Send to Underwriting" : PROPOSAL_STEPS[step].label,
@@ -713,7 +728,9 @@ export function CopilotInterface() {
       return (
         `**Proposal under review** · ${ref}\n\n${figures}\n` +
         `- **Assigned underwriter:** ${d.assigned_underwriter_name || "Unassigned"}\n\n` +
-        `_Sending to underwriting opens an underwriting case for this exact proposal — documents, AI risk scoring and the final decision all happen there._`
+        (canHandOffToUnderwriting()
+          ? `_Sending to underwriting opens an underwriting case for this exact proposal — documents, AI risk scoring and the final decision all happen there._`
+          : SENT_FOR_REVIEW)
       );
     }
     if (state === "info") {
@@ -846,7 +863,7 @@ export function CopilotInterface() {
       }
       const def = PROPOSAL_STEPS[step];
       if (step === "reject" && !window.confirm(`Reject ${p.name}'s proposal? This cannot be undone.`)) {
-        addAssistantMessage(`Okay — **${p.name}**'s proposal was not rejected. ${PROPOSAL_OPTIONS[from].next}`, proposalActions(from, base));
+        addAssistantMessage(`Okay — **${p.name}**'s proposal was not rejected. ${proposalNext(from)}`, proposalActions(from, base));
         return;
       }
       await Promise.all([p.quoteId, ...(p.extraQuoteIds ?? [])].map((id) => updateQuote(id, { status: def.status })));
@@ -856,7 +873,7 @@ export function CopilotInterface() {
         addAssistantMessage(
           `**${p.name}**'s proposal ${def.done}\n\n` +
             (detail ? `${proposalSummary(detail, def.to)}\n\n` : "") +
-            PROPOSAL_OPTIONS[def.to].next,
+            proposalNext(def.to),
           proposalActions(def.to, fresh)
         );
       } else {

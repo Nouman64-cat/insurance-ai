@@ -1170,6 +1170,8 @@ export default function CasePage({ params }: { params: { id: string } }) {
       } else if (autoRun === "true") {
         // Remove autoRun from URL so we don't re-trigger on refresh
         router.replace(`/case/${caseId}`);
+        // Running underwriting is not an Agent action: a pasted ?autoRun link must not start it
+        if (localStorage.getItem("user_role") === "Agent") return;
         // Small delay to ensure UI renders first before stream starts
         setTimeout(() => runUnderwriting(), 100);
       }
