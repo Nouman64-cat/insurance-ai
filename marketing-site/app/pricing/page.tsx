@@ -1,14 +1,14 @@
 import { ButtonLink } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { PageHero, Section } from "@/components/ui/Section";
-import { FaqBand, FeatureGrid, StepsBand } from "@/components/blocks/Blocks";
+import { BlockHeader, CompareBand, FaqBand, FeatureGrid, StepsBand } from "@/components/blocks/Blocks";
 import { CtaBand } from "@/components/sections/CtaBand";
 import { pageMetadata } from "@/lib/seo";
 import { stagger } from "@/lib/utils";
 
 export const metadata = pageMetadata(
   "Pricing",
-  "Pilot, growth and enterprise engagements for insurers. Demo packaging while Insurance AI is a prototype.",
+  "Two ways to pay for Insurance AI: a fixed Enterprise Retainer at $9,500 a month, or a Cost + Hybrid plan at $6,500 a month plus $0.40 per policy.",
   "/pricing"
 );
 
@@ -46,10 +46,55 @@ const tiers = [
   },
 ];
 
+// How the insurer pays — independent of the package (scope) above.
+const models = [
+  {
+    name: "Enterprise Retainer",
+    blurb: "One fixed fee, whatever your policy volume.",
+    price: "$9,500",
+    unit: "per month, flat",
+    bestFor: "Best for insurers who want a fixed, predictable line in the budget.",
+    terms: [
+      "Billed monthly, payable within the first 7 days of the cycle",
+      "No per-policy charges and nothing to reconcile",
+      "No separate software development fee",
+      "Service-level agreement on availability and support",
+      "12-month minimum term, 90 days' notice to end it",
+    ],
+  },
+  {
+    name: "Cost + Hybrid",
+    blurb: "A lower base fee, plus a small charge for each policy.",
+    price: "$6,500",
+    unit: "per month + $0.40 per policy",
+    highlight: true,
+    bestFor: "Best for insurers who want the bill to follow the business: lighter in slow months, scaling with campaigns.",
+    terms: [
+      "Fixed base fee of $6,500 a month",
+      "$0.40 per transaction, where one policy generated is one transaction",
+      "Usage itemised on every invoice",
+      "Pay less in off-season months such as Ramzan",
+      "No separate software development fee",
+    ],
+  },
+];
+
 const faq = [
   {
-    q: "Why are there no prices?",
-    a: "Insurance AI is a prototype, so packaging is illustrative. We will agree scope and terms directly during the demo phase.",
+    q: "Which model should we choose?",
+    a: "If budget certainty matters most, the Enterprise Retainer is one flat fee. If you would rather pay in line with volume, Cost + Hybrid is cheaper below roughly 7,500 policies a month and scales with you above it.",
+  },
+  {
+    q: "What counts as a transaction on Cost + Hybrid?",
+    a: "Each policy generated on the platform is one transaction, billed at $0.40. Quotes, underwriting runs and copilot conversations along the way are not billed separately.",
+  },
+  {
+    q: "What is the minimum commitment on the Enterprise Retainer?",
+    a: "Twelve months. Either side can end it with 90 days' notice; ending it before the minimum term carries an early-termination fee set out in the contract.",
+  },
+  {
+    q: "Are the packages and the payment models separate choices?",
+    a: "Yes. Pilot, Growth and Enterprise describe what you get. The Enterprise Retainer and Cost + Hybrid describe how you pay for it. Scope is agreed with each insurer.",
   },
   {
     q: "Do LLM costs come on top?",
@@ -76,7 +121,7 @@ export default function PricingPage() {
         eyebrow="Pricing"
         art="stages"
         title="Engagements that grow with your book"
-        description="Three illustrative packages. Final scope and commercials are agreed with each insurer."
+        description="Choose the package that fits your scope, then the way you want to pay for it: one flat retainer, or a base fee plus usage."
       />
       <Section>
         <div className="mx-auto grid max-w-[96rem] gap-4 md:grid-cols-3 2xl:gap-6">
@@ -111,6 +156,70 @@ export default function PricingPage() {
         </div>
       </Section>
 
+      <section className="bg-alt py-16 sm:py-20 2xl:py-28">
+        <div className="mx-auto w-full max-w-[150rem] px-4 sm:px-6 lg:px-10 2xl:px-16">
+          <BlockHeader
+            eyebrow="Two ways to pay"
+            title="A flat retainer, or a base fee plus usage"
+            description="Both include 24/7 availability of the platform, 24/7 technical support, and full observability and audit trails. They differ only in how the bill is worked out."
+          />
+          <div className="mt-10 grid gap-4 md:grid-cols-2 2xl:mt-14 2xl:gap-6">
+            {models.map((m, i) => (
+              <div
+                key={m.name}
+                data-reveal
+                style={stagger(i)}
+                className={`card flex flex-col p-6 2xl:p-8 ${m.highlight ? "border-brand ring-1 ring-brand" : ""}`}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-lg font-semibold text-ink 2xl:text-xl">{m.name}</h3>
+                  {m.highlight && (
+                    <span className="rounded-full bg-brand px-2.5 py-1 text-[0.6875rem] font-semibold text-white">Scales with you</span>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-body">{m.blurb}</p>
+                <p className="mt-5 flex flex-wrap items-baseline gap-x-2">
+                  <span className="text-4xl font-semibold tracking-tight text-ink">{m.price}</span>
+                  <span className="text-sm text-muted">{m.unit}</span>
+                </p>
+                <ul className="mt-5 flex-1 space-y-2.5">
+                  {m.terms.map((t) => (
+                    <li key={t} className="flex items-start gap-2.5 text-sm text-body 2xl:text-[1rem]">
+                      <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+                      {t}
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-5 text-sm font-medium text-ink">{m.bestFor}</p>
+                <div className="mt-6">
+                  <ButtonLink href="/contact" variant={m.highlight ? "brand" : "ghost"} arrow>
+                    Discuss this model
+                  </ButtonLink>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <CompareBand
+        eyebrow="What a month costs"
+        title="The same month, under each model"
+        description="Illustrative monthly bills at three policy volumes. On Cost + Hybrid, one policy generated is one transaction at $0.40."
+        heads={["Slow month · 3,000 policies", "Normal month · 10,000 policies", "Peak month · 25,000 policies"]}
+        rows={[
+          { label: "Enterprise Retainer", cells: ["$9,500", "$9,500", "$9,500"] },
+          {
+            label: "Cost + Hybrid",
+            cells: [
+              "$7,700 ($6,500 base + $1,200 usage)",
+              "$10,500 ($6,500 base + $4,000 usage)",
+              "$16,500 ($6,500 base + $10,000 usage)",
+            ],
+          },
+        ]}
+      />
+
       <FeatureGrid
         tone="alt"
         eyebrow="In every engagement"
@@ -127,6 +236,7 @@ export default function PricingPage() {
       />
 
       <StepsBand
+        tone="canvas"
         eyebrow="How an engagement runs"
         title="From first conversation to live business"
         steps={[
@@ -137,7 +247,7 @@ export default function PricingPage() {
         ]}
       />
 
-      <FaqBand tone="canvas" title="Pricing questions" items={faq} />
+      <FaqBand tone="alt" title="Pricing questions" items={faq} />
       <CtaBand title="Let's scope the right engagement" description="Tell us about your book and we will propose a package to match." />
     </>
   );

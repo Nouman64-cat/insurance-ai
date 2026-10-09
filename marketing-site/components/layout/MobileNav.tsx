@@ -33,13 +33,17 @@ export function MobileNav() {
                 {item.label}
               </Link>
             ))}
-            <a
+            {/* <a
               href={`${siteConfig.portalUrl}/login`}
               className="rounded-lg px-3 py-2.5 text-sm font-medium text-body hover:bg-alt"
             >
               Sign in
-            </a>
-            <Link href="/contact" onClick={() => setOpen(false)} className={`${buttonClass("primary")} mt-2`}>
+            </a> */}
+            <Link
+              href="/contact"
+              onClick={() => setOpen(false)}
+              className={`${buttonClass("primary")} mt-2`}
+            >
               Request a demo
             </Link>
           </nav>
