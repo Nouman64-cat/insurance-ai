@@ -11,18 +11,20 @@ import { AppState, AppStateStatus } from 'react-native';
 import { fetchACRRequests, ACRRequest } from '../api/confidentialReport';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
+import { useLiveEvents, useLiveRefresh } from './LiveEventsProvider';
 
 /**
  * The Agent's Confidential Reports the pipeline has asked this user to file.
  *
  * When an individual, family or corporate case reaches Gate 2, the portal sends
  * the request to the case's acquisition source (agent, broker, bank desk…).
- * This provider polls for those requests while the app is in the foreground and
- * raises a notification for each new one; filing it from the ACR screen
+ * This provider re-reads them the moment the server says something changed
+ * (SSE via LiveEventsProvider) and raises a notification for each new one; filing it from the ACR screen
  * publishes `ACRSubmitted`, which moves the portal's workflow on by itself.
  */
 
-const POLL_INTERVAL_MS = 15_000;
+/** Fallback only, while the live connection is down. */
+const POLL_INTERVAL_MS = 30_000;
 
 const SEGMENT_LABEL: Record<ACRRequest['segment'], string> = {
   individual: 'Individual',
@@ -46,6 +48,7 @@ const ACRRequestsContext = createContext<ACRRequestsContextValue>({
 export const ACRRequestsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isAuthenticated } = useSession();
   const { notify } = useNotifications();
+  const { connected: liveConnected } = useLiveEvents();
 
   const [requests, setRequests] = useState<ACRRequest[]>([]);
   const [loading, setLoading] = useState(true);
@@ -102,9 +105,12 @@ export const ACRRequestsProvider: React.FC<{ children: React.ReactNode }> = ({ c
     if (isAuthenticated) load();
   }, [isAuthenticated, user?.id, load]);
 
-  // Poll only while the app is in the foreground.
+  // ACR requests and submissions are writes under /cases.
+  useLiveRefresh(load, ['cases'], 300);
+
+  // Poll only while the live connection is down and the app is in the foreground.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || liveConnected) return;
     let timer: ReturnType<typeof setInterval> | null = setInterval(load, POLL_INTERVAL_MS);
     const sub = AppState.addEventListener('change', (state: AppStateStatus) => {
       if (state === 'active') {
@@ -119,7 +125,7 @@ export const ACRRequestsProvider: React.FC<{ children: React.ReactNode }> = ({ c
       if (timer) clearInterval(timer);
       sub.remove();
     };
-  }, [isAuthenticated, load]);
+  }, [isAuthenticated, liveConnected, load]);
 
   const value = useMemo(() => ({ requests, loading, refresh: load }), [requests, loading, load]);
   return <ACRRequestsContext.Provider value={value}>{children}</ACRRequestsContext.Provider>;

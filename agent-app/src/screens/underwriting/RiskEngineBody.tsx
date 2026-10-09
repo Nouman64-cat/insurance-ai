@@ -3,6 +3,7 @@ import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../../theme/ThemeContext';
+import { useLiveEvents, useLiveRefresh } from '../../sync/LiveEventsProvider';
 import { spacing, radii } from '../../theme/tokens';
 import { ToneName } from '../../theme/palette';
 import { useResponsive } from '../../hooks/useResponsive';
@@ -95,13 +96,17 @@ export default function RiskEngineBody({ onSubtitle }: { onSubtitle?: (s: string
   // A risk assessment can land while the agent stays on this exact screen —
   // poll while focused, same as Pre-Underwriting, rather than only
   // refreshing on in-app navigation.
+  const { connected: liveConnected } = useLiveEvents();
   useFocusEffect(
     useCallback(() => {
       load({ silent: true });
+      // Live events refresh this as things change; poll only while offline.
+      if (liveConnected) return undefined;
       const timer = setInterval(() => load({ silent: true }), 15_000);
       return () => clearInterval(timer);
-    }, [load])
+    }, [load, liveConnected])
   );
+  useLiveRefresh(() => load({ silent: true }), ['cases', 'policies', 'customers']);
 
   useEffect(() => {
     if (loading) {

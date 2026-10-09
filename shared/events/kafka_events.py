@@ -234,14 +234,19 @@ class PolicyLifecycleEvent(BaseModel):
 # hub fans these out to connected browsers over SSE (GET /events/stream), so
 # the copilot can react the moment it happens instead of waiting to be asked.
 #
-# event_type examples: "EApplicationSubmitted".
+# event_type examples: "EApplicationSubmitted", "ACRSubmitted".
+#
+# "DataChanged" is the generic one: tenant-service publishes it after every
+# successful write under /tenants/{id}/<resource>, with no case attached
+# (case_id None, detail {"resource", "method"}), so live clients — the agent
+# app above all — re-read what changed instead of waiting to be refreshed.
 # ─────────────────────────────────────────────────────────────────────────────
 
 CASE_EVENTS_TOPIC = "insurance.case.events.v1"
 
 
 class CaseEventPayload(BaseModel):
-    case_id: UUID
+    case_id: Optional[UUID] = None
     case_number: Optional[str] = None
     customer_id: Optional[UUID] = None
     customer_name: Optional[str] = None

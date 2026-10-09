@@ -35,7 +35,10 @@ from contextlib import asynccontextmanager
 
 from aiokafka import AIOKafkaProducer
 from aiokafka.errors import KafkaConnectionError
-from fastapi import FastAPI
+import re
+from uuid import UUID
+
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -46,6 +49,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 from database import _session_factory
 from migrate import run_migrations
 from ocr_worker import start_ocr_worker
+from services.case_events import publish_data_changed
 from routers.tenants import router as tenants_router
 from routers.branches import router as branches_router
 from routers.users import router as users_router
@@ -169,6 +173,30 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+_WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+_TENANT_RESOURCE = re.compile(r"^/tenants/([0-9a-fA-F-]{36})/([A-Za-z][\w-]*)")
+
+
+@app.middleware("http")
+async def announce_writes(request: Request, call_next):
+    """After every successful write under /tenants/{id}/<resource>, publish a
+    DataChanged event so live clients (the agent app's SSE feed) refresh on
+    their own. Published in the background — never delays or fails the write."""
+    response = await call_next(request)
+    if request.method in _WRITE_METHODS and response.status_code < 400:
+        match = _TENANT_RESOURCE.match(request.url.path)
+        producer = getattr(request.app.state, "kafka_producer", None)
+        if match and producer is not None:
+            try:
+                tenant_id = UUID(match.group(1))
+            except ValueError:
+                return response
+            asyncio.create_task(publish_data_changed(
+                producer, tenant_id=tenant_id, resource=match.group(2), method=request.method,
+            ))
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,

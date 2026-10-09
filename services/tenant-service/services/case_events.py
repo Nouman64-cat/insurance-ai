@@ -51,3 +51,17 @@ async def publish_case_event(
         await producer.send_and_wait(CASE_EVENTS_TOPIC, value=event.model_dump_json(), key=str(tenant_id))
     except Exception:
         logger.exception("Failed to publish %s | case_id=%s", event_type, case_id)
+
+
+async def publish_data_changed(producer, *, tenant_id: UUID, resource: str, method: str) -> None:
+    """Generic "something under /tenants/{id}/<resource> was written" event for
+    live clients. Fire-and-forget, never raises (see the middleware in main.py)."""
+    try:
+        event = CaseEvent(
+            event_type="DataChanged",
+            tenant_id=tenant_id,
+            payload=CaseEventPayload(detail={"resource": resource, "method": method}),
+        )
+        await producer.send_and_wait(CASE_EVENTS_TOPIC, value=event.model_dump_json(), key=str(tenant_id))
+    except Exception:
+        logger.exception("Failed to publish DataChanged | resource=%s", resource)

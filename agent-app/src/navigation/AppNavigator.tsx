@@ -19,6 +19,7 @@ import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { LeadSyncProvider } from '../sync/LeadSyncProvider';
 import { ACRRequestsProvider } from '../sync/ACRRequestsProvider';
+import { LiveEventsProvider } from '../sync/LiveEventsProvider';
 import ToastHost from '../notifications/ToastHost';
 import NotificationPopup from '../notifications/NotificationPopup';
 import AnimatedSplashScreen from '../components/ui/AnimatedSplashScreen';
@@ -235,6 +236,7 @@ function AppFlow() {
   const [showSplash, setShowSplash] = useState(true);
 
   return (
+    <LiveEventsProvider>
     <LeadSyncProvider>
     <ACRRequestsProvider>
       {showSplash ? (
@@ -280,6 +282,7 @@ function AppFlow() {
       <NotificationPopup />
     </ACRRequestsProvider>
     </LeadSyncProvider>
+    </LiveEventsProvider>
   );
 }
 

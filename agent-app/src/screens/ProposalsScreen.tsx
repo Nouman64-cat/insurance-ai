@@ -3,6 +3,7 @@ import { View, StyleSheet, FlatList, ScrollView, TextInput, RefreshControl } fro
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../theme/ThemeContext';
+import { useLiveRefresh } from '../sync/LiveEventsProvider';
 import { spacing, radii, typography, hitTarget } from '../theme/tokens';
 import { ToneName } from '../theme/palette';
 import { useResponsive } from '../hooks/useResponsive';
@@ -101,6 +102,8 @@ export default function ProposalsScreen() {
       load({ silent: true });
     }, [load])
   );
+  // …and one created anywhere else (portal, copilot, another device) as it happens.
+  useLiveRefresh(() => load({ silent: true }), ['customers', 'policies', 'cases', 'families', 'organizations']);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

@@ -12,6 +12,7 @@ import { fetchCases, CaseItem } from '../api/cases';
 import { inviteEApplication, buildEApplicationLink } from '../api/eApplication';
 import { formatRelativeTime } from '../notifications/types';
 import { useACRRequests } from '../sync/ACRRequestsProvider';
+import { useLiveRefresh } from '../sync/LiveEventsProvider';
 import { ACRRequest } from '../api/confidentialReport';
 import {
   Screen,
@@ -113,6 +114,9 @@ export default function CasesScreen() {
       refreshACRRequests();
     }, [load, refreshACRRequests])
   );
+
+  // Cases change in the portal and the copilot as much as here — follow them live.
+  useLiveRefresh(() => load({ silent: true }), ['cases', 'customers', 'policies']);
 
   const openACR = useCallback(
     (caseId: string, applicantName?: string | null) =>

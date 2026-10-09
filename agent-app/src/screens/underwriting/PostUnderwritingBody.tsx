@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { useTheme } from '../../theme/ThemeContext';
+import { useLiveEvents, useLiveRefresh } from '../../sync/LiveEventsProvider';
 import { spacing } from '../../theme/tokens';
 import { ToneName } from '../../theme/palette';
 import { useResponsive } from '../../hooks/useResponsive';
@@ -66,13 +67,17 @@ export default function PostUnderwritingBody({ onSubtitle }: { onSubtitle?: (s: 
   // Readiness can change while the agent stays on this exact screen (e.g.
   // underwriting clears a requirement) — poll while focused, same as
   // Pre-Underwriting, rather than only refreshing on in-app navigation.
+  const { connected: liveConnected } = useLiveEvents();
   useFocusEffect(
     useCallback(() => {
       load({ silent: true });
+      // Live events refresh this as things change; poll only while offline.
+      if (liveConnected) return undefined;
       const timer = setInterval(() => load({ silent: true }), 15_000);
       return () => clearInterval(timer);
-    }, [load])
+    }, [load, liveConnected])
   );
+  useLiveRefresh(() => load({ silent: true }), ['cases', 'policies']);
 
   useEffect(() => {
     onSubtitle?.(loading ? 'Loading…' : `${items.length} awaiting verification`);

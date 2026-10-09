@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../theme/ThemeContext';
+import { useLiveEvents, useLiveRefresh } from '../../sync/LiveEventsProvider';
 import { spacing, radii } from '../../theme/tokens';
 import { ToneName } from '../../theme/palette';
 import { useResponsive } from '../../hooks/useResponsive';
@@ -119,13 +120,17 @@ export default function PreUnderwritingBody({ onSubtitle }: { onSubtitle?: (s: s
   // nothing about in-app navigation changed. Polling while focused, and
   // stopping the moment focus is lost, keeps the queue live without a
   // background timer running once the agent has moved on.
+  const { connected: liveConnected } = useLiveEvents();
   useFocusEffect(
     useCallback(() => {
       load({ silent: true });
+      // Live events refresh this as things change; poll only while offline.
+      if (liveConnected) return undefined;
       const timer = setInterval(() => load({ silent: true }), 15_000);
       return () => clearInterval(timer);
-    }, [load])
+    }, [load, liveConnected])
   );
+  useLiveRefresh(() => load({ silent: true }), ['cases', 'customers', 'policies', 'compliance']);
 
   useEffect(() => {
     onSubtitle?.(loading ? 'Loading…' : `${cases.length} in progress`);

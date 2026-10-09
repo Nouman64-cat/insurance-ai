@@ -11,6 +11,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { fetchLeads, UnifiedLead, LeadScope } from '../api/leads';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
+import { useLiveRefresh } from './LiveEventsProvider';
 import { entityLabel, statusLabel } from '../theme/palette';
 
 /**
@@ -336,6 +337,10 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     setLoading(true);
     runSyncRef.current();
   }, [isAuthenticated, scope, user?.id]);
+
+  // Live: any lead-shaped write anywhere (portal, copilot, another device)
+  // re-reads the board, and the diff above turns it into notifications.
+  useLiveRefresh(() => runSyncRef.current(), ['customers', 'families', 'organizations', 'policies', 'cases']);
 
   // ── Optimistic local mutations ─────────────────────────────────────────────
 

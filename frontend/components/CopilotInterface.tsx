@@ -2011,6 +2011,11 @@ export function CopilotInterface() {
   const seenEventIds = useRef<Set<string>>(new Set());
 
   const handleCaseEvent = useCallback(async (evt: CaseEvent) => {
+    // Generic "a write happened" pulse (no case attached) — just keep the open case view fresh.
+    if (evt.event_type === "DataChanged") {
+      if (journeyCaseId && evt.detail?.resource === "cases") refreshJourney(journeyCaseId);
+      return;
+    }
     if (seenEventIds.current.has(evt.event_id)) return;
     seenEventIds.current.add(evt.event_id);
 

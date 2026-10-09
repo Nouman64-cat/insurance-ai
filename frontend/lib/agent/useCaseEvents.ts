@@ -7,9 +7,9 @@ import { useEffect, useRef, useState } from "react";
 export interface CaseEvent {
   type: "case_event";
   event_id: string;
-  event_type: string; // e.g. "EApplicationSubmitted"
+  event_type: string; // e.g. "EApplicationSubmitted", "ACRSubmitted"; "DataChanged" carries no case
   timestamp: string;
-  case_id: string;
+  case_id: string | null;
   case_number?: string | null;
   customer_id?: string | null;
   customer_name?: string | null;
