@@ -8,13 +8,26 @@ import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
 import { PENDING_QUOTES_STORAGE_KEY, PENDING_QUOTES_EVENT, PendingQuoteWatch } from "@/lib/pendingQuotes";
 import { useCopilot } from "@/components/CopilotContext";
-import { CopilotInterface } from "@/components/CopilotInterface";
+import dynamic from "next/dynamic";
+import { NavigationProgress } from "@/components/NavigationProgress";
 import { NotificationProvider, useNotify } from "@/components/NotificationContext";
 import { useRecordHighlighter } from "@/lib/useHighlightTarget";
 
 // Give up watching an customer after this many polls (~2 min at 4s/poll) —
 // they simply didn't qualify for any active plan, so no quote will ever land.
 const MAX_QUOTE_POLL_ATTEMPTS = 30;
+
+// The copilot (~4k lines + markdown renderer) only renders in automation mode;
+// importing it statically put it in the root layout bundle of every page.
+const CopilotInterface = dynamic(
+  () => import("@/components/CopilotInterface").then((m) => m.CopilotInterface),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-full items-center justify-center text-xs text-slate-400">Loading copilot…</div>
+    ),
+  }
+);
 
 export function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -277,6 +290,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <body className={bypassAuthShell ? (isLoginPage ? "bg-slate-950" : "bg-slate-50") : "dashboard-shell bg-slate-50"}>
+      <NavigationProgress />
       {bypassAuthShell ? (
         children
       ) : (

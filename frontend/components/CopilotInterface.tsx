@@ -2,7 +2,9 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import VoiceOverlay from "./VoiceOverlay";
+import dynamic from "next/dynamic";
+// Voice mode pulls in LangChain (+ LangSmith, zod); load it only when opened.
+const VoiceOverlay = dynamic(() => import("./VoiceOverlay"), { ssr: false });
 import { useRouter } from "next/navigation";
 import api from "../app/services/api";
 import { useNotify } from "./NotificationContext";
