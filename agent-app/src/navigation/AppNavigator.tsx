@@ -18,6 +18,7 @@ import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { LeadSyncProvider } from '../sync/LeadSyncProvider';
+import { ACRRequestsProvider } from '../sync/ACRRequestsProvider';
 import ToastHost from '../notifications/ToastHost';
 import NotificationPopup from '../notifications/NotificationPopup';
 import AnimatedSplashScreen from '../components/ui/AnimatedSplashScreen';
@@ -235,6 +236,7 @@ function AppFlow() {
 
   return (
     <LeadSyncProvider>
+    <ACRRequestsProvider>
       {showSplash ? (
         <AnimatedSplashScreen onFinish={() => setShowSplash(false)} />
       ) : null}
@@ -276,6 +278,7 @@ function AppFlow() {
           screen without each screen having to host them. */}
       <ToastHost />
       <NotificationPopup />
+    </ACRRequestsProvider>
     </LeadSyncProvider>
   );
 }

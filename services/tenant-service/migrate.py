@@ -1316,6 +1316,30 @@ MIGRATIONS: list[tuple[str, str]] = [
         "v53b — index group_quotes.renewal_id",
         "CREATE INDEX IF NOT EXISTS ix_group_quotes_renewal_id ON group_quotes (renewal_id)",
     ),
+    # ── ACR requests: the pipeline asks the case's acquisition source (agent,
+    #    broker, bank desk…) to file the ACR from the mobile app.
+    (
+        "v55a — add requested_at to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS requested_at TIMESTAMP WITHOUT TIME ZONE",
+    ),
+    (
+        "v55b — add requested_by to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS requested_by UUID REFERENCES users(id) ON DELETE SET NULL",
+    ),
+    (
+        "v55c — add requested_source_id to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS requested_source_id UUID "
+        "REFERENCES acquisition_sources(id) ON DELETE SET NULL",
+    ),
+    (
+        "v55d — add requested_user_id to agent_confidential_reports",
+        "ALTER TABLE agent_confidential_reports ADD COLUMN IF NOT EXISTS requested_user_id UUID REFERENCES users(id) ON DELETE SET NULL",
+    ),
+    (
+        "v55e — index agent_confidential_reports.requested_user_id",
+        "CREATE INDEX IF NOT EXISTS ix_agent_confidential_reports_requested_user_id "
+        "ON agent_confidential_reports (requested_user_id)",
+    ),
 ]
 
 

@@ -13,6 +13,7 @@ export type NotificationKind =
   | 'lead.deleted'
   | 'proposal.created'
   | 'case.updated'
+  | 'acr.requested'
   | 'sync.error'
   | 'generic';
 
@@ -62,6 +63,7 @@ export const NOTIFICATION_PRESETS: Record<NotificationKind, NotificationPreset> 
   'lead.deleted': { tone: 'neutral', icon: 'trash-outline' },
   'proposal.created': { tone: 'info', icon: 'document-text-outline' },
   'case.updated': { tone: 'warning', icon: 'folder-open-outline' },
+  'acr.requested': { tone: 'accent', icon: 'lock-closed-outline' },
   'sync.error': { tone: 'danger', icon: 'cloud-offline-outline' },
   generic: { tone: 'neutral', icon: 'notifications-outline' },
 };

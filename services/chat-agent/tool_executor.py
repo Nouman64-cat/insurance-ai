@@ -1928,6 +1928,57 @@ def _already_complete(case: dict, detail: dict, key: str, label: str) -> Optiona
             "message": f"✅ **{label}** is already complete for case **{case.get('caseNumber')}**{why}; nothing to do here."}
 
 
+_SOURCE_TYPE_LABEL = {
+    "AGENT": "Agent", "BROKER": "Broker", "BANCASSURANCE": "Bancassurance desk",
+    "CORPORATE_AGENT": "Corporate agent", "DIRECT": "Direct sales", "DIGITAL": "Digital channel",
+}
+
+
+async def _request_acr_from_source(case: dict, case_id: str, ctx: Ctx, client_fill: dict) -> dict:
+    """Gate 2 for staff: ask the case's acquisition source to file the ACR from the agent app."""
+    case_no = case.get("caseNumber")
+    status_chip = {"label": "Check Gate Status", "actionType": "submit",
+                   "payload": f"Check pre-underwriting status for case {case_no}"}
+    on_behalf = _anyway_chip(
+        f"Submit agent confidential report for case {case_no} — yes, continue anyway (bypass_prerequisites true)"
+    )
+    res = await ctx.client.post(ctx.tsvc(f"/cases/{case_id}/acr/request"))
+    if res.status_code == 422:
+        detail = (res.json() or {}).get("detail") if res.headers.get("content-type", "").startswith("application/json") else None
+        return {
+            "success": False,
+            "status": "NoRecipient",
+            "message": (
+                f"⚠️ **Gate 2 (ACR) can't be requested for case {case_no}.**\n\n"
+                f"{detail or 'The customer has no acquisition source or assigned agent to ask.'}"
+            ),
+            "quick_actions": [*on_behalf, status_chip],
+        }
+    res.raise_for_status()
+    data = res.json()
+    if data.get("self_request"):
+        return client_fill        # the caller is the source — just let them file it
+
+    who = data.get("recipient") or {}
+    kind = _SOURCE_TYPE_LABEL.get(who.get("source_type") or "", "Assigned agent")
+    source = who.get("source_name")
+    via = f" — {kind}" + (f", {source}" if source and source != who.get("name") else "") + (
+        f" ({who['source_code']})" if who.get("source_code") else "")
+    lead = ("📨 **Already requested** — still waiting on" if data.get("already_requested")
+            else "📨 **Agent's Confidential Report requested** from")
+    return {
+        "success": True,
+        "status": "Requested",
+        "message": (
+            f"{lead} **{who.get('name', 'the acquisition source')}**{via} for case **{case_no}**.\n\n"
+            "They've been notified in the agent app and file it there. "
+            "As soon as they submit, the workflow moves on to **Gate 3: Compliance / PEP Screening** automatically."
+        ),
+        "last_action": _action("submit_agent_confidential_report", "case", case_id, f"case/{case_id}", "ACR requested"),
+        "quick_actions": [status_chip, *on_behalf],
+    }
+
+
 @handles("submit_agent_confidential_report")
 async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
     case = await _resolve_case(args, ctx)
@@ -1975,34 +2026,21 @@ async def _submit_agent_confidential_report(args: dict, ctx: Ctx) -> dict:
     # which files a standard ACR on the agent's behalf like the demo journey does.
     if not (args.get("auto_fill") and is_demo()):
         role = (ctx.exec_ctx.role or "").strip().lower()
-        if role != "agent" and not args.get("bypass_prerequisites"):
-            return {
-                "success": False,
-                "message": (
-                    f"⚠️ **Gate 2 (ACR) is normally filled by the assigned Agent** for case **{case.get('caseNumber')}**.\n\n"
-                    f"The Agent who met the proposer in person should complete the Agent's Confidential Report — it is required for underwriting. "
-                    + (
-                        "You can continue anyway (for example in a demo) and a standard report will be filed on the agent's behalf."
-                        if is_demo() else
-                        "It can't be filed on their behalf — ask the assigned Agent to complete it, then continue."
-                    )
-                ),
-                "status": "RequiresAgent",
-                "quick_actions": [
-                    *_anyway_chip(f"Submit agent confidential report for case {case.get('caseNumber')} — yes, continue anyway (bypass_prerequisites true)"),
-                    {"label": "Check Gate Status", "actionType": "submit",
-                     "payload": f"Check pre-underwriting status for case {case.get('caseNumber')}"},
-                ],
-            }
+        client_fill = {
+            "__client_execute__": True,
+            "kind": "client_execute",
+            "tool_call": {
+                "name": "submit_agent_confidential_report",
+                "args": {"case_id": case_id, "case_number": case.get("caseNumber")},
+            },
+        }
         if role == "agent":
-            return {
-                "__client_execute__": True,
-                "kind": "client_execute",
-                "tool_call": {
-                    "name": "submit_agent_confidential_report",
-                    "args": {"case_id": case_id, "case_number": case.get("caseNumber")},
-                },
-            }
+            return client_fill
+        if not args.get("bypass_prerequisites"):
+            # Send it to whoever brought the customer in (agent, broker, bank
+            # desk…). They file it from the agent app; submitting publishes
+            # ACRSubmitted, which the copilot picks up over SSE and moves on.
+            return await _request_acr_from_source(case, case_id, ctx, client_fill)
         # Non-agent who confirmed "continue anyway": fall through and file the
         # standard ACR on the agent's behalf (same path as the demo journey).
 

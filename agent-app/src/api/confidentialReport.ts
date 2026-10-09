@@ -57,3 +57,24 @@ export const submitConfidentialReport = async (caseId: string): Promise<Confiden
   const res = await api.post(`/tenants/${tenantId}/cases/${caseId}/acr/submit`);
   return res.data;
 };
+
+/** An ACR the pipeline has asked this user (or the acquisition source whose
+ * login they hold) to file. "Requested" = not opened yet. */
+export interface ACRRequest {
+  case_id: string;
+  case_number: string | null;
+  applicant_name: string | null;
+  segment: 'individual' | 'family' | 'organization';
+  group_name: string | null;
+  status: 'Requested' | 'Draft' | 'Submitted';
+  requested_at: string | null;
+  requested_by_name: string | null;
+  submitted_at: string | null;
+}
+
+export const fetchACRRequests = async (): Promise<ACRRequest[]> => {
+  const tenantId = await AsyncStorage.getItem('tenant_id');
+  if (!tenantId) throw new Error('No tenant ID found');
+  const res = await api.get(`/tenants/${tenantId}/acr-requests`);
+  return res.data || [];
+};

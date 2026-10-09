@@ -655,6 +655,24 @@ async def submit_acr(tenant_id: UUID, case_id: UUID, request: Request, token: st
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr/submit")
 
 
+@app.post(
+    "/tenants/{tenant_id}/cases/{case_id}/acr/request",
+    tags=["Pre-Underwriting"],
+    summary="Ask the case's acquisition source to file the ACR from the agent app",
+)
+async def request_acr(tenant_id: UUID, case_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/cases/{case_id}/acr/request")
+
+
+@app.get(
+    "/tenants/{tenant_id}/acr-requests",
+    tags=["Pre-Underwriting"],
+    summary="ACRs the signed-in agent/broker/source has been asked to file",
+)
+async def list_acr_requests(tenant_id: UUID, request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/{tenant_id}/acr-requests")
+
+
 # ── Pre-Underwriting — Initial Premium Payment (IPP) ────────────────────────────
 
 @app.get(

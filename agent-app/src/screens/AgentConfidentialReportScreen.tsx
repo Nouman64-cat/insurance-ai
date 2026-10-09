@@ -6,6 +6,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { spacing } from '../theme/tokens';
 import { ToneName } from '../theme/palette';
 import { useNotifications } from '../notifications/NotificationContext';
+import { useACRRequests } from '../sync/ACRRequestsProvider';
 import {
   fetchConfidentialReport,
   saveConfidentialReport,
@@ -78,6 +79,7 @@ export default function AgentConfidentialReportScreen() {
   const route = useRoute<ACRRoute>();
   const { caseId, applicantName, onResolved } = route.params ?? ({} as ACRRoute['params']);
   const { toast } = useNotifications();
+  const { refresh: refreshRequests } = useACRRequests();
 
   // Fires onResolved exactly once — whichever comes first, a successful
   // submit or the user leaving (back gesture, header back, hardware back).
@@ -246,8 +248,11 @@ export default function AgentConfidentialReportScreen() {
       await saveConfidentialReport(caseId, buildPayload());
       await submitConfidentialReport(caseId);
       setSubmitted(true);
+      // Drops it from the requested list; the portal's workflow picks the
+      // submission up on its own (ACRSubmitted over SSE).
+      refreshRequests();
       toast('Report submitted', {
-        body: 'It is now locked and visible to underwriting.',
+        body: 'It is now locked and underwriting moves on to the next step.',
         tone: 'success',
         icon: 'checkmark-circle',
       });
@@ -263,7 +268,7 @@ export default function AgentConfidentialReportScreen() {
       setSaving(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [caseId, text, flags, recommendation, toast, navigation, applicantName, resolveOnce]);
+  }, [caseId, text, flags, recommendation, toast, navigation, applicantName, resolveOnce, refreshRequests]);
 
   const editable = !submitted && !saving;
 

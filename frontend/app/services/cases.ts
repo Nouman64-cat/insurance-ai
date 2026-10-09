@@ -24,7 +24,7 @@ export interface CaseQueueItem {
   family_group_name?: string;
   organization_id?: string;
   e_application_status?: "NotSent" | "Sent" | "InProgress" | "Submitted" | "Expired";
-  acr_status?: "NotStarted" | "Draft" | "Submitted";
+  acr_status?: "NotStarted" | "Requested" | "Draft" | "Submitted";
   compliance_status?: "NotStarted" | "Passed" | "Flagged" | "Failed";
   ipp_status?: "NotStarted" | "Initiated" | "Realized" | "Failed";
   insurance_history_status?: "NotStarted" | "Clear" | "Flagged" | "Failed";

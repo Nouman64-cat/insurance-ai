@@ -11,6 +11,8 @@ import { useNotifications } from '../notifications/NotificationContext';
 import { fetchCases, CaseItem } from '../api/cases';
 import { inviteEApplication, buildEApplicationLink } from '../api/eApplication';
 import { formatRelativeTime } from '../notifications/types';
+import { useACRRequests } from '../sync/ACRRequestsProvider';
+import { ACRRequest } from '../api/confidentialReport';
 import {
   Screen,
   ScreenHeader,
@@ -26,6 +28,8 @@ import {
   Divider,
   Pressable,
   LinkShareSheet,
+  ListRow,
+  SectionHeader,
 } from '../components/ui';
 
 type ViewMode = 'list' | 'board';
@@ -56,6 +60,12 @@ const metaFor = (status: string) => {
   return STATUS_META[key] ?? { tone: 'neutral' as ToneName, label: status || 'Unknown' };
 };
 
+const SEGMENT_LABEL: Record<ACRRequest['segment'], string> = {
+  individual: 'Individual',
+  family: 'Family',
+  organization: 'Corporate',
+};
+
 const BOARD_COLUMNS: { title: string; statuses: string[] }[] = [
   { title: 'New', statuses: ['DRAFT', 'NEW', 'QUOTED'] },
   { title: 'Underwriting', statuses: ['UNDERWRITING', 'IN_PROGRESS', 'PENDING'] },
@@ -68,6 +78,7 @@ export default function CasesScreen() {
   const { listPadding } = useBottomClearance();
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
+  const { requests: acrRequests, refresh: refreshACRRequests } = useACRRequests();
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,8 +110,55 @@ export default function CasesScreen() {
   useFocusEffect(
     useCallback(() => {
       load({ silent: true });
-    }, [load])
+      refreshACRRequests();
+    }, [load, refreshACRRequests])
   );
+
+  const openACR = useCallback(
+    (caseId: string, applicantName?: string | null) =>
+      navigation.navigate('AgentConfidentialReport', { caseId, applicantName: applicantName ?? undefined }),
+    [navigation]
+  );
+  // Cases whose ACR the portal is waiting on — their "File ACR" button is highlighted.
+  const requestedCaseIds = useMemo(() => new Set(acrRequests.map((r) => r.case_id)), [acrRequests]);
+
+  // ACRs the pipeline (individual, family or corporate) asked this user to file.
+  // Submitting one moves the portal's workflow on by itself.
+  // `padded`: the board view needs its own gutter; the list's content already has one.
+  const requestsSection = (padded: boolean) =>
+    acrRequests.length > 0 ? (
+      <View style={[styles.requests, padded ? { paddingHorizontal: gutter, marginTop: spacing.lg } : null]}>
+        <SectionHeader title="Confidential reports requested" count={acrRequests.length} icon="lock-closed-outline" />
+        <Card padding="none">
+          {acrRequests.map((r, i) => (
+            <View key={r.case_id}>
+              {i > 0 ? <Divider /> : null}
+              <ListRow
+                title={r.applicant_name || r.case_number || 'Applicant'}
+                subtitle={[
+                  SEGMENT_LABEL[r.segment],
+                  r.group_name,
+                  r.case_number,
+                  r.requested_at ? `requested ${formatRelativeTime(new Date(r.requested_at + (r.requested_at.endsWith('Z') ? '' : 'Z')).getTime())}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+                icon="document-text-outline"
+                tone={r.status === 'Draft' ? 'warning' : 'accent'}
+                right={
+                  <Badge
+                    label={r.status === 'Draft' ? 'Continue' : 'File now'}
+                    tone={r.status === 'Draft' ? 'warning' : 'accent'}
+                    variant="soft"
+                  />
+                }
+                onPress={() => openACR(r.case_id, r.applicant_name)}
+              />
+            </View>
+          ))}
+        </Card>
+      </View>
+    ) : null;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -137,6 +195,7 @@ export default function CasesScreen() {
     const meta = metaFor(item.status);
     const priorityTone = PRIORITY_TONE[(item.priority ?? '').toUpperCase()] ?? 'neutral';
     const sending = sendingLinkFor === item.id;
+    const acrRequested = requestedCaseIds.has(item.id);
 
     return (
       <Card key={item.id} padding="lg" style={compact ? undefined : styles.card}>
@@ -188,23 +247,29 @@ export default function CasesScreen() {
           </Pressable>
 
           <Pressable
-            onPress={() =>
-              navigation.navigate('AgentConfidentialReport', {
-                caseId: item.id,
-                applicantName: item.applicant_name,
-              })
-            }
+            onPress={() => openACR(item.id, item.applicant_name)}
             pressedScale={0.97}
             accessibilityRole="button"
             accessibilityLabel={`File the agent's confidential report for ${item.applicant_name}`}
             style={[
               styles.action,
-              { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
+              acrRequested
+                ? { backgroundColor: colors.tone.accent.soft, borderColor: colors.tone.accent.softBorder }
+                : { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
             ]}
           >
-            <Ionicons name="lock-closed-outline" size={15} color={colors.textMuted} />
-            <Text variant="captionStrong" color="muted" numberOfLines={1}>
-              File ACR
+            <Ionicons
+              name="lock-closed-outline"
+              size={15}
+              color={acrRequested ? colors.tone.accent.on : colors.textMuted}
+            />
+            <Text
+              variant="captionStrong"
+              color={acrRequested ? undefined : 'muted'}
+              style={acrRequested ? { color: colors.tone.accent.on } : undefined}
+              numberOfLines={1}
+            >
+              {acrRequested ? 'ACR requested' : 'File ACR'}
             </Text>
           </Pressable>
         </View>
@@ -273,6 +338,8 @@ export default function CasesScreen() {
           <SkeletonList count={3} />
         </View>
       ) : viewMode === 'board' ? (
+        <>
+        {requestsSection(true)}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -315,6 +382,7 @@ export default function CasesScreen() {
             );
           })}
         </ScrollView>
+        </>
       ) : (
         <FlatList
           key={`cases-${gridColumns}`}
@@ -331,13 +399,17 @@ export default function CasesScreen() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => load()}
+              onRefresh={() => {
+                load();
+                refreshACRRequests();
+              }}
               tintColor={colors.primary}
               colors={[colors.primary]}
               progressBackgroundColor={colors.surface}
             />
           }
           renderItem={({ item }) => renderCard(item)}
+          ListHeaderComponent={requestsSection(false)}
           ListEmptyComponent={
             <EmptyState
               icon={search ? 'search-outline' : 'folder-open-outline'}
@@ -401,6 +473,10 @@ const styles = StyleSheet.create({
     width: 96,
   },
   banner: {
+    marginBottom: spacing.md,
+  },
+  requests: {
+    gap: spacing.sm,
     marginBottom: spacing.md,
   },
   listContent: {

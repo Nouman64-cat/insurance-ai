@@ -2032,6 +2032,29 @@ export function CopilotInterface() {
       return;
     }
 
+    if (evt.event_type === "ACRSubmitted") {
+      const recommendation = (evt.detail?.recommendation as string | undefined) ?? null;
+      const filedBy = (evt.detail?.submitted_by as string | undefined) || "The agent";
+      if (!inThisChat) {
+        notify(`📝 ${filedBy} filed the confidential report for ${caseNo}`, true, `case/${evt.case_id}`);
+        return;
+      }
+      // Filed from this browser (the ACR form the chat opened) — that turn
+      // already reported it and offered the next gate.
+      const selfInflicted =
+        isLoading ||
+        messages.slice(-3).some((m) => m.actionResult?.toolName === "submit_agent_confidential_report" && m.actionResult.label !== "ACR requested" && m.actionResult.entityId === evt.case_id);
+      if (selfInflicted) return;
+
+      setMapRun({ startIndex: messages.length, nodeId: "acr", title: "Agent confidential report filed" });
+      addAssistantMessage(
+        `📝 **${filedBy}** just filed the Agent's Confidential Report for case **${caseNo}**${recommendation ? ` — recommendation **${recommendation}**` : ""}. Moving on to compliance screening.`
+      );
+      // The screening tool skips itself (and points onward) if it's already clear.
+      setAutoActions((q) => [...q, { label: "Run compliance screening", actionType: "submit", payload: `Run compliance screening for case ${caseNo}` }]);
+      return;
+    }
+
     if (evt.event_type === "MedicalExamCompleted") {
       const outcome = (evt.detail?.outcome as string | undefined) ?? null;
       if (!inThisChat) {

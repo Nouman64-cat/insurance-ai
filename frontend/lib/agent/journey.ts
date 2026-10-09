@@ -169,8 +169,10 @@ export function journeyFromCase(d: CaseDetail): Journey {
         waitingWhen: ["Sent", "InProgress"],
         actionWhen: { Submitted: submit("Verify e-application", `Verify e-application for case ${cn} action verify`) },
       }),
+    // "Requested": sent to the acquisition source, who files it in the agent app.
     gate("acr", "Agent confidential report", pu.acr, ["Submitted"], [],
-      submit("Submit ACR", `Submit agent confidential report for case ${cn}`)),
+      submit("Submit ACR", `Submit agent confidential report for case ${cn}`),
+      { waitingWhen: ["Requested"] }),
     gate("compliance", "PEP & sanctions screening", pu.compliance, ["Passed"], ["Failed", "Flagged"],
       submit("Run compliance screening", `Run compliance screening for case ${cn}`)),
     gate("ipp", "Initial premium payment", pu.ipp, ["Realized"], ["Failed"],

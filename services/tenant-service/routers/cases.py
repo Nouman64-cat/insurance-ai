@@ -66,6 +66,13 @@ async def _case_in_scope(case: Case, scope: Optional[set[UUID]], session: AsyncS
     customer = await session.get(Customer, case.customer_id)
     return customer is not None and customer.acquisition_source_id in scope
 
+def _acr_status(status, requested_at) -> str:
+    """ACR gate status, with "Requested" for one sent to the acquisition source
+    that they haven't started yet (the stored status is still NotStarted)."""
+    value = status.value if hasattr(status, "value") else str(status)
+    return "Requested" if value == "NotStarted" and requested_at else value
+
+
 def generate_case_number() -> str:
     # Auto-generate CaseNumber: e.g., CASE-YYYY-XXXXXX
     import uuid
@@ -270,8 +277,8 @@ async def list_cases(
         )).all()
     }
     acr_status_by_case = {
-        row[0]: row[1] for row in (await session.execute(
-            select(AgentConfidentialReport.case_id, AgentConfidentialReport.status)
+        row[0]: _acr_status(row[1], row[2]) for row in (await session.execute(
+            select(AgentConfidentialReport.case_id, AgentConfidentialReport.status, AgentConfidentialReport.requested_at)
             .where(AgentConfidentialReport.case_id.in_(case_ids))
         )).all()
     }
@@ -341,8 +348,7 @@ async def list_cases(
         row["latest_composite_score"] = latest.composite_risk_score if latest else None
         e_app_status = e_app_status_by_case.get(c.caseld)
         row["e_application_status"] = e_app_status.value if e_app_status else "NotSent"
-        acr_status = acr_status_by_case.get(c.caseld)
-        row["acr_status"] = acr_status.value if acr_status else "NotStarted"
+        row["acr_status"] = acr_status_by_case.get(c.caseld) or "NotStarted"
         
         cc_list = (
             compliance_checks_by_policy.get(c.policy_id, []) if c.policy_id else []
@@ -596,7 +602,7 @@ async def get_case_detail(
         comp_checks = (await session.execute(select(ComplianceCheck).where(ComplianceCheck.customer_id == case.customer_id))).scalars().all()
         
     e_app_status_val = e_app.status.value if e_app else "NotSent"
-    acr_status_val = acr.status.value if acr else "NotStarted"
+    acr_status_val = _acr_status(acr.status, acr.requested_at) if acr else "NotStarted"
     ipp_status_val = ipp.status.value if ipp else "NotStarted"
     
     # Derived from compliance_engine.effective_status — the same rule the case

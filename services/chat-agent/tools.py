@@ -747,7 +747,7 @@ class SubmitACRArgs(BaseModel):
 
 @tool(args_schema=SubmitACRArgs)
 def submit_agent_confidential_report(**kwargs) -> str:
-    """Gate 2: File the Agent's Confidential Report (ACR). Call this immediately when asked — do NOT ask the user for recommendation/remarks first, the tool itself decides what happens: it opens the real ACR form in the UI for the case's Agent to fill and sign, or tells the caller to ask their Agent to do it if they aren't one."""
+    """Gate 2: File the Agent's Confidential Report (ACR). Call this immediately when asked — do NOT ask the user for recommendation/remarks first, the tool itself decides what happens: it opens the real ACR form in the UI for the case's Agent to fill and sign, or — for anyone else — sends an ACR request to the case's acquisition source (agent, broker, bank desk…), who files it from the agent app. When they submit, the chat is told automatically and the workflow moves on to Gate 3; do not poll or ask the user to confirm the submission."""
     return "{}"
 
 

@@ -2004,6 +2004,14 @@ class AgentConfidentialReport(SQLModel, table=True):
     recommendation: Optional[ACRRecommendationEnum] = Field(default=None, max_length=50, nullable=True)
     remarks: Optional[str] = Field(default=None, sa_column=Column(Text, nullable=True))
 
+    # Set when the pipeline asks the case's acquisition source to file the
+    # report (POST /acr/request). requested_user_id is the login that sees it
+    # in the agent app — the source's own account, else the assigned agent.
+    requested_at: Optional[datetime] = Field(default=None, nullable=True)
+    requested_by: Optional[UUID] = Field(default=None, foreign_key="users.id", nullable=True)
+    requested_source_id: Optional[UUID] = Field(default=None, foreign_key="acquisition_sources.id", nullable=True)
+    requested_user_id: Optional[UUID] = Field(default=None, foreign_key="users.id", index=True, nullable=True)
+
     submitted_at: Optional[datetime] = Field(default=None, nullable=True)
     created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
