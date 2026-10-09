@@ -9,6 +9,7 @@ Responsibilities:
 """
 
 import asyncio
+import logging
 import json
 import os
 import httpx
@@ -65,8 +66,17 @@ async def lifespan(app: FastAPI):
     yield
 
     stop_event.set()
-    await asyncio.gather(*worker_tasks, return_exceptions=True)
-    await app.state.kafka_producer.stop()
+    # Bounded: a consumer whose group coordinator is unreachable never finishes
+    # LeaveGroup in consumer.stop(), which would hang every --reload. On timeout
+    # wait_for cancels the gather, and with it the workers.
+    try:
+        await asyncio.wait_for(asyncio.gather(*worker_tasks, return_exceptions=True), timeout=10)
+    except asyncio.TimeoutError:
+        logging.getLogger("api-gateway").warning("Kafka workers did not stop within 10s — cancelled")
+    try:
+        await asyncio.wait_for(app.state.kafka_producer.stop(), timeout=5)
+    except asyncio.TimeoutError:
+        pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────

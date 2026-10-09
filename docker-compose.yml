@@ -114,6 +114,9 @@ services:
       context: ./services/api-gateway
       dockerfile: Dockerfile
     container_name: insurance-api-gateway
+    # Browsers hold /events/stream (SSE) open indefinitely, so a --reload would
+    # wait on them forever and hang the gateway; cap the graceful shutdown.
+    command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload", "--timeout-graceful-shutdown", "5"]
     ports:
       - "8010:8000"
     volumes:
