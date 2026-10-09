@@ -1,6 +1,8 @@
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { PageHero, Section, SectionHeader } from "@/components/ui/Section";
 import { CtaBand } from "@/components/sections/CtaBand";
+import { FeatureGrid, StatementBand } from "@/components/blocks/Blocks";
+import { TrustSection } from "@/components/sections/TrustSection";
 import { pageMetadata } from "@/lib/seo";
 import { stagger } from "@/lib/utils";
 
@@ -57,16 +59,30 @@ export default function AboutPage() {
         </div>
       </Section>
 
-      <Section tone="muted">
-        <div className="mx-auto max-w-3xl 2xl:max-w-4xl">
-          <SectionHeader eyebrow="Status" title="A working prototype" />
-          <p className="mt-5 leading-relaxed text-body">
-            The underwriting pipeline, copilot, claims journey, fraud graph, group and family workflows and the agent
-            app are built and running end to end. Plans, rates and customer data on this site are demo data while we
-            work with early insurers on real catalogues and integrations.
-          </p>
-        </div>
-      </Section>
+      <StatementBand
+        tone="alt"
+        lines={[
+          { word: "Models advise.", note: "Language models read evidence and score risk. Their output is advice, and it is always labelled as advice." },
+          { word: "Rules decide.", note: "A deterministic, versioned rule chain chooses the verdict, so the same inputs always give the same outcome." },
+          { word: "Audit proves.", note: "Every input, rule and outcome is recorded, so a decision can be replayed months later." },
+        ]}
+      />
+
+      <FeatureGrid
+        eyebrow="Status"
+        title="A working prototype, built end to end"
+        description="Plans, rates and customer data on this site are demo data while we work with early insurers on real catalogues and integrations."
+        items={[
+          { icon: "spark", title: "Underwriting pipeline", body: "Medical, financial and fraud scoring, then a rule-based verdict with reasons." },
+          { icon: "chat", title: "AI copilot", body: "Onboards leads and runs workflows from chat, pausing for confirmation before any change." },
+          { icon: "coin", title: "Claims journey", body: "Triage, fraud checks, adjudication, payout and recovery, with a human wherever it matters." },
+          { icon: "graph", title: "Fraud graph", body: "A relationship graph that finds what a single application cannot show." },
+          { icon: "users", title: "Group and family workflows", body: "Census upload for employers, nominee shares for families, on the same lifecycle." },
+          { icon: "phone", title: "Agent mobile app", body: "Lead board, e-application links, the confidential agent report and commissions." },
+        ]}
+      />
+
+      <TrustSection />
 
       <CtaBand title="Want to see it with your own scenarios?" />
     </>

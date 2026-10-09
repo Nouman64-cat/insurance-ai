@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Logo } from "./Logo";
 import { MobileNav } from "./MobileNav";
 import { buttonClass } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { mainNav, siteConfig } from "@/lib/site-config";
 
 export function Header() {
@@ -14,7 +15,7 @@ export function Header() {
             <Link
               key={item.href}
               href={item.href}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-body hover:bg-chip hover:text-ink"
+              className="nav-link rounded-lg px-3 py-2 text-sm font-medium text-body hover:text-ink"
             >
               {item.label}
             </Link>
@@ -29,6 +30,7 @@ export function Header() {
           </a>
           <Link href="/contact" className={buttonClass("primary")}>
             Request a demo
+            <Icon name="arrow" className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />
           </Link>
         </div>
         <MobileNav />

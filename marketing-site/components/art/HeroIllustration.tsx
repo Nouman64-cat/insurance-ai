@@ -44,22 +44,22 @@ function Family({ person }: Readonly<{ person: string }>) {
 function Individual({ person }: Readonly<{ person: string }>) {
   return (
     <g fill={person}>
-      <circle cx="320" cy="236" r="21" />
-      <path d="M290 335 V285 a30 30 0 0 1 60 0 V335 Z" />
+      <circle cx="320" cy="250" r="21" />
+      <path d="M290 335 V299 a30 30 0 0 1 60 0 V335 Z" />
     </g>
   );
 }
 
-const windows = [0, 1, 2].flatMap((c) => [0, 1, 2, 3].map((r) => ({ c, r })));
+const windows = [0, 1, 2].flatMap((c) => [0, 1, 2].map((r) => ({ c, r })));
 
 function Group({ person }: Readonly<{ person: string }>) {
   return (
     <g>
       <rect x="244" y="272" width="32" height="63" rx="4" fill="#5b9bff" opacity="0.55" />
       <rect x="364" y="258" width="32" height="77" rx="4" fill="#5b9bff" opacity="0.55" />
-      <rect x="280" y="206" width="80" height="129" rx="6" fill={person} />
+      <rect x="280" y="236" width="80" height="99" rx="6" fill={person} />
       {windows.map(({ c, r }) => (
-        <rect key={`${c}-${r}`} x={290 + c * 24} y={220 + r * 24} width="14" height="14" rx="2" fill="#0a2370" opacity="0.85" />
+        <rect key={`${c}-${r}`} x={290 + c * 24} y={248 + r * 24} width="14" height="14" rx="2" fill="#0a2370" opacity="0.85" />
       ))}
       <rect x="308" y="312" width="24" height="23" rx="3" fill="#0a2370" />
     </g>
@@ -180,7 +180,9 @@ export function HeroIllustration({ kind = "family", className = "" }: Readonly<{
           strokeLinejoin="round"
           opacity="0.85"
         />
-        <Motif person={person} />
+        <g key={kind} className="motif-in">
+          <Motif person={person} />
+        </g>
       </svg>
 
       {/* Layer 4: orbiting capabilities as HTML, drifted and pulsed by transform/opacity. Sizes use cqw so they

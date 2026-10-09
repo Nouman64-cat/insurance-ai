@@ -25,7 +25,7 @@ export default function PlatformFeaturePage({ params }: { params: { slug: string
 
   return (
     <>
-      <section className="relative -mt-16 overflow-hidden bg-base">
+      <section className="relative -mt-16 overflow-hidden bg-canvas">
         <div aria-hidden="true" className="pointer-events-none absolute -left-[10%] top-[-40%] h-[40rem] w-[40rem] rounded-full bg-[radial-gradient(closest-side,rgba(37,99,235,0.12),transparent)]" />
         <Container className="relative grid items-center gap-12 pb-14 pt-[calc(4rem+3.5rem)] sm:pb-20 sm:pt-[calc(4rem+5rem)] 2xl:gap-24 2xl:pb-24 2xl:pt-[calc(4rem+6rem)] lg:grid-cols-2">
           <div className="fade-up">

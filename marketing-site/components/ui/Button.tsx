@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Icon } from "@/components/ui/Icon";
 
 const base =
-  "btn inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+  "btn group inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
 
 const variants = {
   // Solid blue: the committing action
@@ -25,23 +26,31 @@ export function ButtonLink({
   href,
   variant = "primary",
   external = false,
+  arrow = false,
   children,
 }: Readonly<{
   href: string;
   variant?: ButtonVariant;
   external?: boolean;
+  arrow?: boolean;
   children: ReactNode;
 }>) {
+  const content = (
+    <>
+      {children}
+      {arrow && <Icon name="arrow" className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5" />}
+    </>
+  );
   if (external) {
     return (
       <a href={href} className={buttonClass(variant)}>
-        {children}
+        {content}
       </a>
     );
   }
   return (
     <Link href={href} className={buttonClass(variant)}>
-      {children}
+      {content}
     </Link>
   );
 }

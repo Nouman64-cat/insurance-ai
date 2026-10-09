@@ -15,8 +15,8 @@ const config: Config = {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
       },
       colors: {
-        // Surfaces: white, stepping into pale blue
-        base: "#ffffff",
+        // Surfaces: white (canvas), stepping into pale blue. Never name a colour "base": text-base is also the font-size class.
+        canvas: "#ffffff",
         alt: "#f3f7ff",
         card: "#ffffff",
         chip: "#e8f0fe",
@@ -40,6 +40,7 @@ const config: Config = {
         card: "0 1px 2px 0 rgb(15 35 90 / 0.05), 0 10px 28px -18px rgb(15 35 90 / 0.18)",
         float: "0 0 0 1px rgb(37 99 235 / 0.08), 0 28px 60px -26px rgb(37 99 235 / 0.4)",
         glow: "0 10px 28px -10px rgb(37 99 235 / 0.6)",
+        surface: "0 1px 2px 0 rgb(15 35 90 / 0.05), 0 40px 90px -40px rgb(37 99 235 / 0.35)",
       },
     },
   },

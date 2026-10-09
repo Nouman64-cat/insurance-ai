@@ -18,7 +18,7 @@
   }
 
   body {
-    @apply bg-base font-sans text-body;
+    @apply bg-canvas font-sans text-body;
   }
 
   h1, h2, h3 {
@@ -30,8 +30,8 @@
   }
 
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-track { @apply bg-base; }
-  ::-webkit-scrollbar-thumb { @apply rounded-full border-2 border-solid border-base bg-line-strong; }
+  ::-webkit-scrollbar-track { @apply bg-canvas; }
+  ::-webkit-scrollbar-thumb { @apply rounded-full border-2 border-solid border-canvas bg-line-strong; }
 }
 
 /* ── Responsive scale ─────────────────────────────────────────────────────
@@ -93,6 +93,33 @@ html[data-splash="pending"] { --intro-delay: 2s; }
   from { opacity: 0; transform: translateY(0.6em); }
   to { opacity: 1; transform: none; }
 }
+@keyframes sc-in {
+  from { opacity: 0; transform: translateY(0.6rem); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes sc-pop {
+  from { opacity: 0; transform: scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes line-rise {
+  from { transform: translateY(105%); }
+  to { transform: none; }
+}
+@keyframes cue-dot {
+  0% { transform: translateY(0); opacity: 0; }
+  25% { opacity: 1; }
+  75% { opacity: 1; }
+  100% { transform: translateY(1rem); opacity: 0; }
+}
+@keyframes cue-line {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(200%); }
+}
+@keyframes flow-dot {
+  0% { left: 0; opacity: 0; }
+  10%, 90% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
 @keyframes drop-in {
   from { opacity: 0; transform: translateY(-1.5rem); }
   to { opacity: 1; transform: none; }
@@ -114,6 +141,50 @@ html[data-splash="pending"] { --intro-delay: 2s; }
 
 .fade-up { animation: fade-up 0.8s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--i, 0) * 90ms); }
 .fade-up-intro { animation: fade-up 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--i, 0) * 110ms); }
+/* Hero service showcase (components/sections/HeroLive.tsx). --d is each element's stagger in ms. */
+.sc-in { animation: sc-in 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--d, 0) * 1ms); }
+.sc-pop { animation: sc-pop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; animation-delay: calc(var(--intro-delay) + var(--d, 0) * 1ms); }
+.sc-bar { transform-origin: left; animation: bar-grow 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--d, 0) * 1ms); }
+.motif-in { animation: fade-in 0.6s ease both; }
+/* Hero headline: each line rises out of a clipping mask */
+.hero-line { display: block; overflow: hidden; padding-bottom: 0.14em; margin-bottom: -0.14em; }
+.hero-line > span {
+  display: block;
+  animation: line-rise 1s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--intro-delay) + 0.1s + var(--i, 0) * 140ms);
+}
+/* Hero decision feed: three cases take turns, 4 s each */
+@keyframes feed-cycle {
+  0% { opacity: 0; transform: translateY(0.6rem); }
+  4%, 30% { opacity: 1; transform: none; }
+  34%, 100% { opacity: 0; transform: translateY(-0.6rem); }
+}
+@keyframes feed-bar {
+  0% { transform: scaleX(0); }
+  14%, 100% { transform: scaleX(1); }
+}
+.feed-item { opacity: 0; animation: feed-cycle 12s ease-in-out infinite both; animation-delay: calc(var(--intro-delay) + var(--k, 0) * 4s); }
+.feed-bar { transform-origin: left; animation: feed-bar 12s ease-out infinite both; animation-delay: calc(var(--intro-delay) + var(--k, 0) * 4s); }
+.cue-dot { animation: cue-dot 2.2s ease-in-out infinite; }
+.cue-line { animation: cue-line 2.2s ease-in-out infinite; }
+.flow-dot { animation: flow-dot 4s ease-in-out infinite; }
+/* Nav links: an underline draws in on hover */
+.nav-link { position: relative; }
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: 0.25rem;
+  height: 1.5px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.25s ease;
+}
+.nav-link:hover::after { transform: scaleX(1); }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
 .intro-left { animation: slide-from-left 1s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--i, 0) * 110ms); }
 .intro-right { animation: slide-from-right 1.1s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: calc(var(--intro-delay) + var(--i, 0) * 110ms); }
 /* Header controls drop in from above, only on the first visit (while the splash is pending) */
@@ -125,7 +196,6 @@ html[data-splash="pending"] .intro-drop {
 .animate-float { animation: float 7s ease-in-out infinite; }
 .animate-drift { animation: node-drift 8s ease-in-out infinite; }
 .node-ping { animation: node-ping 3.2s ease-out infinite; }
-.flow-caption { animation: fade-up 0.5s ease both; }
 .animate-spin-slow { animation: spin-slow 60s linear infinite; }
 .animate-glow { animation: glow 6s ease-in-out infinite; }
 .bar-grow {
