@@ -21,6 +21,7 @@ import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import { leadAnnouncementsPaused } from "@/lib/leadAnnouncements";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
+import LeadProgress from "@/components/LeadProgress";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 type ProfileStatus = "LEAD" | "PROSPECT" | "UNDERWRITING_READY" | "NOT_INTERESTED" | "POLICYHOLDER";
@@ -513,8 +514,8 @@ export default function LeadsHubPage() {
 
   // The Status dropdown. The first group filters on the lead's own stage; the second on where
   // its proposal has got to, which is what an agent follows after submitting.
-  const matchesStatus = (l: UnifiedLead) => {
-    switch (statusFilter) {
+  const matchesStatus = (l: UnifiedLead, filter: string = statusFilter) => {
+    switch (filter) {
       case "ALL": return true;
       case "ACTIVE": return l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER" && l.proposalStatus !== "Declined";
       case "IN_PROGRESS": return l.status === "PROSPECT" || l.status === "UNDERWRITING_READY";
@@ -797,24 +798,7 @@ export default function LeadsHubPage() {
             />
           </div>
 
-          <div className="shrink-0">
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className={`appearance-none px-4 py-2 pr-10 h-[38px] text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 shadow-sm bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22none%22%20stroke%3D%22%2364748b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%224%206%208%2010%2012%206%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[right_16px_center] bg-no-repeat ${statusFilter === 'ALL' ? 'bg-slate-100' : 'bg-white'}`}
-            >
-              <option value="ALL">All</option>
-              <option value="ACTIVE">Active</option>
-              <option value="LEAD">Leads</option>
-              <option value="IN_PROGRESS">In Progress</option>
-              <option value="DRAFT">Draft</option>
-              <option value="SUBMITTED">Proposal Submitted</option>
-              <option value="UNDER_REVIEW">Under Review</option>
-              <option value="INFO_REQUESTED">Info Requested</option>
-              <option value="REJECTED">Rejected</option>
-              <option value="DEAD">Dead</option>
-            </select>
-          </div>
+
 
           {/* View Mode Toggle */}
           <div className="ml-auto shrink-0 inline-flex bg-slate-100/80 p-1 rounded-xl shadow-inner border border-slate-200/60">
@@ -854,6 +838,50 @@ export default function LeadsHubPage() {
             </button>
           </div>
         </div>
+
+        {/* Where leads are in their journey: one tap to see only those, with how many */}
+        {(() => {
+          const q = search.trim().toLowerCase();
+          const base = leads.filter((l) => {
+            if (filterType !== "ALL" && l.type !== filterType) return false;
+            if (!q) return true;
+            return `${l.name} ${l.contact_info} ${l.primaryIdentifier ?? ""}`.toLowerCase().includes(q);
+          });
+          const stages: { id: string; label: string; dot: string }[] = [
+            { id: "ALL", label: "All", dot: "bg-slate-400" },
+            { id: "LEAD", label: "New lead", dot: "bg-amber-400" },
+            { id: "IN_PROGRESS", label: "Proposal", dot: "bg-blue-500" },
+            { id: "SUBMITTED", label: "Submitted", dot: "bg-blue-500" },
+            { id: "UNDER_REVIEW", label: "Under review", dot: "bg-blue-500" },
+            { id: "INFO_REQUESTED", label: "Info requested", dot: "bg-amber-400" },
+            { id: "REJECTED", label: "Rejected", dot: "bg-rose-500" },
+            { id: "DEAD", label: "Not interested", dot: "bg-slate-300" },
+          ];
+          return (
+            <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Lead stage">
+              {stages.map((st) => {
+                const count = base.filter((l) => matchesStatus(l, st.id)).length;
+                const on = statusFilter === st.id;
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={on}
+                    onClick={() => setStatusFilter(st.id)}
+                    className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                      on ? "border-blue-600 bg-blue-600 text-white shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                    }`}
+                  >
+                    {st.id !== "ALL" && <span className={`h-2 w-2 rounded-full ${on ? "bg-white" : st.dot}`} />}
+                    {st.label}
+                    <span className={`tabular-nums ${on ? "text-blue-100" : "text-slate-400"}`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })()}
 
         {activeFilterChips.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -1043,7 +1071,7 @@ export default function LeadsHubPage() {
                             <th className="px-6 py-4">Contact</th>
                             <th className="px-6 py-4">CNIC</th>
                             <th className="px-6 py-4">Date Added</th>
-                            <th className="px-6 py-4">Status</th>
+                            <th className="px-6 py-4">Progress</th>
                             <th className="px-4 py-4 w-10"></th>
                             <th className="px-6 py-4 text-right">Actions</th>
                           </tr>
@@ -1057,13 +1085,6 @@ export default function LeadsHubPage() {
                               INDIVIDUAL: "bg-blue-50 text-blue-700 border-blue-200",
                               FAMILY: "bg-blue-50 text-blue-700 border-blue-200",
                               CORPORATE: "bg-blue-50 text-blue-700 border-blue-200"
-                            };
-                            const statusStyles = {
-                              LEAD: "bg-amber-50 text-amber-700 border-amber-200",
-                              PROSPECT: "bg-blue-50 text-blue-700 border-blue-200",
-                              UNDERWRITING_READY: "bg-blue-50 text-blue-700 border-blue-200",
-                              NOT_INTERESTED: "bg-slate-100 text-slate-600 border-slate-200",
-                              POLICYHOLDER: "bg-blue-50 text-blue-700 border-blue-200"
                             };
                             return (
                               <tr
@@ -1087,9 +1108,7 @@ export default function LeadsHubPage() {
                                 <td className="px-6 py-4 text-slate-500 font-mono text-xs">{lead.primaryIdentifier || "-"}</td>
                                 <td className="px-6 py-4 text-slate-500 text-xs">{new Date(lead.created_at).toLocaleDateString()}</td>
                                 <td className="px-6 py-4">
-                                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${statusStyles[lead.status]}`}>
-                                    {lead.status === "LEAD" ? "Lead" : (lead.status === "NOT_INTERESTED" ? "Dead Lead" : "In Progress")}
-                                  </span>
+                                  <LeadProgress lead={lead} />
                                 </td>
                                 <td className="px-4 py-4 text-center">
                                   <button

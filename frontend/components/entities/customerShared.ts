@@ -77,7 +77,13 @@ export interface AcquisitionSource {
   code: string;
   partner_name?: string | null;
   city?: string | null;
+  /** The login account issued to this source, if any (an Agent source's own user). */
+  user_id?: string | null;
+  is_active?: boolean;
 }
+
+/** The kinds of acquisition source, in the order the forms list them (numbers 1 to 6 on the backend). */
+export const SOURCE_TYPE_ORDER = ["AGENT", "BROKER", "BANCASSURANCE", "CORPORATE_AGENT", "DIRECT", "DIGITAL"] as const;
 
 export interface Customer {
   id: string;

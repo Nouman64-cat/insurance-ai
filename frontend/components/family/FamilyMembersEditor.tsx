@@ -68,6 +68,11 @@ export function buildMembersPayload(rows: FamilyRow[], isBundle: boolean): Recor
 
 const empty = (v: string) => v.trim() === "";
 
+/** An untouched extra row (nothing typed into it): safe to ignore rather than report as incomplete. */
+export const isBlankRow = (r: FamilyRow) =>
+  r.kind !== "Self" &&
+  [r.name, r.cnic, r.dob, r.gender, r.occupation, r.declared_income, r.share_pct].every((v) => empty(String(v ?? "")));
+
 /**
  * What is wrong with the rows, before anything is saved. `existingShare` is what earlier batches already
  * gave their nominees; `hasHead` is false when the head was enrolled earlier (an add-on batch).

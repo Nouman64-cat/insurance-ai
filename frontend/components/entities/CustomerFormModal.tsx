@@ -7,6 +7,7 @@ import api, { OCR_BASE_URL } from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
+import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { registerPendingQuote } from "@/lib/pendingQuotes";
 import {
@@ -180,6 +181,8 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   const [assignedAgentId, setAssignedAgentId] = useState("");
   const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
   const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
+  const [acquisitionSourceId, setAcquisitionSourceId] = useState("");
+  const sources = useAcquisitionSources(open);
 
   // ── Auto-fill from an uploaded document (PDF / PNG / JPG) ─────────────────
   // `flagged` holds the fields the document did not contain. A flagged field is
@@ -522,6 +525,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       setProvince("");
       setBranchId("");
       setAssignedAgentId("");
+      setAcquisitionSourceId(defaultAcquisitionSourceId || "");
       if (tenantId) {
         setPlansLoading(true);
         listInsurancePlans(tenantId)
@@ -565,6 +569,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       setProvince(customer.province ?? customer.details?.address?.province ?? "");
       setBranchId(customer.branch_id || "");
       setAssignedAgentId(customer.assigned_agent_id || "");
+      setAcquisitionSourceId(customer.acquisition_source_id || "");
 
       setEditSelectedPlanId("");
       setEditPolicyCoverage("");
@@ -716,7 +721,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         province: province || null,
         branch_id: branchId || null,
         assigned_agent_id: assignedAgentId || null,
-        ...(defaultAcquisitionSourceId ? { acquisition_source_id: defaultAcquisitionSourceId } : {}),
+        acquisition_source_id: acquisitionSourceId || null,
         details: payloadDetails,
       });
 
@@ -822,6 +827,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
         province: province || null,
         branch_id: branchId || null,
         assigned_agent_id: assignedAgentId || null,
+        acquisition_source_id: acquisitionSourceId || null,
         details: payloadDetails,
       });
 
@@ -1148,32 +1154,18 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
               <div>
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-3">Assignment</h4>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Branch</label>
-                    <select
-                      value={branchId}
-                      onChange={(e) => setBranchId(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
-                    >
-                      <option value="">Unassigned</option>
-                      {branchOptions.map((b) => (
-                        <option key={b.id} value={b.id}>{b.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-semibold text-slate-600">Assigned Agent</label>
-                    <select
-                      value={assignedAgentId}
-                      onChange={(e) => setAssignedAgentId(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
-                    >
-                      <option value="">Unassigned</option>
-                      {agentOptions.map((a) => (
-                        <option key={a.id} value={a.id}>{a.full_name}</option>
-                      ))}
-                    </select>
-                  </div>
+                  <SourcePicker
+                    sources={sources}
+                    sourceId={acquisitionSourceId}
+                    onChange={(src) => {
+                      setAcquisitionSourceId(src?.id ?? "");
+                      // An Agent source is a login of its own: picking one hands the lead to that agent's mobile app.
+                      setAssignedAgentId(src?.user_id && agentOptions.some((a) => a.id === src.user_id) ? src.user_id : "");
+                    }}
+                    fieldClass="space-y-1"
+                    labelClass="text-xs font-semibold text-slate-600"
+                    selectClass="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-900"
+                  />
                 </div>
               </div>
             </div>

@@ -38,6 +38,7 @@ from schemas import (
     CensusValidationResponse,
     CustomerRead,
     MasterPolicyCreate,
+    MasterPolicyUpdate,
     MasterPolicyRead,
     OrganizationCreate,
     OrganizationUpdate,
@@ -596,6 +597,100 @@ async def list_master_policies(tenant_id: UUID, org_id: UUID, session: AsyncSess
         select(MasterPolicy).where(MasterPolicy.tenant_id == tenant_id, MasterPolicy.organization_id == org_id)
     )
     return [await _master_policy_read(mp, session) for mp in result.all()]
+
+
+# A master policy can be edited or removed while it is still a proposal. Once the employer has accepted
+# the quote and cover is being issued or is live, it is a contract and stays.
+_REMOVABLE_MASTER_STATUSES = {"Pending", "Proposed", "Quoted", "Declined"}
+
+
+async def _get_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, session: AsyncSession) -> MasterPolicy:
+    mp = await session.get(MasterPolicy, mp_id)
+    if mp is None or mp.tenant_id != tenant_id or mp.organization_id != org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Master policy not found.")
+    return mp
+
+
+@router.patch(
+    "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}",
+    response_model=MasterPolicyRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_master_policy(
+    tenant_id: UUID, org_id: UUID, mp_id: UUID, body: MasterPolicyUpdate,
+    session: AsyncSession = Depends(get_session),
+) -> MasterPolicyRead:
+    """Change the terms of a master policy before any employee is enrolled. Afterwards the free cover limit
+    and every certificate depend on them, so remove the policy and create it again (or use an endorsement)."""
+    await _get_organization(tenant_id, org_id, session)
+    mp = await _get_master_policy(tenant_id, org_id, mp_id, session)
+    enrolled = (await session.exec(select(GroupMember.id).where(GroupMember.master_policy_id == mp_id))).first()
+    has_certificates = (await session.exec(select(Policy.id).where(Policy.master_policy_id == mp_id))).first()
+    if enrolled or has_certificates:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Employees are already enrolled on this master policy, so its terms can't be edited. Remove the policy and create it again.",
+        )
+    data = body.model_dump(exclude_unset=True)
+    if "sum_assured_multiple" in data:
+        errors = validate_sum_assured_multiple(data["sum_assured_multiple"])
+        if errors:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+        mp.sum_assured_multiple = data["sum_assured_multiple"]
+    if "term_years" in data:
+        if not (1 <= (data["term_years"] or 0) <= 40):
+            raise HTTPException(status_code=422, detail="term_years must be between 1 and 40.")
+        mp.term_years = data["term_years"]
+    if "effective_date" in data and data["effective_date"] is not None:
+        mp.effective_date = data["effective_date"]
+    if data.get("plan_code"):
+        plan = await _resolve_group_plan(tenant_id, data["plan_code"], session)
+        mp.plan_id = plan.id if plan is not None else None
+    session.add(mp)
+    await session.commit()
+    await session.refresh(mp)
+    return await _master_policy_read(mp, session)
+
+
+@router.delete(
+    "/{tenant_id}/organizations/{org_id}/master-policies/{mp_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_master_policy(tenant_id: UUID, org_id: UUID, mp_id: UUID, session: AsyncSession = Depends(get_session)):
+    """Remove a master policy with its benefit classes, enrolled employees' certificates and proposal records.
+    Employees the census created are removed with it unless they have other cover; refused once accepted or issued."""
+    await _get_organization(tenant_id, org_id, session)
+    mp = await _get_master_policy(tenant_id, org_id, mp_id, session)
+    if mp.status not in _REMOVABLE_MASTER_STATUSES:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"This master policy is {mp.status}, so it can't be removed. Only a proposal that hasn't been accepted can be.",
+        )
+    try:
+        certificates = list((await session.exec(select(Policy).where(Policy.master_policy_id == mp_id))).all())
+        customer_ids = {p.customer_id for p in certificates}
+        for policy in certificates:
+            await _delete_policy_cascade(session, policy)
+        for customer_id in customer_ids:
+            customer = await session.get(Customer, customer_id)
+            # Still covered under another of this organization's master policies: leave them in place.
+            if customer is None or await _org_certificates(tenant_id, org_id, session, customer_id=customer_id):
+                continue
+            await _release_employee(session, customer, org_id)
+        await session.flush()
+        await session.delete(mp)     # benefit classes, members, endorsements... go with it (ON DELETE CASCADE)
+        await session.commit()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        await session.rollback()
+        logger.exception("delete_master_policy failed | mp_id=%s", mp_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This master policy already has records attached (for example pre-underwriting), so it can't be removed.",
+        ) from exc
+    return None
 
 
 # ── Benefit classes ─────────────────────────────────────────────────────────────

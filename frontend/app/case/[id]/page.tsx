@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
@@ -10,6 +10,7 @@ import { DecisionBanner, StatusBadge } from "@/components/StatusBadge";
 import { RiskScoreBar, CompositeScoreRing } from "@/components/RiskScoreBar";
 import { fmtCoverage, fmtDob, fmtIncome, type AIDecision } from "@/lib/mock-data";
 import api, { summarizerApi } from "@/app/services/api";
+import { useCaseEvents, type CaseEvent } from "@/lib/agent/useCaseEvents";
 import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
 import { getACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
 import { ACRModal } from "@/components/entities/ACRModal";
@@ -652,6 +653,22 @@ function UploadModal({ tenantId, caseId, docTypes, missingTypes = [], onClose, o
 // Page
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Case events that change what this page shows, and the toast each one raises.
+const LIVE_CASE_EVENT_MESSAGES: Record<string, string> = {
+  ACRSubmitted: "✅ The Agent's Confidential Report was just submitted.",
+  EApplicationSubmitted: "✅ The applicant just submitted the e-application.",
+  MedicalExamCompleted: "✅ The medical examination result just came in.",
+};
+const LIVE_CASE_EVENTS = new Set([
+  ...Object.keys(LIVE_CASE_EVENT_MESSAGES),
+  "ACRRequested",
+  "VerificationCompleted",
+  "RequirementsDetermined",
+  "ComplianceFailed",
+  "PremiumCollected",
+  "PaymentConfirmed",
+]);
+
 export default function CasePage({ params }: { params: { id: string } }) {
   const caseId = params.id;
   const [detail, setDetail] = useState<CaseDetailResponse | null>(null);
@@ -1127,6 +1144,34 @@ export default function CasePage({ params }: { params: { id: string } }) {
   const autoRun = searchParams.get("autoRun");
   const router = useRouter();
   const { notify } = useNotify();
+
+  // Live updates: when something happens to this case away from this screen (an agent files the
+  // ACR from the mobile app, the applicant submits the e-application, the clinic returns the
+  // medical...) the gateway pushes a case event over SSE and the page re-reads its data, so
+  // nobody has to refresh. A family's gates are recorded on one case, so events for any member
+  // case of this family count too.
+  const relatedCaseIds = useMemo(() => {
+    const ids = new Set<string>([String(caseId)]);
+    detail?.family_members?.forEach((m) => ids.add(m.case_id));
+    if (detail?.family_head_case) ids.add(detail.family_head_case.case_id);
+    return ids;
+  }, [caseId, detail?.family_members, detail?.family_head_case]);
+
+  useCaseEvents((evt: CaseEvent) => {
+    if (!evt.case_id || !relatedCaseIds.has(evt.case_id)) return;
+    if (!LIVE_CASE_EVENTS.has(evt.event_type)) return;
+    fetchDetail();
+    fetchEApplication();
+    fetchAcr();
+    fetchIpp();
+    fetchHistory();
+    fetchMedical();
+    fetchCompliance();
+    fetchRequirements();
+    fetchVerificationFindings();
+    const message = LIVE_CASE_EVENT_MESSAGES[evt.event_type];
+    if (message) notify(message, true);
+  });
 
   // One-shot popup the moment every pre-underwriting prerequisite clears —
   // fires once per transition into "ready", not on every poll/re-render.

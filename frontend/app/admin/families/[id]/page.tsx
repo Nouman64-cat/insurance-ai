@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import api from "@/app/services/api";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
-import FamilyMembersEditor, { FamilyRow, blankRow, buildMembersPayload, checkRows, startRows } from "@/components/family/FamilyMembersEditor";
+import FamilyMembersEditor, { FamilyRow, blankRow, buildMembersPayload, checkRows, isBlankRow, startRows } from "@/components/family/FamilyMembersEditor";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 
 interface FamilyGroup {
@@ -77,7 +77,7 @@ interface FamilyConfirmResult {
   nominees?: NomineeShare[];
 }
 
-interface NomineeShare { name: string; relationship: string; share_pct: number; amount: number | null; is_minor: boolean; guardian_name: string | null }
+interface NomineeShare { id: string; cnic?: string | null; date_of_birth?: string | null; name: string; relationship: string; share_pct: number; amount: number | null; is_minor: boolean; guardian_name: string | null }
 
 const EMPTY_ROW: MemberFormRow = {
   cnic: "", name: "", dob: "", gender: "Male", occupation: "", declared_income: "", relationship: "Spouse",
@@ -327,6 +327,107 @@ export default function FamilyDetailPage() {
     }
   };
 
+  // Edit / remove a family policy
+  const [editingPolicy, setEditingPolicy] = useState<FamilyPolicy | null>(null);
+  const [policyForm, setPolicyForm] = useState({ amount: "", term: "", date: "" });
+  const [policyBusy, setPolicyBusy] = useState(false);
+
+  const startEditPolicy = (fp: FamilyPolicy) => {
+    setError(""); setSuccess("");
+    setEditingPolicy(fp);
+    setPolicyForm({
+      amount: fp.plan_type === "Floater" ? String(fp.total_sum_insured ?? "") : String(fp.discount_percentage ?? 0),
+      term: String(fp.term_years),
+      date: fp.effective_date,
+    });
+  };
+
+  const handleSavePolicy = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingPolicy) return;
+    setPolicyBusy(true);
+    setError("");
+    try {
+      const isFloater = editingPolicy.plan_type === "Floater";
+      const resp = await api.patch<FamilyPolicy>(`/tenants/${tenantId}/families/${familyId}/family-policies/${editingPolicy.id}`, {
+        ...(isFloater ? { total_sum_insured: parseFloat(policyForm.amount) || 0 } : { discount_percentage: parseFloat(policyForm.amount) || 0 }),
+        term_years: parseInt(policyForm.term) || 0,
+        effective_date: policyForm.date,
+      });
+      setFamilyPolicies((prev) => prev.map((p) => (p.id === resp.data.id ? resp.data : p)));
+      setEditingPolicy(null);
+      setSuccess("Policy updated.");
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join(", ") : detail ?? err.message ?? "Failed to update the policy.");
+    } finally {
+      setPolicyBusy(false);
+    }
+  };
+
+  const handleDeletePolicy = async (fp: FamilyPolicy) => {
+    const label = fp.plan_type === "Floater" ? "health floater" : "life bundle";
+    if (!window.confirm(`Remove this ${label} policy? Its proposal, cases and nominees are deleted too. The family members stay. This cannot be undone.`)) return;
+    setError(""); setSuccess("");
+    try {
+      await api.delete(`/tenants/${tenantId}/families/${familyId}/family-policies/${fp.id}`);
+      setSuccess("Policy removed.");
+      if (fp.id === selectedPolicyId) setSelectedPolicyId("");
+      await fetchAll();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : err.message ?? "Failed to remove the policy.");
+    }
+  };
+
+  // Edit / remove a nominee
+  const [editingNominee, setEditingNominee] = useState<NomineeShare | null>(null);
+  const [nomineeForm, setNomineeForm] = useState({ name: "", relationship: "Child", cnic: "", dob: "", share: "" });
+  const [nomineeBusy, setNomineeBusy] = useState(false);
+
+  const startEditNominee = (n: NomineeShare) => {
+    setError(""); setSuccess("");
+    setEditingNominee(n);
+    setNomineeForm({ name: n.name, relationship: n.relationship, cnic: n.cnic ?? "", dob: n.date_of_birth ?? "", share: String(n.share_pct) });
+  };
+
+  const handleSaveNominee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingNominee || !selectedPolicyId) return;
+    setNomineeBusy(true);
+    setError("");
+    try {
+      await api.patch(`/tenants/${tenantId}/families/${familyId}/family-policies/${selectedPolicyId}/nominees/${editingNominee.id}`, {
+        name: nomineeForm.name,
+        relationship: nomineeForm.relationship,
+        cnic: nomineeForm.cnic,
+        date_of_birth: nomineeForm.dob || null,
+        share_pct: parseFloat(nomineeForm.share) || 0,
+      });
+      setEditingNominee(null);
+      setSuccess("Nominee updated.");
+      await loadNominees(selectedPolicyId);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join(", ") : detail ?? err.message ?? "Failed to update the nominee.");
+    } finally {
+      setNomineeBusy(false);
+    }
+  };
+
+  const handleDeleteNominee = async (n: NomineeShare) => {
+    if (!window.confirm(`Remove ${n.name} as a nominee? Their ${n.share_pct}% share becomes unallocated until you give it to someone else.`)) return;
+    setError(""); setSuccess("");
+    try {
+      await api.delete(`/tenants/${tenantId}/families/${familyId}/family-policies/${selectedPolicyId}/nominees/${n.id}`);
+      setSuccess(`${n.name} removed.`);
+      await loadNominees(selectedPolicyId);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : err.message ?? "Failed to remove the nominee.");
+    }
+  };
+
   const handleCreateFloater = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -386,6 +487,9 @@ export default function FamilyDetailPage() {
 
   const policyPathSegment = isLifeBundle ? "life-bundle-policies" : "floater-policies";
 
+  // Rows nobody has typed into (the spare nominee row on an add-on batch) are not part of the batch.
+  const rowsToSend = hasHead ? memberRows.filter((r) => !isBlankRow(r)) : memberRows;
+
   const handleValidateMembers = async () => {
     if (!selectedPolicy) return;
     setError("");
@@ -395,7 +499,7 @@ export default function FamilyDetailPage() {
     try {
       const resp = await api.post<FamilyValidationResult>(
         `/tenants/${tenantId}/families/${familyId}/${policyPathSegment}/${selectedPolicy.id}/members/validate`,
-        { members: buildMembersPayload(memberRows, isLifeBundle) }
+        { members: buildMembersPayload(rowsToSend, isLifeBundle) }
       );
       setValidationResult(resp.data);
     } catch (err: any) {
@@ -414,9 +518,18 @@ export default function FamilyDetailPage() {
     setSuccess("");
     setMemberLoading(true);
     try {
-      const { problems } = checkRows(memberRows, isLifeBundle, nomineeInfo.total_share, hasHead);
+      // Nothing new typed: the head and the nominees recorded earlier are already enrolled.
+      if (hasHead && rowsToSend.length === 0) {
+        if (Math.abs(nomineeInfo.total_share - 100) < 0.01) {
+          setSuccess("Everyone is already enrolled on this policy and the nominee shares total 100%. Add a row above to enrol someone else.");
+        } else {
+          setError(`Nominee shares are at ${nomineeInfo.total_share}%. Add a nominee to bring them to 100%.`);
+        }
+        return;
+      }
+      const { problems } = checkRows(rowsToSend, isLifeBundle, nomineeInfo.total_share, hasHead);
       if (problems.length) { setError(problems.slice(0, 4).join("; ") + (problems.length > 4 ? `; …and ${problems.length - 4} more` : "")); return; }
-      const sent = buildMembersPayload(memberRows, isLifeBundle);
+      const sent = buildMembersPayload(rowsToSend, isLifeBundle);
       const insuredSent = sent.filter((m: any) => m.is_insured);
       const resp = await api.post<FamilyConfirmResult>(
         `/tenants/${tenantId}/families/${familyId}/${policyPathSegment}/${selectedPolicy.id}/members/confirm`,
@@ -624,6 +737,7 @@ export default function FamilyDetailPage() {
                       <th className="px-5 py-3 text-left">Term</th>
                       <th className="px-5 py-3 text-left">Effective Date</th>
                       <th className="px-5 py-3 text-left">Status</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -644,6 +758,17 @@ export default function FamilyDetailPage() {
                             {fp.status}
                           </span>
                         </td>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          <button onClick={() => startEditPolicy(fp)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                          <button
+                            onClick={() => handleDeletePolicy(fp)}
+                            title="Remove this policy"
+                            aria-label="Remove this policy"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 align-middle"
+                          >
+                            ✕
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -651,6 +776,41 @@ export default function FamilyDetailPage() {
               </div>
             )}
           </div>
+
+          {editingPolicy && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setEditingPolicy(null)}>
+              <form onSubmit={handleSavePolicy} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="text-sm font-bold text-slate-800">
+                  Edit {editingPolicy.plan_type === "Floater" ? "Health Floater" : "Life Bundle"}
+                </h3>
+                <label className="block text-xs font-semibold text-slate-600">
+                  {editingPolicy.plan_type === "Floater" ? "Total sum insured (PKR)" : "Bundle discount (%)"}
+                  <input type="number" min="0" step="any" required value={policyForm.amount}
+                    onChange={(e) => setPolicyForm((f) => ({ ...f, amount: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Term (years)
+                  <input type="number" min="1" max="40" required value={policyForm.term}
+                    onChange={(e) => setPolicyForm((f) => ({ ...f, term: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Effective date
+                  <input type="date" required value={policyForm.date}
+                    onChange={(e) => setPolicyForm((f) => ({ ...f, date: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <p className="text-[11px] text-slate-400">Terms can only be edited before anyone is enrolled on the policy. Otherwise remove it and create it again.</p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setEditingPolicy(null)} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                  <button type="submit" disabled={policyBusy} className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                    {policyBusy ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
 
           {/* Member entry */}
           {familyPolicies.length > 0 && (
@@ -763,20 +923,77 @@ export default function FamilyDetailPage() {
                   <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
                     <th className="px-5 py-3 text-left">Name</th><th className="px-5 py-3 text-left">Relationship</th>
                     <th className="px-5 py-3 text-right">Share</th><th className="px-5 py-3 text-right">Amount</th><th className="px-5 py-3 text-left">Note</th>
+                    <th className="px-5 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {nomineeInfo.nominees.map((n, i) => (
-                    <tr key={`${n.name}${i}`}>
+                    <tr key={n.id ?? `${n.name}${i}`}>
                       <td className="px-5 py-3 font-medium text-slate-800">{n.name}</td>
                       <td className="px-5 py-3 text-slate-600">{n.relationship}</td>
                       <td className="px-5 py-3 text-right tabular-nums">{n.share_pct}%</td>
                       <td className="px-5 py-3 text-right tabular-nums text-slate-700">{n.amount != null ? formatPKR(n.amount) : "—"}</td>
                       <td className="px-5 py-3 text-xs text-slate-500">{n.is_minor ? `Minor${n.guardian_name ? ` — paid to ${n.guardian_name}` : ""}` : ""}</td>
+                      <td className="px-5 py-3 text-right whitespace-nowrap">
+                        <button onClick={() => startEditNominee(n)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                        <button
+                          onClick={() => handleDeleteNominee(n)}
+                          title="Remove this nominee"
+                          aria-label="Remove this nominee"
+                          className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 align-middle"
+                        >
+                          ✕
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {editingNominee && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setEditingNominee(null)}>
+              <form onSubmit={handleSaveNominee} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
+                <h3 className="text-sm font-bold text-slate-800">Edit nominee</h3>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Full name
+                  <input required value={nomineeForm.name} onChange={(e) => setNomineeForm((f) => ({ ...f, name: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Relationship
+                    <select value={nomineeForm.relationship} onChange={(e) => setNomineeForm((f) => ({ ...f, relationship: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                      {["Spouse", "Child", "Parent", "Sibling", "Other"].map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </label>
+                  <label className="block text-xs font-semibold text-slate-600">
+                    Share (%)
+                    <input type="number" min="0.01" max="100" step="any" required value={nomineeForm.share}
+                      onChange={(e) => setNomineeForm((f) => ({ ...f, share: e.target.value }))}
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                  </label>
+                </div>
+                <label className="block text-xs font-semibold text-slate-600">
+                  CNIC (optional)
+                  <input value={nomineeForm.cnic} placeholder="XXXXX-XXXXXXX-X" onChange={(e) => setNomineeForm((f) => ({ ...f, cnic: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <label className="block text-xs font-semibold text-slate-600">
+                  Date of birth (optional)
+                  <input type="date" value={nomineeForm.dob} onChange={(e) => setNomineeForm((f) => ({ ...f, dob: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </label>
+                <p className="text-[11px] text-slate-400">A nominee under 18 is marked a minor and paid through the head. Shares can't total more than 100%.</p>
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={() => setEditingNominee(null)} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+                  <button type="submit" disabled={nomineeBusy} className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                    {nomineeBusy ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </form>
             </div>
           )}
 

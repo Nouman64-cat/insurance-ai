@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
+import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import OrganizationFullEntryModal from "./OrganizationFullEntryModal";
 
@@ -17,6 +18,7 @@ export interface OrganizationFormValue {
   contact_phone: string | null;
   branch_id?: string | null;
   assigned_agent_id?: string | null;
+  acquisition_source_id?: string | null;
   city?: string | null;
   province?: string | null;
 }
@@ -52,6 +54,8 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
   const [assignedAgentId, setAssignedAgentId] = useState("");
   const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
   const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
+  const [acquisitionSourceId, setAcquisitionSourceId] = useState("");
+  const sources = useAcquisitionSources(open);
 
   const editingId = organization?.id ?? null;
 
@@ -82,6 +86,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
       setProvince(organization.province || "");
       setBranchId(organization.branch_id || "");
       setAssignedAgentId(organization.assigned_agent_id || "");
+      setAcquisitionSourceId(organization.acquisition_source_id || "");
     } else {
       setName("");
       setRegistrationNumber("");
@@ -93,6 +98,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
       setProvince("");
       setBranchId("");
       setAssignedAgentId("");
+      setAcquisitionSourceId("");
     }
   }, [open, mode, organization]);
 
@@ -119,6 +125,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
         // Without this the lead is created unassigned and never reaches any
         // agent's mobile app, which filters by assigned_agent_id.
         assigned_agent_id: assignedAgentId || null,
+        acquisition_source_id: acquisitionSourceId || null,
       });
       onSaved(`Organization "${name.trim()}" added — set up its master policy when ready.`, { id: resp.data?.id, isNew: true });
       onClose();
@@ -146,6 +153,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
         province: province || null,
         branch_id: branchId || null,
         assigned_agent_id: assignedAgentId || null,
+        acquisition_source_id: acquisitionSourceId || null,
       };
       if (editingId) {
         await api.patch(`/tenants/${tenantId}/organizations/${editingId}`, payload);
@@ -200,23 +208,18 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">Assign to Agent</label>
-              <select
-                value={assignedAgentId} onChange={(e) => setAssignedAgentId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-              >
-                <option value="">-- Unassigned --</option>
-                {agentOptions.map((a) => (
-                  <option key={a.id} value={a.id}>{a.full_name}</option>
-                ))}
-              </select>
-              <p className="text-[11px] text-slate-500">
-                {assignedAgentId
-                  ? "This lead will appear on the agent's mobile app, and they will be notified."
-                  : "Unassigned leads stay in the portal only — no agent will be notified."}
-              </p>
-            </div>
+            <SourcePicker
+              sources={sources}
+              sourceId={acquisitionSourceId}
+              onChange={(src) => {
+                setAcquisitionSourceId(src?.id ?? "");
+                // An Agent source is a login of its own: picking one hands the lead to that agent's mobile app.
+                setAssignedAgentId(src?.user_id && agentOptions.some((a) => a.id === src.user_id) ? src.user_id : "");
+              }}
+              fieldClass="space-y-1.5"
+              labelClass="block text-xs font-semibold text-slate-600"
+              selectClass="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+            />
             <p className="text-[11px] text-slate-400">
               Adds the account now — fill in registration/industry details and set up its master policy later via "Complete Detail" or the Manage page.
             </p>
@@ -335,30 +338,18 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
           </div>
 
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Branch</label>
-              <select
-                value={branchId} onChange={(e) => setBranchId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-              >
-                <option value="">Unassigned</option>
-                {branchOptions.map((b) => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Assigned Agent</label>
-              <select
-                value={assignedAgentId} onChange={(e) => setAssignedAgentId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-sm font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-              >
-                <option value="">Unassigned</option>
-                {agentOptions.map((a) => (
-                  <option key={a.id} value={a.id}>{a.full_name}</option>
-                ))}
-              </select>
-            </div>
+            <SourcePicker
+              sources={sources}
+              sourceId={acquisitionSourceId}
+              onChange={(src) => {
+                setAcquisitionSourceId(src?.id ?? "");
+                // An Agent source is a login of its own: picking one hands the lead to that agent's mobile app.
+                setAssignedAgentId(src?.user_id && agentOptions.some((a) => a.id === src.user_id) ? src.user_id : "");
+              }}
+              fieldClass="space-y-1.5"
+              labelClass="block text-xs font-bold text-slate-700 uppercase tracking-wider"
+              selectClass="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+            />
           </div>
 
           <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">

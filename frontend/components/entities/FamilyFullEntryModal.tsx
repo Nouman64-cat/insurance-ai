@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import api, { OCR_BASE_URL } from "@/app/services/api";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
+import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
@@ -48,6 +49,8 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
   const [assignedAgentId, setAssignedAgentId] = useState("");
   const [branchOptions, setBranchOptions] = useState<Branch[]>([]);
   const [agentOptions, setAgentOptions] = useState<Agent[]>([]);
+  const [acquisitionSourceId, setAcquisitionSourceId] = useState("");
+  const sources = useAcquisitionSources(open);
 
   // Tab 2
   const [kind, setKind] = useState<PolicyKind>("Floater");
@@ -76,7 +79,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
     if (!open) return;
     setTab("family"); setError(""); setNotice(null); setFlagged(new Set());
     setName(""); setContactPerson(""); setContactEmail(""); setContactPhone(""); setHouseholdIncome("");
-    setCity(""); setProvince(""); setBranchId(""); setAssignedAgentId("");
+    setCity(""); setProvince(""); setBranchId(""); setAssignedAgentId(""); setAcquisitionSourceId("");
     setKind("Floater"); setSumInsured("5000000"); setTerm("1"); setEffective(todayIso()); setDiscount("10");
     setRows(startRows());
     created.current = {};
@@ -231,7 +234,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
         const resp = await api.post(`/tenants/${tenantId}/families`, {
           name: name.trim(), contact_person: contactPerson || null, contact_email: contactEmail || null, contact_phone: contactPhone || null,
           household_declared_income: householdIncome ? parseFloat(householdIncome) : null,
-          city: city || null, province: province || null, branch_id: branchId || null, assigned_agent_id: assignedAgentId || null,
+          city: city || null, province: province || null, branch_id: branchId || null, assigned_agent_id: assignedAgentId || null, acquisition_source_id: acquisitionSourceId || null,
         });
         created.current.familyId = resp.data.id;
       }
@@ -378,16 +381,18 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
                   </select></div>
               </div>
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5"><label className={label}>Branch</label>
-                  <select className={INPUT} value={branchId} onChange={(e) => setBranchId(e.target.value)}>
-                    <option value="">Unassigned</option>
-                    {branchOptions.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-                  </select></div>
-                <div className="space-y-1.5"><label className={label}>Assigned Agent</label>
-                  <select className={INPUT} value={assignedAgentId} onChange={(e) => setAssignedAgentId(e.target.value)}>
-                    <option value="">Unassigned</option>
-                    {agentOptions.map((a) => <option key={a.id} value={a.id}>{a.full_name}</option>)}
-                  </select></div>
+                <SourcePicker
+                  sources={sources}
+                  sourceId={acquisitionSourceId}
+                  onChange={(src) => {
+                    setAcquisitionSourceId(src?.id ?? "");
+                    // An Agent source is a login of its own: picking one hands the lead to that agent's mobile app.
+                    setAssignedAgentId(src?.user_id && agentOptions.some((a) => a.id === src.user_id) ? src.user_id : "");
+                  }}
+                  fieldClass="space-y-1.5"
+                  labelClass={label}
+                  selectClass={INPUT}
+                />
               </div>
             </div>
           )}

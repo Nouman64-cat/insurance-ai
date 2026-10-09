@@ -394,6 +394,53 @@ export default function OrganizationDetailPage() {
     }
   };
 
+  // Edit / remove a master policy
+  const [editingMP, setEditingMP] = useState<MasterPolicy | null>(null);
+  const [mpForm, setMpForm] = useState({ plan: "GROUP_LIFE", multiple: "", term: "", date: "" });
+  const [mpBusy, setMpBusy] = useState(false);
+
+  const startEditMP = (mp: MasterPolicy) => {
+    setError(""); setSuccess("");
+    setEditingMP(mp);
+    setMpForm({ plan: mp.plan_code ?? "GROUP_LIFE", multiple: String(mp.sum_assured_multiple), term: String(mp.term_years), date: mp.effective_date });
+  };
+
+  const handleSaveMP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMP) return;
+    setMpBusy(true);
+    setError("");
+    try {
+      const resp = await api.patch<MasterPolicy>(`/tenants/${tenantId}/organizations/${orgId}/master-policies/${editingMP.id}`, {
+        plan_code: mpForm.plan,
+        sum_assured_multiple: parseFloat(mpForm.multiple) || 0,
+        term_years: parseInt(mpForm.term) || 0,
+        effective_date: mpForm.date,
+      });
+      setMasterPolicies((prev) => prev.map((m) => (m.id === resp.data.id ? resp.data : m)));
+      setEditingMP(null);
+      setSuccess("Master policy updated.");
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(Array.isArray(detail) ? detail.map((d: any) => d.msg ?? d).join(", ") : detail ?? err.message ?? "Failed to update the master policy.");
+    } finally {
+      setMpBusy(false);
+    }
+  };
+
+  const handleDeleteMP = async (mp: MasterPolicy) => {
+    if (!window.confirm(`Remove this master policy (${mp.sum_assured_multiple}× · ${mp.effective_date})? The employees enrolled on it, their certificates and its benefit classes are removed too. This cannot be undone.`)) return;
+    setError(""); setSuccess("");
+    try {
+      await api.delete(`/tenants/${tenantId}/organizations/${orgId}/master-policies/${mp.id}`);
+      setSuccess("Master policy removed.");
+      await fetchAll(true);
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      setError(typeof detail === "string" ? detail : err.message ?? "Failed to remove the master policy.");
+    }
+  };
+
   const updateCensusRow = (index: number, field: keyof CensusRow, value: string) => {
     let finalValue = value;
     if (field === "cnic") {
@@ -405,8 +452,12 @@ export default function OrganizationDetailPage() {
   const addCensusRow = () => setCensusRows((prev) => [...prev, { ...EMPTY_ROW }]);
   const removeCensusRow = (index: number) => setCensusRows((prev) => prev.filter((_, i) => i !== index));
 
+  // A row nobody typed into is not part of the census.
+  const filledCensusRows = censusRows.filter((r) =>
+    [r.cnic, r.name, r.dob, r.occupation, r.declared_income, r.height_cm, r.weight_kg].some((v) => v.trim() !== ""));
+
   const buildEmployeesPayload = () =>
-    censusRows.map((r) => ({
+    filledCensusRows.map((r) => ({
       cnic: r.cnic,
       name: r.name,
       dob: r.dob,
@@ -422,6 +473,7 @@ export default function OrganizationDetailPage() {
     setError("");
     setSuccess("");
     setCensusResult(null);
+    if (filledCensusRows.length === 0) { setError("Add at least one employee to the census first."); return; }
     setCensusLoading(true);
     try {
       const resp = await api.post<CensusValidationResult>(
@@ -439,6 +491,7 @@ export default function OrganizationDetailPage() {
   const handleConfirmCensus = async () => {
     setError("");
     setSuccess("");
+    if (filledCensusRows.length === 0) { setError("Add at least one employee to the census first."); return; }
     setCensusLoading(true);
     try {
       const resp = await api.post<CensusConfirmResult>(
@@ -679,6 +732,7 @@ export default function OrganizationDetailPage() {
                       <th className="px-5 py-3 text-left">Effective Date</th>
                       <th className="px-5 py-3 text-left">Free Cover Limit</th>
                       <th className="px-5 py-3 text-left">Status</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -695,6 +749,17 @@ export default function OrganizationDetailPage() {
                           <span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${STATUS_STYLE[mp.status] ?? "bg-slate-100 text-slate-700 border-slate-200"}`}>
                             {mp.status}
                           </span>
+                        </td>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          <button onClick={() => startEditMP(mp)} className="text-xs font-semibold text-blue-600 hover:text-blue-800 mr-3">Edit</button>
+                          <button
+                            onClick={() => handleDeleteMP(mp)}
+                            title="Remove this master policy"
+                            aria-label="Remove this master policy"
+                            className="inline-flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600 align-middle"
+                          >
+                            ✕
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -946,6 +1011,44 @@ export default function OrganizationDetailPage() {
       )}
 
       {/* ── CREATE MASTER POLICY MODAL ── */}
+      {editingMP && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setEditingMP(null)}>
+          <form onSubmit={handleSaveMP} onClick={(e) => e.stopPropagation()} className="w-full max-w-sm space-y-4 rounded-2xl bg-white p-6 shadow-2xl">
+            <h3 className="text-sm font-bold text-slate-800">Edit master policy</h3>
+            <label className="block text-xs font-semibold text-slate-600">
+              Product
+              <select value={mpForm.plan} onChange={(e) => setMpForm((f) => ({ ...f, plan: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                {GROUP_PLANS.map((p) => <option key={p.code} value={p.code}>{p.label}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs font-semibold text-slate-600">
+              Sum assured multiple (× monthly basic salary)
+              <input type="number" step="0.1" required value={mpForm.multiple} onChange={(e) => setMpForm((f) => ({ ...f, multiple: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+              <span className="mt-1 block text-[11px] font-normal text-slate-400">Must be between 12x and 36x.</span>
+            </label>
+            <label className="block text-xs font-semibold text-slate-600">
+              Term (years)
+              <input type="number" min="1" max="40" required value={mpForm.term} onChange={(e) => setMpForm((f) => ({ ...f, term: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-xs font-semibold text-slate-600">
+              Effective date
+              <input type="date" required value={mpForm.date} onChange={(e) => setMpForm((f) => ({ ...f, date: e.target.value }))}
+                className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+            </label>
+            <p className="text-[11px] text-slate-400">Terms can only be edited before any employee is enrolled. Otherwise remove the policy and create it again.</p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setEditingMP(null)} className="px-3 py-1.5 text-sm font-semibold text-slate-500 hover:text-slate-700">Cancel</button>
+              <button type="submit" disabled={mpBusy} className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                {mpBusy ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
       {showCreateMP && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4 my-8">

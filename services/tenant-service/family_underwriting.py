@@ -75,6 +75,7 @@ def validate_family_members(
     existing_count: int = 0,
     has_existing_self: bool = False,
     existing_share_total: float = 0.0,
+    existing_nominee_count: int = 0,
 ) -> FamilyValidationResult:
     """Validate a family-member batch before it's persisted.
 
@@ -95,7 +96,9 @@ def validate_family_members(
     errors: List[str] = []
     missing_fields: List[str] = []
 
-    total_size = existing_count + len(members)
+    # Nominees already recorded count towards the family too: a head with three nominees is a
+    # family of four even though only the head is an enrolled customer.
+    total_size = existing_count + existing_nominee_count + len(members)
     if total_size < MIN_FAMILY_SIZE or total_size > MAX_FAMILY_SIZE:
         errors.append(
             f"Family size ({total_size}) must be between {MIN_FAMILY_SIZE} and "
@@ -184,10 +187,11 @@ def validate_life_bundle_members(
     existing_count: int = 0,
     has_existing_self: bool = False,
     existing_share_total: float = 0.0,
+    existing_nominee_count: int = 0,
 ) -> FamilyValidationResult:
     """Same checks as validate_family_members, plus each insured row must also carry
     its own coverage_amount + plan_code (see LIFE_BUNDLE_EXTRA_FIELDS). Nominees have no cover."""
-    result = validate_family_members(existing_cnics, members, existing_count, has_existing_self, existing_share_total)
+    result = validate_family_members(existing_cnics, members, existing_count, has_existing_self, existing_share_total, existing_nominee_count)
 
     extra_missing: List[str] = []
     for i, row in enumerate(members):

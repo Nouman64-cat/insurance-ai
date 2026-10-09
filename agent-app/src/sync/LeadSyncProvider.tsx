@@ -11,7 +11,7 @@ import { AppState, AppStateStatus } from 'react-native';
 import { fetchLeads, UnifiedLead, LeadScope } from '../api/leads';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
-import { useLiveRefresh } from './LiveEventsProvider';
+import { useLiveEvents, useLiveRefresh } from './LiveEventsProvider';
 import { entityLabel, statusLabel } from '../theme/palette';
 
 /**
@@ -147,6 +147,8 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const consecutiveFailures = useRef(0);
   /** Guards against two polls overlapping when one runs long. */
   const inFlight = useRef(false);
+  /** A change arrived while a read was running: that read may predate it, so read again straight after. */
+  const rerunQueued = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
   /** So a persistent outage raises one notification, not one per attempt. */
@@ -284,7 +286,11 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   const runSync = useCallback(
     async (options: { manual?: boolean } = {}) => {
-      if (!isAuthenticated || inFlight.current) return;
+      if (!isAuthenticated) return;
+      if (inFlight.current) {
+        rerunQueued.current = true;
+        return;
+      }
       inFlight.current = true;
       setSyncing(true);
 
@@ -320,6 +326,10 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
           setSyncing(false);
           setLoading(false);
         }
+        if (rerunQueued.current && mounted.current) {
+          rerunQueued.current = false;
+          runSyncRef.current();
+        }
       }
     },
     [isAuthenticated, scope, announceChanges]
@@ -340,7 +350,31 @@ export const LeadSyncProvider: React.FC<{ children: React.ReactNode }> = ({ chil
 
   // Live: any lead-shaped write anywhere (portal, copilot, another device)
   // re-reads the board, and the diff above turns it into notifications.
-  useLiveRefresh(() => runSyncRef.current(), ['customers', 'families', 'organizations', 'policies', 'cases']);
+  // 250 ms is enough to merge a burst of writes (a family's members) into one read without making an
+  // assignment feel slow.
+  useLiveRefresh(() => runSyncRef.current(), ['customers', 'families', 'organizations', 'policies', 'cases'], 250);
+
+  // Safety net: while the live connection is down (or has not come up yet) fall back to reading on a
+  // timer, so a lead assigned in the portal still arrives within a few seconds instead of waiting for
+  // the next manual refresh. Paused in the background and whenever the stream is healthy.
+  const { connected } = useLiveEvents();
+  useEffect(() => {
+    if (!isAuthenticated || connected) return;
+    let interval: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (!interval) interval = setInterval(() => runSyncRef.current(), POLL_INTERVAL_MS);
+    };
+    const stop = () => {
+      if (interval) clearInterval(interval);
+      interval = null;
+    };
+    if (AppState.currentState === 'active') start();
+    const sub = AppState.addEventListener('change', (state: AppStateStatus) => (state === 'active' ? start() : stop()));
+    return () => {
+      sub.remove();
+      stop();
+    };
+  }, [isAuthenticated, connected]);
 
   // ── Optimistic local mutations ─────────────────────────────────────────────
 

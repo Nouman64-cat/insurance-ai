@@ -12,6 +12,8 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from decision_status import DECISION_CASE_STATUS
 from family_underwriting import (
+    NOMINEE_RELATIONSHIPS,
+    SHARE_TOLERANCE,
     age_from_dob,
     eldest_age,
     is_insured_row,
@@ -32,8 +34,10 @@ from schemas import (
     FamilyPolicyRead,
     FamilyStatsRead,
     FamilyValidationResponse,
+    FamilyPolicyUpdate,
     FloaterPolicyCreate,
     LifeBundlePolicyCreate,
+    NomineeUpdate,
 )
 from shared.models.core import (
     ActionTypeEnum,
@@ -609,6 +613,103 @@ async def list_family_policies(tenant_id: UUID, family_id: UUID, session: AsyncS
 
 
 
+# A family policy can be edited or removed while it is still a proposal. Once any of its policies has a
+# decision (approved, issued, in force, lapsed...) it is a contract and stays.
+_REMOVABLE_POLICY_STATUSES = {
+    PolicyStatusEnum.QUOTED, PolicyStatusEnum.PROPOSED,
+    PolicyStatusEnum.UNDER_REVIEW, PolicyStatusEnum.INFORMATION_REQUESTED,
+}
+
+
+async def _get_family_policy_any(tenant_id: UUID, family_id: UUID, fp_id: UUID, session: AsyncSession) -> FamilyPolicy:
+    fp = await session.get(FamilyPolicy, fp_id)
+    if fp is None or fp.tenant_id != tenant_id or fp.family_group_id != family_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Family policy not found.")
+    return fp
+
+
+@router.patch(
+    "/{tenant_id}/families/{family_id}/family-policies/{fp_id}",
+    response_model=FamilyPolicyRead,
+    dependencies=[Depends(verify_admin)],
+)
+async def update_family_policy(
+    tenant_id: UUID, family_id: UUID, fp_id: UUID, body: FamilyPolicyUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    """Change the terms of a family policy before anyone is enrolled on it. Once members are on it
+    the premium and the nominees' shares depend on these figures, so remove the policy and create it again."""
+    fp = await _get_family_policy_any(tenant_id, family_id, fp_id, session)
+    enrolled = (await session.exec(select(func.count()).select_from(Policy).where(Policy.family_policy_id == fp_id))).one()
+    if enrolled:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Members are already enrolled on this policy, so its terms can't be edited. Remove the policy and create it again.",
+        )
+    data = body.model_dump(exclude_unset=True)
+    if "term_years" in data and not (1 <= (data["term_years"] or 0) <= 40):
+        raise HTTPException(status_code=422, detail="term_years must be between 1 and 40.")
+    if fp.plan_type == FamilyPlanTypeEnum.FLOATER:
+        data.pop("discount_percentage", None)
+        if "total_sum_insured" in data and (data["total_sum_insured"] or 0) <= 0:
+            raise HTTPException(status_code=422, detail="total_sum_insured must be greater than 0.")
+    else:
+        data.pop("total_sum_insured", None)
+        if "discount_percentage" in data and not (0 <= (data["discount_percentage"] or 0) <= 50):
+            raise HTTPException(status_code=422, detail="discount_percentage must be between 0 and 50.")
+    for key, value in data.items():
+        setattr(fp, key, value)
+    session.add(fp)
+    await session.commit()
+    await session.refresh(fp)
+    return fp
+
+
+@router.delete(
+    "/{tenant_id}/families/{family_id}/family-policies/{fp_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_family_policy(tenant_id: UUID, family_id: UUID, fp_id: UUID, session: AsyncSession = Depends(get_session)):
+    """Remove a family policy and the proposal records built on it (its pooled policy, cases, quotes and
+    nominees). The family's members stay. Refused once any policy under it has been decided or issued."""
+    fp = await _get_family_policy_any(tenant_id, family_id, fp_id, session)
+    policies = (await session.exec(select(Policy).where(Policy.family_policy_id == fp_id))).all()
+    locked = [p for p in policies if p.status not in _REMOVABLE_POLICY_STATUSES]
+    if locked:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This policy has already been decided or issued, so it can't be removed.",
+        )
+    try:
+        for policy in policies:
+            cases = (await session.exec(select(Case).where(Case.policy_id == policy.id))).all()
+            for case in cases:
+                for model, col in (
+                    (CaseHistory, CaseHistory.caseld), (CaseWorkflow, CaseWorkflow.caseld), (CaseAssignment, CaseAssignment.caseld),
+                    (CaseEscalation, CaseEscalation.caseld), (CaseComment, CaseComment.caseld), (CaseAttachment, CaseAttachment.caseld),
+                    (CaseAuditTrail, CaseAuditTrail.caseld), (Artifact, Artifact.case_id), (RiskAssessment, RiskAssessment.case_id),
+                    (CaseRequirement, CaseRequirement.case_id), (VerificationFinding, VerificationFinding.case_id),
+                ):
+                    for row in (await session.exec(select(model).where(col == case.caseld))).all():
+                        await session.delete(row)
+                await session.delete(case)
+            for model, col in ((PremiumQuote, PremiumQuote.policy_id), (Beneficiary, Beneficiary.policy_id)):
+                for row in (await session.exec(select(model).where(col == policy.id))).all():
+                    await session.delete(row)
+            await session.delete(policy)
+        await session.delete(fp)
+        await session.commit()
+    except Exception as exc:   # e.g. pre-underwriting records (e-application, ACR) already hang off a case
+        await session.rollback()
+        logger.exception("delete_family_policy failed | fp_id=%s", fp_id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This policy already has pre-underwriting records attached, so it can't be removed.",
+        ) from exc
+    return None
+
+
 # ── Nominees ─────────────────────────────────────────────────────────────────────
 # Only the head and (optionally) the spouse are insured. Everyone else is a nominee: a
 # `Beneficiary` row on the head's policy carrying their share of the death benefit.
@@ -622,6 +723,14 @@ async def _existing_share_total(session: AsyncSession, fp_id: UUID) -> float:
     return float(total or 0.0)
 
 
+async def _existing_nominee_count(session: AsyncSession, fp_id: UUID) -> int:
+    return int((await session.exec(
+        select(func.count()).select_from(Beneficiary).where(
+            Beneficiary.policy_id.in_(select(Policy.id).where(Policy.family_policy_id == fp_id))
+        )
+    )).one() or 0)
+
+
 def _parse_dob(value: Any) -> Optional[date]:
     if value in (None, ""):
         return None
@@ -629,6 +738,29 @@ def _parse_dob(value: Any) -> Optional[date]:
         return value if isinstance(value, date) else date.fromisoformat(str(value))
     except ValueError:
         return None
+
+
+async def _snapshot_beneficiaries(
+    session: AsyncSession, tenant_id: UUID, policy_id: UUID, changed_by: str, reason: str,
+) -> List[Beneficiary]:
+    """Record the policy's current nominee roster as the next BeneficiaryVersion and return it."""
+    await session.flush()
+    roster = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == policy_id))).all()
+    last_seq = (await session.exec(
+        select(BeneficiaryVersion.version_sequence).where(BeneficiaryVersion.policy_id == policy_id)
+        .order_by(BeneficiaryVersion.version_sequence.desc())  # type: ignore[arg-type]
+    )).first()
+    total = round(sum(b.share_pct for b in roster), 2)
+    session.add(BeneficiaryVersion(
+        tenant_id=tenant_id, policy_id=policy_id, version_sequence=(last_seq or 0) + 1,
+        beneficiaries_json=[{
+            "name": b.name, "cnic": b.cnic, "relationship": b.relationship, "share_pct": b.share_pct,
+            "date_of_birth": b.date_of_birth.isoformat() if b.date_of_birth else None,
+            "is_minor": b.is_minor, "guardian_name": b.guardian_name,
+        } for b in roster],
+        total_share=min(total, 100.0), changed_by=changed_by, change_reason=reason,
+    ))
+    return list(roster)
 
 
 async def _save_nominees(
@@ -649,28 +781,14 @@ async def _save_nominees(
             relationship=r["relationship"], share_pct=float(r["share_pct"]), date_of_birth=dob,
             is_minor=minor, guardian_name=head_name if minor else None,
         ))
-    await session.flush()
-    roster = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == policy_id))).all()
-    last_seq = (await session.exec(
-        select(BeneficiaryVersion.version_sequence).where(BeneficiaryVersion.policy_id == policy_id)
-        .order_by(BeneficiaryVersion.version_sequence.desc())  # type: ignore[arg-type]
-    )).first()
-    total = round(sum(b.share_pct for b in roster), 2)
-    session.add(BeneficiaryVersion(
-        tenant_id=tenant_id, policy_id=policy_id, version_sequence=(last_seq or 0) + 1,
-        beneficiaries_json=[{
-            "name": b.name, "cnic": b.cnic, "relationship": b.relationship, "share_pct": b.share_pct,
-            "date_of_birth": b.date_of_birth.isoformat() if b.date_of_birth else None,
-            "is_minor": b.is_minor, "guardian_name": b.guardian_name,
-        } for b in roster],
-        total_share=min(total, 100.0), changed_by="system", change_reason="Family enrolment",
-    ))
+    roster = await _snapshot_beneficiaries(session, tenant_id, policy_id, "system", "Family enrolment")
     return [nominee_dict(b, base_amount) for b in roster]
 
 
 def nominee_dict(b: Beneficiary, base_amount: Optional[float]) -> Dict[str, Any]:
     return {
-        "name": b.name, "relationship": b.relationship, "cnic": b.cnic, "share_pct": b.share_pct,
+        "id": str(b.id), "name": b.name, "relationship": b.relationship, "cnic": b.cnic, "share_pct": b.share_pct,
+        "date_of_birth": b.date_of_birth.isoformat() if b.date_of_birth else None,
         "amount": round(b.share_pct / 100.0 * base_amount, 2) if base_amount else None,
         "is_minor": b.is_minor, "guardian_name": b.guardian_name,
     }
@@ -695,6 +813,89 @@ async def list_family_nominees(tenant_id: UUID, family_id: UUID, fp_id: UUID, se
     base = family_policy.total_sum_insured if family_policy.plan_type == FamilyPlanTypeEnum.FLOATER else head.coverage_amount
     rows = (await session.exec(select(Beneficiary).where(Beneficiary.policy_id == head.id))).all()
     return {"nominees": [nominee_dict(b, base) for b in rows], "total_share": round(sum(b.share_pct for b in rows), 2), "base_amount": base}
+
+
+async def _nominee_context(tenant_id: UUID, family_id: UUID, fp_id: UUID, nominee_id: UUID, session: AsyncSession):
+    """The nominee, its policy and the family's head name, after checking it belongs to this family policy
+    and that the policy is still a proposal (a decided or issued policy changes nominees by endorsement)."""
+    family_group = await _get_family_group(tenant_id, family_id, session)
+    await _get_family_policy_any(tenant_id, family_id, fp_id, session)
+    nominee = await session.get(Beneficiary, nominee_id)
+    policy = await session.get(Policy, nominee.policy_id) if nominee else None
+    if nominee is None or policy is None or policy.family_policy_id != fp_id or nominee.tenant_id != tenant_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Nominee not found.")
+    if policy.status not in _REMOVABLE_POLICY_STATUSES:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This policy has already been decided or issued, so its nominees can't be changed here.")
+    head = await session.get(Customer, family_group.primary_member_customer_id) if family_group.primary_member_customer_id else None
+    return nominee, policy, (head.name if head else None)
+
+
+@router.patch(
+    "/{tenant_id}/families/{family_id}/family-policies/{fp_id}/nominees/{nominee_id}",
+    dependencies=[Depends(verify_admin)],
+)
+async def update_family_nominee(
+    tenant_id: UUID, family_id: UUID, fp_id: UUID, nominee_id: UUID, body: NomineeUpdate,
+    session: AsyncSession = Depends(get_session),
+):
+    nominee, policy, head_name = await _nominee_context(tenant_id, family_id, fp_id, nominee_id, session)
+    data = body.model_dump(exclude_unset=True)
+
+    if "name" in data:
+        name = (data["name"] or "").strip()
+        if not name:
+            raise HTTPException(422, "Name can't be empty.")
+        nominee.name = name
+    if "relationship" in data:
+        if data["relationship"] not in NOMINEE_RELATIONSHIPS | {"Spouse"}:
+            raise HTTPException(422, f"Relationship must be one of {sorted(NOMINEE_RELATIONSHIPS | {'Spouse'})}.")
+        nominee.relationship = data["relationship"]
+    if "cnic" in data:
+        raw = (data["cnic"] or "").strip()
+        if raw:
+            cnic = normalize_cnic(raw)
+            if cnic is None:
+                raise HTTPException(422, "CNIC must be 13 digits or in the format XXXXX-XXXXXXX-X.")
+            nominee.cnic = cnic
+        else:
+            nominee.cnic = None
+    if "date_of_birth" in data:
+        nominee.date_of_birth = data["date_of_birth"]
+        minor = bool(data["date_of_birth"] and age_from_dob(data["date_of_birth"]) < 18)
+        nominee.is_minor = minor
+        nominee.guardian_name = head_name if minor else None
+    if "share_pct" in data:
+        share = data["share_pct"]
+        if share is None or not (0 < share <= 100):
+            raise HTTPException(422, "Share must be greater than 0 and at most 100.")
+        others = (await session.exec(select(func.coalesce(func.sum(Beneficiary.share_pct), 0.0)).where(
+            Beneficiary.policy_id == policy.id, Beneficiary.id != nominee.id))).one()
+        if float(others or 0.0) + share > 100.0 + SHARE_TOLERANCE:
+            raise HTTPException(422, f"Shares would total {round(float(others or 0.0) + share, 2):g}%. The other nominees already hold {round(float(others or 0.0), 2):g}%.")
+        nominee.share_pct = share
+
+    session.add(nominee)
+    await _snapshot_beneficiaries(session, tenant_id, policy.id, "admin", "Nominee edited")
+    await session.commit()
+    await session.refresh(nominee)
+    fp = await session.get(FamilyPolicy, fp_id)
+    base = fp.total_sum_insured if fp and fp.plan_type == FamilyPlanTypeEnum.FLOATER else policy.coverage_amount
+    return nominee_dict(nominee, base)
+
+
+@router.delete(
+    "/{tenant_id}/families/{family_id}/family-policies/{fp_id}/nominees/{nominee_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(verify_admin)],
+)
+async def delete_family_nominee(
+    tenant_id: UUID, family_id: UUID, fp_id: UUID, nominee_id: UUID, session: AsyncSession = Depends(get_session),
+):
+    nominee, policy, _ = await _nominee_context(tenant_id, family_id, fp_id, nominee_id, session)
+    await session.delete(nominee)
+    await _snapshot_beneficiaries(session, tenant_id, policy.id, "admin", "Nominee removed")
+    await session.commit()
+    return None
 
 
 # ── Floater members ──────────────────────────────────────────────────────────────
@@ -725,7 +926,8 @@ async def validate_floater_members(
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
     result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self,
-                                     await _existing_share_total(session, fp_id))
+                                     await _existing_share_total(session, fp_id),
+                                     existing_nominee_count=await _existing_nominee_count(session, fp_id))
     return FamilyValidationResponse(**result.model_dump())
 
 
@@ -757,7 +959,8 @@ async def confirm_floater_members(
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
     result = validate_family_members(existing_cnics, body.members, existing_count, has_existing_self,
-                                     await _existing_share_total(session, fp_id))
+                                     await _existing_share_total(session, fp_id),
+                                     existing_nominee_count=await _existing_nominee_count(session, fp_id))
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 
@@ -967,7 +1170,8 @@ async def validate_life_bundle_members(
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
     result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self,
-                                                await _existing_share_total(session, fp_id))
+                                                await _existing_share_total(session, fp_id),
+                                     existing_nominee_count=await _existing_nominee_count(session, fp_id))
     return FamilyValidationResponse(**result.model_dump())
 
 
@@ -999,7 +1203,8 @@ async def confirm_life_bundle_members(
     has_existing_self = any(m.family_relationship == FamilyRelationshipEnum.SELF for m in existing_list)
 
     result = validate_life_bundle_member_fields(existing_cnics, body.members, existing_count, has_existing_self,
-                                                await _existing_share_total(session, fp_id))
+                                                await _existing_share_total(session, fp_id),
+                                     existing_nominee_count=await _existing_nominee_count(session, fp_id))
     if not result.is_valid:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result.model_dump())
 

@@ -20,6 +20,15 @@ export interface LiveEvent {
   detail?: Record<string, unknown> | null;
 }
 
+/**
+ * The server sends a keep-alive comment every 15 s. If nothing at all has arrived for this long the
+ * connection is dead even though the OS never reported it (a phone's Wi-Fi going to sleep leaves the
+ * socket half-open), so it is dropped and re-opened instead of waiting forever for events that
+ * can no longer reach the app.
+ */
+const STALL_AFTER_MS = 40_000;
+const STALL_CHECK_MS = 10_000;
+
 export interface EventStreamHandle {
   close: () => void;
 }
@@ -43,8 +52,17 @@ export const openEventStream = async (
   let consumed = 0;
   let buffer = '';
   let closed = false;
+  let lastActivity = Date.now();
+
+  const watchdog = setInterval(() => {
+    if (closed || Date.now() - lastActivity < STALL_AFTER_MS) return;
+    clearInterval(watchdog);
+    finish('stalled');
+    xhr.abort();
+  }, STALL_CHECK_MS);
 
   const finish = (reason: string) => {
+    clearInterval(watchdog);
     if (closed) return;
     closed = true;
     onClose(reason);
@@ -53,6 +71,7 @@ export const openEventStream = async (
   const drain = () => {
     const text = xhr.responseText || '';
     if (text.length <= consumed) return;
+    lastActivity = Date.now();   // any bytes, keep-alive comments included
     buffer += text.slice(consumed);
     consumed = text.length;
 
@@ -96,6 +115,7 @@ export const openEventStream = async (
   return {
     close: () => {
       closed = true;
+      clearInterval(watchdog);
       xhr.abort();
     },
   };

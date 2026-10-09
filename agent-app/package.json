@@ -3,10 +3,10 @@
   "main": "expo/AppEntry.js",
   "version": "1.0.0",
   "scripts": {
-    "start": "NODE_OPTIONS=\"--require ./fix-dns.js\" expo start",
-    "android": "NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --android",
-    "ios": "NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --ios",
-    "web": "NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --web",
+    "start": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start",
+    "android": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --android",
+    "ios": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --ios",
+    "web": "ELECTRON_DISABLE_SANDBOX=1 NODE_OPTIONS=\"--require ./fix-dns.js\" expo start --web",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

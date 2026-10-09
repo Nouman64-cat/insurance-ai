@@ -663,6 +663,14 @@ class MasterPolicyCreate(BaseModel):
     plan_code: Optional[str] = None
 
 
+class MasterPolicyUpdate(BaseModel):
+    """Edit a master policy before any employee is enrolled on it."""
+    sum_assured_multiple: Optional[float] = None
+    term_years: Optional[int] = None
+    effective_date: Optional[date] = None
+    plan_code: Optional[str] = None
+
+
 class MasterPolicyRead(BaseModel):
     id: UUID
     tenant_id: UUID
@@ -1052,6 +1060,23 @@ class LifeBundlePolicyCreate(BaseModel):
     term_years: int
     effective_date: date
     discount_percentage: float = 0.0
+
+
+class NomineeUpdate(BaseModel):
+    """Edit one nominee of a family policy (a Beneficiary row)."""
+    name: Optional[str] = None
+    relationship: Optional[str] = None
+    cnic: Optional[str] = None
+    share_pct: Optional[float] = None
+    date_of_birth: Optional[date] = None
+
+
+class FamilyPolicyUpdate(BaseModel):
+    """Edit a family policy that has no members enrolled yet."""
+    total_sum_insured: Optional[float] = None       # floater
+    discount_percentage: Optional[float] = None     # life bundle
+    term_years: Optional[int] = None
+    effective_date: Optional[date] = None
 
 
 class FamilyPolicyRead(BaseModel):
