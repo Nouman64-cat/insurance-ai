@@ -41,7 +41,7 @@ export default function AboutPage() {
       <PageHero
         eyebrow="About"
         title="Insurance technology that can explain itself"
-        description="Insurance AI is an AI-powered, multi-tenant life insurance platform built for Pakistani insurers, designed so that every automated step can be justified to an underwriter, an auditor or a customer."
+        description="Insurance AI is an AI-powered, multi-tenant life insurance platform built for Pakistani insurers, designed so that every automated step can be justified to an underwriter, an auditor or a customer. It is developed by Rizviz International Impex."
       />
 
       <Section>

@@ -1,13 +1,16 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { buttonClass } from "@/components/ui/Button";
 import { mainNav, siteConfig } from "@/lib/site-config";
+import { isActivePath } from "./NavLinks";
 
 export function MobileNav() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
 
   return (
     <div className="md:hidden">
@@ -23,16 +26,22 @@ export function MobileNav() {
       {open && (
         <div className="absolute inset-x-0 top-full bg-card shadow-float">
           <nav className="mx-auto flex max-w-[150rem] flex-col gap-1 px-4 py-4">
-            {mainNav.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className="rounded-lg px-3 py-2.5 text-sm font-medium text-body hover:bg-alt"
-              >
-                {item.label}
-              </Link>
-            ))}
+            {mainNav.map((item) => {
+              const active = isActivePath(pathname, item.href);
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={() => setOpen(false)}
+                  aria-current={active ? "page" : undefined}
+                  className={`rounded-lg px-3 py-2.5 text-sm font-medium ${
+                    active ? "bg-brand/10 text-brand" : "text-body hover:bg-alt"
+                  }`}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
             {/* <a
               href={`${siteConfig.portalUrl}/login`}
               className="rounded-lg px-3 py-2.5 text-sm font-medium text-body hover:bg-alt"

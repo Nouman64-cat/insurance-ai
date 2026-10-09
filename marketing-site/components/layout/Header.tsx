@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Logo } from "./Logo";
 import { MobileNav } from "./MobileNav";
+import { NavLinks } from "./NavLinks";
 import { buttonClass } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
-import { mainNav, siteConfig } from "@/lib/site-config";
+import { siteConfig } from "@/lib/site-config";
 
 export function Header() {
   return (
@@ -15,15 +16,7 @@ export function Header() {
           style={{ "--i": 0 } as React.CSSProperties}
           aria-label="Main"
         >
-          {mainNav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="nav-link rounded-lg px-3 py-2 text-sm font-medium text-body hover:text-ink"
-            >
-              {item.label}
-            </Link>
-          ))}
+          <NavLinks />
         </nav>
         <div
           className="intro-drop hidden items-center gap-2 md:flex"

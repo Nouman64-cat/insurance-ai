@@ -17,6 +17,9 @@ export const metadata: Metadata = {
     template: `%s | ${siteConfig.name}`,
   },
   description: siteConfig.description,
+  authors: [{ name: siteConfig.developer }],
+  creator: siteConfig.developer,
+  publisher: siteConfig.developer,
   openGraph: {
     siteName: siteConfig.name,
     type: "website",

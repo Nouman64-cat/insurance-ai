@@ -1,5 +1,6 @@
 export const siteConfig = {
   name: "Insurance AI",
+  developer: "Rizviz International Impex",
   tagline: "AI-assisted underwriting and policy servicing for life and takaful insurers",
   description:
     "Insurance AI takes a policy from lead to claim on one auditable platform: AI underwriting with deterministic decision rules, a fraud graph, a gated AI copilot and a field-agent mobile app.",

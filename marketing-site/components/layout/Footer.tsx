@@ -32,7 +32,10 @@ export function Footer() {
             Insurance AI is a prototype. Plans, rates, figures and people shown on this site are illustrative demo
             data and do not describe a live insurance product or real customers.
           </p>
-          <p className="mt-2">© {new Date().getFullYear()} {siteConfig.name}</p>
+          <p className="mt-2">
+            © {new Date().getFullYear()} {siteConfig.name}. Developed by{" "}
+            <span className="font-medium text-body">{siteConfig.developer}</span>.
+          </p>
         </div>
       </Container>
     </footer>
