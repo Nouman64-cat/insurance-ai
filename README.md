@@ -133,6 +133,7 @@ Provider credentials are encrypted at rest and services automatically fall back 
 ```text
 insurance-ai/
 ├── frontend/                 # Next.js operations/admin portal
+├── marketing-site/           # Next.js public marketing site (demo content, :3002)
 ├── agent-app/                # React Native / Expo agent application
 ├── services/
 │   ├── api-gateway/
