@@ -11,6 +11,10 @@
     "android": {
       "package": "com.anonymous.agentapp",
       "softwareKeyboardLayoutMode": "pan"
-    }
+    },
+    "plugins": [
+      "expo-status-bar",
+      "expo-font"
+    ]
   }
 }

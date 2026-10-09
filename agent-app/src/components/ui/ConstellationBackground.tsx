@@ -148,7 +148,7 @@ export default function ConstellationBackground() {
   });
 
   return (
-    <View style={StyleSheet.absoluteFillObject} pointerEvents="none">
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
       {/* Delicate hairline network lines */}
       {lines}
 

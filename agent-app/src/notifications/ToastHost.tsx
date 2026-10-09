@@ -162,7 +162,7 @@ function ToastCard({ toast, index }: { toast: Toast; index: number }) {
 
 const styles = StyleSheet.create({
   host: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     // Toasts must sit above modals raised by screens beneath them.
     zIndex: 9999,
