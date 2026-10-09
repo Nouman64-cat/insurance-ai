@@ -15,6 +15,7 @@ interface AcquisitionSource {
   id: string;
   tenant_id: string;
   source_type: SourceType;
+  source_type_code?: number;
   name: string;
   code: string;
   partner_name?: string | null;
@@ -55,6 +56,17 @@ const SOURCE_TYPE_STYLE: Record<SourceType, string> = {
 };
 
 const SOURCE_TYPES: SourceType[] = ["AGENT", "BROKER", "BANCASSURANCE", "CORPORATE_AGENT", "DIRECT", "DIGITAL"];
+
+// Numeric value of each type, 1 to 6. Mirrors AcquisitionSourceType.number on the backend
+// (shared/models/core.py); the API also returns it as `source_type_code`.
+const SOURCE_TYPE_NUMBER: Record<SourceType, number> = {
+  AGENT: 1,
+  BROKER: 2,
+  BANCASSURANCE: 3,
+  CORPORATE_AGENT: 4,
+  DIRECT: 5,
+  DIGITAL: 6,
+};
 
 const EMPTY_FORM = {
   source_type: "AGENT" as SourceType,
@@ -359,7 +371,7 @@ export default function AcquisitionSourcesPage() {
             typeFilter={filterType}
             onTypeChange={setFilterType}
             typeOptions={[
-              ...SOURCE_TYPES.map(t => ({ value: t, label: SOURCE_TYPE_LABELS[t] }))
+              ...SOURCE_TYPES.map(t => ({ value: t, label: `${SOURCE_TYPE_NUMBER[t]}. ${SOURCE_TYPE_LABELS[t]}` }))
             ]}
             statusFilter={filterStatus}
             onStatusChange={setFilterStatus}
@@ -432,6 +444,7 @@ export default function AcquisitionSourcesPage() {
                 <div className="flex items-center justify-between mb-4 px-2">
                   <div className="flex items-center gap-2">
                     <span className={`w-2.5 h-2.5 rounded-full ${SOURCE_TYPE_STYLE[type].split(' ')[0]}`} />
+                    <span className="text-xs font-bold tabular-nums text-slate-400">{SOURCE_TYPE_NUMBER[type]}</span>
                     <h3 className="text-sm font-bold text-slate-800 tracking-wide uppercase">{SOURCE_TYPE_LABELS[type]}</h3>
                   </div>
                   <span className="px-2.5 py-0.5 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-full shadow-sm">{colSources.length}</span>
@@ -639,7 +652,7 @@ export default function AcquisitionSourcesPage() {
                     className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 outline-none transition-all"
                   >
                     {SOURCE_TYPES.map((t) => (
-                      <option key={t} value={t}>{SOURCE_TYPE_LABELS[t]}</option>
+                      <option key={t} value={t}>{SOURCE_TYPE_NUMBER[t]}. {SOURCE_TYPE_LABELS[t]}</option>
                     ))}
                   </select>
                 </div>

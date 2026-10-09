@@ -400,6 +400,30 @@ class AcquisitionSourceType(str, Enum):
     DIRECT = "DIRECT"                  # insurer's own direct-sales team / walk-in
     DIGITAL = "DIGITAL"                # online / aggregator / app funnel
 
+    # Numeric value of each type, 1 to 6, in the order the UI lists them. The stored value stays
+    # the name above (existing rows and every API payload keep working); the number is for
+    # reports, exports and anything that wants a compact code. Never renumber: append only.
+    @property
+    def number(self) -> int:
+        return _ACQUISITION_SOURCE_TYPE_NUMBER[self]
+
+    @classmethod
+    def from_number(cls, number: int) -> "AcquisitionSourceType":
+        for member, n in _ACQUISITION_SOURCE_TYPE_NUMBER.items():
+            if n == number:
+                return member
+        raise ValueError(f"Unknown acquisition source type number: {number}")
+
+
+_ACQUISITION_SOURCE_TYPE_NUMBER = {
+    AcquisitionSourceType.AGENT: 1,
+    AcquisitionSourceType.BROKER: 2,
+    AcquisitionSourceType.BANCASSURANCE: 3,
+    AcquisitionSourceType.CORPORATE_AGENT: 4,
+    AcquisitionSourceType.DIRECT: 5,        # shown as "Walk-in"
+    AcquisitionSourceType.DIGITAL: 6,
+}
+
 
 class AcquisitionSource(SQLModel, table=True):
     """The distribution channel or intermediary credited with bringing a

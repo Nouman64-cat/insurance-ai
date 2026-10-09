@@ -72,7 +72,7 @@ function StatusPill({ done, pending, label, locked }: { done: boolean; pending: 
   );
 }
 
-function GateStepItem({ step, isLast, isExpanded, onToggle }: { step: any; isLast: boolean; isExpanded: boolean; onToggle: () => void }) {
+function GateStepItem({ step, isLast, isExpanded, onToggle, readOnly = false }: { step: any; isLast: boolean; isExpanded: boolean; onToggle: () => void; readOnly?: boolean }) {
 
   return (
     <div className={`relative flex gap-4 transition-all duration-300 group ${isExpanded ? "pb-6" : "pb-2"} last:pb-1`}>
@@ -180,7 +180,18 @@ function GateStepItem({ step, isLast, isExpanded, onToggle }: { step: any; isLas
                   className="shrink-0"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  {step.action}
+                  {readOnly ? (
+                    // View only: every button and field inside is natively disabled
+                    <fieldset
+                      disabled
+                      title="Currently, you have no access to do this, ask your manager"
+                      className="m-0 min-w-0 cursor-not-allowed border-0 p-0 opacity-50 [&_*]:pointer-events-none"
+                    >
+                      {step.action}
+                    </fieldset>
+                  ) : (
+                    step.action
+                  )}
                 </div>
               </div>
             </div>
@@ -653,6 +664,11 @@ function UnderwritingMainContent() {
               <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M15 18l-6-6 6-6" /></svg>
               Back to case
             </button>
+          )}
+          {userRole === "Agent" && (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              <span className="font-semibold text-slate-700">View only.</span> Pre-underwriting is handled by your underwriting team. You can follow each case&apos;s progress here, but the gate actions are disabled for the Agent role.
+            </div>
           )}
           {/* Executive 4-Card Metric Suite */}
           {!focusCase && (
@@ -1192,6 +1208,7 @@ function UnderwritingMainContent() {
                                         step={step} 
                                         isLast={isLast} 
                                         isExpanded={activeNum === step.num}
+                                        readOnly={userRole === "Agent"}
                                         onToggle={() => {
                                           setExpandedGates(prev => ({
                                             ...prev,

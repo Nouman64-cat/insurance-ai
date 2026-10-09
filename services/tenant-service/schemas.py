@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, computed_field, field_validator, model_validator
 from shared.models.core import (
     UserStatus,
     Gender,
@@ -377,6 +377,15 @@ class CustomerCreate(BaseModel):
             raise ValueError("weight_kg must be greater than 0")
         return v
 
+def _source_type_from_input(v):
+    """Accept the number (1 to 6, or "1") as well as the name, so a client may send either."""
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, int) or (isinstance(v, str) and v.strip().isdigit()):
+        return AcquisitionSourceType.from_number(int(v))
+    return v
+
+
 class AcquisitionSourceRead(BaseModel):
     """Who brought the customer in — the crediting agent / broker / bank / etc.
     Compact shape embedded inside CustomerRead."""
@@ -389,8 +398,15 @@ class AcquisitionSourceRead(BaseModel):
 
     model_config = {"from_attributes": True}
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source_type_code(self) -> int:
+        return self.source_type.number
+
 class AcquisitionSourceCreate(BaseModel):
     source_type:      AcquisitionSourceType
+
+    _source_type_in = field_validator("source_type", mode="before")(_source_type_from_input)
     name:             str
     code:             str
     partner_name:     Optional[str] = None
@@ -404,6 +420,8 @@ class AcquisitionSourceCreate(BaseModel):
 
 class AcquisitionSourceUpdate(BaseModel):
     source_type:      Optional[AcquisitionSourceType] = None
+
+    _source_type_in = field_validator("source_type", mode="before")(_source_type_from_input)
     name:             Optional[str] = None
     code:             Optional[str] = None
     partner_name:     Optional[str] = None
@@ -432,6 +450,11 @@ class AcquisitionSourceFull(BaseModel):
     is_active:        bool
     created_at:       datetime
     customer_count:   int = 0    # how many customers this source has brought in
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source_type_code(self) -> int:
+        return self.source_type.number
     user_id:          Optional[UUID] = None   # login account issued to this source, if any
     # Login account issued to this source: None (no account), "invited"
     # (credentials sent, not signed in yet) or "active" (has signed in).

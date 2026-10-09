@@ -6,6 +6,7 @@ import { listAcquisitionSources, AcquisitionSource } from "@/app/services/acquis
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
+import { listQuotes } from "@/app/services/quotes";
 import { resetFunnel } from "@/app/services/demo";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
 import FiltersPanel from "@/components/FiltersPanel";
@@ -39,6 +40,8 @@ interface UnifiedLead {
   /** Who brought the lead in (individual customers): the source's name and its type. */
   sourceName?: string | null;
   sourceType?: string | null;
+  /** Status of this customer's latest proposal (quote), when they have one. Individuals only. */
+  proposalStatus?: string | null;
 }
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -93,6 +96,10 @@ export default function LeadsHubPage() {
   const { notify } = useNotify();
   const cnicQuery = searchParams.get("cnic");
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
+  // An Agent works the same board as an admin, minus the destructive tools: no demo reset and no delete.
+  const [userRole, setUserRole] = useState<string | null>(null);
+  useEffect(() => { setUserRole(localStorage.getItem("user_role")); }, []);
+  const isAgent = userRole === "Agent";
   /** Leads that appeared since the board was opened, awaiting acknowledgement. */
   const [incomingLeads, setIncomingLeads] = useState<NewLeadInfo[]>([]);
   /**
@@ -438,6 +445,19 @@ export default function LeadsHubPage() {
         lead.displayId = `${prefix}-${yymm}-${seq.toString().padStart(3, "0")}`;
       });
 
+      // 1b. Attach each individual's latest proposal status, so the board can filter by
+      // Under Review / Submitted / Rejected. Best effort: the board still works without it.
+      try {
+        const quotes = await listQuotes();
+        const latest = new Map<string, { status: string; at: number }>();
+        for (const q of quotes ?? []) {
+          const at = new Date(q.updated_at ?? q.created_at).getTime();
+          const prev = latest.get(q.customer_id);
+          if (!prev || at > prev.at) latest.set(q.customer_id, { status: q.status, at });
+        }
+        unified.forEach((l) => { if (l.type === "INDIVIDUAL") l.proposalStatus = latest.get(l.id)?.status ?? null; });
+      } catch { /* proposal statuses unavailable: status filters fall back to the lead status */ }
+
       // 2. Sort by newest first
       unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       announceNewLeads(unified);
@@ -491,17 +511,30 @@ export default function LeadsHubPage() {
     ]);
   };
 
+  // The Status dropdown. The first group filters on the lead's own stage; the second on where
+  // its proposal has got to, which is what an agent follows after submitting.
+  const matchesStatus = (l: UnifiedLead) => {
+    switch (statusFilter) {
+      case "ALL": return true;
+      case "ACTIVE": return l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER" && l.proposalStatus !== "Declined";
+      case "IN_PROGRESS": return l.status === "PROSPECT" || l.status === "UNDERWRITING_READY";
+      case "DRAFT": return l.status === "DRAFT";
+      case "LEAD": return l.status === "LEAD";
+      case "DEAD": return l.status === "NOT_INTERESTED";
+      case "POLICYHOLDER": return l.status === "POLICYHOLDER";
+      case "SUBMITTED": return l.proposalStatus === "Proposed";
+      case "UNDER_REVIEW": return l.proposalStatus === "UnderReview";
+      case "INFO_REQUESTED": return l.proposalStatus === "InformationRequested";
+      case "REJECTED": return l.proposalStatus === "Declined";
+      default: return true;
+    }
+  };
+
   const getFilteredLeads = () => {
     const q = search.trim().toLowerCase();
     return leads.filter(l => {
       if (filterType !== "ALL" && l.type !== filterType) return false;
-      if (statusFilter !== "ALL") {
-        if (statusFilter === "IN_PROGRESS" && (l.status !== "PROSPECT" && l.status !== "UNDERWRITING_READY")) return false;
-        if (statusFilter === "DRAFT" && l.status !== "DRAFT") return false;
-        if (statusFilter === "LEAD" && l.status !== "LEAD") return false;
-        if (statusFilter === "DEAD" && l.status !== "NOT_INTERESTED") return false;
-        if (statusFilter === "POLICYHOLDER" && l.status !== "POLICYHOLDER") return false;
-      }
+      if (!matchesStatus(l)) return false;
       if (q) {
         const haystack = `${l.name} ${l.contact_info} ${l.primaryIdentifier ?? ""}`.toLowerCase();
         if (!haystack.includes(q)) return false;
@@ -513,13 +546,7 @@ export default function LeadsHubPage() {
   const getStatsLeads = () => {
     const q = search.trim().toLowerCase();
     return leads.filter(l => {
-      if (statusFilter !== "ALL") {
-        if (statusFilter === "IN_PROGRESS" && (l.status !== "PROSPECT" && l.status !== "UNDERWRITING_READY")) return false;
-        if (statusFilter === "DRAFT" && l.status !== "DRAFT") return false;
-        if (statusFilter === "LEAD" && l.status !== "LEAD") return false;
-        if (statusFilter === "DEAD" && l.status !== "NOT_INTERESTED") return false;
-        if (statusFilter === "POLICYHOLDER" && l.status !== "POLICYHOLDER") return false;
-      }
+      if (!matchesStatus(l)) return false;
       if (q) {
         const haystack = `${l.name} ${l.contact_info} ${l.primaryIdentifier ?? ""}`.toLowerCase();
         if (!haystack.includes(q)) return false;
@@ -629,10 +656,11 @@ export default function LeadsHubPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Leads</h1>
           <p className="text-sm text-slate-500 mt-0.5">
-            Manage & track your prospects across all segments.
+            {isAgent ? "Add leads and take them as far as a submitted proposal." : "Manage & track your prospects across all segments."}
           </p>
         </div>
         <div className="flex items-center gap-2 self-start">
+          {!isAgent && (
           <button
             onClick={handleResetFunnel}
             disabled={resetting}
@@ -647,6 +675,7 @@ export default function LeadsHubPage() {
             </svg>
             {resetting ? "Resetting…" : "Reset Demo Data"}
           </button>
+          )}
           <button
             onClick={() => router.push("/plans")}
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all shadow-sm"
@@ -775,9 +804,14 @@ export default function LeadsHubPage() {
               className={`appearance-none px-4 py-2 pr-10 h-[38px] text-sm font-semibold text-slate-700 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 shadow-sm bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22none%22%20stroke%3D%22%2364748b%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%224%206%208%2010%2012%206%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px_16px] bg-[right_16px_center] bg-no-repeat ${statusFilter === 'ALL' ? 'bg-slate-100' : 'bg-white'}`}
             >
               <option value="ALL">All</option>
+              <option value="ACTIVE">Active</option>
               <option value="LEAD">Leads</option>
               <option value="IN_PROGRESS">In Progress</option>
               <option value="DRAFT">Draft</option>
+              <option value="SUBMITTED">Proposal Submitted</option>
+              <option value="UNDER_REVIEW">Under Review</option>
+              <option value="INFO_REQUESTED">Info Requested</option>
+              <option value="REJECTED">Rejected</option>
               <option value="DEAD">Dead</option>
             </select>
           </div>
@@ -901,7 +935,7 @@ export default function LeadsHubPage() {
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
-                        onDelete={() => handleDeleteLead(lead)}
+                        onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
                       />
                     ))}
                   </div>
@@ -926,7 +960,7 @@ export default function LeadsHubPage() {
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
-                        onDelete={() => handleDeleteLead(lead)}
+                        onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
                       />
                     ))}
                   </div>
@@ -952,7 +986,7 @@ export default function LeadsHubPage() {
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
-                        onDelete={() => handleDeleteLead(lead)}
+                        onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
                       />
                     ))}
                   </div>
@@ -977,7 +1011,7 @@ export default function LeadsHubPage() {
                         onMoveInProgress={() => handleMoveInProgress(lead)}
                         onMarkNotInterested={() => handleMarkNotInterested(lead)}
                         onReactivate={() => handleReactivate(lead)}
-                        onDelete={() => handleDeleteLead(lead)}
+                        onDelete={isAgent ? undefined : () => handleDeleteLead(lead)}
                       />
                     ))}
                   </div>
@@ -1096,6 +1130,7 @@ export default function LeadsHubPage() {
                                         </button>
                                       </>
                                     )}
+                                    {!isAgent && (
                                     <button
                                       disabled={busy}
                                       onClick={() => handleDeleteLead(lead)}
@@ -1103,6 +1138,7 @@ export default function LeadsHubPage() {
                                     >
                                       Delete
                                     </button>
+                                    )}
                                   </div>
                                 </td>
                               </tr>
@@ -1280,7 +1316,7 @@ function LeadCard({
   onMoveInProgress: () => void;
   onMarkNotInterested: () => void;
   onReactivate: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
 }) {
   const typeStyles = {
     INDIVIDUAL: "bg-blue-50 text-blue-700 border-blue-200",
@@ -1356,9 +1392,11 @@ function LeadCard({
             </button>
           </>
         )}
-        <button disabled={busy} onClick={act(onDelete)} className={`${btnBase} text-red-600 bg-white border border-red-100 hover:bg-red-50 ml-auto`}>
-          Delete
-        </button>
+        {onDelete && (
+          <button disabled={busy} onClick={act(onDelete)} className={`${btnBase} text-red-600 bg-white border border-red-100 hover:bg-red-50 ml-auto`}>
+            Delete
+          </button>
+        )}
       </div>
     </div>
   );
