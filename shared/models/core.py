@@ -287,7 +287,8 @@ class User(SQLModel, table=True):
     __tablename__ = "users"
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
-    tenant_id: UUID = Field(foreign_key="tenants.id", index=True, nullable=False)
+    # NULL only for SuperAdmins — they operate at platform level, above tenants.
+    tenant_id: Optional[UUID] = Field(default=None, foreign_key="tenants.id", index=True, nullable=True)
     role_id: UUID = Field(foreign_key="roles.id", nullable=False)
     user_type_id: Optional[UUID] = Field(default=None, foreign_key="user_types.id", nullable=True)
     branch_id: Optional[UUID] = Field(default=None, foreign_key="branches.id", nullable=True)

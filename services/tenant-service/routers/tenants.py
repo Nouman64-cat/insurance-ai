@@ -2,13 +2,14 @@ from typing import List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
 from routers.auth import verify_superadmin
-from schemas import TenantCreate, TenantRead, TenantUpdate
-from shared.models.core import Tenant
+from schemas import TenantCreate, TenantRead, TenantSetupStatus, TenantUpdate
+from shared.models.core import Branch, Role, Tenant, User
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 
@@ -49,6 +50,37 @@ async def list_tenants(
     session: AsyncSession = Depends(get_session),
 ) -> List[Tenant]:
     return list(await session.exec(select(Tenant)))
+
+
+@router.get(
+    "/setup-status",
+    response_model=List[TenantSetupStatus],
+    dependencies=[Depends(verify_superadmin)],
+)
+async def tenant_setup_status(
+    session: AsyncSession = Depends(get_session),
+) -> List[TenantSetupStatus]:
+    """Onboarding progress per tenant for the SuperAdmin console. A tenant is ready
+    once it has a branch and an Admin — Admins (and all staff) must belong to a
+    branch, so the branch comes first."""
+    branch_counts = dict((await session.execute(
+        select(Branch.tenant_id, func.count()).group_by(Branch.tenant_id)
+    )).all())
+    admin_counts = dict((await session.execute(
+        select(User.tenant_id, func.count())
+        .join(Role, Role.id == User.role_id)
+        .where(Role.name == "Admin", User.is_deleted.is_(False), User.tenant_id.is_not(None))
+        .group_by(User.tenant_id)
+    )).all())
+    tenant_ids = (await session.exec(select(Tenant.id))).all()
+    return [
+        TenantSetupStatus(
+            tenant_id=tid,
+            branch_count=branch_counts.get(tid, 0),
+            admin_count=admin_counts.get(tid, 0),
+        )
+        for tid in tenant_ids
+    ]
 
 
 @router.get("/{tenant_id}", response_model=TenantRead)

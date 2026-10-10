@@ -77,6 +77,12 @@ class TenantRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TenantSetupStatus(BaseModel):
+    tenant_id: UUID
+    branch_count: int
+    admin_count: int
+
+
 class TenantUpdate(BaseModel):
     name: Optional[str] = None
     code: Optional[str] = None
@@ -242,7 +248,7 @@ class UserCreate(BaseModel):
 
 class UserRead(BaseModel):
     id: UUID
-    tenant_id: UUID
+    tenant_id: Optional[UUID] = None  # None for SuperAdmins
     role_id: UUID
     branch_id: Optional[UUID] = None
     email: str

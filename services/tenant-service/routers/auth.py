@@ -82,14 +82,14 @@ async def _role_name(user: User, session: AsyncSession) -> str:
 async def _me_payload(
     user: User, profile: UserProfile | None, role_name: str, session: AsyncSession
 ) -> dict:
-    tenant = await session.get(Tenant, user.tenant_id)
+    tenant = await session.get(Tenant, user.tenant_id) if user.tenant_id else None
     branch = await session.get(Branch, user.branch_id) if user.branch_id else None
     return {
         "id": str(user.id),
         "email": user.email,
         "username": user.username,
         "full_name": user.full_name,
-        "tenant_id": str(user.tenant_id),
+        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
         "tenant_name": tenant.name if tenant else None,
         "role_id": str(user.role_id),
         "role_name": role_name,
@@ -134,7 +134,7 @@ async def login_for_access_token(
     payload = {
         "sub": str(user.id),
         "email": user.email,
-        "tenant_id": str(user.tenant_id),
+        "tenant_id": str(user.tenant_id) if user.tenant_id else None,
         "role_id": str(user.role_id)
     }
 

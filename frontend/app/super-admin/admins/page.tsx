@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoInboxEmail, demoPerson } from "@/lib/demoData";
+import { branchesHref } from "@/components/TenantSetupChecklist";
 
 interface Tenant {
   id: string;
@@ -46,6 +50,9 @@ interface AdminUser {
 function AdminManagementContent() {
   const searchParams = useSearchParams();
   const preselectedTenantId = searchParams.get("tenantId");
+  // Set by the tenant setup flow: open the Add Admin form straight away.
+  const openFormOnLoad = searchParams.get("new") === "1";
+  const autoOpened = useRef(false);
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -53,11 +60,14 @@ function AdminManagementContent() {
   const [authorized, setAuthorized] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  // Details of the Admin just created, shown as a result card instead of a plain banner.
+  const [created, setCreated] = useState<{ tenantName: string; email: string; setupComplete: boolean } | null>(null);
 
   const [tenantId, setTenantId] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [branchId, setBranchId] = useState("");
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
 
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -91,6 +101,10 @@ function AdminManagementContent() {
     }
     fetchTenantsAndRoles();
   }, []);
+
+  useEffect(() => {
+    if (!success) setCreated(null);
+  }, [success]);
 
   useEffect(() => {
     if (tenantId) {
@@ -153,11 +167,24 @@ function AdminManagementContent() {
     }
   };
 
-  const branchLabel = (id?: string | null) => {
-    if (!id) return "—";
-    const b = branches.find((b) => b.id === id);
-    return b ? `${b.name} (${b.branch_code})` : "—";
+  const initials = (name: string) =>
+    name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("") || "?";
+
+  const handleOpenCreateModal = () => {
+    setFullName("");
+    setEmail("");
+    setError("");
+    setSuccess("");
+    setShowCreateModal(true);
   };
+
+  useEffect(() => {
+    if (tenantId && openFormOnLoad && !autoOpened.current) {
+      autoOpened.current = true;
+      handleOpenCreateModal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
 
   const handleCreateAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -206,7 +233,9 @@ function AdminManagementContent() {
         }
       }
       const tenantName = tenants.find((t) => t.id === tenantId)?.name ?? "the tenant";
-      setSuccess(`Admin account created for "${tenantName}". Login credentials were emailed to ${email}.`);
+      setSuccess(`Admin created for ${tenantName}.`);
+      setCreated({ tenantName, email, setupComplete: admins.length === 0 });
+      setShowCreateModal(false);
       setFullName("");
       setEmail("");
       fetchAdmins(tenantId);
@@ -316,11 +345,25 @@ function AdminManagementContent() {
     <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
 
       {/* Header */}
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Admin Management</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          Provision the first Admin account for a tenant. Login credentials are emailed automatically.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Admin Management</h1>
+          <p className="text-sm text-slate-500 mt-0.5">
+            Provision Admin accounts for each tenant. Login credentials are emailed automatically.
+          </p>
+        </div>
+        {tenants.length > 0 && (
+          <button
+            onClick={handleOpenCreateModal}
+            disabled={!tenantId}
+            className="flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all shadow-sm hover:shadow-md active:scale-95 self-start disabled:opacity-50"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="w-4 h-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Add Admin
+          </button>
+        )}
       </div>
 
       {/* Message banners */}
@@ -330,8 +373,44 @@ function AdminManagementContent() {
         </div>
       )}
       {success && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">
-          {success}
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3.5 flex items-start gap-3">
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-800">{success}</p>
+            {created && (
+              <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+                <p className="truncate">
+                  Login credentials emailed to <span className="font-medium text-slate-700">{created.email}</span>
+                </p>
+                {created.setupComplete && (
+                  <p>{created.tenantName} is fully set up — the Admin can now sign in and add the rest of the team.</p>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {created?.setupComplete && (
+              <Link
+                href="/super-admin/tenants"
+                className="px-3 py-1.5 text-xs font-semibold text-blue-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
+              >
+                Back to tenants
+              </Link>
+            )}
+            <button
+              onClick={() => setSuccess("")}
+              className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+              title="Dismiss"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
 
@@ -351,110 +430,24 @@ function AdminManagementContent() {
           </a>
         </div>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-5 items-start">
-
-          {/* ── Create Admin Form ── */}
-          <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm">
-            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-              <p className="text-sm font-semibold text-slate-700">Create Admin Account</p>
-            </div>
-
-            <form onSubmit={handleCreateAdmin} className="p-5 space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Tenant *</label>
-                <select
-                  required
-                  value={tenantId}
-                  onChange={(e) => setTenantId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
-                >
-                  {tenants.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.code})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Branch *</label>
-                <select
-                  required
-                  value={branchId}
-                  onChange={(e) => setBranchId(e.target.value)}
-                  disabled={branchesLoading || branches.length === 0}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <option value="" disabled>
-                    {branchesLoading ? "Loading branches..." : branches.length === 0 ? "No branches for this tenant" : "Select a branch"}
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-semibold text-slate-600">Tenant</label>
+              <select
+                value={tenantId}
+                onChange={(e) => setTenantId(e.target.value)}
+                className="bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+              >
+                {tenants.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name} ({t.code})
                   </option>
-                  {branches.map((b) => (
-                    <option key={b.id} value={b.id}>
-                      {b.name} ({b.branch_code}) — {b.city}
-                    </option>
-                  ))}
-                </select>
-                {!branchesLoading && branches.length === 0 && (
-                  <p className="text-[11px] text-slate-400">
-                    This tenant has no branches yet — add one from Branch Management first.
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Ali Raza"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Email Address *</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="e.g. ali@adamjeelife.com"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-
-              <p className="text-xs text-slate-400">
-                A username and password will be generated automatically and emailed to this address.
-              </p>
-
-              <div className="pt-3 border-t border-slate-100">
-                <button
-                  type="submit"
-                  disabled={formLoading}
-                  className="w-full flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
-                >
-                  {formLoading && (
-                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                  )}
-                  Create Admin
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* ── Existing Admins for Selected Tenant ── */}
-          <div className="lg:col-span-3 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
-              <p className="text-sm font-semibold text-slate-700">
-                Admins {selectedTenant ? `— ${selectedTenant.name}` : ""}
-              </p>
-              <span className="text-xs text-slate-400 font-medium">Total: {admins.length}</span>
+                ))}
+              </select>
             </div>
+            <span className="text-xs text-slate-400 font-medium">Total: {admins.length}</span>
+          </div>
 
             {adminsLoading ? (
               <div className="py-16 flex flex-col items-center justify-center gap-3">
@@ -467,32 +460,60 @@ function AdminManagementContent() {
             ) : adminsError ? (
               <div className="py-16 text-center text-sm text-red-500 px-5">{adminsError}</div>
             ) : admins.length === 0 ? (
-              <div className="py-16 text-center text-slate-400 px-5">
-                <p className="text-sm">No Admin has been provisioned for this tenant yet.</p>
+              <div className="py-20 text-center text-slate-400 px-5">
+                <p className="text-sm">
+                  No Admin has been provisioned for {selectedTenant ? selectedTenant.name : "this tenant"} yet.
+                </p>
+                <button
+                  onClick={handleOpenCreateModal}
+                  className="mt-3 text-xs text-blue-600 font-semibold hover:underline"
+                >
+                  Add the first admin
+                </button>
               </div>
             ) : (
               <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
-                      <th className="px-5 py-3.5 text-left">Full Name</th>
-                      <th className="px-5 py-3.5 text-left">Email</th>
-                      <th className="px-5 py-3.5 text-left">Branch</th>
-                      <th className="px-5 py-3.5 text-center">Status</th>
-                      <th className="px-5 py-3.5 text-left">Created</th>
-                      <th className="px-5 py-3.5 text-right">Actions</th>
+                    <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold uppercase tracking-widest text-slate-400 whitespace-nowrap">
+                      <th className="px-5 py-3 text-left">Admin</th>
+                      <th className="px-5 py-3 text-left">Branch</th>
+                      <th className="px-5 py-3 text-center">Status</th>
+                      <th className="px-5 py-3 text-left">Created</th>
+                      <th className="px-5 py-3 text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {pagedAdmins.map((admin) => (
                       <tr key={admin.id} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-3.5 font-semibold text-slate-800">{admin.full_name}</td>
-                        <td className="px-5 py-3.5 text-slate-600">{admin.email}</td>
-                        <td className="px-5 py-3.5 text-slate-600">{branchLabel(admin.branch_id)}</td>
-                        <td className="px-5 py-3.5 text-center">
+                        <td className="px-5 py-3 max-w-[18rem]">
+                          <div className="flex items-center gap-3 min-w-0">
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-blue-700 text-xs font-bold">
+                              {initials(admin.full_name)}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800 truncate">{admin.full_name}</p>
+                              <p className="text-xs text-slate-500 truncate" title={admin.email}>{admin.email}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3">
+                          {(() => {
+                            const b = branches.find((br) => br.id === admin.branch_id);
+                            return b ? (
+                              <div className="min-w-0">
+                                <p className="text-slate-700 whitespace-nowrap">{b.name}</p>
+                                <p className="text-[11px] font-mono text-slate-400">{b.branch_code}</p>
+                              </div>
+                            ) : (
+                              <span className="text-slate-300">—</span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-5 py-3 text-center">
                           <span
-                            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                            className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border whitespace-nowrap ${
                               admin.status === "ACTIVE"
                                 ? "bg-blue-50 text-blue-700 border-blue-200"
                                 : admin.status === "SUSPENDED"
@@ -513,27 +534,28 @@ function AdminManagementContent() {
                               : admin.status}
                           </span>
                         </td>
-                        <td className="px-5 py-3.5 text-xs text-slate-400">
+                        <td className="px-5 py-3 text-xs text-slate-500 whitespace-nowrap">
                           {new Date(admin.created_at).toLocaleDateString(undefined, {
                             year: "numeric",
                             month: "short",
                             day: "numeric",
                           })}
                         </td>
-                        <td className="px-5 py-3.5 text-right space-x-2">
-                          <button
-                            onClick={() => handleOpenEditModal(admin)}
-                            className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                          >
-                            Edit
-                          </button>
-                          <span className="text-slate-200">|</span>
-                          <button
-                            onClick={() => handleDeleteAdmin(admin)}
-                            className="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            Delete
-                          </button>
+                        <td className="px-5 py-3 text-right whitespace-nowrap">
+                          <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden divide-x divide-slate-200">
+                            <button
+                              onClick={() => handleOpenEditModal(admin)}
+                              className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-white hover:bg-slate-50 transition-colors"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDeleteAdmin(admin)}
+                              className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-slate-50 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -543,6 +565,130 @@ function AdminManagementContent() {
           <Pagination pagination={pagination} noun="admins" inline />
               </>
             )}
+        </div>
+      )}
+
+      {/* ── CREATE ADMIN MODAL ── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="text-base font-bold text-slate-900">Add Admin</h3>
+              <DemoFillButton
+                className="ml-auto mr-3"
+                onFill={() => {
+                  const person = demoPerson();
+                  setFullName(person.full);
+                  setEmail(demoInboxEmail(person));
+                  if (!branchId && branches.length > 0) {
+                    setBranchId(branches[Math.floor(Math.random() * branches.length)].id);
+                  }
+                }}
+              />
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAdmin} className="space-y-4">
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs font-medium text-red-600">{error}</div>
+              )}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Tenant</label>
+                <input
+                  type="text"
+                  disabled
+                  value={selectedTenant ? `${selectedTenant.name} (${selectedTenant.code})` : ""}
+                  className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-600">Branch *</label>
+                <select
+                  required
+                  value={branchId}
+                  onChange={(e) => setBranchId(e.target.value)}
+                  disabled={branchesLoading || branches.length === 0}
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <option value="" disabled>
+                    {branchesLoading ? "Loading branches..." : branches.length === 0 ? "No branches for this tenant" : "Select a branch"}
+                  </option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.branch_code}) — {b.city}
+                    </option>
+                  ))}
+                </select>
+                {!branchesLoading && branches.length === 0 && tenantId && (
+                  <p className="text-[11px] text-slate-500">
+                    Admins must belong to a branch, and this tenant has none yet.{" "}
+                    <Link href={branchesHref(tenantId, true)} className="font-semibold text-blue-600 hover:underline">
+                      Add a branch first →
+                    </Link>
+                  </p>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Full Name *</label>
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="e.g. Ali Raza"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold text-slate-600">Email Address *</label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="e.g. ali@adamjeelife.com"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                  />
+                </div>
+              </div>
+
+              <p className="text-[11px] text-slate-400">
+                A username and password are generated automatically and emailed to this address.
+              </p>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={formLoading || branches.length === 0}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors flex items-center gap-1.5"
+                >
+                  {formLoading && (
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  )}
+                  Create Admin
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

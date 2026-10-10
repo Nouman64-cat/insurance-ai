@@ -1340,6 +1340,23 @@ MIGRATIONS: list[tuple[str, str]] = [
         "CREATE INDEX IF NOT EXISTS ix_agent_confidential_reports_requested_user_id "
         "ON agent_confidential_reports (requested_user_id)",
     ),
+    # ── SuperAdmins are platform-level, not tenant members. They used to hang off a
+    #    reserved "Platform" tenant, which showed up in Tenant Management — deleting it
+    #    cascaded to every SuperAdmin account. tenant_id is now NULL for them.
+    (
+        "v56a — allow users.tenant_id NULL (SuperAdmin)",
+        "ALTER TABLE users ALTER COLUMN tenant_id DROP NOT NULL",
+    ),
+    (
+        "v56b — detach SuperAdmins from the Platform tenant",
+        "UPDATE users SET tenant_id = NULL "
+        "WHERE role_id IN (SELECT id FROM roles WHERE name = 'SuperAdmin') AND tenant_id IS NOT NULL",
+    ),
+    (
+        "v56c — drop the now-empty Platform tenant",
+        "DELETE FROM tenants t WHERE t.code = 'PLATFORM' AND t.name = 'Platform' "
+        "AND NOT EXISTS (SELECT 1 FROM users u WHERE u.tenant_id = t.id)",
+    ),
 ]
 
 

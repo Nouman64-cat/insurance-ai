@@ -28,7 +28,7 @@ class CurrentUserResponse(BaseModel):
     id: UUID
     email: str
     full_name: str
-    tenant_id: UUID
+    tenant_id: Optional[UUID] = None  # None for SuperAdmins
     tenant_name: Optional[str] = None
     role_id: UUID
     role_name: str
@@ -55,7 +55,7 @@ class UserCreate(BaseModel):
 
 class UserRead(BaseModel):
     id: UUID
-    tenant_id: UUID
+    tenant_id: Optional[UUID] = None  # None for SuperAdmins
     role_id: UUID
     branch_id: Optional[UUID] = None
     email: str

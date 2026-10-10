@@ -45,7 +45,7 @@ export default function LoginPage() {
       const profileResponse = await api.get<{
         email: string;
         full_name: string;
-        tenant_id: string;
+        tenant_id: string | null;
         role_id: string;
         role_name: string;
         branch_id: string | null;
@@ -55,10 +55,16 @@ export default function LoginPage() {
         },
       });
 
+      // null for SuperAdmins — they sit above tenants.
       const userTenantId = profileResponse.data.tenant_id;
 
       // Save user details & active tenant in localStorage
-      localStorage.setItem("tenant_id", userTenantId);
+      if (userTenantId) {
+        localStorage.setItem("tenant_id", userTenantId);
+      } else {
+        localStorage.removeItem("tenant_id");
+        localStorage.removeItem("tenant_name");
+      }
       localStorage.setItem("user_email", profileResponse.data.email);
       localStorage.setItem("user_name", profileResponse.data.full_name);
       localStorage.setItem("user_role", profileResponse.data.role_name);
@@ -69,10 +75,14 @@ export default function LoginPage() {
       }
 
       // Apply the active tenant header for subsequent client actions
-      api.defaults.headers.common["X-Tenant-Id"] = userTenantId;
+      if (userTenantId) {
+        api.defaults.headers.common["X-Tenant-Id"] = userTenantId;
+      } else {
+        delete api.defaults.headers.common["X-Tenant-Id"];
+      }
 
-      // Redirect to the dashboard
-      window.location.href = "/";
+      // The tenant dashboard has nothing to show a SuperAdmin — land on the platform console.
+      window.location.href = profileResponse.data.role_name === "SuperAdmin" ? "/super-admin/tenants" : "/";
     } catch (err: any) {
       setError(
         err.response?.data?.detail ??

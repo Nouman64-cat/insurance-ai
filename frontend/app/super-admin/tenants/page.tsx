@@ -4,6 +4,13 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoTenant } from "@/lib/demoData";
+import TenantSetupChecklist, {
+  nextSetupStep,
+  setupProgress,
+  type TenantSetupStatus,
+} from "@/components/TenantSetupChecklist";
 
 interface Tenant {
   id: string;
@@ -80,6 +87,10 @@ export default function TenantManagementPage() {
   const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
   const [deleteConfirmationCode, setDeleteConfirmationCode] = useState("");
 
+  // Onboarding progress per tenant, and the tenant whose setup checklist is open.
+  const [setupStatus, setSetupStatus] = useState<Record<string, TenantSetupStatus>>({});
+  const [setupTenant, setSetupTenant] = useState<Tenant | null>(null);
+
   useEffect(() => {
     const role = localStorage.getItem("user_role");
     if (role !== "SuperAdmin") {
@@ -94,8 +105,12 @@ export default function TenantManagementPage() {
     setLoading(true);
     setError("");
     try {
-      const resp = await api.get<Tenant[]>("/tenants");
+      const [resp, statusResp] = await Promise.all([
+        api.get<Tenant[]>("/tenants"),
+        api.get<TenantSetupStatus[]>("/tenants/setup-status").catch(() => ({ data: [] as TenantSetupStatus[] })),
+      ]);
       setTenants(resp.data);
+      setSetupStatus(Object.fromEntries(statusResp.data.map((st) => [st.tenant_id, st])));
     } catch (err: any) {
       setError(err.message ?? "Failed to load tenants.");
     } finally {
@@ -123,9 +138,10 @@ export default function TenantManagementPage() {
       for (const [key, value] of Object.entries(createProfile)) {
         if (value.trim() !== "") payload[key] = value;
       }
-      await api.post("/tenants", payload);
-      setSuccess(`Tenant "${tenantName}" created successfully!`);
+      const created = await api.post<Tenant>("/tenants", payload);
       setShowCreateModal(false);
+      // Hand straight over to the remaining setup steps rather than a bare banner.
+      setSetupTenant(created.data);
       fetchTenants();
     } catch (err: any) {
       const detail = err.response?.data?.detail;
@@ -320,6 +336,7 @@ export default function TenantManagementPage() {
                   <th className="px-5 py-3.5 text-left">Tenant ID</th>
                   <th className="px-5 py-3.5 text-left">Code</th>
                   <th className="px-5 py-3.5 text-center">Status</th>
+                  <th className="px-5 py-3.5 text-left">Setup</th>
                   <th className="px-5 py-3.5 text-left">Created Date</th>
                   <th className="px-5 py-3.5 text-right">Actions</th>
                 </tr>
@@ -368,6 +385,21 @@ export default function TenantManagementPage() {
                       >
                         {tenant.is_active ? "Active" : "Inactive"}
                       </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {nextSetupStep(tenant.id, setupStatus[tenant.id]) ? (
+                        <button
+                          onClick={() => setSetupTenant(tenant)}
+                          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-semibold border bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 transition-colors"
+                          title="Show remaining setup steps"
+                        >
+                          {setupProgress(setupStatus[tenant.id])}/3 · {nextSetupStep(tenant.id, setupStatus[tenant.id])!.label}
+                        </button>
+                      ) : (
+                        <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold border bg-emerald-50 text-emerald-700 border-emerald-200">
+                          Ready
+                        </span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-xs text-slate-400">
                       {new Date(tenant.created_at).toLocaleDateString(undefined, {
@@ -426,6 +458,15 @@ export default function TenantManagementPage() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">Add New Tenant</h3>
+              <DemoFillButton
+                className="ml-auto mr-3"
+                onFill={() => {
+                  const t = demoTenant();
+                  setTenantName(t.name);
+                  setTenantCode(t.code);
+                  setCreateProfile(t.profile);
+                }}
+              />
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
@@ -596,6 +637,44 @@ export default function TenantManagementPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── TENANT SETUP CHECKLIST ── */}
+      {setupTenant && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-lg w-full p-6 space-y-4 my-8">
+            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Set up {setupTenant.name}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  A tenant can be used once it has a branch and an Admin.
+                </p>
+              </div>
+              <button
+                onClick={() => setSetupTenant(null)}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <TenantSetupChecklist
+              tenantId={setupTenant.id}
+              tenantName={setupTenant.name}
+              status={setupStatus[setupTenant.id]}
+            />
+            <div className="flex justify-end pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSetupTenant(null)}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              >
+                Finish later
+              </button>
+            </div>
           </div>
         </div>
       )}

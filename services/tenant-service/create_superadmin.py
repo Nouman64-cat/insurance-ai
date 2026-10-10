@@ -3,8 +3,8 @@ CLI to bootstrap a SuperAdmin account — the platform-level operator who
 creates tenants and their first Admin (see routers/tenants.py and
 routers/users.py:seed_admin, both gated on verify_superadmin).
 
-SuperAdmin users are attached to a reserved "Platform" tenant so the
-existing User.tenant_id NOT NULL constraint doesn't need to change.
+SuperAdmin users belong to no tenant (User.tenant_id is NULL) — they operate
+at platform level, above every tenant.
 
 Usage (inside the tenant-service container) — only --email is required,
 everything else is derived or auto-generated:
@@ -35,9 +35,8 @@ from provisioning import (
     generate_password,
     generate_random_username,
 )
-from shared.models.core import Role, Tenant, User, UserProfile, UserStatus
+from shared.models.core import Role, User, UserProfile, UserStatus
 
-PLATFORM_TENANT_NAME = "Platform"
 SUPERADMIN_ROLE = "SuperAdmin"
 
 _pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -54,14 +53,6 @@ async def create_superadmin(
     last_name = last_name or ""
 
     async with _session_factory() as session:
-        tenant = (
-            await session.exec(select(Tenant).where(Tenant.name == PLATFORM_TENANT_NAME))
-        ).first()
-        if tenant is None:
-            tenant = Tenant(name=PLATFORM_TENANT_NAME, code="PLATFORM")
-            session.add(tenant)
-            await session.flush()
-
         role = (await session.exec(select(Role).where(Role.name == SUPERADMIN_ROLE))).first()
         if role is None:
             role = Role(
@@ -86,7 +77,7 @@ async def create_superadmin(
         plaintext_password = password or generate_password()
 
         user = User(
-            tenant_id=tenant.id,
+            tenant_id=None,
             role_id=role.id,
             email=email,
             username=username,

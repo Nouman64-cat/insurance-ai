@@ -110,17 +110,23 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       setTenantName(tName);
     }
 
-    if (token && tenantId) {
+    // SuperAdmins have a token but no tenant_id, so the two headers are set independently.
+    if (token) {
       api.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+    }
+    if (token && tenantId) {
       api.defaults.headers.common["X-Tenant-Id"] = tenantId;
     }
+    const isSuperAdmin = localStorage.getItem("user_role") === "SuperAdmin";
 
     if (isPublicStandalonePage) {
       setAuthChecked(true);
     } else if (!token && !isLoginPage) {
       router.push("/login");
     } else if (token && isLoginPage) {
-      router.push("/");
+      router.push(isSuperAdmin ? "/super-admin/tenants" : "/");
+    } else if (token && isSuperAdmin && pathname === "/") {
+      router.push("/super-admin/tenants");
     } else {
       setAuthChecked(true);
     }

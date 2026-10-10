@@ -923,6 +923,16 @@ async def list_tenants(request: Request):
     return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/")
 
 
+# Declared before /tenants/{tenant_id} so "setup-status" isn't parsed as an ID.
+@app.get(
+    "/tenants/setup-status",
+    tags=["Bootstrap"],
+    summary="Onboarding progress per tenant — branch and Admin counts (SuperAdmin only)",
+)
+async def tenant_setup_status(request: Request, token: str = Depends(oauth2_scheme)):
+    return await _proxy_to_tenant(request, f"{TENANT_SERVICE_URL}/tenants/setup-status")
+
+
 @app.get(
     "/tenants/{tenant_id}",
     tags=["Bootstrap"],

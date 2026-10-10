@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoBranch } from "@/lib/demoData";
+import { adminsHref, type TenantSetupStatus } from "@/components/TenantSetupChecklist";
 
 interface Tenant {
   id: string;
@@ -71,6 +75,9 @@ const emptyBranchForm: BranchFormFields = {
 function BranchManagementContent() {
   const searchParams = useSearchParams();
   const preselectedTenantId = searchParams.get("tenantId");
+  // Set by the tenant setup checklist: open the Add Branch form straight away.
+  const openFormOnLoad = searchParams.get("new") === "1";
+  const autoOpened = useRef(false);
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [tenantId, setTenantId] = useState("");
@@ -78,6 +85,8 @@ function BranchManagementContent() {
   const [authorized, setAuthorized] = useState(true);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  // Optional "what to do next" link shown inside the success banner.
+  const [successNext, setSuccessNext] = useState<{ hint: string; label: string; href: string } | null>(null);
 
   const [branches, setBranches] = useState<Branch[]>([]);
   const [branchesLoading, setBranchesLoading] = useState(false);
@@ -102,6 +111,18 @@ function BranchManagementContent() {
     fetchTenants();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!success) setSuccessNext(null);
+  }, [success]);
+
+  useEffect(() => {
+    if (tenantId && openFormOnLoad && !autoOpened.current) {
+      autoOpened.current = true;
+      handleOpenCreateModal();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tenantId]);
 
   useEffect(() => {
     if (tenantId) {
@@ -173,9 +194,26 @@ function BranchManagementContent() {
       if (createForm.opened_date.trim()) payload.opened_date = createForm.opened_date;
 
       await api.post(`/tenants/${tenantId}/branches`, payload);
-      setSuccess(`Branch "${createForm.name}" created successfully!`);
+      const tenantName = tenants.find((t) => t.id === tenantId)?.name ?? "this tenant";
       setShowCreateModal(false);
       fetchBranches(tenantId);
+
+      // If the tenant still has no Admin, say so — that's the next onboarding step.
+      const statuses = await api
+        .get<TenantSetupStatus[]>("/tenants/setup-status")
+        .then((r) => r.data)
+        .catch(() => [] as TenantSetupStatus[]);
+      const needsAdmin = (statuses.find((st) => st.tenant_id === tenantId)?.admin_count ?? 0) === 0;
+      setSuccess(`Branch "${createForm.name}" (${createForm.branch_code}) created for ${tenantName}.`);
+      setSuccessNext(
+        needsAdmin
+          ? {
+              hint: `Next step: create ${tenantName}'s first Admin and assign them to a branch.`,
+              label: "Create admin",
+              href: adminsHref(tenantId, true),
+            }
+          : null
+      );
     } catch (err: any) {
       const detail = err.response?.data?.detail;
       setError(
@@ -318,8 +356,35 @@ function BranchManagementContent() {
         </div>
       )}
       {success && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-600 font-medium">
-          {success}
+        <div className="bg-white border border-slate-200 rounded-xl shadow-sm px-4 py-3.5 flex items-start gap-3">
+          <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth="2.5" stroke="currentColor" className="h-4 w-4">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+            </svg>
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-slate-800">{success}</p>
+            {successNext && <p className="mt-1 text-xs text-slate-500">{successNext.hint}</p>}
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {successNext && (
+              <Link
+                href={successNext.href}
+                className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+              >
+                {successNext.label} →
+              </Link>
+            )}
+            <button
+              onClick={() => setSuccess("")}
+              className="p-1 text-slate-400 hover:text-slate-600 transition-colors"
+              title="Dismiss"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
       )}
 
@@ -373,6 +438,7 @@ function BranchManagementContent() {
               <p className="text-sm">
                 No branches registered for {selectedTenant ? selectedTenant.name : "this tenant"} yet.
               </p>
+              <p className="text-xs mt-1">Admins and staff are assigned to a branch, so add one before creating the tenant&apos;s Admin.</p>
               <button
                 onClick={handleOpenCreateModal}
                 className="mt-3 text-xs text-blue-600 font-semibold hover:underline"
@@ -385,7 +451,7 @@ function BranchManagementContent() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  <tr className="border-b border-slate-100 bg-slate-50/50 text-xs font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">
                     <th className="px-5 py-3.5 text-left">Code</th>
                     <th className="px-5 py-3.5 text-left">Name</th>
                     <th className="px-5 py-3.5 text-left">Type</th>
@@ -419,20 +485,21 @@ function BranchManagementContent() {
                           {branch.is_active ? "Active" : "Inactive"}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-right space-x-2">
-                        <button
-                          onClick={() => handleOpenEditModal(branch)}
-                          className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                        >
-                          Edit
-                        </button>
-                        <span className="text-slate-200">|</span>
-                        <button
-                          onClick={() => handleDeleteBranch(branch)}
-                          className="text-xs font-bold text-red-500 hover:text-red-700 transition-colors"
-                        >
-                          Delete
-                        </button>
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <div className="inline-flex rounded-lg border border-slate-200 overflow-hidden divide-x divide-slate-200">
+                          <button
+                            onClick={() => handleOpenEditModal(branch)}
+                            className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDeleteBranch(branch)}
+                            className="px-3 py-1.5 text-xs font-semibold text-red-600 bg-white hover:bg-slate-50 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -451,6 +518,10 @@ function BranchManagementContent() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-xl w-full p-6 space-y-4 my-8">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-base font-bold text-slate-900">Add New Branch</h3>
+              <DemoFillButton
+                className="ml-auto mr-3"
+                onFill={() => setCreateForm(demoBranch(BRANCH_TYPES.map((t) => t.value)))}
+              />
               <button
                 onClick={() => setShowCreateModal(false)}
                 className="text-slate-400 hover:text-slate-600 transition-colors"
