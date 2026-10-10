@@ -10,6 +10,7 @@ export interface TenantSetupStatus {
   tenant_id: string;
   branch_count: number;
   admin_count: number;
+  plan_count?: number;
 }
 
 export const branchesHref = (tenantId: string, openForm = false) =>

@@ -64,3 +64,26 @@ export async function submitACR(caseId: string): Promise<AgentConfidentialReport
   const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/submit`);
   return res.data;
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Requests addressed to the signed-in user (agent / broker / bank desk login)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ACRRequest {
+  case_id: string;
+  case_number: string | null;
+  applicant_name: string | null;
+  segment: "individual" | "family" | "organization";
+  group_name: string | null;
+  status: "Requested" | "Draft" | "Submitted";
+  requested_at: string | null;
+  requested_by_name: string | null;
+  submitted_at: string | null;
+}
+
+/** ACRs the signed-in user has been asked to file and hasn't submitted yet, newest first. */
+export async function listMyACRRequests(): Promise<ACRRequest[]> {
+  const tid = tenantId();
+  const res = await api.get<ACRRequest[]>(`/tenants/${tid}/acr-requests`);
+  return res.data;
+}

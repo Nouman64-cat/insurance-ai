@@ -1,6 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useCopilot } from "@/components/CopilotContext";
+import { useACRRequests } from "@/components/ACRRequestsProvider";
 import GlobalSearch from "@/components/GlobalSearch";
 
 function BellIcon() {
@@ -29,6 +31,26 @@ interface TopBarProps {
 
 export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) {
   const { isAutomationMode, setAutomationMode } = useCopilot();
+  const router = useRouter();
+  const { requests: acrRequests } = useACRRequests();
+  const pendingACR = acrRequests.filter((r) => r.status !== "Submitted");
+  const [bellOpen, setBellOpen] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
+
+  // Close the bell dropdown on an outside click or Escape.
+  useEffect(() => {
+    if (!bellOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setBellOpen(false);
+    document.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [bellOpen]);
   const [tenantName, setTenantName] = useState("Adamjee Life");
 
   useEffect(() => {
@@ -119,15 +141,56 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
         {/* Divider */}
         <span className="h-5 w-px bg-slate-200 mx-1" />
 
-        {/* Notification bell */}
-        <button
-          type="button"
-          className="relative p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-          aria-label="Notifications"
-        >
-          <BellIcon />
-          <span className="absolute top-1 right-1 w-2 h-2 bg-blue-500 rounded-full border border-white" />
-        </button>
+        {/* Notification bell — pending ACR requests addressed to this user */}
+        <div className="relative" ref={bellRef}>
+          <button
+            type="button"
+            onClick={() => setBellOpen((o) => !o)}
+            className="relative p-1.5 rounded-lg text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            aria-label={pendingACR.length ? `Notifications: ${pendingACR.length} ACR request${pendingACR.length === 1 ? "" : "s"}` : "Notifications"}
+          >
+            <BellIcon />
+            {pendingACR.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center text-[9px] font-bold text-white bg-red-500 rounded-full border border-white">
+                {pendingACR.length}
+              </span>
+            )}
+          </button>
+          {bellOpen && (
+            <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-slate-100 bg-slate-50">
+                <p className="text-xs font-bold text-slate-700">Notifications</p>
+              </div>
+              {pendingACR.length === 0 ? (
+                <p className="px-4 py-6 text-center text-xs text-slate-400">You&apos;re all caught up.</p>
+              ) : (
+                <ul className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                  {pendingACR.map((r) => (
+                    <li key={r.case_id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBellOpen(false);
+                          router.push(`/case/${r.case_id}`);
+                        }}
+                        className="w-full text-left px-4 py-3 hover:bg-slate-50 transition-colors"
+                      >
+                        <p className="text-xs font-semibold text-slate-800">
+                          {r.status === "Draft" ? "Finish the ACR" : "ACR requested"} — {r.applicant_name || r.case_number}
+                        </p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {r.case_number}
+                          {r.group_name ? ` · ${r.group_name}` : ""}
+                          {r.requested_by_name ? ` · from ${r.requested_by_name}` : ""}
+                        </p>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Strictly confidential badge */}
         <span className="hidden lg:inline-flex items-center text-[9px] font-bold uppercase tracking-widest text-slate-400 bg-slate-100 border border-slate-200 px-2 py-1 rounded-md whitespace-nowrap">

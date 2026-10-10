@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { listAgents, Agent } from "@/app/services/agents";
 import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoQuickLead } from "@/lib/demoData";
 
 interface Props {
   open: boolean;
@@ -115,12 +117,23 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
               Capture initial contact info. Diagnostic medical & financial details can be filled later.
             </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-white/80 hover:text-white text-xl font-bold p-1 transition-colors"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <DemoFillButton
+              className="!bg-white"
+              onFill={() => {
+                const lead = demoQuickLead();
+                setFirstName(lead.first);
+                setLastName(lead.last);
+                setPhone(lead.phone);
+              }}
+            />
+            <button
+              onClick={onClose}
+              className="text-white/80 hover:text-white text-xl font-bold p-1 transition-colors"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {error && (

@@ -18,6 +18,8 @@ import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
 import { pauseLeadAnnouncements } from "@/lib/leadAnnouncements";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoOrganizationExtraction } from "@/lib/demoData";
 
 interface Props {
   open: boolean;
@@ -177,6 +179,110 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
     return e ? e.name.trim() || e.employee_id || "(unnamed employee)" : "";
   };
 
+  // Fills all six tabs from document-reader output (or demo data of the same shape).
+  const applyExtracted = (data: any, from: string) => {
+    const missing = new Set<string>();
+    const take = (key: string, value: unknown, apply: (v: any) => void) => { if (empty(value)) missing.add(key); else apply(value); };
+
+    const c = data.company || {};
+    take("name", c.name, setName);
+    take("registration_number", c.registration_number, setRegistrationNumber);
+    take("industry", c.industry, setIndustry);
+    take("contact_person", c.contact_person, setContactPerson);
+    take("contact_email", c.contact_email, setContactEmail);
+    take("contact_phone", c.contact_phone, setContactPhone);
+    take("city", c.city, setCity);
+    take("province", c.province, (v) => ((PAKISTAN_PROVINCES as readonly string[]).includes(v) ? setProvince(v) : missing.add("province")));
+
+    const p = data.policy || {};
+    const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+    // Exact name or code first; otherwise the longest plan name the document's wording contains
+    // ("Group Life — SME" must not settle for plain "Group Life").
+    const wanted = p.plan_name ? norm(p.plan_name) : "";
+    const matched = wanted
+      ? plans.find((x) => norm(x.label) === wanted || norm(x.code) === wanted)
+        ?? [...plans].sort((a, b) => b.label.length - a.label.length).find((x) => wanted.includes(norm(x.label)) || norm(x.label).includes(wanted))
+      : undefined;
+    if (matched) setPlanCode(matched.code); else missing.add("plan");
+    take("multiple", p.sum_assured_multiple, (v) => setMultiple(String(v)));
+    take("term", p.term_years, (v) => setTerm(String(v)));
+    take("effective", p.effective_date, setEffective);
+
+    const readClasses: any[] = Array.isArray(data.classes) ? data.classes : [];
+    const nextClasses: ClassRow[] = readClasses.map((k, i) => {
+      const basis: Basis = ["Flat", "SalaryMultiple", "ServiceBanded", "LoanBalance"].includes(k.basis) ? k.basis : "SalaryMultiple";
+      const row: ClassRow = { ...BLANK_CLASS, basis, name: k.name ?? "", salary_multiple: "", coverages: [] };
+      if (basis === "Flat") { if (empty(k.flat_amount)) missing.add(`class.${i}.flat_amount`); else row.flat_amount = String(k.flat_amount); }
+      else if (basis === "SalaryMultiple") { if (empty(k.salary_multiple)) missing.add(`class.${i}.salary_multiple`); else row.salary_multiple = String(k.salary_multiple); }
+      else if (basis === "ServiceBanded") {
+        const bands = Array.isArray(k.service_bands) ? k.service_bands.filter((b: any) => !empty(b.min_years) && !empty(b.amount)) : [];
+        if (bands.length) row.bands = bands.map((b: any) => `${b.min_years}:${b.amount}`).join(", "); else missing.add(`class.${i}.bands`);
+      }
+      if (Array.isArray(k.grades) && k.grades.length) row.grades = k.grades.join(", ");
+      if (!empty(k.min_cover)) row.min_cover = String(k.min_cover);
+      if (!empty(k.max_cover)) row.max_cover = String(k.max_cover);
+      row.is_default = Boolean(k.is_default);
+      row.coverages = (Array.isArray(k.coverages) ? k.coverages : [])
+        .filter((v: any) => v.coverage_type in RIDERS && !empty(v.percent_of_base))
+        .map((v: any) => ({ coverage_type: v.coverage_type, percent_of_base: String(v.percent_of_base), max_amount: empty(v.max_amount) ? "" : String(v.max_amount) }));
+      return row;
+    });
+    setClasses(nextClasses);
+
+    const readEmployees: any[] = Array.isArray(data.employees) ? data.employees : [];
+    const nextEmployees: EmployeeRow[] = readEmployees.map((e) => {
+      const row: EmployeeRow = { ...blankEmployee(), gender: "" };
+      (["cnic", "name", "dob", "gender", "occupation", "declared_income"] as (keyof EmployeeRow)[]).forEach((f) => {
+        if (empty(e[f])) missing.add(`emp.${row.uid}.${f}`); else (row[f] as string) = f === "cnic" ? formatCNIC(String(e[f])) : String(e[f]);
+      });
+      (["employee_id", "designation", "grade", "joining_date", "basic_monthly_salary", "benefit_class", "height_cm", "weight_kg", "loan_amount"] as (keyof EmployeeRow)[])
+        .forEach((f) => { if (!empty(e[f])) (row[f] as string) = String(e[f]); });
+      if (e.is_smoker !== null && e.is_smoker !== undefined) row.is_smoker = String(Boolean(e.is_smoker));
+      return row;
+    });
+    if (nextEmployees.length) setEmployees(nextEmployees); else missing.add("employees");
+
+    // A dependant or nominee is tied to an employee by employee ID or CNIC in the document.
+    const refTo = (ref: unknown): number | null => {
+      const r = String(ref ?? "").trim().toLowerCase();
+      if (!r) return null;
+      const hit = nextEmployees.find((e) => e.employee_id.toLowerCase() === r || e.cnic.replace(/\D/g, "") === r.replace(/\D/g, "") || e.name.toLowerCase() === r);
+      return hit ? hit.uid : null;
+    };
+    const nextDeps: DependantRow[] = (Array.isArray(data.dependants) ? data.dependants : []).map((d: any) => {
+      const row = blankDependant(refTo(d.employee_ref));
+      if (row.emp === null) missing.add(`dep.${row.uid}.emp`);
+      (["name", "relationship", "dob", "cnic", "gender"] as const).forEach((f) => { if (!empty(d[f])) row[f] = f === "cnic" ? formatCNIC(String(d[f])) : String(d[f]); });
+      if (!["Spouse", "Child", "Parent"].includes(row.relationship)) { row.relationship = "Spouse"; missing.add(`dep.${row.uid}.relationship`); }
+      (["name", "dob"] as const).forEach((f) => { if (empty(row[f])) missing.add(`dep.${row.uid}.${f}`); });
+      if (empty(d.covered_amount)) missing.add(`dep.${row.uid}.covered_amount`); else row.covered_amount = String(d.covered_amount);
+      return row;
+    });
+    const nextNoms: NomineeRow[] = (Array.isArray(data.nominees) ? data.nominees : []).map((n: any) => {
+      const row = blankNominee(refTo(n.employee_ref));
+      if (row.emp === null) missing.add(`nom.${row.uid}.emp`);
+      (["name", "relationship", "cnic", "guardian_name"] as const).forEach((f) => { if (!empty(n[f])) row[f] = f === "cnic" ? formatCNIC(String(n[f])) : String(n[f]); });
+      if (!empty(n.date_of_birth)) row.dob = String(n.date_of_birth);
+      row.is_minor = Boolean(n.is_minor);
+      if (empty(row.name)) missing.add(`nom.${row.uid}.name`);
+      if (empty(n.share_pct)) missing.add(`nom.${row.uid}.share_pct`); else row.share_pct = String(n.share_pct);
+      return row;
+    });
+    setDependants(nextDeps);
+    setNominees(nextNoms);
+    setFlagged(missing);
+
+    const filled = Number(data.found) || 0;
+    const counts = `${nextClasses.length} class${nextClasses.length === 1 ? "" : "es"}, ${nextEmployees.length} employee${nextEmployees.length === 1 ? "" : "s"}, ${nextDeps.length} dependant${nextDeps.length === 1 ? "" : "s"}, ${nextNoms.length} nominee${nextNoms.length === 1 ? "" : "s"}`;
+    setNotice(
+      filled === 0
+        ? { tone: "warn", text: "No company details could be read from this document. Please fill the tabs manually." }
+        : missing.size === 0
+        ? { tone: "ok", text: `Filled ${filled} fields (${counts}) from ${from}. Please review them before saving.` }
+        : { tone: "warn", text: `Filled ${filled} fields (${counts}) from ${from}. ${missing.size} value${missing.size === 1 ? "" : "s"} not found in the document ${missing.size === 1 ? "is" : "are"} highlighted — please fill ${missing.size === 1 ? "it" : "them"} in.` },
+    );
+  };
+
   // ── Upload & read a document ───────────────────────────────────────────────
   const handleUpload = async (file: File) => {
     const ext = file.name.toLowerCase().split(".").pop() || "";
@@ -203,106 +309,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
       setProgress(100);
       if (!ok) throw new Error(data.detail || `Extraction failed (${status}).`);
 
-      const missing = new Set<string>();
-      const take = (key: string, value: unknown, apply: (v: any) => void) => { if (empty(value)) missing.add(key); else apply(value); };
-
-      const c = data.company || {};
-      take("name", c.name, setName);
-      take("registration_number", c.registration_number, setRegistrationNumber);
-      take("industry", c.industry, setIndustry);
-      take("contact_person", c.contact_person, setContactPerson);
-      take("contact_email", c.contact_email, setContactEmail);
-      take("contact_phone", c.contact_phone, setContactPhone);
-      take("city", c.city, setCity);
-      take("province", c.province, (v) => ((PAKISTAN_PROVINCES as readonly string[]).includes(v) ? setProvince(v) : missing.add("province")));
-
-      const p = data.policy || {};
-      const norm = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/g, "");
-      // Exact name or code first; otherwise the longest plan name the document's wording contains
-      // ("Group Life — SME" must not settle for plain "Group Life").
-      const wanted = p.plan_name ? norm(p.plan_name) : "";
-      const matched = wanted
-        ? plans.find((x) => norm(x.label) === wanted || norm(x.code) === wanted)
-          ?? [...plans].sort((a, b) => b.label.length - a.label.length).find((x) => wanted.includes(norm(x.label)) || norm(x.label).includes(wanted))
-        : undefined;
-      if (matched) setPlanCode(matched.code); else missing.add("plan");
-      take("multiple", p.sum_assured_multiple, (v) => setMultiple(String(v)));
-      take("term", p.term_years, (v) => setTerm(String(v)));
-      take("effective", p.effective_date, setEffective);
-
-      const readClasses: any[] = Array.isArray(data.classes) ? data.classes : [];
-      const nextClasses: ClassRow[] = readClasses.map((k, i) => {
-        const basis: Basis = ["Flat", "SalaryMultiple", "ServiceBanded", "LoanBalance"].includes(k.basis) ? k.basis : "SalaryMultiple";
-        const row: ClassRow = { ...BLANK_CLASS, basis, name: k.name ?? "", salary_multiple: "", coverages: [] };
-        if (basis === "Flat") { if (empty(k.flat_amount)) missing.add(`class.${i}.flat_amount`); else row.flat_amount = String(k.flat_amount); }
-        else if (basis === "SalaryMultiple") { if (empty(k.salary_multiple)) missing.add(`class.${i}.salary_multiple`); else row.salary_multiple = String(k.salary_multiple); }
-        else if (basis === "ServiceBanded") {
-          const bands = Array.isArray(k.service_bands) ? k.service_bands.filter((b: any) => !empty(b.min_years) && !empty(b.amount)) : [];
-          if (bands.length) row.bands = bands.map((b: any) => `${b.min_years}:${b.amount}`).join(", "); else missing.add(`class.${i}.bands`);
-        }
-        if (Array.isArray(k.grades) && k.grades.length) row.grades = k.grades.join(", ");
-        if (!empty(k.min_cover)) row.min_cover = String(k.min_cover);
-        if (!empty(k.max_cover)) row.max_cover = String(k.max_cover);
-        row.is_default = Boolean(k.is_default);
-        row.coverages = (Array.isArray(k.coverages) ? k.coverages : [])
-          .filter((v: any) => v.coverage_type in RIDERS && !empty(v.percent_of_base))
-          .map((v: any) => ({ coverage_type: v.coverage_type, percent_of_base: String(v.percent_of_base), max_amount: empty(v.max_amount) ? "" : String(v.max_amount) }));
-        return row;
-      });
-      setClasses(nextClasses);
-
-      const readEmployees: any[] = Array.isArray(data.employees) ? data.employees : [];
-      const nextEmployees: EmployeeRow[] = readEmployees.map((e) => {
-        const row: EmployeeRow = { ...blankEmployee(), gender: "" };
-        (["cnic", "name", "dob", "gender", "occupation", "declared_income"] as (keyof EmployeeRow)[]).forEach((f) => {
-          if (empty(e[f])) missing.add(`emp.${row.uid}.${f}`); else (row[f] as string) = f === "cnic" ? formatCNIC(String(e[f])) : String(e[f]);
-        });
-        (["employee_id", "designation", "grade", "joining_date", "basic_monthly_salary", "benefit_class", "height_cm", "weight_kg", "loan_amount"] as (keyof EmployeeRow)[])
-          .forEach((f) => { if (!empty(e[f])) (row[f] as string) = String(e[f]); });
-        if (e.is_smoker !== null && e.is_smoker !== undefined) row.is_smoker = String(Boolean(e.is_smoker));
-        return row;
-      });
-      if (nextEmployees.length) setEmployees(nextEmployees); else missing.add("employees");
-
-      // A dependant or nominee is tied to an employee by employee ID or CNIC in the document.
-      const refTo = (ref: unknown): number | null => {
-        const r = String(ref ?? "").trim().toLowerCase();
-        if (!r) return null;
-        const hit = nextEmployees.find((e) => e.employee_id.toLowerCase() === r || e.cnic.replace(/\D/g, "") === r.replace(/\D/g, "") || e.name.toLowerCase() === r);
-        return hit ? hit.uid : null;
-      };
-      const nextDeps: DependantRow[] = (Array.isArray(data.dependants) ? data.dependants : []).map((d: any) => {
-        const row = blankDependant(refTo(d.employee_ref));
-        if (row.emp === null) missing.add(`dep.${row.uid}.emp`);
-        (["name", "relationship", "dob", "cnic", "gender"] as const).forEach((f) => { if (!empty(d[f])) row[f] = f === "cnic" ? formatCNIC(String(d[f])) : String(d[f]); });
-        if (!["Spouse", "Child", "Parent"].includes(row.relationship)) { row.relationship = "Spouse"; missing.add(`dep.${row.uid}.relationship`); }
-        (["name", "dob"] as const).forEach((f) => { if (empty(row[f])) missing.add(`dep.${row.uid}.${f}`); });
-        if (empty(d.covered_amount)) missing.add(`dep.${row.uid}.covered_amount`); else row.covered_amount = String(d.covered_amount);
-        return row;
-      });
-      const nextNoms: NomineeRow[] = (Array.isArray(data.nominees) ? data.nominees : []).map((n: any) => {
-        const row = blankNominee(refTo(n.employee_ref));
-        if (row.emp === null) missing.add(`nom.${row.uid}.emp`);
-        (["name", "relationship", "cnic", "guardian_name"] as const).forEach((f) => { if (!empty(n[f])) row[f] = f === "cnic" ? formatCNIC(String(n[f])) : String(n[f]); });
-        if (!empty(n.date_of_birth)) row.dob = String(n.date_of_birth);
-        row.is_minor = Boolean(n.is_minor);
-        if (empty(row.name)) missing.add(`nom.${row.uid}.name`);
-        if (empty(n.share_pct)) missing.add(`nom.${row.uid}.share_pct`); else row.share_pct = String(n.share_pct);
-        return row;
-      });
-      setDependants(nextDeps);
-      setNominees(nextNoms);
-      setFlagged(missing);
-
-      const filled = Number(data.found) || 0;
-      const counts = `${nextClasses.length} class${nextClasses.length === 1 ? "" : "es"}, ${nextEmployees.length} employee${nextEmployees.length === 1 ? "" : "s"}, ${nextDeps.length} dependant${nextDeps.length === 1 ? "" : "s"}, ${nextNoms.length} nominee${nextNoms.length === 1 ? "" : "s"}`;
-      setNotice(
-        filled === 0
-          ? { tone: "warn", text: "No company details could be read from this document. Please fill the tabs manually." }
-          : missing.size === 0
-          ? { tone: "ok", text: `Filled ${filled} fields (${counts}) from ${file.name}. Please review them before saving.` }
-          : { tone: "warn", text: `Filled ${filled} fields (${counts}) from ${file.name}. ${missing.size} value${missing.size === 1 ? "" : "s"} not found in the document ${missing.size === 1 ? "is" : "are"} highlighted — please fill ${missing.size === 1 ? "it" : "them"} in.` },
-      );
+      applyExtracted(data, file.name);
     } catch (err: any) {
       setNotice({ tone: "error", text: err?.message || "Could not extract details from this document." });
     } finally {
@@ -553,6 +560,7 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
             <p className="text-xs text-slate-500 mt-0.5">Company, group policy, benefit classes, employees, dependants and nominees in one place — or upload a document to fill every tab.</p>
           </div>
           <div className="flex items-center gap-3">
+            <DemoFillButton onFill={() => applyExtracted(demoOrganizationExtraction(), "demo data")} />
             <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={extracting || saving}

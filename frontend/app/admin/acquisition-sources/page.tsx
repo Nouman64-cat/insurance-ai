@@ -6,6 +6,8 @@ import { MetricCard } from "@/components/MetricCard";
 import FiltersPanel from "@/components/FiltersPanel";
 import { formatCnic } from "@/lib/cnic";
 import { Pagination, usePagination } from "@/components/Pagination";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoAcquisitionSource } from "@/lib/demoData";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -635,6 +637,13 @@ export default function AcquisitionSourcesPage() {
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <h3 className="text-base font-bold text-slate-900">{editingId ? "Edit Acquisition Source" : "Add Acquisition Source"}</h3>
+              {!editingId && (
+                // Fills realistic values for whichever Type is currently selected.
+                <DemoFillButton
+                  className="ml-auto mr-3"
+                  onFill={() => setForm((f) => ({ ...demoAcquisitionSource(f.source_type), source_type: f.source_type }))}
+                />
+              )}
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 bg-white hover:bg-slate-100 rounded-full p-1.5 transition-colors">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="w-4 h-4"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>

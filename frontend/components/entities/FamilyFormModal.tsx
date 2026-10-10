@@ -7,6 +7,8 @@ import { listAgents, Agent } from "@/app/services/agents";
 import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import FamilyFullEntryModal from "./FamilyFullEntryModal";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoFamilyName } from "@/lib/demoData";
 
 export interface FamilyFormValue {
   id: string;
@@ -172,6 +174,15 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
         <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-sm w-full p-6 space-y-4 my-8">
           <div className="flex justify-between items-center border-b border-slate-100 pb-3">
             <h3 className="text-base font-bold text-slate-900">Quick Family</h3>
+            <DemoFillButton
+              className="ml-auto mr-3"
+              onFill={() => {
+                const f = demoFamilyName();
+                setName(f.familyName);
+                setContactPerson(f.contactPerson);
+                setContactPhone(f.phone);
+              }}
+            />
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />

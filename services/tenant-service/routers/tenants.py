@@ -9,7 +9,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import verify_superadmin
 from schemas import TenantCreate, TenantRead, TenantSetupStatus, TenantUpdate
-from shared.models.core import Branch, Role, Tenant, User
+from shared.models.core import Branch, InsurancePlan, Role, Tenant, User
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
 
@@ -72,12 +72,16 @@ async def tenant_setup_status(
         .where(Role.name == "Admin", User.is_deleted.is_(False), User.tenant_id.is_not(None))
         .group_by(User.tenant_id)
     )).all())
+    plan_counts = dict((await session.execute(
+        select(InsurancePlan.tenant_id, func.count()).group_by(InsurancePlan.tenant_id)
+    )).all())
     tenant_ids = (await session.exec(select(Tenant.id))).all()
     return [
         TenantSetupStatus(
             tenant_id=tid,
             branch_count=branch_counts.get(tid, 0),
             admin_count=admin_counts.get(tid, 0),
+            plan_count=plan_counts.get(tid, 0),
         )
         for tid in tenant_ids
     ]

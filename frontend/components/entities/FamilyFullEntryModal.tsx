@@ -15,6 +15,8 @@ import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoFamilyExtraction } from "@/lib/demoData";
 import FamilyMembersEditor, { FamilyRow, NOMINEE_RELATIONSHIPS, blankRow, buildMembersPayload, checkRows, formatCNIC, isInsured, startRows } from "@/components/family/FamilyMembersEditor";
 
 interface Props {
@@ -106,6 +108,73 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [flagged, name, contactPerson, householdIncome, city, province, kind, sumInsured, discount, term, effective, rows]);
 
+  // Fills all three tabs from document-reader output (or demo data of the same shape).
+  const applyExtracted = (data: any, from: string) => {
+    const f = data.family || {};
+    const missing = new Set<string>();
+    const take = (key: string, value: unknown, apply: (v: any) => void) => {
+      if (empty(value)) { missing.add(key); return; }
+      apply(value);
+    };
+    take("name", f.family_name, setName);
+    take("contact_person", f.contact_person, setContactPerson);
+    take("contact_email", f.contact_email, setContactEmail);
+    take("contact_phone", f.contact_phone, setContactPhone);
+    take("household_income", f.household_declared_income, (v) => setHouseholdIncome(String(v)));
+    take("city", f.city, setCity);
+    take("province", f.province, (v) => (PAKISTAN_PROVINCES as readonly string[]).includes(v) ? setProvince(v) : missing.add("province"));
+
+    const bundle = f.policy_type === "LifeBundle";
+    if (f.policy_type) setKind(bundle ? "LifeBundle" : "Floater"); else missing.add("policy_type");
+    take("term", f.term_years, (v) => setTerm(String(v)));
+    take("effective", f.effective_date, setEffective);
+    if (bundle) take("discount", f.discount_percentage, (v) => setDiscount(String(v)));
+    else take("sum_insured", f.total_sum_insured, (v) => setSumInsured(String(v)));
+
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const read: any[] = Array.isArray(data.members) ? data.members : [];
+    if (read.length > 0) {
+      const next: FamilyRow[] = read.map((m, i) => {
+        // The head is "Self"; a spouse is asked "fully insured?"; every other relative is a nominee.
+        const kind = m.relationship === "Self" ? "Self" : m.relationship === "Spouse" ? "Spouse" : "Nominee";
+        const row: FamilyRow = blankRow(kind);
+        if (kind === "Nominee") row.relationship = NOMINEE_RELATIONSHIPS.includes(m.relationship) ? m.relationship : "Other";
+        if (kind === "Spouse") { if (m.is_insured === null || m.is_insured === undefined) missing.add(`member.${i}.insured`); else row.insured = m.is_insured ? "yes" : "no"; }
+        const insured = isInsured(row);
+        const need: (keyof FamilyRow)[] = ["name", ...(insured ? (["cnic", "dob", "gender", "occupation", "declared_income"] as (keyof FamilyRow)[]) : [])];
+        (["name", "cnic", "dob", "gender", "occupation", "declared_income"] as (keyof FamilyRow)[]).forEach((k) => {
+          if (!empty(m[k])) (row[k] as string) = k === "cnic" ? formatCNIC(String(m[k])) : String(m[k]);
+          else if (need.includes(k)) missing.add(`member.${i}.${k}`);
+        });
+        if (kind !== "Self") { if (empty(m.share_pct)) missing.add(`member.${i}.share_pct`); else row.share_pct = String(m.share_pct); }
+        if (insured) {
+          if (m.is_smoker !== null && m.is_smoker !== undefined) row.is_smoker = String(Boolean(m.is_smoker));
+          if (!empty(m.height_cm)) row.height_cm = String(m.height_cm);
+          if (!empty(m.weight_kg)) row.weight_kg = String(m.weight_kg);
+          if (bundle) {
+            if (empty(m.coverage_amount)) missing.add(`member.${i}.coverage_amount`); else row.coverage_amount = String(m.coverage_amount);
+            const plan = m.plan_name ? lifePlans.find((p) => norm(p.label).includes(norm(m.plan_name)) || norm(m.plan_name).includes(norm(p.label)) || norm(p.code) === norm(m.plan_name)) : undefined;
+            if (plan) row.plan_code = plan.code; else missing.add(`member.${i}.plan_code`);
+          }
+        }
+        return row;
+      });
+      setRows(next);
+    } else {
+      missing.add("members");
+    }
+    setFlagged(missing);
+    const filled = Number(data.found) || 0;
+    const members = read.length;
+    setNotice(
+      filled === 0
+        ? { tone: "warn", text: "No family details could be read from this document. Please fill the tabs manually." }
+        : missing.size === 0
+        ? { tone: "ok", text: `Filled ${filled} fields (${members} member${members === 1 ? "" : "s"}) from ${from}. Please review them before saving.` }
+        : { tone: "warn", text: `Filled ${filled} fields (${members} member${members === 1 ? "" : "s"}) from ${from}. ${missing.size} value${missing.size === 1 ? "" : "s"} not found in the document ${missing.size === 1 ? "is" : "are"} highlighted — please fill ${missing.size === 1 ? "it" : "them"} in.` },
+    );
+  };
+
   // ── Upload & read a document ───────────────────────────────────────────────
   const handleUpload = async (file: File) => {
     const ext = file.name.toLowerCase().split(".").pop() || "";
@@ -132,69 +201,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
       setProgress(100);
       if (!ok) throw new Error(data.detail || `Extraction failed (${status}).`);
 
-      const f = data.family || {};
-      const missing = new Set<string>();
-      const take = (key: string, value: unknown, apply: (v: any) => void) => {
-        if (empty(value)) { missing.add(key); return; }
-        apply(value);
-      };
-      take("name", f.family_name, setName);
-      take("contact_person", f.contact_person, setContactPerson);
-      take("contact_email", f.contact_email, setContactEmail);
-      take("contact_phone", f.contact_phone, setContactPhone);
-      take("household_income", f.household_declared_income, (v) => setHouseholdIncome(String(v)));
-      take("city", f.city, setCity);
-      take("province", f.province, (v) => (PAKISTAN_PROVINCES as readonly string[]).includes(v) ? setProvince(v) : missing.add("province"));
-
-      const bundle = f.policy_type === "LifeBundle";
-      if (f.policy_type) setKind(bundle ? "LifeBundle" : "Floater"); else missing.add("policy_type");
-      take("term", f.term_years, (v) => setTerm(String(v)));
-      take("effective", f.effective_date, setEffective);
-      if (bundle) take("discount", f.discount_percentage, (v) => setDiscount(String(v)));
-      else take("sum_insured", f.total_sum_insured, (v) => setSumInsured(String(v)));
-
-      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const read: any[] = Array.isArray(data.members) ? data.members : [];
-      if (read.length > 0) {
-        const next: FamilyRow[] = read.map((m, i) => {
-          // The head is "Self"; a spouse is asked "fully insured?"; every other relative is a nominee.
-          const kind = m.relationship === "Self" ? "Self" : m.relationship === "Spouse" ? "Spouse" : "Nominee";
-          const row: FamilyRow = blankRow(kind);
-          if (kind === "Nominee") row.relationship = NOMINEE_RELATIONSHIPS.includes(m.relationship) ? m.relationship : "Other";
-          if (kind === "Spouse") { if (m.is_insured === null || m.is_insured === undefined) missing.add(`member.${i}.insured`); else row.insured = m.is_insured ? "yes" : "no"; }
-          const insured = isInsured(row);
-          const need: (keyof FamilyRow)[] = ["name", ...(insured ? (["cnic", "dob", "gender", "occupation", "declared_income"] as (keyof FamilyRow)[]) : [])];
-          (["name", "cnic", "dob", "gender", "occupation", "declared_income"] as (keyof FamilyRow)[]).forEach((k) => {
-            if (!empty(m[k])) (row[k] as string) = k === "cnic" ? formatCNIC(String(m[k])) : String(m[k]);
-            else if (need.includes(k)) missing.add(`member.${i}.${k}`);
-          });
-          if (kind !== "Self") { if (empty(m.share_pct)) missing.add(`member.${i}.share_pct`); else row.share_pct = String(m.share_pct); }
-          if (insured) {
-            if (m.is_smoker !== null && m.is_smoker !== undefined) row.is_smoker = String(Boolean(m.is_smoker));
-            if (!empty(m.height_cm)) row.height_cm = String(m.height_cm);
-            if (!empty(m.weight_kg)) row.weight_kg = String(m.weight_kg);
-            if (bundle) {
-              if (empty(m.coverage_amount)) missing.add(`member.${i}.coverage_amount`); else row.coverage_amount = String(m.coverage_amount);
-              const plan = m.plan_name ? lifePlans.find((p) => norm(p.label).includes(norm(m.plan_name)) || norm(m.plan_name).includes(norm(p.label)) || norm(p.code) === norm(m.plan_name)) : undefined;
-              if (plan) row.plan_code = plan.code; else missing.add(`member.${i}.plan_code`);
-            }
-          }
-          return row;
-        });
-        setRows(next);
-      } else {
-        missing.add("members");
-      }
-      setFlagged(missing);
-      const filled = Number(data.found) || 0;
-      const members = read.length;
-      setNotice(
-        filled === 0
-          ? { tone: "warn", text: "No family details could be read from this document. Please fill the tabs manually." }
-          : missing.size === 0
-          ? { tone: "ok", text: `Filled ${filled} fields (${members} member${members === 1 ? "" : "s"}) from ${file.name}. Please review them before saving.` }
-          : { tone: "warn", text: `Filled ${filled} fields (${members} member${members === 1 ? "" : "s"}) from ${file.name}. ${missing.size} value${missing.size === 1 ? "" : "s"} not found in the document ${missing.size === 1 ? "is" : "are"} highlighted — please fill ${missing.size === 1 ? "it" : "them"} in.` },
-      );
+      applyExtracted(data, file.name);
     } catch (err: any) {
       setNotice({ tone: "error", text: err?.message || "Could not extract details from this document." });
     } finally {
@@ -296,6 +303,7 @@ export default function FamilyFullEntryModal({ open, onClose, onSaved }: Props) 
             <p className="text-xs text-slate-500 mt-0.5">Household, policy and members in one place — or upload a document to fill all three tabs.</p>
           </div>
           <div className="flex items-center gap-3">
+            <DemoFillButton onFill={() => applyExtracted(demoFamilyExtraction(), "demo data")} />
             <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={extracting || saving}

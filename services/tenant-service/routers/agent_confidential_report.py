@@ -287,6 +287,65 @@ async def _resolve_recipient(session: AsyncSession, case: Case) -> Optional[ACRR
     return None
 
 
+async def _record_request(
+    request: Request,
+    session: AsyncSession,
+    tenant_id: UUID,
+    owner: Case,
+    acr: Optional[AgentConfidentialReport],
+    recipient: ACRRecipient,
+    requested_by: Optional[UUID],
+) -> AgentConfidentialReport:
+    """Address the case's ACR to `recipient` and publish `ACRRequested` — the event the
+    agent app (and the agent's web session) listen for to raise the notification."""
+    if acr is None:
+        acr = AgentConfidentialReport(tenant_id=tenant_id, case_id=owner.caseld, status=ACRStatusEnum.NOT_STARTED)
+    now = datetime.utcnow()
+    acr.requested_at = now
+    acr.requested_by = requested_by
+    acr.requested_source_id = recipient.source_id
+    acr.requested_user_id = recipient.user_id
+    acr.updated_at = now
+    session.add(acr)
+    await session.commit()
+    await session.refresh(acr)
+    await publish_case_event(
+        request, session,
+        event_type="ACRRequested",
+        tenant_id=tenant_id, case_id=owner.caseld, customer_id=owner.customer_id,
+        detail={"recipient": recipient.name, "source_type": recipient.source_type},
+    )
+    return acr
+
+
+async def auto_request_acr(
+    request: Request,
+    session: AsyncSession,
+    tenant_id: UUID,
+    case_id: UUID,
+    requested_by: Optional[UUID],
+) -> Optional[ACRRecipient]:
+    """Gate 1 just passed (e-application verified): ask the case's agent for the ACR,
+    whichever screen the verification came from. The copilot calls POST /acr/request
+    itself, but a case worked from the web case page never did — so the agent was
+    never told. Silent no-op when there's nobody to ask, the ACR is already in, it's
+    already requested from that person, or the verifier is the agent themselves."""
+    case_id = await owner_case_id(session, await _get_case(session, tenant_id, case_id), "acr")
+    owner = await session.get(Case, case_id)
+    acr = (await session.execute(
+        select(AgentConfidentialReport).where(AgentConfidentialReport.case_id == case_id)
+    )).scalars().first()
+    if acr is not None and acr.status == ACRStatusEnum.SUBMITTED:
+        return None
+    recipient = await _resolve_recipient(session, owner)
+    if recipient is None or recipient.user_id == requested_by:
+        return None
+    if acr is not None and acr.requested_at is not None and acr.requested_user_id == recipient.user_id:
+        return None
+    await _record_request(request, session, tenant_id, owner, acr, recipient, requested_by)
+    return recipient
+
+
 @router.post("/tenants/{tenant_id}/cases/{case_id}/acr/request", response_model=ACRRequestResult)
 async def request_acr(
     tenant_id: UUID,
@@ -328,23 +387,7 @@ async def request_acr(
 
     already = acr is not None and acr.requested_at is not None and acr.requested_user_id == recipient.user_id
     if not already:
-        if acr is None:
-            acr = AgentConfidentialReport(tenant_id=tenant_id, case_id=case_id, status=ACRStatusEnum.NOT_STARTED)
-        now = datetime.utcnow()
-        acr.requested_at = now
-        acr.requested_by = user_id
-        acr.requested_source_id = recipient.source_id
-        acr.requested_user_id = recipient.user_id
-        acr.updated_at = now
-        session.add(acr)
-        await session.commit()
-        await session.refresh(acr)
-        await publish_case_event(
-            request, session,
-            event_type="ACRRequested",
-            tenant_id=tenant_id, case_id=case_id, customer_id=owner.customer_id,
-            detail={"recipient": recipient.name, "source_type": recipient.source_type},
-        )
+        acr = await _record_request(request, session, tenant_id, owner, acr, recipient, user_id)
 
     return ACRRequestResult(
         case_id=case_id, status=acr.status, requested_at=acr.requested_at, recipient=recipient,

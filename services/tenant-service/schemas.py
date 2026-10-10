@@ -81,6 +81,7 @@ class TenantSetupStatus(BaseModel):
     tenant_id: UUID
     branch_count: int
     admin_count: int
+    plan_count: int = 0
 
 
 class TenantUpdate(BaseModel):

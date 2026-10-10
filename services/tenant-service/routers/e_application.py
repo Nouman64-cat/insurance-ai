@@ -14,6 +14,7 @@ expiring token — the customer never has a login.
 """
 
 import hashlib
+import logging
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional
@@ -36,6 +37,8 @@ from shared.models.core import (
     Tenant,
 )
 from services.case_events import publish_case_event
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Pre-Underwriting — E-Application"])
 
@@ -226,6 +229,7 @@ async def verify_e_application(
     tenant_id: UUID,
     case_id: UUID,
     body: VerifyPayload,
+    request: Request,
     token: str = Depends(oauth2_scheme),
     session: AsyncSession = Depends(get_session),
 ):
@@ -249,6 +253,18 @@ async def verify_e_application(
     e_app.updated_at = now
     session.add(e_app)
     await session.commit()
+
+    if body.action == "approve":
+        # Gate 1 passed, so Gate 2 (the ACR) is next: tell the case's agent now, on the
+        # app and the web, rather than only when the copilot happens to drive the case.
+        # Best-effort — the verification itself has already been saved.
+        try:
+            from routers.agent_confidential_report import auto_request_acr
+            await auto_request_acr(request, session, tenant_id, case_id, user_id)
+        except Exception:  # noqa: BLE001
+            log.exception("Auto ACR request after e-application verification failed for case %s", case_id)
+        await session.refresh(e_app)
+
     return {"status": e_app.status, "verified_at": e_app.verified_at}
 
 

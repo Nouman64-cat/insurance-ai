@@ -73,6 +73,10 @@ def _sla_status(status: PolicyStatusEnum, updated_at: datetime) -> tuple[str | N
     target_days = SLA_TARGET_DAYS.get(status)
     if not target_days:
         return None, None
+    # Policy.updated_at is stored naive (datetime.utcnow); treat it as UTC so it can
+    # be compared with an aware "now".
+    if updated_at.tzinfo is None:
+        updated_at = updated_at.replace(tzinfo=timezone.utc)
     days_elapsed = (datetime.now(timezone.utc) - updated_at).total_seconds() / 86400.0
     days_remaining = target_days - days_elapsed
     if days_remaining < 0:

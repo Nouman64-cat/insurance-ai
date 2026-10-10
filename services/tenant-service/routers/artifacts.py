@@ -15,7 +15,11 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from database import get_session
 from routers.auth import decode_access_token, oauth2_scheme
 from shared.events.kafka_events import ArtifactOCRPayload, ArtifactOCRRequestedEvent
-from shared.models.core import Artifact, Case, Claim, Policy, Tenant, User
+from sqlalchemy import update as sa_update
+from shared.models.core import (
+    Artifact, Case, CaseRequirement, CaseRequirementStatusEnum, Claim, MedicalExamOrder, Policy,
+    PolicyRequirement, Tenant, User, VerificationFinding,
+)
 
 router = APIRouter(prefix="/tenants", tags=["Artifacts"])
 
@@ -530,6 +534,8 @@ async def get_artifact(
 
 class ArtifactUpdate(BaseModel):
     document_type: Optional[str] = None
+    # Display name only — the stored object keeps its key, so links stay valid.
+    file_name: Optional[str] = None
 
 
 @router.patch("/{tenant_id}/artifacts/{artifact_id}", summary="Update artifact metadata")
@@ -546,7 +552,13 @@ async def update_artifact(
         raise HTTPException(status_code=404, detail="Artifact not found")
 
     if payload.document_type is not None:
-        artifact.document_type = payload.document_type
+        if not payload.document_type.strip():
+            raise HTTPException(status_code=422, detail="Document type can't be empty.")
+        artifact.document_type = payload.document_type.strip()
+    if payload.file_name is not None:
+        if not payload.file_name.strip():
+            raise HTTPException(status_code=422, detail="File name can't be empty.")
+        artifact.file_name = payload.file_name.strip()[:255]
 
     session.add(artifact)
     await session.commit()
@@ -591,6 +603,26 @@ async def delete_artifact(
         except Exception:
             pass  # don't block DB deletion on S3 failure
 
+    # Four tables point at artifacts with no ON DELETE action, so once OCR has linked a
+    # document to a requirement or finding the plain delete would fail. Unlink first; a
+    # requirement this file satisfied goes back to Missing (unless it was waived).
+    await session.execute(
+        sa_update(CaseRequirement)
+        .where(CaseRequirement.satisfied_by_artifact_id == artifact_id, CaseRequirement.status != CaseRequirementStatusEnum.WAIVED)
+        .values(satisfied_by_artifact_id=None, status=CaseRequirementStatusEnum.MISSING)
+    )
+    await session.execute(
+        sa_update(CaseRequirement).where(CaseRequirement.satisfied_by_artifact_id == artifact_id).values(satisfied_by_artifact_id=None)
+    )
+    await session.execute(
+        sa_update(VerificationFinding).where(VerificationFinding.source_artifact_id == artifact_id).values(source_artifact_id=None)
+    )
+    await session.execute(
+        sa_update(PolicyRequirement).where(PolicyRequirement.artifact_id == artifact_id).values(artifact_id=None)
+    )
+    await session.execute(
+        sa_update(MedicalExamOrder).where(MedicalExamOrder.result_artifact_id == artifact_id).values(result_artifact_id=None)
+    )
     await session.delete(artifact)
     await session.commit()
 

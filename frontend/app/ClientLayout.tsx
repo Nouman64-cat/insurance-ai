@@ -11,6 +11,7 @@ import { useCopilot } from "@/components/CopilotContext";
 import dynamic from "next/dynamic";
 import { NavigationProgress } from "@/components/NavigationProgress";
 import { NotificationProvider, useNotify } from "@/components/NotificationContext";
+import { ACRRequestsProvider } from "@/components/ACRRequestsProvider";
 import { useRecordHighlighter } from "@/lib/useHighlightTarget";
 
 // Give up watching an customer after this many polls (~2 min at 4s/poll) —
@@ -300,7 +301,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
       {bypassAuthShell ? (
         children
       ) : (
-        <>
+        <ACRRequestsProvider>
           {/* ── Sidebar ──────────────────────────────────────────────────────── */}
           {!isAutomationMode && !isPortalEmbed && <Sidebar />}
 
@@ -335,7 +336,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
             )}
           </div>
 
-        </>
+        </ACRRequestsProvider>
       )}
     </body>
   );

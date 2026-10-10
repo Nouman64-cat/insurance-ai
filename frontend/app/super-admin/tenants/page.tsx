@@ -6,6 +6,7 @@ import api from "@/app/services/api";
 import { Pagination, usePagination } from "@/components/Pagination";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoTenant } from "@/lib/demoData";
+import { IS_DEMO } from "@/lib/envMode";
 import TenantSetupChecklist, {
   nextSetupStep,
   setupProgress,
@@ -90,6 +91,32 @@ export default function TenantManagementPage() {
   // Onboarding progress per tenant, and the tenant whose setup checklist is open.
   const [setupStatus, setSetupStatus] = useState<Record<string, TenantSetupStatus>>({});
   const [setupTenant, setSetupTenant] = useState<Tenant | null>(null);
+  const [seedingId, setSeedingId] = useState<string | null>(null);
+
+  // Demo mode only: load the standard plan catalog (seeds/insurance_plans_seed.py)
+  // into a tenant. Idempotent server-side — plans the tenant already has are skipped.
+  const handleSeedPlans = async (tenant: Tenant) => {
+    if (!confirm(`Add the default insurance plan catalog to "${tenant.name}"? Plans it already has are left untouched.`)) {
+      return;
+    }
+    setError("");
+    setSuccess("");
+    setSeedingId(tenant.id);
+    try {
+      const resp = await api.post<unknown[]>(`/tenants/${tenant.id}/insurance-plans/seed-defaults`);
+      const added = resp.data.length;
+      setSuccess(
+        added > 0
+          ? `Added ${added} insurance plan${added === 1 ? "" : "s"} to "${tenant.name}".`
+          : `"${tenant.name}" already has every default insurance plan — nothing to add.`
+      );
+      fetchTenants();
+    } catch (err: any) {
+      setError(err.message ?? "Failed to seed insurance plans.");
+    } finally {
+      setSeedingId(null);
+    }
+  };
 
   useEffect(() => {
     const role = localStorage.getItem("user_role");
@@ -410,6 +437,17 @@ export default function TenantManagementPage() {
                     </td>
                     <td className="px-5 py-3.5 text-right">
                       <div className="flex items-center justify-end gap-3">
+                        {IS_DEMO && (
+                          <button
+                            onClick={() => handleSeedPlans(tenant)}
+                            disabled={seedingId === tenant.id}
+                            title={`${setupStatus[tenant.id]?.plan_count ?? 0} insurance plans — add the default catalog (demo only)`}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-violet-700 bg-violet-50 border border-dashed border-violet-300 rounded-md hover:bg-violet-100 transition-colors whitespace-nowrap disabled:opacity-60"
+                          >
+                            {seedingId === tenant.id ? "Seeding…" : "Seed plans"}
+                            <span className="text-violet-500/80">· {setupStatus[tenant.id]?.plan_count ?? 0}</span>
+                          </button>
+                        )}
                         <button
                           onClick={() => router.push(`/super-admin/admins?tenantId=${tenant.id}`)}
                           className="text-xs font-bold text-blue-600 hover:text-blue-800 transition-colors mr-2"

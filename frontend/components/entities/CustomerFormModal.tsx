@@ -10,6 +10,8 @@ import { listAgents, Agent } from "@/app/services/agents";
 import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { registerPendingQuote } from "@/lib/pendingQuotes";
+import DemoFillButton from "@/components/DemoFillButton";
+import { demoCustomerFields } from "@/lib/demoData";
 import {
   customerCoreSchema,
   CustomerCoreForm,
@@ -268,6 +270,196 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
   const missingInTab = (tab: string) =>
     EXTRACT_FIELDS.some((f) => f.tab === tab && isMissing(f.key));
 
+  // Fills every tab from document-reader output (or demo data of the same shape).
+  const applyExtracted = async (data: any, from: string) => {
+    const f = data.fields || {};
+    const opts = { shouldDirty: true, shouldValidate: false };
+    const found = new Set<ExtractKey>();
+    const take = (key: ExtractKey, value: unknown, apply: (v: any) => void) => {
+      if (isEmptyValue(value)) return;
+      apply(value);
+      found.add(key);
+    };
+
+    // Tab 1: Identity & Contact
+    take("firstName", f.first_name, (v) => setValue("firstName", v, opts));
+    take("lastName", f.last_name, (v) => setValue("lastName", v, opts));
+    take("cnic", f.cnic, (v) => setValue("cnic", formatCNIC(v), opts));
+    take("dob", f.date_of_birth, (v) => setValue("dob", v, opts));
+    take("gender", f.gender, (v) => setValue("gender", v, opts));
+    take("maritalStatus", f.marital_status, (v) => setValue("maritalStatus", v, opts));
+    take("mobile", f.mobile_number, (v) => updateField("contact", "mobile_number", v));
+    take("email", f.email, (v) => updateField("contact", "email", v));
+    take("emergency", f.emergency_contact_name, (v) => updateField("contact", "emergency_contact_name", v));
+    take("street", f.street_address, (v) => updateField("address", "street_address", v));
+    take("postal", f.postal_code, (v) => updateField("address", "postal_code", v));
+    take("city", f.city, (v) => setCity(v));
+    take("province", f.province, (v) => setProvince(v));
+
+    // Tab 2: CNIC & Docs
+    take("cnicIssueDate", f.cnic_issue_date, (v) => updateField("cnic_metadata", "issue_date", v));
+    take("cnicExpiryDate", f.cnic_expiry_date, (v) => updateField("cnic_metadata", "expiry_date", v));
+    take("validationStatus", f.cnic_validation_status, (v) => updateField("cnic_metadata", "validation_status", v));
+
+    // Tab 3: Occupation & Income
+    take("employmentType", f.employment_type, (v) => updateField("occupation_details", "employment_type", v));
+    take("occupation", f.occupation, (v) => setValue("occupation", v, opts));
+    take("employerName", f.employer_name, (v) => updateField("occupation_details", "employer_name", v));
+    take("industry", f.industry, (v) => updateField("occupation_details", "industry", v));
+    take("yearsOfExperience", f.years_of_experience, (v) => updateField("occupation_details", "years_of_experience", v));
+    take("occupationHazardLevel", f.occupation_hazard_level, (v) => updateField("occupation_details", "occupation_hazard_level", v));
+    take("declaredIncome", f.declared_annual_income, (v) => {
+      setValue("declaredIncome", v, opts);
+      updateField("income_record", "declared_income", v);
+      updateField("income_record", "annual_income", v);
+    });
+    take("monthlyIncome", f.monthly_income, (v) => updateField("income_record", "monthly_income", v));
+    take("incomeStabilityScore", f.income_stability_score, (v) => updateField("income_record", "income_stability_score", v));
+
+    // Tab 4: Medical & Lifestyle
+    if (f.has_pre_existing_conditions !== null && f.has_pre_existing_conditions !== undefined) {
+      updateField("medical_history", "has_pre_existing_conditions", Boolean(f.has_pre_existing_conditions));
+    }
+    if (f.is_smoker !== null && f.is_smoker !== undefined) {
+      updateField("medical_history", "is_smoker", Boolean(f.is_smoker));
+    }
+    if (f.is_diabetic !== null && f.is_diabetic !== undefined) {
+      updateField("medical_history", "is_diabetic", Boolean(f.is_diabetic));
+    }
+    if (Array.isArray(f.medical_conditions) && f.medical_conditions.length > 0) {
+      setDetails(prev => ({ ...prev, conditions: f.medical_conditions }));
+    }
+    take("heightCm", f.height_cm, (v) => updateField("lifestyle", "height_cm", v));
+    take("weightKg", f.weight_kg, (v) => updateField("lifestyle", "weight_kg", v));
+    take("exerciseFrequency", f.exercise_frequency, (v) => updateField("lifestyle", "exercise_frequency", v));
+
+    // Tab 5: Habit Check
+    take("smokingStatus", f.smoking_status, (v) => updateField("habit_check", "smoking_status", v));
+    take("alcoholConsumptionFrequency", f.alcohol_consumption_frequency, (v) => updateField("habit_check", "alcohol_consumption_frequency", v));
+    if (f.recreational_drug_use_history !== null && f.recreational_drug_use_history !== undefined) {
+      updateField("habit_check", "recreational_drug_use_history", Boolean(f.recreational_drug_use_history));
+    }
+    if (f.participates_in_extreme_sports !== null && f.participates_in_extreme_sports !== undefined) {
+      updateField("habit_check", "participates_in_extreme_sports", Boolean(f.participates_in_extreme_sports));
+    }
+    if (Array.isArray(f.extreme_sports_details) && f.extreme_sports_details.length > 0) {
+      updateField("habit_check", "extreme_sports_details", f.extreme_sports_details);
+    }
+    if (f.private_aviation !== null && f.private_aviation !== undefined) {
+      updateField("habit_check", "private_aviation", Boolean(f.private_aviation));
+    }
+    if (f.frequent_high_risk_travel !== null && f.frequent_high_risk_travel !== undefined) {
+      updateField("habit_check", "frequent_high_risk_travel", Boolean(f.frequent_high_risk_travel));
+    }
+    if (Array.isArray(f.travel_destinations) && f.travel_destinations.length > 0) {
+      updateField("habit_check", "travel_destinations", f.travel_destinations);
+    }
+    if (f.moving_violations_past_3_years !== null && f.moving_violations_past_3_years !== undefined) {
+      updateField("habit_check", "moving_violations_past_3_years", f.moving_violations_past_3_years);
+    }
+    if (f.dui_dwi_history !== null && f.dui_dwi_history !== undefined) {
+      updateField("habit_check", "dui_dwi_history", Boolean(f.dui_dwi_history));
+    }
+    if (f.criminal_record !== null && f.criminal_record !== undefined) {
+      updateField("habit_check", "criminal_record", Boolean(f.criminal_record));
+    }
+
+    // Tab 6: Financial Profile
+    take("creditScore", f.credit_score, (v) => updateSubField("financial_records", "credit_bureau", "credit_score", v));
+    take("delinquencyCount", f.delinquency_count, (v) => updateSubField("financial_records", "credit_bureau", "delinquency_count", v));
+    take("riskGrade", f.risk_grade, (v) => updateSubField("financial_records", "credit_bureau", "risk_grade", v));
+    take("numberOfDependents", f.number_of_dependents, (v) => updateSubField("financial_records", "dependents", "number_of_dependents", v));
+    take("dependentType", f.dependent_type, (v) => updateSubField("financial_records", "dependents", "dependent_type", v));
+
+    // Tab 7: Nominee Details
+    take("beneficiaryFirstName", f.beneficiary_first_name, (v) => updateField("beneficiary", "first_name", v));
+    take("beneficiaryLastName", f.beneficiary_last_name, (v) => updateField("beneficiary", "last_name", v));
+    take("beneficiaryCnic", f.beneficiary_cnic, (v) => updateField("beneficiary", "cnic_number", formatCNIC(v)));
+    take("beneficiaryRelationship", f.beneficiary_relationship, (v) => updateField("beneficiary", "relationship", v));
+    take("beneficiaryShare", f.beneficiary_share, (v) => updateField("beneficiary", "share_percentage", v));
+
+    // Tab 8: Insurance Plans
+    let plans = availablePlans;
+    if (plans.length === 0) {
+      const tenantId = localStorage.getItem("tenant_id");
+      if (tenantId) {
+        try {
+          const fetched = await listInsurancePlans(tenantId);
+          plans = (fetched ?? []).filter((p: any) => p.is_active || p.status === "Active");
+          setAvailablePlans(plans);
+        } catch (_) {}
+      }
+    }
+    if (f.insurance_plan_name && plans.length > 0) {
+      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const target = norm(f.insurance_plan_name);
+      const match = plans.find((p) =>
+        norm(p.label).includes(target) ||
+        target.includes(norm(p.label)) ||
+        norm(p.code) === target ||
+        norm(p.insurance_type) === target
+      );
+      if (match) {
+        setValue("selectedPlanId", match.id, opts);
+        setEditSelectedPlanId(match.id);
+        found.add("selectedPlan");
+      }
+    }
+    take("policyCoverage", f.policy_coverage, (v) => {
+      setValue("policyCoverage", v, opts);
+      setEditPolicyCoverage(String(v));
+    });
+    take("policyTerm", f.policy_term, (v) => {
+      setValue("policyTerm", v, opts);
+      setEditPolicyTerm(String(v));
+    });
+    if (f.dependent_name) {
+      setValue("policyDependentName", f.dependent_name, opts);
+      setEditPolicyDependentName(f.dependent_name);
+    }
+    if (f.dependent_dob) {
+      setValue("policyDependentDob", f.dependent_dob, opts);
+      setEditPolicyDependentDob(f.dependent_dob);
+    }
+
+    // Gender / marital status are pre-set to defaults on a new customer. If
+    // the document didn't state them and they're still the untouched default,
+    // clear them so they read as "missing" rather than silently asserting a value.
+    if (isCreate) {
+      if (!found.has("gender") && formValues.gender === "Male") setValue("gender", "", opts);
+      if (!found.has("maritalStatus") && formValues.maritalStatus === "Single") setValue("maritalStatus", "", opts);
+    }
+
+    const notFound = EXTRACT_FIELDS.filter((x) => !found.has(x.key));
+    setFlagged(new Set(notFound.map((x) => x.key)));
+    setFormTab("demographics");
+    setExtractNotice(
+      found.size === 0
+        ? { tone: "warn", text: "No customer details could be read from this document. Please fill the form manually." }
+        : notFound.length === 0
+        ? { tone: "ok", text: `Filled ${found.size} fields across all tabs from ${from}. Please review them before saving.` }
+        : {
+            tone: "warn",
+            text: `Filled ${found.size} fields from ${from}. ${notFound.length} not found in the document are highlighted — please fill them in: ${notFound.map((x) => x.label).join(", ")}.`,
+          }
+    );
+  };
+
+  // Demo mode: fit a random customer to one of the tenant's plans, then fill the form
+  // through the same path an uploaded document takes.
+  const handleDemoFill = async () => {
+    let plans = availablePlans;
+    if (plans.length === 0) {
+      const tenantId = localStorage.getItem("tenant_id");
+      if (tenantId) {
+        try {
+          plans = ((await listInsurancePlans(tenantId)) ?? []).filter((p: any) => p.is_active || p.status === "Active");
+        } catch (_) {}
+      }
+    }
+    await applyExtracted({ fields: demoCustomerFields(plans) }, "demo data");
+  };
+
   const handleDocumentUpload = async (file: File) => {
     const ext = file.name.toLowerCase().split(".").pop() || "";
     if (!["pdf", "png", "jpg", "jpeg"].includes(ext)) {
@@ -306,177 +498,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       setExtractProgress(100);
       if (!ok) throw new Error(data.detail || `Extraction failed (${status}).`);
 
-      const f = data.fields || {};
-      const opts = { shouldDirty: true, shouldValidate: false };
-      const found = new Set<ExtractKey>();
-      const take = (key: ExtractKey, value: unknown, apply: (v: any) => void) => {
-        if (isEmptyValue(value)) return;
-        apply(value);
-        found.add(key);
-      };
-
-      // Tab 1: Identity & Contact
-      take("firstName", f.first_name, (v) => setValue("firstName", v, opts));
-      take("lastName", f.last_name, (v) => setValue("lastName", v, opts));
-      take("cnic", f.cnic, (v) => setValue("cnic", formatCNIC(v), opts));
-      take("dob", f.date_of_birth, (v) => setValue("dob", v, opts));
-      take("gender", f.gender, (v) => setValue("gender", v, opts));
-      take("maritalStatus", f.marital_status, (v) => setValue("maritalStatus", v, opts));
-      take("mobile", f.mobile_number, (v) => updateField("contact", "mobile_number", v));
-      take("email", f.email, (v) => updateField("contact", "email", v));
-      take("emergency", f.emergency_contact_name, (v) => updateField("contact", "emergency_contact_name", v));
-      take("street", f.street_address, (v) => updateField("address", "street_address", v));
-      take("postal", f.postal_code, (v) => updateField("address", "postal_code", v));
-      take("city", f.city, (v) => setCity(v));
-      take("province", f.province, (v) => setProvince(v));
-
-      // Tab 2: CNIC & Docs
-      take("cnicIssueDate", f.cnic_issue_date, (v) => updateField("cnic_metadata", "issue_date", v));
-      take("cnicExpiryDate", f.cnic_expiry_date, (v) => updateField("cnic_metadata", "expiry_date", v));
-      take("validationStatus", f.cnic_validation_status, (v) => updateField("cnic_metadata", "validation_status", v));
-
-      // Tab 3: Occupation & Income
-      take("employmentType", f.employment_type, (v) => updateField("occupation_details", "employment_type", v));
-      take("occupation", f.occupation, (v) => setValue("occupation", v, opts));
-      take("employerName", f.employer_name, (v) => updateField("occupation_details", "employer_name", v));
-      take("industry", f.industry, (v) => updateField("occupation_details", "industry", v));
-      take("yearsOfExperience", f.years_of_experience, (v) => updateField("occupation_details", "years_of_experience", v));
-      take("occupationHazardLevel", f.occupation_hazard_level, (v) => updateField("occupation_details", "occupation_hazard_level", v));
-      take("declaredIncome", f.declared_annual_income, (v) => {
-        setValue("declaredIncome", v, opts);
-        updateField("income_record", "declared_income", v);
-        updateField("income_record", "annual_income", v);
-      });
-      take("monthlyIncome", f.monthly_income, (v) => updateField("income_record", "monthly_income", v));
-      take("incomeStabilityScore", f.income_stability_score, (v) => updateField("income_record", "income_stability_score", v));
-
-      // Tab 4: Medical & Lifestyle
-      if (f.has_pre_existing_conditions !== null && f.has_pre_existing_conditions !== undefined) {
-        updateField("medical_history", "has_pre_existing_conditions", Boolean(f.has_pre_existing_conditions));
-      }
-      if (f.is_smoker !== null && f.is_smoker !== undefined) {
-        updateField("medical_history", "is_smoker", Boolean(f.is_smoker));
-      }
-      if (f.is_diabetic !== null && f.is_diabetic !== undefined) {
-        updateField("medical_history", "is_diabetic", Boolean(f.is_diabetic));
-      }
-      if (Array.isArray(f.medical_conditions) && f.medical_conditions.length > 0) {
-        setDetails(prev => ({ ...prev, conditions: f.medical_conditions }));
-      }
-      take("heightCm", f.height_cm, (v) => updateField("lifestyle", "height_cm", v));
-      take("weightKg", f.weight_kg, (v) => updateField("lifestyle", "weight_kg", v));
-      take("exerciseFrequency", f.exercise_frequency, (v) => updateField("lifestyle", "exercise_frequency", v));
-
-      // Tab 5: Habit Check
-      take("smokingStatus", f.smoking_status, (v) => updateField("habit_check", "smoking_status", v));
-      take("alcoholConsumptionFrequency", f.alcohol_consumption_frequency, (v) => updateField("habit_check", "alcohol_consumption_frequency", v));
-      if (f.recreational_drug_use_history !== null && f.recreational_drug_use_history !== undefined) {
-        updateField("habit_check", "recreational_drug_use_history", Boolean(f.recreational_drug_use_history));
-      }
-      if (f.participates_in_extreme_sports !== null && f.participates_in_extreme_sports !== undefined) {
-        updateField("habit_check", "participates_in_extreme_sports", Boolean(f.participates_in_extreme_sports));
-      }
-      if (Array.isArray(f.extreme_sports_details) && f.extreme_sports_details.length > 0) {
-        updateField("habit_check", "extreme_sports_details", f.extreme_sports_details);
-      }
-      if (f.private_aviation !== null && f.private_aviation !== undefined) {
-        updateField("habit_check", "private_aviation", Boolean(f.private_aviation));
-      }
-      if (f.frequent_high_risk_travel !== null && f.frequent_high_risk_travel !== undefined) {
-        updateField("habit_check", "frequent_high_risk_travel", Boolean(f.frequent_high_risk_travel));
-      }
-      if (Array.isArray(f.travel_destinations) && f.travel_destinations.length > 0) {
-        updateField("habit_check", "travel_destinations", f.travel_destinations);
-      }
-      if (f.moving_violations_past_3_years !== null && f.moving_violations_past_3_years !== undefined) {
-        updateField("habit_check", "moving_violations_past_3_years", f.moving_violations_past_3_years);
-      }
-      if (f.dui_dwi_history !== null && f.dui_dwi_history !== undefined) {
-        updateField("habit_check", "dui_dwi_history", Boolean(f.dui_dwi_history));
-      }
-      if (f.criminal_record !== null && f.criminal_record !== undefined) {
-        updateField("habit_check", "criminal_record", Boolean(f.criminal_record));
-      }
-
-      // Tab 6: Financial Profile
-      take("creditScore", f.credit_score, (v) => updateSubField("financial_records", "credit_bureau", "credit_score", v));
-      take("delinquencyCount", f.delinquency_count, (v) => updateSubField("financial_records", "credit_bureau", "delinquency_count", v));
-      take("riskGrade", f.risk_grade, (v) => updateSubField("financial_records", "credit_bureau", "risk_grade", v));
-      take("numberOfDependents", f.number_of_dependents, (v) => updateSubField("financial_records", "dependents", "number_of_dependents", v));
-      take("dependentType", f.dependent_type, (v) => updateSubField("financial_records", "dependents", "dependent_type", v));
-
-      // Tab 7: Nominee Details
-      take("beneficiaryFirstName", f.beneficiary_first_name, (v) => updateField("beneficiary", "first_name", v));
-      take("beneficiaryLastName", f.beneficiary_last_name, (v) => updateField("beneficiary", "last_name", v));
-      take("beneficiaryCnic", f.beneficiary_cnic, (v) => updateField("beneficiary", "cnic_number", formatCNIC(v)));
-      take("beneficiaryRelationship", f.beneficiary_relationship, (v) => updateField("beneficiary", "relationship", v));
-      take("beneficiaryShare", f.beneficiary_share, (v) => updateField("beneficiary", "share_percentage", v));
-
-      // Tab 8: Insurance Plans
-      let plans = availablePlans;
-      if (plans.length === 0) {
-        const tenantId = localStorage.getItem("tenant_id");
-        if (tenantId) {
-          try {
-            const fetched = await listInsurancePlans(tenantId);
-            plans = (fetched ?? []).filter((p: any) => p.is_active || p.status === "Active");
-            setAvailablePlans(plans);
-          } catch (_) {}
-        }
-      }
-      if (f.insurance_plan_name && plans.length > 0) {
-        const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
-        const target = norm(f.insurance_plan_name);
-        const match = plans.find((p) =>
-          norm(p.label).includes(target) ||
-          target.includes(norm(p.label)) ||
-          norm(p.code) === target ||
-          norm(p.insurance_type) === target
-        );
-        if (match) {
-          setValue("selectedPlanId", match.id, opts);
-          setEditSelectedPlanId(match.id);
-          found.add("selectedPlan");
-        }
-      }
-      take("policyCoverage", f.policy_coverage, (v) => {
-        setValue("policyCoverage", v, opts);
-        setEditPolicyCoverage(String(v));
-      });
-      take("policyTerm", f.policy_term, (v) => {
-        setValue("policyTerm", v, opts);
-        setEditPolicyTerm(String(v));
-      });
-      if (f.dependent_name) {
-        setValue("policyDependentName", f.dependent_name, opts);
-        setEditPolicyDependentName(f.dependent_name);
-      }
-      if (f.dependent_dob) {
-        setValue("policyDependentDob", f.dependent_dob, opts);
-        setEditPolicyDependentDob(f.dependent_dob);
-      }
-
-      // Gender / marital status are pre-set to defaults on a new customer. If
-      // the document didn't state them and they're still the untouched default,
-      // clear them so they read as "missing" rather than silently asserting a value.
-      if (isCreate) {
-        if (!found.has("gender") && formValues.gender === "Male") setValue("gender", "", opts);
-        if (!found.has("maritalStatus") && formValues.maritalStatus === "Single") setValue("maritalStatus", "", opts);
-      }
-
-      const notFound = EXTRACT_FIELDS.filter((x) => !found.has(x.key));
-      setFlagged(new Set(notFound.map((x) => x.key)));
-      setFormTab("demographics");
-      setExtractNotice(
-        found.size === 0
-          ? { tone: "warn", text: "No customer details could be read from this document. Please fill the form manually." }
-          : notFound.length === 0
-          ? { tone: "ok", text: `Filled ${found.size} fields across all tabs from ${file.name}. Please review them before saving.` }
-          : {
-              tone: "warn",
-              text: `Filled ${found.size} fields from ${file.name}. ${notFound.length} not found in the document are highlighted — please fill them in: ${notFound.map((x) => x.label).join(", ")}.`,
-            }
-      );
+      await applyExtracted(data, file.name);
     } catch (err: any) {
       setExtractNotice({ tone: "error", text: err?.message || "Could not extract details from this document." });
     } finally {
@@ -873,6 +895,7 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
             <p className="text-xs text-slate-500 mt-0.5">Please populate the structured underwriting variables below.</p>
           </div>
           <div className="flex items-center gap-3">
+            {isCreate && <DemoFillButton onFill={handleDemoFill} />}
             <input
               ref={fileInputRef}
               type="file"
