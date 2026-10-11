@@ -300,7 +300,10 @@ async def list_family_groups(
         query = query.where(or_(FamilyGroup.name.ilike(like), FamilyGroup.contact_person.ilike(like)))
     if branch_id:
         query = query.where(FamilyGroup.branch_id == branch_id)
-    if assigned_agent_id:
+    # A source login (broker, bank desk…) is already limited to its source's book
+    # above, and leads it brings in usually have no assigned agent — so its own
+    # "assigned to me" filter would hide them. Only staff logins filter by agent.
+    if assigned_agent_id and scope is None:
         query = query.where(FamilyGroup.assigned_agent_id == assigned_agent_id)
     if city:
         query = query.where(FamilyGroup.city.ilike(f"%{city}%"))

@@ -210,7 +210,9 @@ async def list_quotes(
         stmt = stmt.where(Policy.coverage_amount <= coverage_max)
     if assigned_underwriter_id:
         stmt = stmt.where(Policy.assigned_underwriter_id == assigned_underwriter_id)
-    if assigned_agent_id:
+    # A source login is already limited to its source's book above, and its leads
+    # usually have no assigned agent — its own "assigned to me" filter would hide them.
+    if assigned_agent_id and scope is None:
         stmt = stmt.where(Customer.assigned_agent_id == assigned_agent_id)
     if acquisition_source_id:
         stmt = stmt.where(Customer.acquisition_source_id == acquisition_source_id)

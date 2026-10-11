@@ -17,10 +17,16 @@ import {
 } from './types';
 import { ToneName } from '../theme/palette';
 import { Ionicons } from '@expo/vector-icons';
+import { useSession } from '../context/SessionContext';
 
 /** Keeping the persisted feed bounded stops storage growing without limit. */
 const MAX_STORED = 100;
-const STORAGE_KEY = 'app_notifications_v1';
+const STORAGE_PREFIX = 'app_notifications_v2';
+/**
+ * The pre-v2 feed was one device-wide list, so every login on the device saw it.
+ * It can't be attributed to anyone after the fact, so it is dropped.
+ */
+const LEGACY_STORAGE_KEY = 'app_notifications_v1';
 const DEFAULT_TOAST_MS = 4200;
 
 export interface NotifyInput {
@@ -89,10 +95,18 @@ const TONE_ICONS: Record<ToneName, keyof typeof Ionicons.glyphMap> = {
 };
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { user } = useSession();
+  // Each login gets its own feed — an agent and a broker sharing a device (or a
+  // tenant) must never see each other's notifications.
+  const storageKey = user
+    ? `${STORAGE_PREFIX}:${user.tenantId}:${user.id || user.email}`
+    : null;
+
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [popup, setPopup] = useState<AppNotification | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+  /** The storage key the in-memory feed was loaded from; null until it has been. */
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
 
   // A monotonic counter guarantees unique ids even when several notifications
   // are raised inside the same millisecond, which a timestamp alone would not.
@@ -105,29 +119,44 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
   // ── Persistence ────────────────────────────────────────────────────────────
 
   useEffect(() => {
+    AsyncStorage.removeItem(LEGACY_STORAGE_KEY).catch(() => undefined);
+  }, []);
+
+  // Swap feeds whenever the signed-in user changes, so nothing from the previous
+  // login — feed, toasts or popup — carries over to the next one.
+  useEffect(() => {
     let cancelled = false;
-    AsyncStorage.getItem(STORAGE_KEY)
+    setNotifications([]);
+    setToasts([]);
+    setPopup(null);
+    setHydratedKey(null);
+    if (!storageKey) return;
+    AsyncStorage.getItem(storageKey)
       .then((raw) => {
         if (cancelled || !raw) return;
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setNotifications(parsed as AppNotification[]);
+        // Merge rather than replace: anything raised while the read was in
+        // flight belongs to this user too.
+        if (Array.isArray(parsed)) {
+          setNotifications((prev) => [...prev, ...(parsed as AppNotification[])].slice(0, MAX_STORED));
+        }
       })
       // Corrupt stored JSON must not take the app down — start from empty.
       .catch(() => undefined)
       .finally(() => {
-        if (!cancelled) setHydrated(true);
+        if (!cancelled) setHydratedKey(storageKey);
       });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [storageKey]);
 
   useEffect(() => {
-    // Skip the write triggered by the initial empty state, which would clobber
-    // the stored feed before hydration has finished reading it.
-    if (!hydrated) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(notifications)).catch(() => undefined);
-  }, [notifications, hydrated]);
+    // Only write once this user's feed has been read, otherwise the reset above
+    // (or the previous user's list) would clobber what is stored for them.
+    if (!storageKey || hydratedKey !== storageKey) return;
+    AsyncStorage.setItem(storageKey, JSON.stringify(notifications)).catch(() => undefined);
+  }, [notifications, storageKey, hydratedKey]);
 
   // ── Toasts ─────────────────────────────────────────────────────────────────
 

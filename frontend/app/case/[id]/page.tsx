@@ -1210,24 +1210,29 @@ export default function CasePage({ params }: { params: { id: string } }) {
   // re-read its data after something happens in the conversation (a gate run, a
   // document uploaded…) instead of reloading the whole frame — so the user's
   // place and any open dialog are kept.
+  // Re-reads everything the page shows — used by the Copilot's refresh message and by live events.
+  const refreshCaseData = useCallback(() => {
+    fetchDetail();
+    fetchArtifacts();
+    fetchEApplication();
+    fetchAcr();
+    fetchIpp();
+    fetchHistory();
+    fetchMedical();
+    fetchCompliance();
+    fetchRequirements();
+    fetchVerificationFindings();
+  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical, fetchCompliance, fetchRequirements, fetchVerificationFindings]);
+
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
       if (event.data?.source !== "insurance-ai-copilot" || event.data?.type !== "refresh") return;
-      fetchDetail();
-      fetchArtifacts();
-      fetchEApplication();
-      fetchAcr();
-      fetchIpp();
-      fetchHistory();
-      fetchMedical();
-      fetchCompliance();
-      fetchRequirements();
-      fetchVerificationFindings();
+      refreshCaseData();
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [fetchDetail, fetchArtifacts, fetchEApplication, fetchAcr, fetchIpp, fetchHistory, fetchMedical, fetchCompliance]);
+  }, [refreshCaseData]);
 
   // Poll every 3s while any artifact is still being OCR'd, so status/ocr_result
   // update without a manual refresh — same pattern as the /cases explorer.
@@ -1254,21 +1259,15 @@ export default function CasePage({ params }: { params: { id: string } }) {
     return ids;
   }, [caseId, detail?.family_members, detail?.family_head_case]);
 
+  // A reconnect or the tab coming back into view may mean events were missed —
+  // re-read rather than show a stale gate until someone refreshes.
   useCaseEvents((evt: CaseEvent) => {
     if (!evt.case_id || !relatedCaseIds.has(evt.case_id)) return;
     if (!LIVE_CASE_EVENTS.has(evt.event_type)) return;
-    fetchDetail();
-    fetchEApplication();
-    fetchAcr();
-    fetchIpp();
-    fetchHistory();
-    fetchMedical();
-    fetchCompliance();
-    fetchRequirements();
-    fetchVerificationFindings();
+    refreshCaseData();
     const message = LIVE_CASE_EVENT_MESSAGES[evt.event_type];
     if (message) notify(message, true);
-  });
+  }, true, refreshCaseData);
 
   // One-shot popup the moment every pre-underwriting prerequisite clears —
   // fires once per transition into "ready", not on every poll/re-render.

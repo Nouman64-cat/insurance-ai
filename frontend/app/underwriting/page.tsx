@@ -18,6 +18,7 @@ import { createCounterOffer } from "@/app/services/preIssuance";
 import { runInsuranceHistory } from "@/app/services/insuranceHistory";
 import { assessMedicalExam, inviteMedicalExam, recordMedicalResult, MEDICAL_CLEARED } from "@/app/services/medicalExam";
 import api from "@/app/services/api";
+import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import FiltersPanel from "@/components/FiltersPanel";
 import { Pagination, usePagination } from "@/components/Pagination";
 
@@ -341,6 +342,13 @@ function UnderwritingMainContent() {
       setCases(data);
     } catch { /* keep the last good list; the next tick retries */ }
   }, [tenantId, notify]);
+
+  // Live: a gate cleared elsewhere (the agent filing the ACR from the mobile app, the applicant
+  // submitting the e-application…) re-reads the queue, and so does a reconnect or the tab
+  // coming back into view, in case events were missed meanwhile.
+  useCaseEvents((evt) => {
+    if (evt.case_id || evt.event_type === "DataChanged") silentRefresh();
+  }, true, silentRefresh);
 
   const handleRefreshGate1 = async (c: CaseQueueItem) => {
     setRefreshingFor(c.caseld);

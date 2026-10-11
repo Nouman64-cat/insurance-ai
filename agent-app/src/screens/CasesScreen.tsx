@@ -8,7 +8,7 @@ import { ToneName } from '../theme/palette';
 import { useResponsive } from '../hooks/useResponsive';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useNotifications } from '../notifications/NotificationContext';
-import { fetchCases, CaseItem } from '../api/cases';
+import { fetchCaseFolders, CaseItem } from '../api/cases';
 import { inviteEApplication, buildEApplicationLink } from '../api/eApplication';
 import { formatRelativeTime } from '../notifications/types';
 import { useACRRequests } from '../sync/ACRRequestsProvider';
@@ -39,6 +39,7 @@ const STATUS_META: Record<string, { tone: ToneName; label: string }> = {
   DRAFT: { tone: 'neutral', label: 'Draft' },
   NEW: { tone: 'brand', label: 'New' },
   QUOTED: { tone: 'brand', label: 'Quoted' },
+  SUBMITTED: { tone: 'info', label: 'Submitted' },
   UNDERWRITING: { tone: 'warning', label: 'Underwriting' },
   IN_PROGRESS: { tone: 'warning', label: 'In Progress' },
   PENDING: { tone: 'warning', label: 'Pending' },
@@ -68,7 +69,7 @@ const SEGMENT_LABEL: Record<ACRRequest['segment'], string> = {
 };
 
 const BOARD_COLUMNS: { title: string; statuses: string[] }[] = [
-  { title: 'New', statuses: ['DRAFT', 'NEW', 'QUOTED'] },
+  { title: 'New', statuses: ['DRAFT', 'NEW', 'QUOTED', 'SUBMITTED'] },
   { title: 'Underwriting', statuses: ['UNDERWRITING', 'IN_PROGRESS', 'PENDING'] },
   { title: 'Closed', statuses: ['APPROVED', 'ISSUED', 'DECLINED', 'CLOSED'] },
 ];
@@ -93,7 +94,7 @@ export default function CasesScreen() {
   const load = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!options.silent) setRefreshing(true);
     try {
-      const data = await fetchCases();
+      const data = await fetchCaseFolders();
       setCases(data);
       setError(null);
     } catch (err: any) {
@@ -218,7 +219,9 @@ export default function CasesScreen() {
 
         <View style={styles.meta}>
           <Badge label={item.case_type} tone="neutral" variant="outline" icon="albums-outline" />
-          <Badge label={item.priority} tone={priorityTone} variant="soft" icon="flag-outline" />
+          {item.pending ? null : (
+            <Badge label={item.priority} tone={priorityTone} variant="soft" icon="flag-outline" />
+          )}
           <Text variant="micro" color="subtle" style={styles.metaTime}>
             {formatRelativeTime(new Date(item.created_at).getTime())}
           </Text>
@@ -226,6 +229,11 @@ export default function CasesScreen() {
 
         <Divider spacingY="md" />
 
+        {item.pending ? (
+          <Text variant="caption" color="muted">
+            Proposal submitted — the case opens once underwriting picks it up.
+          </Text>
+        ) : (
         <View style={styles.actions}>
           <Pressable
             onPress={() => sendEApplicationLink(item)}
@@ -277,6 +285,7 @@ export default function CasesScreen() {
             </Text>
           </Pressable>
         </View>
+        )}
       </Card>
     );
   };
@@ -292,7 +301,7 @@ export default function CasesScreen() {
         <ScreenHeader
           title="Cases"
           subtitle={
-            loading ? 'Loading…' : `${cases.length} ${cases.length === 1 ? 'case' : 'cases'} in underwriting`
+            loading ? 'Loading…' : `${cases.length} ${cases.length === 1 ? 'case' : 'cases'}`
           }
           leading="menu"
         >

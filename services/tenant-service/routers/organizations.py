@@ -347,7 +347,10 @@ async def list_organizations(
         )
     if branch_id:
         query = query.where(Organization.branch_id == branch_id)
-    if assigned_agent_id:
+    # A source login (broker, bank desk…) is already limited to its source's book
+    # above, and leads it brings in usually have no assigned agent — so its own
+    # "assigned to me" filter would hide them. Only staff logins filter by agent.
+    if assigned_agent_id and scope is None:
         query = query.where(Organization.assigned_agent_id == assigned_agent_id)
     if city:
         query = query.where(Organization.city.ilike(f"%{city}%"))

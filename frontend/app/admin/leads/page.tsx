@@ -99,7 +99,8 @@ export default function LeadsHubPage() {
   // An Agent works the same board as an admin, minus the destructive tools: no demo reset and no delete.
   const [userRole, setUserRole] = useState<string | null>(null);
   useEffect(() => { setUserRole(localStorage.getItem("user_role")); }, []);
-  const isAgent = userRole === "Agent";
+  // Brokers work leads the same way Agents do — add and progress them, but not delete.
+  const isAgent = userRole === "Agent" || userRole === "Broker";
   /** Leads that appeared since the board was opened, awaiting acknowledgement. */
   const [incomingLeads, setIncomingLeads] = useState<NewLeadInfo[]>([]);
   /**

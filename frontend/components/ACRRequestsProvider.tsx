@@ -79,6 +79,7 @@ export function ACRRequestsProvider({ children }: { children: ReactNode }) {
       if (WATCHED_EVENTS.has(evt.event_type)) load();
     }, [load]),
     enabled,
+    load,
   );
 
   useEffect(() => {

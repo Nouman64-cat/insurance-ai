@@ -201,7 +201,9 @@ async def list_cases(
         stmt = stmt.where(Case.customer_id == customer_id)
     if status:
         stmt = stmt.where(Case.caseStatus == status)
-    if assigned_user:
+    # A source login is already limited to its source's cases above, and those cases
+    # usually have no assigned agent — its own "assigned to me" filter would hide them.
+    if assigned_user and scope is None:
         stmt = stmt.where(Case.assignedAgentId == assigned_user)
     if case_type:
         stmt = stmt.where(Case.caseType == case_type)

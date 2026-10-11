@@ -128,7 +128,7 @@ const NAV_ITEMS = [
         ),
         badge: null,
         adminOnly: true,
-        agentToo: true,   // an Agent adds leads here too, and takes them as far as a submitted proposal
+        agentToo: true,   // an Agent (or Broker) adds leads here too, and takes them as far as a submitted proposal
       },
       {
         href: "/proposal",
@@ -163,7 +163,7 @@ const NAV_ITEMS = [
             <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
           </svg>
         ),
-        badge: "7",
+        badge: null,
       },
       {
         href: "/admin/acquisition-sources",
@@ -679,7 +679,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-5" aria-label="Sidebar navigation">
         {displayGroups.map((group: any, gIndex: number) => {
           const visibleLinks = group.links.filter((link: any) => {
-            if (link.adminOnly && userRole !== "Admin" && !(link.agentToo && userRole === "Agent")) return false;
+            if (link.adminOnly && userRole !== "Admin" && !(link.agentToo && (userRole === "Agent" || userRole === "Broker"))) return false;
             if (link.superAdminOnly && userRole !== "SuperAdmin") return false;
             return true;
           });

@@ -1,6 +1,7 @@
 import api from './api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { agentScopeParams } from './agentScope';
+import { fetchProposals } from './proposals';
 
 export interface CaseItem {
   id: string;
@@ -11,6 +12,14 @@ export interface CaseItem {
   priority: string;
   status: string;
   created_at: string;
+  customer_id?: string;
+  policy_id?: string;
+  /**
+   * A submitted proposal that has no underwriting case yet. The portal shows its
+   * folder from submission, so the app does too — but there is no case id to
+   * file an ACR or e-application against until underwriting opens one.
+   */
+  pending?: boolean;
 }
 
 export const fetchCases = async (): Promise<CaseItem[]> => {
@@ -30,7 +39,54 @@ export const fetchCases = async (): Promise<CaseItem[]> => {
     priority: c.priorityLevel || c.priority || 'Normal',
     status: c.caseStatus || c.status || 'New',
     created_at: c.createdAt || c.created_at || new Date().toISOString(),
+    customer_id: c.customer_id,
+    policy_id: c.policy_id ?? undefined,
   }));
+};
+
+/** Proposal statuses past Draft — submitted, so the portal already shows a case folder. */
+const SUBMITTED_PROPOSAL_STATUSES = new Set([
+  'Proposed',
+  'UnderReview',
+  'InformationRequested',
+  'Approved',
+  'AcceptedWithLoadings',
+]);
+
+/**
+ * Cases plus a placeholder folder for every submitted proposal that underwriting
+ * has not opened a case for yet — matching the portal, where the folder appears
+ * on submission rather than when underwriting starts.
+ */
+export const fetchCaseFolders = async (): Promise<CaseItem[]> => {
+  const [cases, proposals] = await Promise.all([fetchCases(), fetchProposals()]);
+  const casePolicies = new Set(cases.map((c) => c.policy_id).filter(Boolean));
+  const caseCustomers = new Set(cases.map((c) => c.customer_id).filter(Boolean));
+
+  const pending: CaseItem[] = proposals
+    .filter(
+      (p) =>
+        SUBMITTED_PROPOSAL_STATUSES.has(p.status) &&
+        !casePolicies.has(p.policy_id) &&
+        !caseCustomers.has(p.customer_id)
+    )
+    .map((p) => ({
+      id: `proposal-${p.id}`,
+      case_number: 'Awaiting underwriting',
+      applicant_name: p.customer_name || 'Applicant',
+      customer_cnic: p.customer_cnic,
+      case_type: p.product_name,
+      priority: 'Normal',
+      status: 'SUBMITTED',
+      created_at: p.created_at,
+      customer_id: p.customer_id,
+      policy_id: p.policy_id,
+      pending: true,
+    }));
+
+  return [...cases, ...pending].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
 };
 
 export const createCase = async (data: {

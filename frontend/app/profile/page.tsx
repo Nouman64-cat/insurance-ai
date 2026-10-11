@@ -156,298 +156,260 @@ export default function ProfilePage() {
     .slice(0, 2)
     .toUpperCase();
 
+  const inputCls =
+    "w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all";
+  const labelCls = "block text-xs font-semibold text-slate-600";
+
+  const facts: { label: string; value: React.ReactNode }[] = [
+    { label: "Username", value: me?.username },
+    { label: "Tenant", value: me?.tenant_name ?? "—" },
+    {
+      label: "Branch",
+      value: me?.branch_name ? (
+        <>
+          {me.branch_name}{" "}
+          <span className="font-mono text-[10px] text-slate-500 bg-slate-100 border border-slate-200 rounded px-1 py-0.5">
+            {me.branch_code}
+          </span>
+        </>
+      ) : (
+        "Not assigned"
+      ),
+    },
+    { label: "Department", value: me?.department || "—" },
+    { label: "Employee ID", value: me?.employee_id || "—" },
+    { label: "Joined", value: me?.date_of_joining || "—" },
+  ];
+
   return (
-    <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
+    <div className="px-6 py-5 max-w-screen-2xl mx-auto w-full font-sans">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
 
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center flex-shrink-0 shadow-md">
-          <span className="text-lg font-bold text-white">{initials}</span>
-        </div>
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">{me?.full_name}</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {me?.email} · <span className="font-semibold text-blue-600">{me?.role_name}</span>
-          </p>
-        </div>
-      </div>
-
-      {/* ── Organization ── */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-        <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-          <p className="text-sm font-semibold text-slate-700">Organization</p>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-5">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Tenant</p>
-            <p className="text-sm font-medium text-slate-800">{me?.tenant_name ?? "—"}</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Branch</p>
-            <p className="text-sm font-medium text-slate-800">
-              {me?.branch_name ? (
-                <>
-                  {me.branch_name}{" "}
-                  <span className="font-mono text-xs text-slate-500 bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5">
-                    {me.branch_code}
-                  </span>
-                </>
-              ) : (
-                "Not assigned"
-              )}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
-
-        {/* ── Personal Details ── */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-            <p className="text-sm font-semibold text-slate-700">Personal Details</p>
-          </div>
-
-          {error && (
-            <div className="mx-5 mt-4 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 font-medium">
-              {error}
+        {/* ── Identity sidebar ── */}
+        <aside className="lg:col-span-4 xl:col-span-3 lg:sticky lg:top-5 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="h-16 bg-gradient-to-r from-blue-600 to-blue-800" />
+          <div className="px-5 pb-5 -mt-8">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 ring-4 ring-white flex items-center justify-center shadow-md">
+              <span className="text-xl font-bold text-white">{initials}</span>
             </div>
-          )}
-          {success && (
-            <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-600 font-medium">
-              {success}
-            </div>
-          )}
-
-          <form onSubmit={handleSaveProfile} className="p-5 space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Username (Read Only)</label>
-                <input
-                  type="text"
-                  disabled
-                  value={me?.username ?? ""}
-                  className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Email (Read Only)</label>
-                <input
-                  type="email"
-                  disabled
-                  value={me?.email ?? ""}
-                  className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">First Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={firstName}
-                  onChange={(e) => setFirstName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Last Name</label>
-                <input
-                  type="text"
-                  value={lastName}
-                  onChange={(e) => setLastName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">Phone</label>
-              <input
-                type="text"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. +923001234567"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Department</label>
-                <input
-                  type="text"
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder="e.g. Underwriting"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Designation</label>
-                <input
-                  type="text"
-                  value={designation}
-                  onChange={(e) => setDesignation(e.target.value)}
-                  placeholder="e.g. Senior Underwriter"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Employee ID</label>
-                <input
-                  type="text"
-                  value={employeeId}
-                  onChange={(e) => setEmployeeId(e.target.value)}
-                  placeholder="e.g. EMP-1049"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="block text-xs font-semibold text-slate-600">Date of Joining</label>
-                <input
-                  type="date"
-                  value={dateOfJoining}
-                  onChange={(e) => setDateOfJoining(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-slate-100">
-              <button
-                type="submit"
-                disabled={profileFormLoading}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
+            <h1 className="text-lg font-bold text-slate-900 tracking-tight mt-3 truncate">{me?.full_name}</h1>
+            <p className="text-xs text-slate-500 truncate">{me?.designation || me?.email}</p>
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <span className="text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded border bg-blue-50 text-blue-700 border-blue-200">
+                {me?.role_name}
+              </span>
+              <span
+                className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded border ${
+                  me?.is_active
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                    : "bg-slate-100 text-slate-500 border-slate-200"
+                }`}
               >
-                {profileFormLoading && (
-                  <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                {me?.status ?? (me?.is_active ? "Active" : "Inactive")}
+              </span>
+            </div>
+            {me?.designation && (
+              <p className="text-xs text-slate-500 mt-2 truncate">{me.email}</p>
+            )}
+          </div>
+          <dl className="border-t border-slate-100 divide-y divide-slate-100">
+            {facts.map((f) => (
+              <div key={f.label} className="px-5 py-2.5 flex items-center justify-between gap-3">
+                <dt className="text-xs text-slate-500">{f.label}</dt>
+                <dd className="text-xs font-medium text-slate-800 text-right truncate">{f.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </aside>
+
+        {/* ── Forms ── */}
+        <div className="lg:col-span-8 xl:col-span-9 space-y-5">
+
+          {/* Personal Details */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+              <p className="text-sm font-semibold text-slate-700">Personal Details</p>
+            </div>
+
+            {error && (
+              <div className="mx-5 mt-4 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 font-medium">
+                {error}
+              </div>
+            )}
+            {success && (
+              <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-600 font-medium">
+                {success}
+              </div>
+            )}
+
+            <form onSubmit={handleSaveProfile}>
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className={labelCls}>First Name *</label>
+                  <input type="text" required value={firstName} onChange={(e) => setFirstName(e.target.value)} className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Last Name</label>
+                  <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Phone</label>
+                  <input type="text" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="e.g. +923001234567" className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Department</label>
+                  <input type="text" value={department} onChange={(e) => setDepartment(e.target.value)} placeholder="e.g. Underwriting" className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Designation</label>
+                  <input type="text" value={designation} onChange={(e) => setDesignation(e.target.value)} placeholder="e.g. Senior Underwriter" className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Employee ID</label>
+                  <input type="text" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} placeholder="e.g. EMP-1049" className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Date of Joining</label>
+                  <input type="date" value={dateOfJoining} onChange={(e) => setDateOfJoining(e.target.value)} className={inputCls} />
+                </div>
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Email (Read Only)</label>
+                  <input type="email" disabled value={me?.email ?? ""} className="w-full bg-slate-100 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-500 cursor-not-allowed focus:outline-none" />
+                </div>
+              </div>
+
+              <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={profileFormLoading}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
+                >
+                  {profileFormLoading && (
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                )}
-                Save Changes
-              </button>
-            </div>
-          </form>
-        </div>
-
-        {/* ── Change Password ── */}
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
-          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
-            <p className="text-sm font-semibold text-slate-700">Change Password</p>
+                  )}
+                  Save Changes
+                </button>
+              </div>
+            </form>
           </div>
 
-          {passwordError && (
-            <div className="mx-5 mt-4 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 font-medium">
-              {passwordError}
+          {/* Change Password */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-sm">
+            <div className="px-5 py-3 border-b border-slate-100 bg-slate-50">
+              <p className="text-sm font-semibold text-slate-700">Change Password</p>
             </div>
-          )}
-          {passwordSuccess && (
-            <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-600 font-medium">
-              {passwordSuccess}
-            </div>
-          )}
 
-          <form onSubmit={handleChangePassword} className="p-5 space-y-4">
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">Current Password *</label>
-              <div className="relative">
-                <input
-                  type={showCurrentPassword ? "text" : "password"}
-                  required
-                  value={currentPassword}
-                  onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-10 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrentPassword((prev) => !prev)}
-                  aria-label={showCurrentPassword ? "Hide password" : "Show password"}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  {showCurrentPassword ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
+            {passwordError && (
+              <div className="mx-5 mt-4 bg-red-50 border border-red-200 rounded-xl p-3 text-xs text-red-600 font-medium">
+                {passwordError}
+              </div>
+            )}
+            {passwordSuccess && (
+              <div className="mx-5 mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-600 font-medium">
+                {passwordSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePassword}>
+              <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Current Password *</label>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? "text" : "password"}
+                      required
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      className={`${inputCls} pr-10`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowCurrentPassword((prev) => !prev)}
+                      aria-label={showCurrentPassword ? "Hide password" : "Show password"}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showCurrentPassword ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
                     </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                  )}
-                </button>
-              </div>
-            </div>
+                      )}
+                    </button>
+                  </div>
+                </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">New Password *</label>
-              <div className="relative">
-                <input
-                  type={showNewPassword ? "text" : "password"}
-                  required
-                  minLength={8}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="Minimum 8 characters"
-                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 pr-10 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword((prev) => !prev)}
-                  aria-label={showNewPassword ? "Hide password" : "Show password"}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors"
-                >
-                  {showNewPassword ? (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
+                <div className="space-y-1.5">
+                  <label className={labelCls}>New Password *</label>
+                  <div className="relative">
+                    <input
+                      type={showNewPassword ? "text" : "password"}
+                      required
+                      minLength={8}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Minimum 8 characters"
+                      className={`${inputCls} pr-10`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((prev) => !prev)}
+                      aria-label={showNewPassword ? "Hide password" : "Show password"}
+                      className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600 transition-colors"
+                    >
+                      {showNewPassword ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
                     </svg>
-                  ) : (
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
+                      ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="w-[18px] h-[18px]">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                  )}
-                </button>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className={labelCls}>Confirm New Password *</label>
+                  <input
+                    type={showNewPassword ? "text" : "password"}
+                    required
+                    minLength={8}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter new password"
+                    className={inputCls}
+                  />
+                </div>
               </div>
-            </div>
 
-            <div className="space-y-1.5">
-              <label className="block text-xs font-semibold text-slate-600">Confirm New Password *</label>
-              <input
-                type={showNewPassword ? "text" : "password"}
-                required
-                minLength={8}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="Re-enter new password"
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-              />
-            </div>
-
-            <div className="pt-3 border-t border-slate-100">
-              <button
-                type="submit"
-                disabled={passwordFormLoading}
-                className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
-              >
-                {passwordFormLoading && (
-                  <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+              <div className="px-5 py-3 border-t border-slate-100 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={passwordFormLoading}
+                  className="flex items-center justify-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 rounded-lg transition-colors"
+                >
+                  {passwordFormLoading && (
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                )}
-                Update Password
-              </button>
-            </div>
-          </form>
-        </div>
+                  )}
+                  Update Password
+                </button>
+              </div>
+            </form>
+          </div>
 
+        </div>
       </div>
     </div>
   );

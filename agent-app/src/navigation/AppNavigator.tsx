@@ -17,7 +17,7 @@ import { typography } from '../theme/tokens';
 import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
-import { LeadSyncProvider } from '../sync/LeadSyncProvider';
+import { LeadSyncProvider, useLeadSync } from '../sync/LeadSyncProvider';
 import { ACRRequestsProvider } from '../sync/ACRRequestsProvider';
 import { LiveEventsProvider } from '../sync/LiveEventsProvider';
 import ToastHost from '../notifications/ToastHost';
@@ -115,8 +115,24 @@ const TAB_ICONS: Record<keyof MainTabParamList, [keyof typeof Ionicons.glyphMap,
 
 function MainTabs() {
   const { colors } = useTheme();
-  const { unreadCount } = useNotifications();
+  const { notifications } = useNotifications();
+  const { leads } = useLeadSync();
   const insets = useSafeAreaInsets();
+
+  // The badge counts leads on the board with unread updates — not every unread
+  // notification, which also includes sync errors, ACR requests and leads that
+  // have since left the board, and so showed a number on an empty board.
+  const leadsWithUpdates = useMemo(() => {
+    const onBoard = new Set(leads.map((l) => l.id));
+    const ids = new Set<string>();
+    for (const n of notifications) {
+      const leadId = n.data?.leadId;
+      if (!n.read && n.kind.startsWith('lead.') && typeof leadId === 'string' && onBoard.has(leadId)) {
+        ids.add(leadId);
+      }
+    }
+    return ids.size;
+  }, [notifications, leads]);
 
   // Derived from the device's real bottom inset rather than a per-platform
   // constant: a fixed 84pt wastes a visible band on iPhones with a home button
@@ -164,9 +180,7 @@ function MainTabs() {
       <Tab.Screen
         name="Leads"
         component={LeadsScreen}
-        // Surfacing the unread count on Leads is honest: every notification the
-        // app raises today concerns a lead.
-        options={{ tabBarBadge: unreadCount > 0 ? (unreadCount > 99 ? '99+' : unreadCount) : undefined }}
+        options={{ tabBarBadge: leadsWithUpdates > 0 ? (leadsWithUpdates > 99 ? '99+' : leadsWithUpdates) : undefined }}
       />
       <Tab.Screen name="Proposals" component={ProposalsScreen} />
       <Tab.Screen name="Cases" component={CasesScreen} />

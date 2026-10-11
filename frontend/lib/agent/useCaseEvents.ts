@@ -16,36 +16,70 @@ export interface CaseEvent {
   detail?: Record<string, unknown> | null;
 }
 
+// The gateway sends a keep-alive every 15 s; a stream silent for longer than
+// this is dead even if the socket hasn't noticed, so it is torn down and reopened.
+const STALE_STREAM_MS = 40_000;
+
 // Keeps one SSE connection open while `enabled`, reconnecting with backoff.
 // fetch() rather than EventSource because the stream needs the Bearer header.
 // Returns whether the stream is currently connected.
-export function useCaseEvents(onEvent: (evt: CaseEvent) => void, enabled = true): boolean {
+//
+// Events sent while the stream is down (a reconnect after a gateway restart, a
+// laptop waking up, a background tab the browser suspended) are not replayed,
+// so `onResync` runs whenever events may have been missed — on every reconnect
+// and when the tab becomes visible again — for the caller to re-read its data.
+export function useCaseEvents(
+  onEvent: (evt: CaseEvent) => void,
+  enabled = true,
+  onResync?: () => void,
+): boolean {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onResyncRef = useRef(onResync);
+  onResyncRef.current = onResync;
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!enabled || typeof window === "undefined") return;
     const controller = new AbortController();
     let retryMs = 1000;
+    let everConnected = false;
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") onResyncRef.current?.();
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     const connect = async () => {
       while (!controller.signal.aborted) {
         const token = localStorage.getItem("jwt_token");
         if (!token) return;
         const tenantId = localStorage.getItem("tenant_id");
+        // Per-connection abort so the watchdog can drop a stale stream without
+        // ending the hook.
+        const attempt = new AbortController();
+        const abortAttempt = () => attempt.abort();
+        controller.signal.addEventListener("abort", abortAttempt);
+        let watchdog: ReturnType<typeof setTimeout> | undefined;
+        const resetWatchdog = () => {
+          clearTimeout(watchdog);
+          watchdog = setTimeout(() => attempt.abort(), STALE_STREAM_MS);
+        };
         try {
           const res = await fetch("/api/events/stream", {
             headers: {
               Authorization: `Bearer ${token}`,
               ...(tenantId ? { "X-Tenant-Id": tenantId } : {}),
             },
-            signal: controller.signal,
+            signal: attempt.signal,
           });
           if (res.status === 401 || res.status === 403) return; // signed out — don't hammer
           if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
           retryMs = 1000;
           setConnected(true);
+          if (everConnected) onResyncRef.current?.();
+          everConnected = true;
+          resetWatchdog();
 
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
@@ -53,6 +87,7 @@ export function useCaseEvents(onEvent: (evt: CaseEvent) => void, enabled = true)
           for (;;) {
             const { done, value } = await reader.read();
             if (done) break;
+            resetWatchdog();
             buffer += decoder.decode(value, { stream: true });
             let sep;
             while ((sep = buffer.indexOf("\n\n")) !== -1) {
@@ -70,6 +105,8 @@ export function useCaseEvents(onEvent: (evt: CaseEvent) => void, enabled = true)
         } catch {
           if (controller.signal.aborted) return;
         } finally {
+          clearTimeout(watchdog);
+          controller.signal.removeEventListener("abort", abortAttempt);
           setConnected(false);
         }
         await new Promise((r) => setTimeout(r, retryMs));
@@ -77,7 +114,10 @@ export function useCaseEvents(onEvent: (evt: CaseEvent) => void, enabled = true)
       }
     };
     connect();
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [enabled]);
 
   return connected;
