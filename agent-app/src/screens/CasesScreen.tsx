@@ -12,6 +12,7 @@ import { fetchCaseFolders, CaseItem } from '../api/cases';
 import { inviteEApplication, buildEApplicationLink } from '../api/eApplication';
 import { formatRelativeTime } from '../notifications/types';
 import { useACRRequests } from '../sync/ACRRequestsProvider';
+import { useSeenItems } from '../sync/SeenItemsProvider';
 import { useLiveRefresh } from '../sync/LiveEventsProvider';
 import { ACRRequest } from '../api/confidentialReport';
 import {
@@ -81,6 +82,7 @@ export default function CasesScreen() {
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
   const { requests: acrRequests, refresh: refreshACRRequests } = useACRRequests();
+  const { isUnseen, markSeen } = useSeenItems();
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -196,14 +198,54 @@ export default function CasesScreen() {
     [toast]
   );
 
+  const openCase = (item: CaseItem) => {
+    markSeen('cases', item.id);
+    // A submitted proposal has no gates to show until underwriting opens its case.
+    if (item.pending) return;
+    navigation.navigate('Underwriting', { caseId: item.id });
+  };
+
   const renderCard = (item: CaseItem, compact = false) => {
     const meta = metaFor(item.status);
     const priorityTone = PRIORITY_TONE[(item.priority ?? '').toUpperCase()] ?? 'neutral';
     const sending = sendingLinkFor === item.id;
-    const acrRequested = requestedCaseIds.has(item.id);
+
+    // ACR button reflects where the report actually is, so a filed report reads as done.
+    const acrStatus = item.acr_status ?? 'NotStarted';
+    const acrRequested = requestedCaseIds.has(item.id) || acrStatus === 'Requested';
+    const acr: { label: string; icon: keyof typeof Ionicons.glyphMap; tone: ToneName | null } =
+      acrStatus === 'Submitted'
+        ? { label: 'ACR submitted', icon: 'checkmark-circle', tone: 'success' }
+        : acrStatus === 'Draft'
+        ? { label: 'Continue ACR', icon: 'create-outline', tone: 'warning' }
+        : acrRequested
+        ? { label: 'ACR requested', icon: 'lock-closed-outline', tone: 'accent' }
+        : { label: 'File ACR', icon: 'lock-closed-outline', tone: null };
+
+    const eAppStatus = item.e_application_status ?? 'NotSent';
+    const eAppDone = eAppStatus === 'Submitted' || eAppStatus === 'Verified';
+    const eApp: { label: string; icon: keyof typeof Ionicons.glyphMap; tone: ToneName } = sending
+      ? { label: 'Generating…', icon: 'hourglass-outline', tone: 'brand' }
+      : eAppDone
+      ? { label: eAppStatus === 'Verified' ? 'E-App verified' : 'E-App submitted', icon: 'checkmark-circle', tone: 'success' }
+      : eAppStatus === 'Sent' || eAppStatus === 'InProgress'
+      ? { label: 'Resend E-App', icon: 'link-outline', tone: 'brand' }
+      : { label: 'E-Application', icon: 'link-outline', tone: 'brand' };
+
+    const toneStyle = (tone: ToneName | null) =>
+      tone
+        ? { backgroundColor: colors.tone[tone].soft, borderColor: colors.tone[tone].softBorder }
+        : { backgroundColor: colors.surfaceSunken, borderColor: colors.border };
+    const toneText = (tone: ToneName | null) => (tone ? colors.tone[tone].on : colors.textMuted);
 
     return (
-      <Card key={item.id} padding="lg" style={compact ? undefined : styles.card}>
+      <Card
+        key={item.id}
+        padding="lg"
+        onPress={() => openCase(item)}
+        accessibilityLabel={`${item.applicant_name}, ${meta.label}${item.pending ? '' : ', open case'}`}
+        style={compact ? undefined : styles.card}
+      >
         <View style={styles.cardHeader}>
           <Avatar name={item.applicant_name} tone={meta.tone} size={42} shape="rounded" />
           <View style={styles.cardIdentity}>
@@ -214,6 +256,7 @@ export default function CasesScreen() {
               {item.case_number}
             </Text>
           </View>
+          {isUnseen('cases', item.id) ? <Badge label="New" tone="danger" variant="solid" /> : null}
           <Badge label={meta.label} tone={meta.tone} variant="soft" dot />
         </View>
 
@@ -236,52 +279,44 @@ export default function CasesScreen() {
         ) : (
         <View style={styles.actions}>
           <Pressable
-            onPress={() => sendEApplicationLink(item)}
+            onPress={() => {
+              markSeen('cases', item.id);
+              if (eAppDone) {
+                navigation.navigate('ReviewEApplication', { caseId: item.id, applicantName: item.applicant_name });
+              } else {
+                sendEApplicationLink(item);
+              }
+            }}
             disabled={sending}
             pressedScale={0.97}
             accessibilityRole="button"
-            accessibilityLabel={`Send e-application link to ${item.applicant_name}`}
+            accessibilityLabel={eAppDone ? `Review ${item.applicant_name}'s e-application` : `Send e-application link to ${item.applicant_name}`}
             accessibilityState={{ disabled: sending, busy: sending }}
-            style={[
-              styles.action,
-              { backgroundColor: colors.tone.brand.soft, borderColor: colors.tone.brand.softBorder },
-              sending ? styles.actionBusy : null,
-            ]}
+            style={[styles.action, toneStyle(eApp.tone), sending ? styles.actionBusy : null]}
           >
-            <Ionicons
-              name={sending ? 'hourglass-outline' : 'link-outline'}
-              size={15}
-              color={colors.tone.brand.on}
-            />
-            <Text variant="captionStrong" style={{ color: colors.tone.brand.on }} numberOfLines={1}>
-              {sending ? 'Generating…' : 'E-Application'}
+            <Ionicons name={eApp.icon} size={15} color={toneText(eApp.tone)} />
+            <Text variant="captionStrong" style={{ color: toneText(eApp.tone) }} numberOfLines={1}>
+              {eApp.label}
             </Text>
           </Pressable>
 
           <Pressable
-            onPress={() => openACR(item.id, item.applicant_name)}
+            onPress={() => {
+              markSeen('cases', item.id);
+              openACR(item.id, item.applicant_name);
+            }}
             pressedScale={0.97}
             accessibilityRole="button"
-            accessibilityLabel={`File the agent's confidential report for ${item.applicant_name}`}
-            style={[
-              styles.action,
-              acrRequested
-                ? { backgroundColor: colors.tone.accent.soft, borderColor: colors.tone.accent.softBorder }
-                : { backgroundColor: colors.surfaceSunken, borderColor: colors.border },
-            ]}
+            accessibilityLabel={
+              acrStatus === 'Submitted'
+                ? `View the submitted confidential report for ${item.applicant_name}`
+                : `File the agent's confidential report for ${item.applicant_name}`
+            }
+            style={[styles.action, toneStyle(acr.tone)]}
           >
-            <Ionicons
-              name="lock-closed-outline"
-              size={15}
-              color={acrRequested ? colors.tone.accent.on : colors.textMuted}
-            />
-            <Text
-              variant="captionStrong"
-              color={acrRequested ? undefined : 'muted'}
-              style={acrRequested ? { color: colors.tone.accent.on } : undefined}
-              numberOfLines={1}
-            >
-              {acrRequested ? 'ACR requested' : 'File ACR'}
+            <Ionicons name={acr.icon} size={15} color={toneText(acr.tone)} />
+            <Text variant="captionStrong" style={{ color: toneText(acr.tone) }} numberOfLines={1}>
+              {acr.label}
             </Text>
           </Pressable>
         </View>

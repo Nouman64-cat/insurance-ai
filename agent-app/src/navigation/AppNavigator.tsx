@@ -16,8 +16,8 @@ import { useTheme } from '../theme/ThemeContext';
 import { typography } from '../theme/tokens';
 import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
-import { useNotifications } from '../notifications/NotificationContext';
-import { LeadSyncProvider, useLeadSync } from '../sync/LeadSyncProvider';
+import { LeadSyncProvider } from '../sync/LeadSyncProvider';
+import { SeenItemsProvider, useSeenItems } from '../sync/SeenItemsProvider';
 import { ACRRequestsProvider } from '../sync/ACRRequestsProvider';
 import { LiveEventsProvider } from '../sync/LiveEventsProvider';
 import ToastHost from '../notifications/ToastHost';
@@ -59,7 +59,8 @@ export type RootStackParamList = {
   LeadDetail: { leadId: string };
   AddProposal: undefined;
   AddCase: undefined;
-  Underwriting: undefined;
+  /** `caseId` opens the gates focused on that one case. */
+  Underwriting: { caseId?: string } | undefined;
   PolicyIssuance: undefined;
   Commission: undefined;
   SECPRateCard: undefined;
@@ -115,24 +116,10 @@ const TAB_ICONS: Record<keyof MainTabParamList, [keyof typeof Ionicons.glyphMap,
 
 function MainTabs() {
   const { colors } = useTheme();
-  const { notifications } = useNotifications();
-  const { leads } = useLeadSync();
+  // Badges count items that appeared and the user hasn't opened yet; opening one clears it.
+  const { unseen } = useSeenItems();
+  const badge = (n: number) => (n > 0 ? (n > 99 ? '99+' : n) : undefined);
   const insets = useSafeAreaInsets();
-
-  // The badge counts leads on the board with unread updates — not every unread
-  // notification, which also includes sync errors, ACR requests and leads that
-  // have since left the board, and so showed a number on an empty board.
-  const leadsWithUpdates = useMemo(() => {
-    const onBoard = new Set(leads.map((l) => l.id));
-    const ids = new Set<string>();
-    for (const n of notifications) {
-      const leadId = n.data?.leadId;
-      if (!n.read && n.kind.startsWith('lead.') && typeof leadId === 'string' && onBoard.has(leadId)) {
-        ids.add(leadId);
-      }
-    }
-    return ids.size;
-  }, [notifications, leads]);
 
   // Derived from the device's real bottom inset rather than a per-platform
   // constant: a fixed 84pt wastes a visible band on iPhones with a home button
@@ -180,10 +167,10 @@ function MainTabs() {
       <Tab.Screen
         name="Leads"
         component={LeadsScreen}
-        options={{ tabBarBadge: leadsWithUpdates > 0 ? (leadsWithUpdates > 99 ? '99+' : leadsWithUpdates) : undefined }}
+        options={{ tabBarBadge: badge(unseen.leads) }}
       />
-      <Tab.Screen name="Proposals" component={ProposalsScreen} />
-      <Tab.Screen name="Cases" component={CasesScreen} />
+      <Tab.Screen name="Proposals" component={ProposalsScreen} options={{ tabBarBadge: badge(unseen.proposals) }} />
+      <Tab.Screen name="Cases" component={CasesScreen} options={{ tabBarBadge: badge(unseen.cases) }} />
       <Tab.Screen name="Chat" component={ChatScreen} options={{ title: 'Copilot' }} />
     </Tab.Navigator>
   );
@@ -252,6 +239,7 @@ function AppFlow() {
   return (
     <LiveEventsProvider>
     <LeadSyncProvider>
+    <SeenItemsProvider>
     <ACRRequestsProvider>
       {showSplash ? (
         <AnimatedSplashScreen onFinish={() => setShowSplash(false)} />
@@ -295,6 +283,7 @@ function AppFlow() {
       <ToastHost />
       <NotificationPopup />
     </ACRRequestsProvider>
+    </SeenItemsProvider>
     </LeadSyncProvider>
     </LiveEventsProvider>
   );

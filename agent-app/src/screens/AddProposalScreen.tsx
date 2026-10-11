@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { spacing } from '../theme/tokens';
 import { useNotifications } from '../notifications/NotificationContext';
+import { useSeenItems } from '../sync/SeenItemsProvider';
 import { createProposal } from '../api/proposals';
 import { fetchLeads, UnifiedLead } from '../api/leads';
 import {
@@ -48,6 +49,7 @@ const formatCnic = (val: string) => {
 export default function AddProposalScreen() {
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
+  const { markSeen } = useSeenItems();
 
   const [customerName, setCustomerName] = useState('');
   const [cnic, setCnic] = useState('');
@@ -113,13 +115,15 @@ export default function AddProposalScreen() {
     setSaving(true);
     setSubmitError(null);
     try {
-      await createProposal({
+      const created = await createProposal({
         customer_name: customerName.trim(),
         customer_cnic: cnic.trim() || undefined,
         product_name: productName,
         coverage_amount: coverage,
         term_years: Number(termYears),
       });
+      // The user's own new proposal isn't news to them.
+      markSeen('proposals', created?.data?.quote_id);
       toast('Proposal created', { tone: 'success', icon: 'checkmark-circle' });
       // The Proposals screen refetches on focus, so going back is enough.
       navigation.goBack();

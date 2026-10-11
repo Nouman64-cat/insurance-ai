@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { useRoute, RouteProp } from '@react-navigation/native';
+import { RootStackParamList } from '../navigation/AppNavigator';
 import { Screen, ScreenHeader, SegmentedControl } from '../components/ui';
 import PreUnderwritingBody from './underwriting/PreUnderwritingBody';
 import RiskEngineBody from './underwriting/RiskEngineBody';
@@ -19,6 +21,7 @@ const STAGE_TITLE: Record<Stage, string> = {
  * verification — read-only). One screen, one stage picker, three bodies.
  */
 export default function UnderwritingScreen() {
+  const route = useRoute<RouteProp<RootStackParamList, 'Underwriting'>>();
   const [stage, setStage] = useState<Stage>('PRE');
   const [subtitle, setSubtitle] = useState('Loading…');
 
@@ -44,7 +47,7 @@ export default function UnderwritingScreen() {
         </ScreenHeader>
       }
     >
-      {stage === 'PRE' ? <PreUnderwritingBody onSubtitle={setSubtitle} /> : null}
+      {stage === 'PRE' ? <PreUnderwritingBody onSubtitle={setSubtitle} focusCaseId={route.params?.caseId} /> : null}
       {stage === 'RISK' ? <RiskEngineBody onSubtitle={setSubtitle} /> : null}
       {stage === 'POST' ? <PostUnderwritingBody onSubtitle={setSubtitle} /> : null}
     </Screen>

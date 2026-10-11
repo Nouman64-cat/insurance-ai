@@ -9,6 +9,7 @@ import { useResponsive } from '../hooks/useResponsive';
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { useLeadSync } from '../sync/LeadSyncProvider';
+import { useSeenItems } from '../sync/SeenItemsProvider';
 import {
   createIndividualLead,
   createFamilyLead,
@@ -123,6 +124,7 @@ export default function AddLeadScreen() {
   const { user } = useSession();
   const { toast } = useNotifications();
   const { refresh } = useLeadSync();
+  const { markSeen } = useSeenItems();
 
   const type: EntityType = route.params?.type ?? 'INDIVIDUAL';
   const depth: LeadDepth = route.params?.category ?? 'quick';
@@ -231,6 +233,8 @@ export default function AddLeadScreen() {
       await refresh();
 
       const newLeadId = res?.data?.id;
+      // The user's own new lead isn't news to them.
+      markSeen('leads', newLeadId);
 
       navigation.goBack();
 

@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { spacing } from '../theme/tokens';
 import { useNotifications } from '../notifications/NotificationContext';
+import { useSeenItems } from '../sync/SeenItemsProvider';
 import { createCase } from '../api/cases';
 import { fetchLeads, UnifiedLead } from '../api/leads';
 import {
@@ -48,6 +49,7 @@ const formatCnic = (val: string) => {
 export default function AddCaseScreen() {
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
+  const { markSeen } = useSeenItems();
 
   const [applicantName, setApplicantName] = useState('');
   const [cnic, setCnic] = useState('');
@@ -116,13 +118,15 @@ export default function AddCaseScreen() {
     setSaving(true);
     setSubmitError(null);
     try {
-      await createCase({
+      const created = await createCase({
         applicant_name: applicantName.trim(),
         customer_cnic: cnic.trim() || undefined,
         case_type: caseType,
         priority,
         customer_id: selectedLeadId || undefined,
       });
+      // The user's own new case isn't news to them.
+      markSeen('cases', created?.data?.caseld);
       toast('Case created', { tone: 'success', icon: 'checkmark-circle' });
       // The Cases screen refetches on focus, so going back is enough.
       navigation.goBack();

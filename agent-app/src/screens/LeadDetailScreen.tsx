@@ -9,6 +9,7 @@ import { statusTone, statusLabel, entityTone, entityLabel, ToneName } from '../t
 import { useSession } from '../context/SessionContext';
 import { useNotifications } from '../notifications/NotificationContext';
 import { useLeadSync } from '../sync/LeadSyncProvider';
+import { useSeenItems } from '../sync/SeenItemsProvider';
 import { fetchLeadJourney, LeadJourney as Journey } from '../api/leadJourney';
 import { RootStackParamList } from '../navigation/AppNavigator';
 import { formatRelativeTime } from '../notifications/types';
@@ -42,6 +43,12 @@ export default function LeadDetailScreen() {
   const { canSeeAllLeads } = useSession();
   const { toast } = useNotifications();
   const { leads, refresh, syncing } = useLeadSync();
+  const { markSeen } = useSeenItems();
+
+  // Opening the lead is what clears it from the Leads tab badge.
+  useEffect(() => {
+    markSeen('leads', route.params.leadId);
+  }, [markSeen, route.params.leadId]);
 
   const [journey, setJourney] = useState<Journey | null>(null);
   const [journeyLoading, setJourneyLoading] = useState(true);

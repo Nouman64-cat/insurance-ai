@@ -9,6 +9,7 @@ import { ToneName } from '../theme/palette';
 import { useResponsive } from '../hooks/useResponsive';
 import { useBottomClearance } from '../hooks/useBottomClearance';
 import { useNotifications } from '../notifications/NotificationContext';
+import { useSeenItems } from '../sync/SeenItemsProvider';
 import { fetchProposals, submitProposalToUnderwriting, ProposalItem } from '../api/proposals';
 import { formatRelativeTime } from '../notifications/types';
 import {
@@ -65,6 +66,7 @@ export default function ProposalsScreen() {
   const { listPadding } = useBottomClearance();
   const navigation = useNavigation<any>();
   const { toast } = useNotifications();
+  const { isUnseen, markSeen } = useSeenItems();
 
   const [proposals, setProposals] = useState<ProposalItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -148,13 +150,14 @@ export default function ProposalsScreen() {
       <Card
         key={item.id}
         padding="lg"
-        onPress={() =>
+        onPress={() => {
+          markSeen('proposals', item.id);
           toast(item.customer_name, {
             body: `${item.product_name} · PKR ${formatCurrency(item.coverage_amount)}`,
             tone: meta.tone,
             icon: 'document-text-outline',
-          })
-        }
+          });
+        }}
         accessibilityLabel={`${item.customer_name}, ${meta.label}`}
         style={compact ? undefined : styles.card}
       >
@@ -168,6 +171,7 @@ export default function ProposalsScreen() {
               {item.product_name}
             </Text>
           </View>
+          {isUnseen('proposals', item.id) ? <Badge label="New" tone="danger" variant="solid" /> : null}
           <Badge label={meta.label} tone={meta.tone} variant="soft" dot />
         </View>
 

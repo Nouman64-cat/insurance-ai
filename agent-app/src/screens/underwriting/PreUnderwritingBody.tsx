@@ -83,7 +83,14 @@ const GATE_STATE_META: Record<GateVisualState, { tone: ToneName; icon: keyof typ
  * clears, exactly matching the portal's own timeline
  * (frontend/app/underwriting/page.tsx).
  */
-export default function PreUnderwritingBody({ onSubtitle }: { onSubtitle?: (s: string) => void }) {
+export default function PreUnderwritingBody({
+  onSubtitle,
+  focusCaseId,
+}: {
+  onSubtitle?: (s: string) => void;
+  /** Opened from a case card — show just that case until the user asks for all. */
+  focusCaseId?: string;
+}) {
   const { colors } = useTheme();
   const { gutter, isCompact, columns } = useResponsive();
   const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -95,6 +102,7 @@ export default function PreUnderwritingBody({ onSubtitle }: { onSubtitle?: (s: s
   const [error, setError] = useState<string | null>(null);
   const [busyCaseId, setBusyCaseId] = useState<string | null>(null);
   const [linkResult, setLinkResult] = useState<{ title: string; subtitle: string; url: string } | null>(null);
+  const [showAll, setShowAll] = useState(false);
 
   const load = useCallback(async (options: { silent?: boolean } = {}) => {
     if (!options.silent) setRefreshing(true);
@@ -132,9 +140,13 @@ export default function PreUnderwritingBody({ onSubtitle }: { onSubtitle?: (s: s
   );
   useLiveRefresh(() => load({ silent: true }), ['cases', 'customers', 'policies', 'compliance']);
 
+  // Falls back to the whole queue if the focused case has already cleared pre-underwriting.
+  const focused = !showAll && focusCaseId ? cases.find((c) => c.id === focusCaseId) : undefined;
+  const visibleCases = focused ? [focused] : cases;
+
   useEffect(() => {
-    onSubtitle?.(loading ? 'Loading…' : `${cases.length} in progress`);
-  }, [loading, cases.length, onSubtitle]);
+    onSubtitle?.(loading ? 'Loading…' : focused ? focused.customer_name : `${cases.length} in progress`);
+  }, [loading, cases.length, focused, onSubtitle]);
 
   const runGate = useCallback(
     async (item: PreUnderwritingCase, field: GateField) => {
@@ -261,6 +273,17 @@ export default function PreUnderwritingBody({ onSubtitle }: { onSubtitle?: (s: s
           icon="checkmark-done-circle-outline"
           style={styles.banner}
         />
+        {focused ? (
+          <Banner
+            tone="info"
+            title={`Showing ${focused.customer_name}'s case`}
+            description="Only this case's gates are shown."
+            actionLabel="Show all cases"
+            onAction={() => setShowAll(true)}
+            icon="filter-outline"
+            style={styles.banner}
+          />
+        ) : null}
         {error && !loading ? (
           <Banner
             tone="danger"
@@ -280,7 +303,7 @@ export default function PreUnderwritingBody({ onSubtitle }: { onSubtitle?: (s: s
       ) : (
         <FlatList
           key={`preuw-${gridColumns}`}
-          data={cases}
+          data={visibleCases}
           keyExtractor={(item) => item.id}
           numColumns={gridColumns}
           columnWrapperStyle={gridColumns > 1 ? styles.column : undefined}

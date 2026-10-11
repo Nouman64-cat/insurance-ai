@@ -14,6 +14,10 @@ export interface CaseItem {
   created_at: string;
   customer_id?: string;
   policy_id?: string;
+  /** NotStarted | Requested | Draft | Submitted */
+  acr_status?: string;
+  /** NotSent | Sent | InProgress | Submitted | Verified */
+  e_application_status?: string;
   /**
    * A submitted proposal that has no underwriting case yet. The portal shows its
    * folder from submission, so the app does too — but there is no case id to
@@ -41,6 +45,8 @@ export const fetchCases = async (): Promise<CaseItem[]> => {
     created_at: c.createdAt || c.created_at || new Date().toISOString(),
     customer_id: c.customer_id,
     policy_id: c.policy_id ?? undefined,
+    acr_status: c.acr_status ?? undefined,
+    e_application_status: c.e_application_status ?? undefined,
   }));
 };
 
