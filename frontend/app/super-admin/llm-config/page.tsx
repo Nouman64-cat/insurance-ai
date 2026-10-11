@@ -158,22 +158,31 @@ function ProviderCard({
         ? "bg-amber-50 text-amber-700 border-amber-200"
         : "bg-slate-100 text-slate-500 border-slate-200";
 
+  const accent =
+    status.role === "primary"
+      ? "bg-emerald-500"
+      : status.role === "fallback"
+        ? "bg-amber-400"
+        : "bg-slate-200";
+
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-100 flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-slate-900">{meta.label}</h3>
-            <span
-              className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded border ${roleBadge}`}
-            >
-              {ROLE_LABEL[status.role]}
-            </span>
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
+      <div className={`h-1 ${accent}`} />
+      <div className="px-5 pt-5 pb-4 border-b border-slate-100">
+        <div className="flex items-start justify-between gap-3">
+          <div className="h-10 w-10 rounded-lg bg-slate-900 text-white flex items-center justify-center text-sm font-bold shrink-0">
+            {meta.label.charAt(0).toUpperCase()}
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">{meta.blurb}</p>
+          <span
+            className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-1 rounded border ${roleBadge}`}
+          >
+            {ROLE_LABEL[status.role]}
+          </span>
         </div>
+        <h3 className="text-base font-bold text-slate-900 mt-3">{meta.label}</h3>
+        <p className="text-xs text-slate-500 mt-0.5 min-h-[2rem]">{meta.blurb}</p>
         <span
-          className={`text-[11px] font-medium px-2 py-1 rounded-full ${
+          className={`inline-block mt-2 text-[11px] font-medium px-2 py-0.5 rounded-full ${
             status.has_key
               ? "bg-slate-100 text-slate-600"
               : "bg-red-50 text-red-500"
@@ -183,27 +192,32 @@ function ProviderCard({
         </span>
       </div>
 
-      <div className="px-5 py-4 space-y-4">
+      <div className="px-5 py-4 space-y-4 flex-1">
         {/* Role */}
         <div>
           <label className="block text-xs font-semibold text-slate-600 mb-1.5">
             Role
           </label>
-          <div className="flex gap-2">
+          <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-lg">
             {(["primary", "fallback", "disabled"] as Role[]).map((r) => (
               <button
                 key={r}
                 type="button"
                 onClick={() => setRole(r)}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-all ${
+                title={
+                  roleTaken(r) && role !== r
+                    ? `Reassigns ${ROLE_LABEL[r].toLowerCase()} from another provider`
+                    : undefined
+                }
+                className={`py-1.5 text-xs font-semibold rounded-md transition-all ${
                   role === r
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                    ? "bg-white text-blue-600 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
                 }`}
               >
                 {ROLE_LABEL[r]}
                 {roleTaken(r) && role !== r && (
-                  <span className="ml-1 text-[10px] opacity-70">(reassign)</span>
+                  <span className="ml-0.5 text-[10px] opacity-60">*</span>
                 )}
               </button>
             ))}
@@ -256,28 +270,32 @@ function ProviderCard({
               </button>
             </div>
           )}
-          {editingKey && status.has_key && (
-            <button
-              type="button"
-              onClick={() => {
-                setEditingKey(false);
-                setNewKey("");
-              }}
-              className="text-[11px] text-slate-400 hover:text-slate-600 mt-1"
-            >
-              Cancel key change
-            </button>
-          )}
-          {meta.docs && (
-            <a
-              href={meta.docs}
-              target="_blank"
-              rel="noreferrer"
-              className="block text-[11px] text-blue-500 hover:underline mt-1"
-            >
-              Where to get a key ↗
-            </a>
-          )}
+          <div className="flex items-center justify-between mt-1">
+            {editingKey && status.has_key ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingKey(false);
+                  setNewKey("");
+                }}
+                className="text-[11px] text-slate-400 hover:text-slate-600"
+              >
+                Cancel key change
+              </button>
+            ) : (
+              <span />
+            )}
+            {meta.docs && (
+              <a
+                href={meta.docs}
+                target="_blank"
+                rel="noreferrer"
+                className="text-[11px] text-blue-500 hover:underline"
+              >
+                Where to get a key ↗
+              </a>
+            )}
+          </div>
         </div>
 
         {/* Test result */}
@@ -319,26 +337,26 @@ function ProviderCard({
         {savedNote && !dirty && (
           <div className="text-xs text-emerald-600 font-medium">{savedNote}</div>
         )}
+      </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2 pt-1">
-          <button
-            type="button"
-            onClick={save}
-            disabled={saving || !dirty}
-            className="px-4 py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-          <button
-            type="button"
-            onClick={runTest}
-            disabled={testing || (!status.has_key && newKey.trim() === "")}
-            className="px-4 py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40"
-          >
-            {testing ? "Testing…" : "Test key"}
-          </button>
-        </div>
+      {/* Actions */}
+      <div className="px-5 py-4 border-t border-slate-100 bg-slate-50/60 grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={runTest}
+          disabled={testing || (!status.has_key && newKey.trim() === "")}
+          className="py-2 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:border-slate-300 transition-all disabled:opacity-40"
+        >
+          {testing ? "Testing…" : "Test key"}
+        </button>
+        <button
+          type="button"
+          onClick={save}
+          disabled={saving || !dirty}
+          className="py-2 text-xs font-semibold text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-all disabled:opacity-40"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
       </div>
     </div>
   );
@@ -418,7 +436,7 @@ function LLMConfigContent() {
   );
 
   return (
-    <div className="px-6 py-5 space-y-5 max-w-screen-lg mx-auto w-full font-sans">
+    <div className="px-6 py-5 space-y-5 max-w-screen-2xl mx-auto w-full font-sans">
       <div>
         <h1 className="text-xl font-bold text-slate-900 tracking-tight">
           LLM Configuration
@@ -474,28 +492,43 @@ function LLMConfigContent() {
       ) : (
         cfg && (
           <>
-            <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-600">
-              <span className="font-semibold text-slate-800">Active routing:</span>{" "}
-              {primary ? (
-                <>
-                  {PROVIDER_META[primary.provider]?.label ?? primary.provider}
-                  <span className="text-slate-400"> ({primary.model_name})</span>
-                </>
-              ) : (
-                <span className="text-amber-600">
-                  no primary set — services fall back to env vars
-                </span>
-              )}
-              {fallback && (
-                <>
-                  {"  →  "}
-                  {PROVIDER_META[fallback.provider]?.label ?? fallback.provider}
-                  <span className="text-slate-400"> ({fallback.model_name})</span>
-                </>
-              )}
+            <div className="flex flex-col sm:flex-row sm:items-stretch gap-3">
+              <div className="flex-1 bg-white border border-slate-200 border-l-4 border-l-emerald-500 rounded-xl px-4 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Primary
+                </div>
+                {primary ? (
+                  <div className="text-sm font-semibold text-slate-800 mt-0.5">
+                    {PROVIDER_META[primary.provider]?.label ?? primary.provider}
+                    <span className="font-normal text-slate-400 font-mono text-xs ml-2">
+                      {primary.model_name}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-amber-600 mt-0.5">
+                    No primary set — services fall back to env vars
+                  </div>
+                )}
+              </div>
+              <div className="hidden sm:flex items-center text-slate-300 text-lg">→</div>
+              <div className="flex-1 bg-white border border-slate-200 border-l-4 border-l-amber-400 rounded-xl px-4 py-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Fallback
+                </div>
+                {fallback ? (
+                  <div className="text-sm font-semibold text-slate-800 mt-0.5">
+                    {PROVIDER_META[fallback.provider]?.label ?? fallback.provider}
+                    <span className="font-normal text-slate-400 font-mono text-xs ml-2">
+                      {fallback.model_name}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-400 mt-0.5">None</div>
+                )}
+              </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-1">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 items-stretch">
               {cfg.providers.map((p) => (
                 <ProviderCard
                   key={p.provider}
