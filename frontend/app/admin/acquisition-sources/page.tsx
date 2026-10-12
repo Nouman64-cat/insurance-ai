@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
+import { useCaseEvents } from "@/lib/agent/useCaseEvents";
 import { MetricCard } from "@/components/MetricCard";
 import FiltersPanel from "@/components/FiltersPanel";
 import { formatCnic } from "@/lib/cnic";
@@ -114,9 +115,9 @@ export default function AcquisitionSourcesPage() {
     fetchSources();
   }, []);
 
-  const fetchSources = async () => {
-    setLoading(true);
-    setError("");
+  const fetchSources = async (silent = false) => {
+    if (!silent) setLoading(true);
+    if (!silent) setError("");
     const tenantId = localStorage.getItem("tenant_id");
     if (!tenantId) {
       setError("No active organization tenant found.");
@@ -127,11 +128,23 @@ export default function AcquisitionSourcesPage() {
       const resp = await api.get<AcquisitionSource[]>(`/tenants/${tenantId}/acquisition-sources`);
       setSources(resp.data);
     } catch (err: any) {
-      setError(err.response?.data?.detail ?? err.message ?? "Failed to load acquisition sources.");
+      if (!silent) setError(err.response?.data?.detail ?? err.message ?? "Failed to load acquisition sources.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  // Live: a source signing in for the first time (invited -> active), or any change to the roster made
+  // elsewhere, re-reads the list in place, without the spinner and without a page refresh. A reconnect
+  // and the tab coming back into view re-read too, in case events were missed meanwhile.
+  useCaseEvents(
+    (evt) => {
+      const resource = evt.event_type === "DataChanged" ? (evt.detail?.resource as string | undefined) : undefined;
+      if (resource === "acquisition-sources" || resource === "users") fetchSources(true);
+    },
+    authorized,
+    () => fetchSources(true),
+  );
 
   const openCreate = () => {
     setEditingId(null);

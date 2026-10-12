@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
-import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
+import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import OrganizationFullEntryModal from "./OrganizationFullEntryModal";
 import DemoFillButton from "@/components/DemoFillButton";
@@ -104,6 +104,14 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
     }
   }, [open, mode, organization]);
 
+
+  // "Fill demo data" also hands the lead to one of the available agents.
+  const assignDemoAgent = () => {
+    const pick = pickDemoAgent(sources, agentOptions);
+    if (pick.sourceId) setAcquisitionSourceId(pick.sourceId);
+    if (pick.agentId) setAssignedAgentId(pick.agentId);
+  };
+
   if (!open) return null;
 
   // A new corporate entered in full is one window with four tabs (company, policy, classes, employees)
@@ -185,6 +193,7 @@ export default function OrganizationFormModal({ open, mode, organization, onClos
                 setName(c.name);
                 setContactPerson(c.contactPerson);
                 setContactPhone(c.phone);
+                assignDemoAgent();
               }}
             />
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">

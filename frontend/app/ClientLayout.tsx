@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import AdminTour from "@/components/tour/AdminTour";
 import { useEffect, useState } from "react";
 import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
@@ -304,6 +305,7 @@ export function ClientLayout({ children }: { children: React.ReactNode }) {
         <ACRRequestsProvider>
           {/* ── Sidebar ──────────────────────────────────────────────────────── */}
           {!isAutomationMode && !isPortalEmbed && <Sidebar />}
+          {!isAutomationMode && !isPortalEmbed && <AdminTour />}
 
           {/* ── Main column ─────────────────────────────────────────────────── */}
           <div className="flex flex-col flex-1 min-w-0 overflow-hidden">

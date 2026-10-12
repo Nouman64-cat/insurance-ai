@@ -33,7 +33,7 @@ export default function LoginPage() {
         }
       );
 
-      const { access_token } = response.data;
+      const { access_token, first_login } = response.data as { access_token: string; first_login?: boolean };
 
       // Save token in localStorage
       localStorage.setItem("jwt_token", access_token);
@@ -68,6 +68,10 @@ export default function LoginPage() {
       localStorage.setItem("user_email", profileResponse.data.email);
       localStorage.setItem("user_name", profileResponse.data.full_name);
       localStorage.setItem("user_role", profileResponse.data.role_name);
+      // First ever sign-in of an Admin: the portal starts its welcome tour (components/tour/AdminTour.tsx).
+      if (first_login && profileResponse.data.role_name === "Admin") {
+        localStorage.setItem("tour_pending", profileResponse.data.email);
+      }
       if (profileResponse.data.branch_id) {
         localStorage.setItem("branch_id", profileResponse.data.branch_id);
       } else {

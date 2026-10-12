@@ -7,7 +7,7 @@ import api, { OCR_BASE_URL } from "@/app/services/api";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
-import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
+import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { registerPendingQuote } from "@/lib/pendingQuotes";
 import DemoFillButton from "@/components/DemoFillButton";
@@ -458,6 +458,10 @@ export default function CustomerFormModal({ open, mode, customer, onClose, onSav
       }
     }
     await applyExtracted({ fields: demoCustomerFields(plans) }, "demo data");
+    // The demo lead also goes to one of the available agents.
+    const pick = pickDemoAgent(sources, agentOptions);
+    if (pick.sourceId) setAcquisitionSourceId(pick.sourceId);
+    if (pick.agentId) setAssignedAgentId(pick.agentId);
   };
 
   const handleDocumentUpload = async (file: File) => {

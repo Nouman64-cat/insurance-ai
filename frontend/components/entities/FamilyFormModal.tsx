@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
-import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
+import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import FamilyFullEntryModal from "./FamilyFullEntryModal";
 import DemoFillButton from "@/components/DemoFillButton";
@@ -101,6 +101,14 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
     }
   }, [open, mode, family]);
 
+
+  // "Fill demo data" also hands the lead to one of the available agents.
+  const assignDemoAgent = () => {
+    const pick = pickDemoAgent(sources, agentOptions);
+    if (pick.sourceId) setAcquisitionSourceId(pick.sourceId);
+    if (pick.agentId) setAssignedAgentId(pick.agentId);
+  };
+
   if (!open) return null;
 
   // A new family entered in full is one window with three tabs (family, policy, members) and
@@ -181,6 +189,7 @@ export default function FamilyFormModal({ open, mode, family, onClose, onSaved }
                 setName(f.familyName);
                 setContactPerson(f.contactPerson);
                 setContactPhone(f.phone);
+                assignDemoAgent();
               }}
             />
             <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">

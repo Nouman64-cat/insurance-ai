@@ -483,6 +483,46 @@ const NAV_ITEMS = [
 
 
 
+
+/**
+ * Which sidebar entry is lit for this URL. A page with sub-links (Underwriting, Policy Issuance, Claims...)
+ * lights the exact sub-link the user is on, matched by path and query (?tab=...), so arriving at
+ * /policy-issuance from an approved case highlights "Pre-Issuance Queue", not just "Policy Issuance".
+ * A page opened without a tab falls back to the first sub-link for that path, which is the tab the page
+ * itself opens on. Anything else lights the plain link for the path.
+ */
+// Pages that belong to a section without being one of its sub-links: the case workspace is where
+// underwriting actually happens, a policy's post-issuance page is part of the Post-Issuance queue, and so on.
+const SECTION_PAGES: { prefix: string; href: string }[] = [
+  { prefix: "/case/", href: "/underwriting?tab=pre-underwriting" },
+  { prefix: "/post-issuance/", href: "/policy-issuance?tab=active" },
+  { prefix: "/claims/", href: "/claims/register" },
+];
+
+function activeSidebarHref(pathname: string, searchParams: { get(name: string): string | null }): string {
+  const section = SECTION_PAGES.find((p) => pathname.startsWith(p.prefix) && !pathname.startsWith("/claims/dashboard") && !pathname.startsWith("/claims/register"));
+  if (section) return section.href;
+  let best: { href: string; score: number } | null = null;
+  let firstForPath: string | null = null;
+  for (const group of NAV_ITEMS as unknown as any[]) {
+    for (const link of group.links) {
+      for (const sub of link.subLinks ?? []) {
+        const [subPath, subQuery = ""] = String(sub.href).split("?");
+        if (subPath !== pathname) continue;
+        if (firstForPath === null) firstForPath = sub.href;
+        const wanted = Array.from(new URLSearchParams(subQuery).entries());
+        if (wanted.length === 0 || !wanted.every(([k, v]) => searchParams.get(k) === v)) continue;
+        if (!best || wanted.length > best.score) best = { href: sub.href, score: wanted.length };
+      }
+    }
+  }
+  if (best) return best.href;
+  // On a path whose sub-links are tabs but with no tab given, the page opens on the first one.
+  const tabbed = firstForPath && String(firstForPath).includes("?");
+  if (tabbed && !searchParams.get("tab")) return firstForPath as string;
+  return pathname;
+}
+
 export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
@@ -501,16 +541,12 @@ export function Sidebar() {
   const [draggedOverItem, setDraggedOverItem] = useState<{ groupIndex: number, linkIndex: number } | null>(null);
 
   useEffect(() => {
-    const tab = searchParams.get("tab");
-    if (pathname === "/underwriting" && tab) {
-      setActiveHref(`${pathname}?tab=${tab}`);
-    } else {
-      setActiveHref(pathname);
-    }
+    const lit = activeSidebarHref(pathname, searchParams);
+    setActiveHref(lit);
 
     NAV_ITEMS.forEach((g: any) => {
       g.links.forEach((l: any) => {
-        if (l.subLinks && l.subLinks.some((sub: any) => pathname.startsWith(sub.href.split("?")[0]))) {
+        if (l.subLinks && (l.subLinks.some((sub: any) => sub.href === lit) || l.subLinks.some((sub: any) => pathname.startsWith(sub.href.split("?")[0])))) {
           setExpandedMenus(prev => ({ ...prev, [l.href]: true }));
         }
       });
@@ -714,6 +750,7 @@ export function Sidebar() {
                     >
                       <Link
                         href={link.subLinks ? "#" : link.href}
+                        data-tour={link.href}
                         title={collapsed ? link.label : undefined}
                         onClick={(e) => {
                           if (link.subLinks) toggleSubmenu(e);

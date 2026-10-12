@@ -35,6 +35,9 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
   const { requests: acrRequests } = useACRRequests();
   const pendingACR = acrRequests.filter((r) => r.status !== "Submitted");
   const [bellOpen, setBellOpen] = useState(false);
+  // Admins can replay the welcome tour (components/tour/AdminTour.tsx) at any time.
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => { setIsAdmin(localStorage.getItem("user_role") === "Admin"); }, []);
   const bellRef = useRef<HTMLDivElement>(null);
 
   // Close the bell dropdown on an outside click or Escape.
@@ -128,6 +131,16 @@ export function TopBar({ title = "Executive Overview", subtitle }: TopBarProps) 
             Automation
           </button>
         </div>
+
+        {isAdmin && (
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new Event("start-admin-tour"))}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-all"
+          >
+            Take the tour
+          </button>
+        )}
 
         <button
           type="button"

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import api from "@/app/services/api";
 import { listQuotes } from "@/app/services/quotes";
+import { listCases } from "@/app/services/cases";
 import UnifiedDetailsModal from "@/components/UnifiedDetailsModal";
 import FiltersPanel from "@/components/FiltersPanel";
 import AddEntryChooser, { EntryEntityType } from "@/components/entities/AddEntryChooser";
@@ -20,7 +21,8 @@ import FamilyFormModal from "@/components/entities/FamilyFormModal";
 import { leadAnnouncementsPaused } from "@/lib/leadAnnouncements";
 import OrganizationFormModal from "@/components/entities/OrganizationFormModal";
 import { MetricCard } from "@/components/MetricCard";
-import LeadProgress from "@/components/LeadProgress";
+import { announceTourLead } from "@/lib/tour/events";
+import LeadProgress, { leadStage } from "@/components/LeadProgress";
 
 type EntityType = "INDIVIDUAL" | "FAMILY" | "CORPORATE";
 type ProfileStatus = "LEAD" | "PROSPECT" | "UNDERWRITING_READY" | "NOT_INTERESTED" | "POLICYHOLDER";
@@ -42,6 +44,8 @@ interface UnifiedLead {
   sourceType?: string | null;
   /** Status of this customer's latest proposal (quote), when they have one. Individuals only. */
   proposalStatus?: string | null;
+  /** Status of this lead's underwriting case, when one has been opened. */
+  caseStatus?: string | null;
 }
 
 const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -96,6 +100,7 @@ export default function LeadsHubPage() {
   const { notify } = useNotify();
   const cnicQuery = searchParams.get("cnic");
   const [leads, setLeads] = useState<UnifiedLead[]>([]);
+  const tourSeenIds = useRef<Set<string> | null>(null);
   // An Agent works the same board as an admin, minus the destructive tools: no demo reset and no delete.
   const [userRole, setUserRole] = useState<string | null>(null);
   useEffect(() => { setUserRole(localStorage.getItem("user_role")); }, []);
@@ -407,22 +412,49 @@ export default function LeadsHubPage() {
         lead.displayId = `${prefix}-${yymm}-${seq.toString().padStart(3, "0")}`;
       });
 
-      // 1b. Attach each individual's latest proposal status, so the board can filter by
-      // Under Review / Submitted / Rejected. Best effort: the board still works without it.
+      // 1b. Work out how far each lead has really got. profile_status alone can't say: every registered customer
+      // sits at "ready for underwriting" whatever their proposal is doing, and a customer has one quote per plan.
+      // So take the MOST ADVANCED proposal (quote) and underwriting case each lead has. Best effort: without
+      // them the board falls back to the lead's own status.
       try {
-        const quotes = await listQuotes();
-        const latest = new Map<string, { status: string; at: number }>();
-        for (const q of quotes ?? []) {
-          const at = new Date(q.updated_at ?? q.created_at).getTime();
-          const prev = latest.get(q.customer_id);
-          if (!prev || at > prev.at) latest.set(q.customer_id, { status: q.status, at });
+        const QUOTE_RANK: Record<string, number> = {
+          Declined: 0, Quoted: 1, Proposed: 2, InformationRequested: 2, UnderReview: 3,
+          Approved: 4, AcceptedWithLoadings: 4, PendingPayment: 5, Issued: 5, Active: 5,
+        };
+        const bestQuote = new Map<string, string>();
+        for (const q of (await listQuotes()) ?? []) {
+          const have = bestQuote.get(q.customer_id);
+          if ((QUOTE_RANK[q.status] ?? 1) > (have === undefined ? -1 : QUOTE_RANK[have] ?? 1)) bestQuote.set(q.customer_id, q.status);
         }
-        unified.forEach((l) => { if (l.type === "INDIVIDUAL") l.proposalStatus = latest.get(l.id)?.status ?? null; });
-      } catch { /* proposal statuses unavailable: status filters fall back to the lead status */ }
+        unified.forEach((l) => { if (l.type === "INDIVIDUAL") l.proposalStatus = bestQuote.get(l.id) ?? null; });
+      } catch { /* proposal statuses unavailable */ }
+      try {
+        // An open case beats a closed one; Approved beats the rest.
+        const CASE_RANK: Record<string, number> = { Closed: 0, Rejected: 1, New: 2, InProgress: 3, "Pending Documents": 3, "Under Review": 4, Approved: 5 };
+        const bestCase = new Map<string, string>();
+        const note = (key: string | undefined | null, status: string) => {
+          if (!key) return;
+          const have = bestCase.get(key);
+          if ((CASE_RANK[status] ?? 2) > (have === undefined ? -1 : CASE_RANK[have] ?? 2)) bestCase.set(key, status);
+        };
+        for (const c of (await listCases(tenantId)) ?? []) {
+          note(c.customer_id, c.caseStatus);
+          note(c.family_group_id, c.caseStatus);
+          note(c.organization_id, c.caseStatus);
+        }
+        unified.forEach((l) => { l.caseStatus = bestCase.get(l.id) ?? null; });
+      } catch { /* cases unavailable */ }
 
       // 2. Sort by newest first
       unified.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       announceNewLeads(unified);
+      // Tell the welcome tour about a lead that just appeared (the newest one), so it can follow it.
+      const seen = tourSeenIds.current;
+      tourSeenIds.current = new Set(unified.map((l) => l.id));
+      if (seen) {
+        const fresh = unified.find((l) => !seen.has(l.id));
+        if (fresh) announceTourLead({ id: fresh.id, name: fresh.name, type: fresh.type });
+      }
       setLeads(unified);
     } catch (err: any) {
       setError(err.message || "Failed to load leads");
@@ -476,18 +508,21 @@ export default function LeadsHubPage() {
   // The Status dropdown. The first group filters on the lead's own stage; the second on where
   // its proposal has got to, which is what an agent follows after submitting.
   const matchesStatus = (l: UnifiedLead, filter: string = statusFilter) => {
+    // The same stage the Progress column shows, so a filter and the lead it finds always agree.
+    const st = leadStage(l);
     switch (filter) {
       case "ALL": return true;
-      case "ACTIVE": return l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER" && l.proposalStatus !== "Declined";
-      case "IN_PROGRESS": return l.status === "PROSPECT" || l.status === "UNDERWRITING_READY";
-      case "DRAFT": return l.status === "DRAFT";
-      case "LEAD": return l.status === "LEAD";
+      case "ACTIVE": return l.status !== "NOT_INTERESTED" && l.status !== "POLICYHOLDER" && st.tone !== "red";
+      case "LEAD": return st.step === 1;
+      case "IN_PROGRESS": return st.label === "In proposal" || st.label === "Proposal draft";
+      case "SUBMITTED": return st.label === "Proposal submitted";
+      case "UNDER_REVIEW": return st.label === "Proposal under review";
+      case "INFO_REQUESTED": return st.label === "Info requested";
+      case "UNDERWRITING": return st.label === "In underwriting";
+      case "APPROVED": return st.label === "Approved" || st.step === 5;
+      case "REJECTED": return st.tone === "red";
       case "DEAD": return l.status === "NOT_INTERESTED";
       case "POLICYHOLDER": return l.status === "POLICYHOLDER";
-      case "SUBMITTED": return l.proposalStatus === "Proposed";
-      case "UNDER_REVIEW": return l.proposalStatus === "UnderReview";
-      case "INFO_REQUESTED": return l.proposalStatus === "InformationRequested";
-      case "REJECTED": return l.proposalStatus === "Declined";
       default: return true;
     }
   };
@@ -799,6 +834,8 @@ export default function LeadsHubPage() {
             { id: "SUBMITTED", label: "Submitted", dot: "bg-blue-500" },
             { id: "UNDER_REVIEW", label: "Under review", dot: "bg-blue-500" },
             { id: "INFO_REQUESTED", label: "Info requested", dot: "bg-amber-400" },
+            { id: "UNDERWRITING", label: "Underwriting", dot: "bg-blue-500" },
+            { id: "APPROVED", label: "Approved / policy", dot: "bg-emerald-500" },
             { id: "REJECTED", label: "Rejected", dot: "bg-rose-500" },
             { id: "DEAD", label: "Not interested", dot: "bg-slate-300" },
           ];

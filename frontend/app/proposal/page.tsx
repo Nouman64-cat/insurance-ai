@@ -6,7 +6,7 @@ import api from "../services/api";
 import { getQuote, listQuotes, QuoteDetail, QuoteListItem } from "../services/quotes";
 import { MetricCard } from "@/components/MetricCard";
 import { SegmentDropdown, SegmentFilter } from "@/components/SegmentDropdown";
-import { StatusDropdown, StatusFilter } from "@/components/StatusDropdown";
+import { type StatusFilter } from "@/components/StatusDropdown";
 import { FancyDropdown, FancyDropdownOption } from "@/components/FancyDropdown";
 import { fmtCoverage } from "@/lib/mock-data";
 
@@ -367,6 +367,8 @@ export default function QuotePage() {
   const [search, setSearch] = useState("");
   const [segment, setSegment] = useState<SegmentFilter>("all");
 
+  // Every proposal is shown until a stage chip is picked. Deliberately not remembered between visits:
+  // the page always opens on "All proposals".
   const [activeTab, setActiveTab] = useState<StatusFilter>("ALL");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -399,13 +401,6 @@ export default function QuotePage() {
   );
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (parsed.activeTab) setActiveTab(parsed.activeTab);
-      } catch (e) {}
-    }
     const tenantId = localStorage.getItem("tenant_id");
     if (tenantId) {
       listUnderwriters(tenantId).then(setUnderwriters).catch(console.error);
@@ -434,14 +429,6 @@ export default function QuotePage() {
   const isAgent = userRole === "Agent";
   const canSendToUnderwriting = canActOnProposals && !isAgent;
 
-  const isMounted = useRef(false);
-  useEffect(() => {
-    if (!isMounted.current) {
-      isMounted.current = true;
-      return;
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ activeTab }));
-  }, [activeTab]);
 
 
   const [selectedQuoteId, setSelectedProposalId] = useState<string | null>(null);
@@ -584,9 +571,8 @@ export default function QuotePage() {
       setBulkProceedSuccess("Successfully updated statuses.");
       fetchQuotes();
       setSelectedProposalIds(new Set());
-      // Jump to the destination tab so the just-moved lead(s) are visible
-      // right away instead of vanishing from the tab the user was on.
-      setActiveTab(targetStatus as StatusFilter);
+      // With a stage chip on, follow the moved proposals to their new stage instead of letting them vanish.
+      if (activeTab !== "ALL") setActiveTab(targetStatus as StatusFilter);
     } catch (err: any) {
       setBulkProceedError(err.message ?? "Failed to update statuses.");
     } finally {
@@ -598,7 +584,12 @@ export default function QuotePage() {
   // forBatch=true so it doesn't try to reason about any one customer's
   // missing fields — both Submit and Send-to-Info-Requested are offered
   // together and the underwriter picks whichever fits the selected batch.
-  const batchOptions = useMemo(() => getAvailableActions(activeTab, false, true, canSendToUnderwriting, isAgent), [activeTab, canSendToUnderwriting, isAgent]);
+  // With every proposal on one list there is no status tab to take the batch actions from, so they come from the
+  // proposals ticked in the folder: when they all share a status its moves are offered, otherwise none.
+  const batchOptionsFor = (folderQuotes: QuoteListItem[]) => {
+    const statuses = Array.from(new Set(folderQuotes.filter((q) => selectedQuoteIds.has(q.quote_id)).map((q) => q.status)));
+    return statuses.length === 1 ? getAvailableActions(statuses[0], false, true, canSendToUnderwriting, isAgent) : [];
+  };
 
   const handleBatchApply = async (value: string, quotesToProcess: QuoteListItem[]) => {
     if (value === "underwriting") {
@@ -631,6 +622,12 @@ export default function QuotePage() {
       setDetailLoading(false);
     }
   }, []);
+
+  // Re-read the open proposal in place (no spinner, nothing closes), after one of its moves.
+  const reloadDetail = useCallback(async () => {
+    if (!selectedQuoteId) return;
+    try { setDetail(await getQuote(selectedQuoteId)); } catch { /* keep what is on screen */ }
+  }, [selectedQuoteId]);
 
   const closeQuote = useCallback(() => {
     setSelectedProposalId(null);
@@ -941,11 +938,31 @@ export default function QuotePage() {
       </div>
 
       <div className="flex flex-col gap-3">
-        <div className="flex flex-col gap-1.5">
-          <StatusDropdown value={activeTab} onChange={setActiveTab} counts={statusCounts} />
-          <p className="text-[11px] text-slate-400 px-1">
-            Draft → Submitted → Under Review → Approved/Rejected → Issued — one way, no skipping stages.
-          </p>
+        {/* Stage filter: one tap to see only the proposals at that stage, with how many; "All proposals" until one is picked */}
+        <div className="flex flex-wrap items-center gap-2" role="tablist" aria-label="Proposal stage">
+          {STATUS_TABS.map((t) => {
+            const on = activeTab === t.id;
+            const dot: Record<string, string> = {
+              ALL: "bg-slate-400", Quoted: "bg-slate-400", Proposed: "bg-blue-500", UnderReview: "bg-amber-500",
+              InformationRequested: "bg-amber-300", Approved: "bg-emerald-500", Declined: "bg-rose-500", Issued: "bg-emerald-500",
+            };
+            return (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={on}
+                onClick={() => setActiveTab(t.id as StatusFilter)}
+                className={`inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                  on ? "border-blue-600 bg-blue-600 text-white shadow-sm" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                {t.id !== "ALL" && <span className={`h-2 w-2 rounded-full ${on ? "bg-white" : dot[t.id] ?? "bg-slate-400"}`} />}
+                {t.label}
+                <span className={`tabular-nums ${on ? "text-blue-100" : "text-slate-400"}`}>{statusCounts[t.id as StatusFilter] ?? 0}</span>
+              </button>
+            );
+          })}
         </div>
         <div className="flex flex-wrap gap-3 items-center">
           <button
@@ -1085,14 +1102,14 @@ export default function QuotePage() {
               {quotes.length === 0
                 ? "No proposals yet"
                 : segmentQuotes.length === 0
-                  ? `No ${segment === "all" ? "" : segment + " "}proposals in "${activeTabLabel}"`
+                  ? `No ${segment === "all" ? "" : segment + " "}proposals${activeTab === "ALL" ? "" : ` in "${activeTabLabel}"`}`
                   : "No proposals match your search"}
             </p>
             <p className="text-xs text-slate-400 mt-1.5 max-w-xs leading-relaxed">
               {quotes.length === 0
                 ? "Register a customer and a proposal will be generated automatically in the background."
                 : segmentQuotes.length === 0
-                  ? "Try a different status or switch the segment filter to All Cases."
+                  ? "Try a different stage or switch the segment filter to All Cases."
                   : "Try a different customer name, CNIC, organization, or plan."}
             </p>
           </div>
@@ -1144,7 +1161,7 @@ export default function QuotePage() {
                             totalCount={allOrgQuotes.length}
                             allSelected={allSelected}
                             onToggleAll={() => toggleAllInFolder(allOrgQuotes.map(q => q.quote_id))}
-                            options={batchOptions}
+                            options={batchOptionsFor(allOrgQuotes)}
                             onApply={(value) => handleBatchApply(value, allOrgQuotes)}
                             getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedOrgCount)}
                             disabled={isBulkProceeding || selectedOrgCount === 0}
@@ -1224,7 +1241,7 @@ export default function QuotePage() {
                             totalCount={allFamQuotes.length}
                             allSelected={allSelected}
                             onToggleAll={() => toggleAllInFolder(allFamQuotes.map(q => q.quote_id))}
-                            options={batchOptions}
+                            options={batchOptionsFor(allFamQuotes)}
                             onApply={(value) => handleBatchApply(value, allFamQuotes)}
                             getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedFamCount)}
                             disabled={isBulkProceeding || selectedFamCount === 0}
@@ -1281,7 +1298,7 @@ export default function QuotePage() {
                           totalCount={allIndividualQuotes.length}
                           allSelected={allSelected}
                           onToggleAll={() => toggleAllInFolder(allIndividualQuotes.map(q => q.quote_id))}
-                          options={batchOptions}
+                          options={batchOptionsFor(allIndividualQuotes)}
                           onApply={(value) => handleBatchApply(value, allIndividualQuotes)}
                           getConfirmMessage={(o) => getBatchConfirmMessage(o, selectedIndividualCount)}
                           disabled={isBulkProceeding || selectedIndividualCount === 0}
@@ -1336,7 +1353,8 @@ export default function QuotePage() {
           error={detailError}
           onClose={closeQuote}
           onRefresh={fetchQuotes}
-          onStatusChange={(newStatus) => setActiveTab(newStatus as StatusFilter)}
+          onReloadDetail={reloadDetail}
+          onStatusChange={(newStatus) => { if (activeTab !== "ALL") setActiveTab(newStatus as StatusFilter); }}
           canAct={canActOnProposals}
           canDecide={canDecideProposals}
           canSendToUnderwriting={canSendToUnderwriting}
@@ -1768,8 +1786,75 @@ function ProposalsGrid({
 
 // ── Detail modal ─────────────────────────────────────────────────────────────
 
+// The three moves a proposal makes on its way to underwriting. `current` is the one waiting to be done:
+// Draft waits on Submit, Submitted on Start Review, Under Review on Send to Underwriting. Past that, all done.
+const PROPOSAL_STEPS_UI = [
+  { n: 1, label: "Submit proposal" },
+  { n: 2, label: "Start review" },
+  { n: 3, label: "Send to underwriting" },
+];
+
+function proposalProgress(status: string): { current: number; note?: string; tone?: "amber" | "red" } {
+  switch (status) {
+    case "Quoted": return { current: 1 };
+    case "InformationRequested": return { current: 1, note: "Info requested: add the details and re-submit", tone: "amber" };
+    case "Proposed": return { current: 2 };
+    case "UnderReview": return { current: 3 };
+    case "Declined": return { current: 4, note: "Rejected", tone: "red" };
+    default: return { current: 4 };          // approved, issued...: the whole path is behind it
+  }
+}
+
+function ProposalProgress({ status }: { status: string }) {
+  const { current, note, tone } = proposalProgress(status);
+  return (
+    <div>
+      <ol className="flex items-start" aria-label="Proposal progress">
+        {PROPOSAL_STEPS_UI.map((st, i) => {
+          const done = st.n < current;
+          const now = st.n === current;
+          return (
+            <li key={st.n} className="flex flex-1 items-start last:flex-none">
+              <div className="flex w-28 flex-col items-center gap-1.5 text-center">
+                <span
+                  className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-colors duration-500 ${
+                    done ? "bg-blue-600 text-white" : now ? (tone === "amber" ? "bg-amber-500 text-white" : "bg-blue-600 text-white") : "bg-blue-50 text-blue-300"
+                  }`}
+                  aria-current={now ? "step" : undefined}
+                >
+                  {now && <span className="absolute -inset-1.5 -z-10 rounded-full bg-blue-100/80" aria-hidden="true" />}
+                  {done ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4"><polyline points="20 6 9 17 4 12" /></svg>
+                  ) : now ? (
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4 animate-spin" style={{ animationDuration: "3s" }}>
+                      <path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5L18 18M18 6l-2.5 2.5M8.5 15.5L6 18" />
+                    </svg>
+                  ) : (
+                    <span className="text-xs font-bold">{st.n}</span>
+                  )}
+                </span>
+                <span className={`text-[11px] font-semibold leading-tight ${done || now ? "text-slate-700" : "text-slate-400"}`}>
+                  {st.n}. {st.label}
+                </span>
+              </div>
+              {i < PROPOSAL_STEPS_UI.length - 1 && (
+                <span className="mt-[1.125rem] h-0.5 flex-1 bg-blue-100" aria-hidden="true">
+                  <span className={`block h-full bg-blue-600 transition-all duration-500 ${done ? "w-full" : "w-0"}`} />
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      {note && (
+        <p className={`mt-3 text-center text-xs font-semibold ${tone === "red" ? "text-rose-600" : "text-amber-600"}`}>{note}</p>
+      )}
+    </div>
+  );
+}
+
 function QuoteDetailModal({
-  detail, loading, error, onClose, onStartUnderwriting, onRefresh, onStatusChange, canAct, canDecide, canSendToUnderwriting, isAgent
+  detail, loading, error, onClose, onStartUnderwriting, onRefresh, onReloadDetail, onStatusChange, canAct, canDecide, canSendToUnderwriting, isAgent
 }: {
   detail: QuoteDetail | null;
   loading: boolean;
@@ -1777,6 +1862,8 @@ function QuoteDetailModal({
   onClose: () => void;
   onStartUnderwriting: () => Promise<void>;
   onRefresh: () => void;
+  /** Re-read this proposal so its status (and the progress steps) update while the window stays open. */
+  onReloadDetail: () => Promise<void>;
   onStatusChange: (newStatus: string) => void;
   canAct: boolean;
   canDecide: boolean;
@@ -1839,7 +1926,9 @@ function QuoteDetailModal({
     setStartError(null);
     try {
       if (value === "underwriting") {
+        // The last step: opens the underwriting case and takes the user there. Only now does the window close.
         await onStartUnderwriting();
+        onClose();
         return;
       }
       if (value === "save_info") {
@@ -1852,8 +1941,10 @@ function QuoteDetailModal({
         // where it landed, instead of vanishing from the tab it was on.
         onStatusChange(newStatus);
       }
+      // Stay on the proposal: the list behind it refreshes, and this window re-reads the proposal so the
+      // progress steps and the next action update in place.
       onRefresh();
-      onClose();
+      await onReloadDetail();
     } catch (err: any) {
       setStartError(err.message ?? "Failed to update.");
     }
@@ -1882,6 +1973,33 @@ function QuoteDetailModal({
             </svg>
           </button>
         </div>
+
+        {detail && !loading && (
+          <div className="space-y-4 border-b border-slate-100 bg-slate-50/70 px-5 py-4">
+            <ProposalProgress status={detail.status} />
+            {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-500" title="Currently, you have no access to do this, ask your manager">
+                This proposal has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.
+              </div>
+            )}
+            {/* The next move: only what is legal from here */}
+            {modalOptions.length > 0 && (
+              <div className="space-y-2">
+                {startError && (
+                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{startError}</p>
+                )}
+                <ActionDropdown
+                  options={modalOptions}
+                  onApply={handleApplyAction}
+                  isOptionDisabled={(value) => value === "save_info" && Object.keys(missingFormData).length === 0}
+                  getConfirmMessage={(o) => (o.tier === "decision" ? "Reject this proposal? This cannot be undone." : undefined)}
+                  canAct={canAct}
+                  canDecide={canDecide}
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {loading && (
           <div className="py-16 flex flex-col items-center justify-center gap-2">
@@ -2083,29 +2201,6 @@ function QuoteDetailModal({
               <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 text-xs text-slate-500">
                 This proposal's outcome was decided on its underwriting case, not here — open the case to review the decision.
               </div>
-            )}
-
-            {isAgent && modalOptions.length === 0 && ["Proposed", "UnderReview", "Approved", "AcceptedWithLoadings", "Declined", "Issued"].includes(detail.status) && (
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs text-slate-500" title="Currently, you have no access to do this, ask your manager">
-                This proposal has been sent to the admin team for further review, so it can no longer be changed from here. You can follow its progress on this page.
-              </div>
-            )}
-
-            {/* Dynamic action dropdown — only the moves legal from here */}
-            {modalOptions.length > 0 && (
-              <section className="pt-1 border-t border-slate-100 space-y-2">
-                {startError && (
-                  <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-1">{startError}</p>
-                )}
-                <ActionDropdown
-                  options={modalOptions}
-                  onApply={handleApplyAction}
-                  isOptionDisabled={(value) => value === "save_info" && Object.keys(missingFormData).length === 0}
-                  getConfirmMessage={(o) => (o.tier === "decision" ? "Reject this proposal? This cannot be undone." : undefined)}
-                  canAct={canAct}
-                  canDecide={canDecide}
-                />
-              </section>
             )}
           </div>
         )}

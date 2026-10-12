@@ -13,7 +13,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import api, { OCR_BASE_URL } from "@/app/services/api";
 import { listBranches, Branch } from "@/app/services/branches";
 import { listAgents, Agent } from "@/app/services/agents";
-import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
+import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
 import { listInsurancePlans, InsurancePlan } from "@/app/services/insurancePlans";
 import { PAKISTAN_PROVINCES } from "@/lib/pakistanProvinces";
 import { notifyParentPortal } from "@/lib/agent/portalMessage";
@@ -560,7 +560,13 @@ export default function OrganizationFullEntryModal({ open, onClose, onSaved }: P
             <p className="text-xs text-slate-500 mt-0.5">Company, group policy, benefit classes, employees, dependants and nominees in one place — or upload a document to fill every tab.</p>
           </div>
           <div className="flex items-center gap-3">
-            <DemoFillButton onFill={() => applyExtracted(demoOrganizationExtraction(), "demo data")} />
+            <DemoFillButton onFill={() => {
+              applyExtracted(demoOrganizationExtraction(), "demo data");
+              // The demo company also goes to one of the available agents.
+              const pick = pickDemoAgent(sources, agentOptions);
+              if (pick.sourceId) setAcquisitionSourceId(pick.sourceId);
+              if (pick.agentId) setAssignedAgentId(pick.agentId);
+            }} />
             <input ref={fileRef} type="file" accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f); }} />
             <button type="button" onClick={() => fileRef.current?.click()} disabled={extracting || saving}

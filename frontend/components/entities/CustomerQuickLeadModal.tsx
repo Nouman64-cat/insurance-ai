@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import api from "@/app/services/api";
 import { listAgents, Agent } from "@/app/services/agents";
-import SourcePicker, { useAcquisitionSources } from "./SourcePicker";
+import SourcePicker, { pickDemoAgent, useAcquisitionSources } from "./SourcePicker";
 import DemoFillButton from "@/components/DemoFillButton";
 import { demoQuickLead } from "@/lib/demoData";
 
@@ -69,6 +69,14 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
     if (sources.some((src) => src.id === defaultSourceId)) setAcquisitionSourceId(defaultSourceId);
   }, [open, sources, defaultSourceId]);
 
+
+  // "Fill demo data" also hands the lead to one of the available agents.
+  const assignDemoAgent = () => {
+    const pick = pickDemoAgent(sources, agentOptions);
+    if (pick.sourceId) setAcquisitionSourceId(pick.sourceId);
+    if (pick.agentId) setAssignedAgentId(pick.agentId);
+  };
+
   if (!open) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -125,6 +133,7 @@ export default function CustomerQuickLeadModal({ open, onClose, onSaved, default
                 setFirstName(lead.first);
                 setLastName(lead.last);
                 setPhone(lead.phone);
+                assignDemoAgent();
               }}
             />
             <button

@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 // Where a lead is on its way to a policy, readable at a glance in a list.
 //
 // Five stages, drawn as five segments that fill left to right:
@@ -10,6 +12,9 @@ export const LEAD_STAGES = ["New lead", "Proposal", "Review", "Underwriting", "P
 type Tone = "blue" | "amber" | "green" | "red" | "slate";
 
 export interface LeadStageInfo {
+  /** Where the page for this stage is, and what to call the link. None for a new lead (the lead is the page) and a closed one. */
+  href?: string;
+  linkLabel?: string;
   /** Segments filled, 0 to 5. */
   step: number;
   label: string;
@@ -19,22 +24,47 @@ export interface LeadStageInfo {
 
 interface LeadLike {
   status: string;
+  /** The most advanced proposal (quote) the lead has. */
   proposalStatus?: string | null;
+  /** The most advanced underwriting case the lead has. */
+  caseStatus?: string | null;
 }
 
+const CASE_NOTE: Record<string, string> = {
+  New: "Case opened",
+  InProgress: "Checks under way",
+  "Pending Documents": "Waiting on documents",
+  "Under Review": "Underwriter review",
+};
+
 export function leadStage(lead: LeadLike): LeadStageInfo {
+  const proposal = { href: "/proposal", linkLabel: "Open Proposal" };
+  const underwriting = { href: "/underwriting?tab=pre-underwriting", linkLabel: "Open Underwriting" };
+  const issuance = { href: "/policy-issuance", linkLabel: "Open Issuance" };
+
   if (lead.status === "NOT_INTERESTED") return { step: 0, label: "Not interested", note: "Closed", tone: "slate" };
-  if (lead.status === "POLICYHOLDER") return { step: 5, label: "Policyholder", note: "Cover is live", tone: "green" };
-  if (lead.status === "UNDERWRITING_READY") return { step: 4, label: "In underwriting", note: "Risk assessment", tone: "blue" };
+  if (lead.status === "POLICYHOLDER" || lead.proposalStatus === "Active")
+    return { step: 5, label: "Policy active", note: "Cover is live", tone: "green", href: "/admin/policyholders", linkLabel: "View policy" };
+  if (lead.proposalStatus === "Issued" || lead.proposalStatus === "PendingPayment")
+    return { step: 5, label: "Policy issued", note: "Awaiting first premium", tone: "green", ...issuance };
+
+  // An underwriting case is open (or decided): that is the furthest point
+  if (lead.caseStatus === "Approved") return { step: 4, label: "Approved", note: "Ready to issue", tone: "green", ...issuance };
+  if (lead.caseStatus === "Rejected") return { step: 4, label: "Declined in underwriting", note: "Stopped", tone: "red", ...underwriting };
+  if (lead.caseStatus && lead.caseStatus !== "Closed")
+    return { step: 4, label: "In underwriting", note: CASE_NOTE[lead.caseStatus] ?? "Case open", tone: "blue", ...underwriting };
 
   switch (lead.proposalStatus) {
-    case "Declined": return { step: 2, label: "Proposal rejected", note: "Stopped at proposal", tone: "red" };
-    case "InformationRequested": return { step: 2, label: "Info requested", note: "Waiting on details", tone: "amber" };
-    case "UnderReview": return { step: 3, label: "Under review", note: "With the admin team", tone: "blue" };
-    case "Proposed": return { step: 2, label: "Proposal submitted", note: "Awaiting review", tone: "blue" };
-    case "Quoted": return { step: 2, label: "Proposal draft", note: "Not submitted yet", tone: "blue" };
+    case "Approved":
+    case "AcceptedWithLoadings": return { step: 4, label: "Approved", note: "Ready to issue", tone: "green", ...issuance };
+    case "Declined": return { step: 2, label: "Proposal rejected", note: "Stopped at proposal", tone: "red", ...proposal };
+    case "InformationRequested": return { step: 2, label: "Info requested", note: "Waiting on details", tone: "amber", ...proposal };
+    case "UnderReview": return { step: 3, label: "Proposal under review", note: "Before underwriting", tone: "blue", ...proposal };
+    case "Proposed": return { step: 2, label: "Proposal submitted", note: "Awaiting review", tone: "blue", ...proposal };
+    case "Quoted": return { step: 2, label: "Proposal draft", note: "Not submitted yet", tone: "blue", ...proposal };
   }
-  if (lead.status === "PROSPECT") return { step: 2, label: "In proposal", note: "Being prepared", tone: "blue" };
+  if (lead.status === "PROSPECT" || lead.status === "UNDERWRITING_READY")
+    return { step: 2, label: "In proposal", note: "Being prepared", tone: "blue", ...proposal };
   return { step: 1, label: "New lead", note: "Not started", tone: "amber" };
 }
 
@@ -66,7 +96,19 @@ export default function LeadProgress({ lead }: { lead: LeadLike }) {
         ))}
       </div>
       <p className={`mt-1.5 text-xs font-semibold leading-none ${TEXT[s.tone]}`}>{s.label}</p>
-      <p className="mt-1 text-[11px] leading-none text-slate-400">{s.note}</p>
+      <div className="mt-1 flex items-center justify-between gap-3">
+        <p className="text-[11px] leading-none text-slate-400">{s.note}</p>
+        {s.href && (
+          <Link
+            href={s.href}
+            // the row itself opens the lead's details; this link goes to the page for its current step instead
+            onClick={(e) => e.stopPropagation()}
+            className="whitespace-nowrap text-[11px] font-semibold leading-none text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            {s.linkLabel} →
+          </Link>
+        )}
+      </div>
     </div>
   );
 }

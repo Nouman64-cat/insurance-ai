@@ -1,13 +1,14 @@
 import os
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from sqlmodel import select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from database import get_session
+from services.case_events import publish_data_changed
 from schemas import ChangePasswordRequest, ProfileUpdate
 from typing import Optional
 from uuid import UUID
@@ -110,6 +111,7 @@ async def _me_payload(
 
 @router.post("/token")
 async def login_for_access_token(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
@@ -125,10 +127,18 @@ async def login_for_access_token(
     # A successful sign-in is the invitee acknowledging their credentials email:
     # record it. Accounts issued to acquisition sources stay hidden from User
     # Management until this is set (see routers/users.py).
+    # last_login is empty only before the very first sign-in: that is what the portal's welcome tour keys off.
+    first_login = user.last_login is None
     user.last_login = datetime.utcnow()
     user.is_verified = True
     session.add(user)
     await session.commit()
+
+    # An acquisition source's login turns from "invited" to "active" on its first sign-in. Tell the tenant's open
+    # portals so the Acquisition Sources page updates by itself (the same live event every other write publishes).
+    producer = getattr(request.app.state, "kafka_producer", None)
+    if first_login and user.tenant_id and producer is not None:
+        await publish_data_changed(producer, tenant_id=user.tenant_id, resource="acquisition-sources", method="POST")
 
     # Generate payload
     payload = {
@@ -139,7 +149,7 @@ async def login_for_access_token(
     }
 
     token = create_access_token(payload)
-    return {"access_token": token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer", "first_login": first_login}
 
 
 @router.get("/me")

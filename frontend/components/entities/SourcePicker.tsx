@@ -19,6 +19,24 @@ export function useAcquisitionSources(open: boolean): AcquisitionSource[] {
   return sources;
 }
 
+/**
+ * What "Fill demo data" assigns: one of the available agents. Prefers an Agent-type acquisition source whose own
+ * login is an agent in the list (so the lead is credited to that agent AND lands on their mobile app); otherwise
+ * any Agent source, otherwise just a random agent from the list. Random, so repeated demo leads spread across agents.
+ */
+export function pickDemoAgent(
+  sources: AcquisitionSource[],
+  agents: { id: string }[],
+): { sourceId: string; agentId: string } {
+  const random = <T,>(list: T[]): T | undefined => list[Math.floor(Math.random() * list.length)];
+  const agentIds = new Set(agents.map((a) => a.id));
+  const agentSources = sources.filter((s) => s.source_type === "AGENT");
+  const linked = agentSources.filter((s) => s.user_id && agentIds.has(s.user_id));
+  const source = random(linked) ?? random(agentSources);
+  const agentId = source?.user_id && agentIds.has(source.user_id) ? source.user_id : random(agents)?.id ?? "";
+  return { sourceId: source?.id ?? "", agentId };
+}
+
 interface Props {
   sources: AcquisitionSource[];
   /** The chosen source's id, or "" for none. */

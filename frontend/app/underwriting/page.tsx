@@ -338,6 +338,10 @@ function UnderwritingMainContent() {
         if (before && before !== "Submitted" && c.e_application_status === "Submitted") {
           notify(`${c.customer_name ?? "Applicant"} submitted the e-application — ready to review & verify`, true);
         }
+        const acrBefore = casesRef.current.find((x) => x.caseld === c.caseld)?.acr_status;
+        if (acrBefore && acrBefore !== "Submitted" && c.acr_status === "Submitted") {
+          notify(`The agent submitted ${c.customer_name ?? "the applicant"}'s confidential report (ACR)`, true);
+        }
       }
       setCases(data);
     } catch { /* keep the last good list; the next tick retries */ }
@@ -983,9 +987,12 @@ function UnderwritingMainContent() {
                           isDone: g2Done,
                           isLocked: !g2Unlocked,
                           isNextActive: g2Unlocked && !g2Done,
-                          badge: !g2Unlocked ? null : <StatusPill done={g2Done} pending={c.acr_status ?? "Not Started"} label="Submitted" />,
+                          // Filed by the agent before Gate 1 cleared: show it, so the update is never invisible
+                          badge: !g2Unlocked ? (g2Done ? <StatusPill done pending="Submitted" label="Submitted" /> : null) : <StatusPill done={g2Done} pending={c.acr_status ?? "Not Started"} label="Submitted" />,
                           action: !g2Unlocked ? (
-                            <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 1 first</span>
+                            g2Done
+                              ? <span className="text-xs font-semibold text-emerald-700">✓ Report already filed by the agent, waiting on Gate 1</span>
+                              : <span className="text-xs text-slate-400 font-medium italic">Prerequisite: Complete Gate 1 first</span>
                           ) : g2Done ? (
                             <div className="flex items-center gap-2">
                               <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
