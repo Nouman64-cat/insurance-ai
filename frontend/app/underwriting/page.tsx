@@ -9,7 +9,7 @@ import { useNotify } from "@/components/NotificationContext";
 import { fmtCoverage } from "@/lib/mock-data";
 import { listCases, runCaseCompliance, clearComplianceCheck, type CaseQueueItem } from "@/app/services/cases";
 import { getEApplication, inviteEApplication, type EApplication } from "@/app/services/eApplication";
-import { getACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
+import { getACR, requestACR, type AgentConfidentialReport } from "@/app/services/agentConfidentialReport";
 import { ACRModal } from "@/components/entities/ACRModal";
 import { IPPModal } from "@/components/entities/IPPModal";
 import CustomizeEAppModal from "@/components/entities/CustomizeEAppModal";
@@ -515,6 +515,20 @@ function UnderwritingMainContent() {
     }
   };
 
+  // The report is the agent's own, filed from the agent app; the web only asks for it (and shows it once it is in).
+  const askAgentForAcr = async (c: CaseQueueItem) => {
+    setAcrLoadingFor(c.caseld);
+    try {
+      const r = await requestACR(c.caseld);
+      notify(r.self_request ? "You are the agent on this case: file the report from the agent app." : r.already_requested ? `Already requested from ${r.recipient?.name ?? "the agent"}.` : `Asked ${r.recipient?.name ?? "the agent"} to file the ACR from the app.`, true);
+      await loadData();
+    } catch (e: any) {
+      notify(e?.response?.data?.detail ?? e?.message ?? "Couldn't send the ACR request.", false);
+    } finally {
+      setAcrLoadingFor(null);
+    }
+  };
+
   const canFileAcr = userRole === "Agent" || userRole === "Admin";
 
   // Risk Engine helpers
@@ -1006,13 +1020,16 @@ function UnderwritingMainContent() {
                               </button>
                             </div>
                           ) : (
-                            <button
-                              disabled={!canFileAcr || acrLoadingFor === c.caseld}
-                              onClick={() => openAcrModal(c)}
-                              className="px-3.5 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white font-bold text-xs rounded-xl shadow-xs hover:shadow transition-all flex items-center gap-1.5 disabled:opacity-50"
-                            >
-                              {acrLoadingFor === c.caseld ? "Loading…" : c.acr_status === "Draft" ? "Continue ACR →" : "File ACR →"}
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-slate-500 font-medium italic">Waiting for the agent to submit it from the app</span>
+                              <button
+                                disabled={!canFileAcr || acrLoadingFor === c.caseld}
+                                onClick={() => askAgentForAcr(c)}
+                                className="px-3 py-1.5 bg-white hover:bg-slate-50 text-blue-700 font-bold text-xs rounded-lg border border-slate-200 shadow-xs disabled:opacity-50"
+                              >
+                                {acrLoadingFor === c.caseld ? "Asking…" : c.acr_status === "Requested" ? "Remind agent" : "Request from agent"}
+                              </button>
+                            </div>
                           ),
                         },
                         {

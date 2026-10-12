@@ -246,6 +246,53 @@ export default function EApplicationPage({ params }: { params: { token: string }
   };
   const goBack = () => setStep((s) => Math.max(s - 1, 0));
 
+  // Demo helper: fills every step with plausible answers and jumps to the last step, ready to submit.
+  const fillDemoData = () => {
+    const conditions = emptyConditions().map((c) =>
+      c.key === "hypertension"
+        ? {
+            ...c, checked: true, year_of_diagnosis: "2021", under_treatment: true, medications: "Amlodipine 5mg, once daily",
+            physician_name: "Dr. Sana Malik", physician_clinic: "Shifa International Hospital", physician_phone: "0300-1234567",
+            last_consultation_date: "15 Aug 2026",
+          }
+        : c,
+    );
+    setMedical({
+      ...emptyMedical(),
+      height_cm: "172", weight_kg: "74",
+      tobacco_use: false, alcohol_use: false, drug_use: false,
+      conditions,
+      has_hospitalizations: true,
+      hospitalizations: [{ date: "March 2023", reason_or_type: "Dengue fever", hospital: "Shifa International Hospital", duration: "4 days" }],
+      has_surgeries: true,
+      surgeries: [{ date: "June 2019", reason_or_type: "Appendectomy", hospital: "Aga Khan University Hospital", duration: "3 days" }],
+      disclosures: Object.fromEntries(ADDITIONAL_DISCLOSURES.map((q) => [q.key, { answer: "No" as const, details: "" }])),
+    });
+    setFamilyHistory([
+      { relation: "Father", name: "Muhammad Aslam", age: "68", is_alive: true, condition: "Hypertension", age_at_onset: "55" },
+      { relation: "Mother", name: "Razia Begum", age: "64", is_alive: true, condition: "Type 2 Diabetes", age_at_onset: "58" },
+    ]);
+    setLifestyle({
+      has_hazardous_hobby: false, hazardous_hobby_details: "",
+      occupation_hazard_level: "Low",
+      frequent_foreign_travel: true, foreign_travel_details: "Business trips to the UAE, 2–3 times a year",
+      moving_violations_past_3_years: "0",
+      dui_dwi_history: false, criminal_record: false,
+    });
+    setExistingInsurance({
+      has_existing_policies: true,
+      policies: [{ insurer_name: "State Life Insurance", policy_number: "SL-2018-004512", sum_assured: "2000000", status: "Active" }],
+      applied_last_2_years: false, was_declined_or_deferred: false, declined_details: "",
+    });
+    setDeclaration({
+      confirms_accurate: true, authorizes_records_access: true, not_signed_blank: true, understood_terms: true,
+      signature_name: applicant.name || "Applicant",
+    });
+    setSubmitErr(null);
+    setStep(STEPS.length - 1);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   const [submitErr, setSubmitErr] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -286,6 +333,14 @@ export default function EApplicationPage({ params }: { params: { token: string }
     <div className="min-h-screen bg-slate-50 py-8 px-4">
       <div className="max-w-2xl mx-auto">
         <div className="mb-6">
+          <button
+            type="button"
+            onClick={fillDemoData}
+            title="Fill every step with sample answers and jump to the final step"
+            className="float-right ml-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-100"
+          >
+            Fill demo data
+          </button>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-blue-600">Life Insurance E-Application</p>
           <h1 className="text-xl font-bold text-slate-800">Hi {applicant.name || "there"}, let's complete your application</h1>
           <p className="text-xs text-slate-500 mt-1">Step {step + 1} of {STEPS.length} · {STEPS[step]}</p>

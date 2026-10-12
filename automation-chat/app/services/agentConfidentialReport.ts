@@ -14,6 +14,8 @@ export interface AgentConfidentialReport {
   status: ACRStatus;
   agent_id: string | null;
   submitted_at: string | null;
+  /** When the agent was last asked to file it (null if never asked). */
+  requested_at?: string | null;
 
   known_proposer_since: string | null;
   relationship_to_proposer: string | null;
@@ -62,6 +64,23 @@ export async function saveACR(caseId: string, body: ACRUpsert): Promise<AgentCon
 export async function submitACR(caseId: string): Promise<AgentConfidentialReport> {
   const tid = tenantId();
   const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/submit`);
+  return res.data;
+}
+
+export interface ACRRequestResult {
+  case_id: string;
+  status: ACRStatus;
+  requested_at: string | null;
+  recipient: { user_id: string; name: string; source_name?: string | null } | null;
+  already_requested: boolean;
+  /** The signed-in user is the one who would file it — they are not asked, they file it from the app. */
+  self_request: boolean;
+}
+
+/** Ask the case's agent (or its acquisition source's login) to file the ACR from the agent app. Idempotent. */
+export async function requestACR(caseId: string): Promise<ACRRequestResult> {
+  const tid = tenantId();
+  const res = await api.post(`/tenants/${tid}/cases/${caseId}/acr/request`);
   return res.data;
 }
 

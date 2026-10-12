@@ -463,12 +463,13 @@ function PaymentModal({ policy, onClose, onConfirmed, userRole }: PaymentModalPr
   );
 }
 
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import { Pagination, usePagination } from "@/components/Pagination";
 
 function PolicyIssuanceContent() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const initialTab = searchParams.get("tab") === "active" ? "active" : "queue";
 
   const [stats, setStats] = useState<PolicyStats | null>(null);
@@ -606,11 +607,19 @@ function PolicyIssuanceContent() {
     load();
   };
 
+  // Pre-issuance is finished once the policy is Active; it then lives in the Post-Issuance Queue, so go there
+  // (the URL carries the tab, which also moves the sidebar highlight).
+  const goToPostIssuance = () => {
+    setTab("active");
+    router.replace("/policy-issuance?tab=active");
+  };
+
   const handleConfirmed = (result: PaymentConfirmResult, policyId: string) => {
     const pol = policies.find(p => p.id === policyId);
     setPaymentPolicy(null);
     setActivatedMsg(`${pol?.customer_name ?? "Policy"} — ${result.policy_number} is now Active.`);
     load();
+    goToPostIssuance();
     setTimeout(() => setActivatedMsg(null), 6000);
   };
 
@@ -902,7 +911,12 @@ function PolicyIssuanceContent() {
         <SuccessModal
           result={issuanceResult.result}
           policyName={issuanceResult.policyName}
-          onClose={() => setIssuanceResult(null)}
+          onClose={() => {
+            // Issued with nothing left to pay (already Active): the pre-issuance work is done too.
+            const pending = (issuanceResult.result.status || "").toUpperCase().replace(/[^A-Z]/g, "") === "PENDINGPAYMENT";
+            setIssuanceResult(null);
+            if (!pending) goToPostIssuance();
+          }}
         />
       )}
     </div>
